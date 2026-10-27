@@ -102,6 +102,9 @@ bool VerifySignatures(unsigned timeoutMs) {
                       SignatureOk("menu_sound_decide") && SignatureOk("menu_sound_cancel") &&
                       SignatureOk("menu_sound_deny") && SignatureOk("menu_ball_index") &&
                       SignatureOk("playmenu_cancel_mask");
+    g_caps.setupScreens = g_caps.gameWork && SignatureOk("menu_input") && SignatureOk("startup20_move") &&
+                          SignatureOk("startup21_move") && SignatureOk("startup22_move") &&
+                          SignatureOk("startup21_stage_write") && SignatureOk("startup22_character_write");
     return all;
 }
 

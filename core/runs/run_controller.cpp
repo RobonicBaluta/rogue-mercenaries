@@ -97,7 +97,10 @@ Status RunController::SaveProfile(std::string_view reason) {
     return s;
 }
 
-const CharacterDef* RunController::Character() const { return content_->FindCharacter(run_.character_id); }
+const CharacterDef* RunController::Character() const {
+    // During a run the skin's overrides apply (weapons, passive, skill pool).
+    return run_.active ? &run_.character : content_->FindCharacter(run_.character_id);
+}
 
 const RouteDef* RunController::Route() const { return content_->FindRoute(run_.route_id); }
 
@@ -222,23 +225,34 @@ void RunController::UpdateCheckpoint() {
 std::vector<CharacterAvailability> RunController::Characters() const {
     std::vector<CharacterAvailability> out;
     for (const CharacterDef& c : content_->characters()) {
-        out.push_back({c.id, c.name, CheckCharacter(&c, profile_.unlocked_characters), c.unlock_cost_credits,
-                       c.unlock_text, CheckChallenge(c, profile_.stats)});
+        CharacterAvailability a{c.id, c.name, CheckCharacter(&c, profile_.unlocked_characters), c.unlock_cost_credits,
+                                c.unlock.text, CheckChallenge(c, profile_.stats), c.costume_index};
+        for (const SkinDef& s : c.skins) {
+            a.skins.push_back({s.id, s.name, s.costume_index, CheckSkin(s, profile_.unlocked_characters), s.unlock.text,
+                               CheckChallenge(s.unlock, profile_.stats)});
+        }
+        if (!c.skins.empty() && c.skins.front().costume_index >= 0) a.costume_index = c.skins.front().costume_index;
+        out.push_back(std::move(a));
     }
     return out;
 }
 
 std::vector<std::string> RunController::EvaluateCharacterUnlocks() {
     std::vector<std::string> unlocked;
-    for (const CharacterDef& c : content_->characters()) {
-        if (!c.enabled || c.unlock_kind == ChallengeKind::None || profile_.unlocked_characters.count(c.id)) continue;
-        const ChallengeProgress progress = CheckChallenge(c, profile_.stats);
-        if (!progress.met()) continue;
-        profile_.unlocked_characters.insert(c.id);
-        unlocked.push_back(c.id);
+    auto consider = [&](const std::string& id, const Challenge& challenge, const char* kind) {
+        if (challenge.kind == ChallengeKind::None || profile_.unlocked_characters.count(id)) return;
+        const ChallengeProgress progress = CheckChallenge(challenge, profile_.stats);
+        if (!progress.met()) return;
+        profile_.unlocked_characters.insert(id);
+        unlocked.push_back(id);
         Event e = MakeEvent(EventType::CharacterUnlocked);
-        e.Add("character", c.id).Add("challenge", std::string(ChallengeKindName(c.unlock_kind))).Add("target", progress.target);
+        e.Add(kind, id).Add("challenge", std::string(ChallengeKindName(challenge.kind))).Add("target", progress.target);
         Emit(std::move(e));
+    };
+    for (const CharacterDef& c : content_->characters()) {
+        if (!c.enabled) continue;
+        consider(c.id, c.unlock, "character");
+        for (const SkinDef& s : c.skins) consider(s.id, s.unlock, "skin");
     }
     return unlocked;
 }
@@ -354,7 +368,66 @@ Result<RunSummary> RunController::RecoverInterruptedRun() {
 
 // ---- run lifecycle -------------------------------------------------------------------------
 
+namespace {
+
+// Spends the loadout budget: one of the character's starting weapons (by category cost),
+// then random affordable equipment until nothing fits.
+Loadout RollLoadout(const CharacterDef& ch, const Content& content, Rng& rng) {
+    const LoadoutConfig& cfg = content.loadouts();
+    Loadout out;
+    out.budget = cfg.budget;
+    if (ch.starting_weapons.empty()) return out;
+    // Without a budget there is no roll: the first starting weapon is the sidearm, as before.
+    const auto pick = cfg.budget > 0
+                          ? static_cast<std::size_t>(rng.UniformInt(0, static_cast<std::int64_t>(ch.starting_weapons.size()) - 1))
+                          : std::size_t{0};
+    out.weapon_id = ch.starting_weapons[pick];
+    std::int64_t cost = cfg.default_weapon_cost;
+    if (const WeaponBaseDef* def = content.FindWeapon(out.weapon_id)) {
+        const auto it = cfg.weapon_cost.find(WeaponCategoryName(def->category));
+        if (it != cfg.weapon_cost.end()) cost = it->second;
+    }
+    out.spent = std::min(cost, out.budget);
+    std::vector<int> counts(cfg.equipment.size(), 0);
+    for (int guard = 0; guard < 64; ++guard) {
+        std::vector<std::size_t> options;
+        for (std::size_t i = 0; i < cfg.equipment.size(); ++i) {
+            const EquipmentDef& e = cfg.equipment[i];
+            if (counts[i] < e.max_count && out.spent + e.cost <= out.budget) options.push_back(i);
+        }
+        if (options.empty()) break;
+        const std::size_t i =
+            options[static_cast<std::size_t>(rng.UniformInt(0, static_cast<std::int64_t>(options.size()) - 1))];
+        ++counts[i];
+        out.spent += cfg.equipment[i].cost;
+    }
+    for (std::size_t i = 0; i < cfg.equipment.size(); ++i) {
+        if (counts[i] > 0) out.items.push_back({cfg.equipment[i].id, cfg.equipment[i].name, counts[i]});
+    }
+    return out;
+}
+
+}  // namespace
+
+std::string FormatLoadout(const Loadout& loadout, const Content& content) {
+    std::string text;
+    if (const WeaponBaseDef* def = content.FindWeapon(loadout.weapon_id)) {
+        text = def->name;
+    } else {
+        text = loadout.weapon_id;
+    }
+    for (const LoadoutItem& item : loadout.items) {
+        text += ", " + item.name;
+        if (item.count > 1) text += " x" + std::to_string(item.count);
+    }
+    return text;
+}
+
 Status RunController::StartRun(std::string_view character_id, std::uint64_t seed) {
+    return StartRun(character_id, seed, std::string_view());
+}
+
+Status RunController::StartRun(std::string_view character_id, std::uint64_t seed, std::string_view skin_id) {
     constexpr std::string_view op = "start_run";
     if (run_.active) return Fail(op, ErrorCode::RunInProgress, "run " + run_.run_id + " has not ended");
     const CharacterDef* ch = content_->FindCharacter(character_id);
@@ -366,6 +439,13 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         case CharacterGate::Locked:
             return Fail(op, ErrorCode::Locked, "character '" + std::string(character_id) + "' is locked");
         case CharacterGate::Selectable: break;
+    }
+    const SkinDef* skin = FindSkin(*ch, skin_id);
+    if (skin == nullptr) {
+        return Fail(op, ErrorCode::UnknownId, "unknown skin '" + std::string(skin_id) + "' for " + ch->id);
+    }
+    if (CheckSkin(*skin, profile_.unlocked_characters) == CharacterGate::Locked) {
+        return Fail(op, ErrorCode::Locked, "skin '" + skin->id + "' is locked");
     }
     const EconomyConfig& eco = content_->economy();
     const RouteDef* start = content_->FindRoute(eco.run.starting_route);
@@ -379,6 +459,8 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     fresh.run_id = RunIdFor(profile_.next_run_number);
     fresh.seed = seed;
     fresh.character_id = ch->id;
+    fresh.skin_id = skin->id;
+    fresh.character = ApplySkin(*ch, *skin);
     fresh.phase = Phase::Idle;
     fresh.arena_count = eco.run.arena_count;
     fresh.route_id = start->id;
@@ -390,7 +472,9 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         Rng::Derive(seed, streams::kLoot),
         Rng::Derive(seed, streams::kShop),
         Rng::Derive(seed, streams::kCombat),
+        Rng::Derive(seed, streams::kLoadout),
     });
+    run_.loadout = RollLoadout(run_.character, *content_, streams_->loadout);
     last_summary_.reset();
     ++profile_.next_run_number;
     ++profile_.stats.runs_started;
@@ -398,21 +482,32 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     Event e = MakeEvent(EventType::RunStarted);
     e.Add("character", ch->id).Add("seed", std::to_string(seed)).Add("rng_version", kRngVersion)
         .Add("arena_count", run_.arena_count).Add("route", start->id).Add("capabilities", caps_.ToString())
-        .Add("weapon_mode", WeaponIdMode() ? std::string_view("by_weapon_id") : kSidearmSlot);
+        .Add("weapon_mode", WeaponIdMode() ? std::string_view("by_weapon_id") : kSidearmSlot)
+        .Add("skin", skin->id).Add("loadout_weapon", run_.loadout.weapon_id)
+        .Add("loadout", FormatLoadout(run_.loadout, *content_)).Add("loadout_spent", run_.loadout.spent);
     Emit(std::move(e));
 
-    if (run_.supplies.Credit("start", eco.run.starting_supplies) == TxResult::Applied && eco.run.starting_supplies > 0) {
+    // Unspent loadout points become supplies.
+    const std::int64_t starting_supplies =
+        eco.run.starting_supplies + std::max<std::int64_t>(run_.loadout.budget - run_.loadout.spent, 0);
+    if (run_.supplies.Credit("start", starting_supplies) == TxResult::Applied && starting_supplies > 0) {
         Event c = MakeEvent(EventType::CurrencyChanged);
-        c.Add("currency", "supplies").Add("delta", eco.run.starting_supplies).Add("balance", run_.supplies.balance())
+        c.Add("currency", "supplies").Add("delta", starting_supplies).Add("balance", run_.supplies.balance())
             .Add("tx", "start").Add("reason", "starting_supplies");
         Emit(std::move(c));
     }
-    for (const std::string& base : ch->starting_weapons) {
-        GrantWeapon(MakeStartingWeapon(base, NextInstanceId()), "starting_weapon");
-        if (!WeaponIdMode()) break;  // sidearm mode: first starting weapon only
+    // The rolled weapon first (the sidearm slot without the weapon_id capability), then the
+    // character's other starting weapons when weapons can be told apart.
+    if (!run_.loadout.weapon_id.empty()) {
+        GrantWeapon(MakeStartingWeapon(run_.loadout.weapon_id, NextInstanceId()), "starting_weapon");
     }
-    if (!ch->starting_passive.empty()) {
-        const Status s = GrantPerk(ch->starting_passive, "starting_passive", CursePolicy::Exclude, true);
+    if (WeaponIdMode()) {
+        for (const std::string& base : run_.character.starting_weapons) {
+            if (base != run_.loadout.weapon_id) GrantWeapon(MakeStartingWeapon(base, NextInstanceId()), "starting_weapon");
+        }
+    }
+    if (!run_.character.starting_passive.empty()) {
+        const Status s = GrantPerk(run_.character.starting_passive, "starting_passive", CursePolicy::Exclude, true);
         if (!s.ok()) {
             Event w = MakeEvent(EventType::Error, EventLevel::Info);
             w.Add("operation", "starting_passive").Add("code", ErrorCodeName(s.code)).Add("message", s.message);

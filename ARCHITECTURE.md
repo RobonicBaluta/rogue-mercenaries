@@ -46,7 +46,8 @@ The core facade is `rm::RunController` (`core/include/rm/run_controller.h`); the
 | `hooks_input.cpp` | DirectInput/XInput: game tick, overlay input, blocking while the menu is open (held keys stay hidden after closing) |
 | `hooks_d3d9.cpp`, `overlay.cpp` | Present/Reset hooks, Dear ImGui HUD and menu, digit/Enter hotkeys |
 | `native_menu.cpp` | ROGUE MERCENARIES row and the mod's screens inside the game's Play menu object: the game's own row/help draw, navigation helper, sounds and colours; texts live in borrowed message slots. Screen content comes from a `Model` that `mod.cpp` implements on the run controller |
-| `menu_probe.cpp` | Developer: hooks every `uId*` screen's move() to log screens opening/closing, with byte snapshots and diffs |
+| `autopilot.cpp` | START RUN: drives the game's Mercenaries setup screens (Iniciar, Solo, random stage, costume slot) by writing their cursors and injecting a decide through the game's menu input query |
+| `menu_probe.cpp` | Developer: hooks every `uId*` screen's move() to log screens opening/closing and state/cursor changes, with byte snapshots and diffs |
 | `mod.cpp` | Maps engine events to `RunController`, arena state machine on Mercenaries matches, UI panels, developer tools; every entry point is exception-guarded |
 | `probe.cpp`, `crash.cpp`, `dev_*.cpp` | Diagnostics, crash logging, test-only audio mute and frame capture |
 

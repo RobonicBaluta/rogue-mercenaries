@@ -60,6 +60,15 @@ constexpr std::uintptr_t kFnMenuSoundCancel = 0x009E4A50;
 constexpr std::uintptr_t kFnMenuSoundDeny = 0x009E4AC0;
 // void uIdTopMenu00::SetBallIndex(int item): the planet's highlighted node.
 constexpr std::uintptr_t kFnMenuSetBallIndex = 0x00A58170;
+// Mercenaries setup screens (move() = vtable slot 6), in play order:
+//   uIdStartUp20: "Iniciar/Marcadores" (state 2, cursor +0x48 -> gw+0x5C8),
+//     then the Solo/Duo page (state 10, cursor +0x18C -> gw+0x5CC);
+//   uIdStartUp21: stage (state 2, cursor +0x48 -> gw+0x5D4);
+//   uIdStartUp22: character/costume (state 2, +0x194 -> gw+0x600+4*slot),
+//     states 80..82 while the match loads.
+constexpr std::uintptr_t kFnStartUp20Move = 0x00A47CE0;
+constexpr std::uintptr_t kFnStartUp21Move = 0x00A49C40;
+constexpr std::uintptr_t kFnStartUp22Move = 0x00A48260;
 // void uIdMenu::DrawHelp(int message, int y): help line under a menu, shared by
 // most uId* screens. The Play menu draws rows at y = (item + 3) * 50 and its
 // help at y = 570, which a ninth row (y = 550) would sit under.
@@ -110,6 +119,11 @@ constexpr std::size_t kMenuItemCount = 0x190;  // int32: 7, or 8 with "Contenido
 constexpr std::size_t kMenuEnabledMask = 0x194; // uint32 bit per item; clear bits draw red
 constexpr std::size_t kMenuBlink = 0x3D;        // uint8: selected row pulses while set
 constexpr std::size_t kMenuTopMenu = 0x128;     // uIdTopMenu00* (planet and side labels)
+constexpr std::size_t kMenuModeCursor = 0x18C;  // uIdStartUp20 Solo/Duo page: int32 cursor
+constexpr std::size_t kMenuCharacterIndex = 0x194;  // uIdStartUp22: int32 selected costume slot
+// game work: Mercenaries setup written by those screens
+constexpr std::size_t kGameWorkStage = 0x5D4;      // int32 stage index (0..7)
+constexpr std::size_t kGameWorkCharacter = 0x600;  // int32[4] costume slot per player
 // Pad singleton: decide/cancel button masks for the menu input bits.
 constexpr std::size_t kPadDecideMask = 0x5B4;
 constexpr std::size_t kPadCancelMask = 0x5B8;
@@ -168,6 +182,13 @@ inline constexpr Signature kSignatures[] = {
     {"menu_ball_index", addr::kFnMenuSetBallIndex, "8B 41 5C 85 C0 74 0A 8B 4C 24 04 89 88 58 0D 00 00"},
     // Play menu move: `test [edx+0x5B8], edi` is the cancel check after decide.
     {"playmenu_cancel_mask", 0x00A39774, "85 BA B8 05 00 00 75 6A"},
+    {"startup20_move", addr::kFnStartUp20Move, "53 56 57 6A FF 6A FF 8B F1 E8 32 B7 F9 FF 33 DB"},
+    {"startup21_move", addr::kFnStartUp21Move, "53 55 56 57 6A FF 6A FF 8B F1 E8 D1 97 F9 FF 6A"},
+    {"startup22_move", addr::kFnStartUp22Move, "53 55 56 8B F1 8B 86 88 01 00 00 8B 8E 8C 01 00"},
+    // uIdStartUp21 decide: `mov edx,[esi+0x48]; mov [ecx+0x5D4], edx` (stage).
+    {"startup21_stage_write", 0x00A49F01, "8B 56 48 89 91 D4 05 00 00"},
+    // uIdStartUp22 decide: `mov [eax+ecx*4+0x600], edx` (costume slot).
+    {"startup22_character_write", 0x00A48573, "89 94 88 00 06 00 00"},
     {"menu_draw_help", addr::kFnMenuDrawHelp, "51 8B 51 78 69 D2 FF 00 00 00 B8 39 8E E3 38 F7 EA"},
     // Play menu draw: `push 570; push eax; mov ecx, esi; call DrawHelp`.
     {"playmenu_help_call", 0x00A37566, "68 3A 02 00 00 50 8B CE E8 7D 07 FE FF"},

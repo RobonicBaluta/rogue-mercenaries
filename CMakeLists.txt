@@ -88,6 +88,7 @@ if(RM_BUILD_TESTS)
         tests/test_persistence.cpp
         tests/test_telemetry.cpp
         tests/test_characters.cpp
+        tests/test_skins.cpp
     )
     target_link_libraries(rm_tests PRIVATE rm_core rm_json rm_catch2)
     target_compile_definitions(rm_tests PRIVATE RM_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

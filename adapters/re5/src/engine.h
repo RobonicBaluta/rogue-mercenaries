@@ -22,6 +22,7 @@ struct Verified {
     bool gameWork = false;   // mode/stage/merc timer layout
     bool mercCountdown = false;
     bool playMenu = false;  // native "Rogue Mercenaries" entry in the Play menu
+    bool setupScreens = false;  // Mercenaries setup screens (direct start)
 };
 const Verified& Caps();
 

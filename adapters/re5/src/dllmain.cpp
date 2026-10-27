@@ -11,6 +11,7 @@
 #include "hooks.h"
 #include "log.h"
 #include "menu_probe.h"
+#include "autopilot.h"
 #include "native_menu.h"
 #include "mod.h"
 #include "overlay.h"
@@ -93,6 +94,7 @@ DWORD WINAPI Worker(LPVOID) {
     }
     if (settings.nativeMenu && engine::Caps().buildIdentity) {
         nativemenu::Install();
+        if (settings.directStart) autopilot::Install();
     }
     if (settings.developerMode && settings.devMenuProbe && engine::Caps().buildIdentity) {
         menuprobe::Install();

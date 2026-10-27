@@ -48,6 +48,8 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
         settings.timerHoldSeconds = json.value("timer_hold_seconds", settings.timerHoldSeconds);
         settings.endMatchOnClear = json.value("end_match_on_clear", settings.endMatchOnClear);
         settings.nativeMenu = json.value("native_menu", settings.nativeMenu);
+        settings.directStart = json.value("direct_start", settings.directStart);
+        settings.stageCount = json.value("stage_count", settings.stageCount);
         if (json.contains("dev")) {
             const auto& dev = json["dev"];
             settings.probeIntervalMs = dev.value("probe_interval_ms", settings.probeIntervalMs);

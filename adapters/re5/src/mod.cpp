@@ -27,6 +27,7 @@
 #include "log.h"
 #include "memory.h"
 #include "menu_probe.h"
+#include "autopilot.h"
 #include "native_menu.h"
 #include "mod.h"
 #include "overlay.h"
@@ -150,6 +151,7 @@ struct ModState {
     std::string lastStatus;
     std::uint64_t seedInput = 0;
     int selectedCharacter = 0;
+    std::string selectedSkin;  // skin id for the selected character (empty = default)
     std::string diagnosticsResult;
     // Set when any mod code threw; the game keeps running with vanilla rules.
     std::atomic<bool> disabled{false};
@@ -275,6 +277,27 @@ std::string Plain(const std::string& s) {
     return out;
 }
 
+// The skin the next run wears: the chosen one if it is unlocked, else the
+// character's default.
+const rm::SkinAvailability* SelectedSkin(const rm::CharacterAvailability& c) {
+    const rm::SkinAvailability* fallback = nullptr;
+    for (const auto& s : c.skins) {
+        if (s.gate != rm::CharacterGate::Selectable) continue;
+        if (s.id == g->selectedSkin) return &s;
+        if (fallback == nullptr) fallback = &s;
+    }
+    return fallback;
+}
+
+// Skin id for a run with this character (empty = the default skin).
+std::string SkinForRun(const std::vector<rm::CharacterAvailability>& characters, const std::string& characterId) {
+    if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) return {};
+    const auto& c = characters[g->selectedCharacter];
+    if (c.id != characterId) return {};
+    const rm::SkinAvailability* skin = SelectedSkin(c);
+    return skin ? skin->id : std::string();
+}
+
 // Screens of the native menu, built from the run controller. Called on the
 // game's menu thread, so everything happens under the mod mutex.
 class MenuModel final : public nativemenu::Model {
@@ -352,6 +375,31 @@ private:
                 }
                 break;
             }
+            case ScreenId::Skins: {
+                const auto characters = run.Characters();
+                if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) break;
+                const auto& c = characters[g->selectedCharacter];
+                const rm::SkinAvailability* current = SelectedSkin(c);
+                screen.header = "SKINS   " + Upper(c.name);
+                for (const auto& s : c.skins) {
+                    Item item;
+                    item.label = Upper(s.name);
+                    if (s.gate == rm::CharacterGate::Selectable) {
+                        const bool selected = current != nullptr && current->id == s.id;
+                        if (selected) item.label += "   SELECTED";
+                        item.help = selected ? "Your skin for the next run." : "Press to wear this skin.";
+                    } else {
+                        item.locked = true;
+                        item.help = s.unlock_text.empty() ? "Locked." : s.unlock_text + ".";
+                        if (s.challenge.target > 0) {
+                            item.help += "\n" + std::to_string(s.challenge.current) + " of " +
+                                         std::to_string(s.challenge.target) + " done.";
+                        }
+                    }
+                    screen.items.push_back(std::move(item));
+                }
+                break;
+            }
             case ScreenId::Credits: {
                 const auto& stats = profile.stats;
                 screen.header = "CREDITS";
@@ -395,6 +443,20 @@ private:
         switch (id) {
             case ScreenId::Main:
                 if (index == 0) {
+                    if (g->settings.directStart && autopilot::Available() && !autopilot::Armed()) {
+                        const auto characters = run.Characters();
+                        std::int64_t costume = 0;
+                        if (g->selectedCharacter >= 0 && g->selectedCharacter < static_cast<int>(characters.size())) {
+                            const auto& c = characters[g->selectedCharacter];
+                            const rm::SkinAvailability* skin = SelectedSkin(c);
+                            costume = std::max<std::int64_t>(skin && skin->costume_index >= 0 ? skin->costume_index : c.costume_index, 0);
+                        }
+                        LARGE_INTEGER counter;
+                        QueryPerformanceCounter(&counter);
+                        const int stages = std::max(1, g->settings.stageCount);
+                        autopilot::Arm({static_cast<int>(static_cast<std::uint64_t>(counter.QuadPart) % stages),
+                                        static_cast<int>(costume), stages});
+                    }
                     d.outcome = Outcome::StartRun;
                 } else {
                     d.outcome = Outcome::Push;
@@ -406,8 +468,10 @@ private:
                 if (index < 0 || index >= static_cast<int>(characters.size())) break;
                 const auto& c = characters[index];
                 if (c.gate == rm::CharacterGate::Selectable) {
+                    if (g->selectedCharacter != index) g->selectedSkin.clear();
                     g->selectedCharacter = index;
-                    d.outcome = Outcome::Refresh;
+                    d.outcome = Outcome::Push;
+                    d.next = ScreenId::Skins;
                 } else if (c.gate == rm::CharacterGate::Locked && c.unlock_cost_credits > 0) {
                     purchase(rm::UnlockKind::Character, c.id, c.unlock_cost_credits);
                 } else {
@@ -424,6 +488,19 @@ private:
                         purchase(rm::UnlockKind::Perk, perk.id, perk.unlock_cost_credits);
                     }
                     break;
+                }
+                break;
+            }
+            case ScreenId::Skins: {
+                const auto characters = run.Characters();
+                if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) break;
+                const auto& skins = characters[g->selectedCharacter].skins;
+                if (index < 0 || index >= static_cast<int>(skins.size())) break;
+                if (skins[index].gate == rm::CharacterGate::Selectable) {
+                    g->selectedSkin = skins[index].id;
+                    d.outcome = Outcome::Refresh;
+                } else {
+                    d.outcome = Outcome::Denied;
                 }
                 break;
             }
@@ -458,6 +535,7 @@ void HandleNativeMenu(double now) {
     rm::RunController& run = *g->run;
     if (nativemenu::MenuAtInput() && run.phase() == rm::Phase::Idle && run.state().arena_index == 0) {
         g->rogueModePending = false;  // backed out to the Play menu
+        autopilot::Disarm("back at the Play menu");
         return;
     }
     if (!g->match.inMatch) return;
@@ -470,7 +548,8 @@ void HandleNativeMenu(double now) {
     LARGE_INTEGER counter;
     QueryPerformanceCounter(&counter);
     const auto seed = static_cast<std::uint64_t>(counter.QuadPart) ^ 0x9E3779B97F4A7C15ull;
-    const rm::Status status = run.StartRun(g->match.localCharacter, seed);
+    const rm::Status status =
+        run.StartRun(g->match.localCharacter, seed, SkinForRun(run.Characters(), g->match.localCharacter));
     Report(status, ("start run (" + g->match.localCharacter + ")").c_str());
     if (!status.ok()) {
         g->toasts.Push("Rogue Mercenaries: " + status.message);
@@ -734,6 +813,51 @@ void PollDevCommand(double now) {
             FlushInstructionCache(GetCurrentProcess(), p, 3);
             RM_LOGW("dev %s %08X -> %02X %02X %02X", patch ? "patch_ret" : "unpatch", static_cast<unsigned>(address), p[0], p[1], p[2]);
         }
+    } else if (command.rfind("snap ", 0) == 0 || command == "diff") {
+        // "snap <hex addr|gw> <bytes>" copies a block (gw = game work); "diff" logs
+        // the dwords that changed since, then keeps the new values. Finds the
+        // fields a menu screen writes when the player makes a choice.
+        static std::uintptr_t snapAddress = 0;
+        static std::vector<std::uint32_t> snapData;
+        if (command[0] == 's') {
+            std::istringstream words(command.substr(5));
+            std::string addressText, sizeText;
+            words >> addressText >> sizeText;
+            std::uintptr_t address = 0;
+            if (addressText == "gw") {
+                address = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
+            } else {
+                address = static_cast<std::uintptr_t>(std::strtoul(addressText.c_str(), nullptr, 16));
+            }
+            const auto bytes = std::min<std::size_t>(std::strtoul(sizeText.c_str(), nullptr, 0), 1 << 20);
+            snapData.assign(bytes / 4, 0);
+            snapAddress = address;
+            const bool ok = address && !snapData.empty() && SafeCopy(snapData.data(), address, snapData.size() * 4);
+            if (!ok) snapData.clear();
+            RM_LOGW("dev snap %08X %zu bytes -> %s", static_cast<unsigned>(address), bytes, ok ? "ok" : "failed");
+        } else {
+            std::vector<std::uint32_t> now(snapData.size());
+            if (snapData.empty() || !SafeCopy(now.data(), snapAddress, now.size() * 4)) {
+                RM_LOGW("dev diff: no snapshot or unreadable");
+            } else {
+                int changes = 0;
+                for (std::size_t i = 0; i < now.size(); ++i) {
+                    if (now[i] == snapData[i]) continue;
+                    if (changes < 120) {
+                        RM_LOGW("dev diff +%05X: %08X -> %08X", static_cast<unsigned>(i * 4), snapData[i], now[i]);
+                    }
+                    ++changes;
+                }
+                RM_LOGW("dev diff %08X: %d dwords changed", static_cast<unsigned>(snapAddress), changes);
+                snapData = std::move(now);
+            }
+        }
+    } else if (command.rfind("arm ", 0) == 0) {
+        // "arm <stage> <costume slot>": the next START RUN uses this plan.
+        std::istringstream words(command.substr(4));
+        autopilot::Plan plan;
+        words >> plan.stage >> plan.costume;
+        autopilot::Arm(plan);
     } else if (command.rfind("pokeb ", 0) == 0) {
         // "pokeb <hex addr> <hex byte>"
         std::istringstream words(command.substr(6));
@@ -864,6 +988,7 @@ private:
         const double now = Now();
         ObserveMatch(now);
         nativemenu::OnGameTick();
+        autopilot::OnGameTick();
         if (g->settings.uiDemo) {
             DriveUiDemo(now);
         } else {
@@ -948,6 +1073,7 @@ void DrawHud(const rm::RunSnapshot& s) {
             ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Streak +%.0f%% (%d)", s.kill_streak_bonus * 100.0,
                                s.kill_streak_kills);
         }
+        if (!s.loadout.empty()) ImGui::TextWrapped("Loadout: %s", s.loadout.c_str());
         if (s.cheat_death_remaining > 0) ImGui::Text("Second wind: %d", s.cheat_death_remaining);
         if (!s.perks.empty()) {
             std::string line = "Perks:";
@@ -961,7 +1087,8 @@ void DrawHud(const rm::RunSnapshot& s) {
         }
     } else if (g->rogueModePending) {
         ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.4f, 1.0f), "ROGUE MERCENARIES");
-        ImGui::TextDisabled("Solo, any stage, Chris or Sheva - the run starts with the match");
+        ImGui::TextDisabled(autopilot::Armed() ? "Starting: Solo, random stage, your character"
+                                               : "Solo, any stage, your character - the run starts with the match");
     } else {
         ImGui::TextDisabled("Rogue Mercenaries - Play menu or F7");
     }

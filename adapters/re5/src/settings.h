@@ -43,6 +43,10 @@ struct Settings {
     bool devMenuProbe = false;
     // Adds ROGUE MERCENARIES to the game's Play menu.
     bool nativeMenu = true;
+    // START RUN drives the game's setup screens itself: Solo, a random stage
+    // among the first stageCount, and the selected character's costume slot.
+    bool directStart = true;
+    int stageCount = 8;
     // Mercenaries timer handling while an arena is active:
     //   "hold"  keeps the countdown at or above timerHoldSeconds
     //   "game"  leaves the game's own countdown alone

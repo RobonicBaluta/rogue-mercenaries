@@ -671,6 +671,62 @@ void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>&
 
 // ---- characters / routes -------------------------------------------------------------------
 
+void ParseChallenge(const Diag& d, const json& e, Challenge& out) {
+    std::string kind;
+    GetString(d, e, "unlock_kind", kind, false);
+    if (!kind.empty()) {
+        if (const auto parsed = ParseChallengeKind(kind)) {
+            out.kind = *parsed;
+        } else {
+            d.Error("unknown unlock_kind " + Q(kind));
+        }
+    }
+    if (GetInt(d, e, "unlock_count", out.count, false) && out.count < 0) d.Error("field 'unlock_count' must be >= 0");
+    GetString(d, e, "unlock_character", out.character, false);
+    GetString(d, e, "unlock_text", out.text, false);
+    if (out.kind != ChallengeKind::None && out.count < 1) d.Error("unlock_count must be >= 1 with an unlock_kind");
+    if (out.kind == ChallengeKind::RunsCompletedAs && out.character.empty()) {
+        d.Error("unlock_kind runs_completed_as needs unlock_character");
+    }
+}
+
+void CheckChallengeTarget(const Diag& d, const Challenge& c, const std::set<std::string>& character_ids) {
+    if (c.kind == ChallengeKind::RunsCompletedAs && character_ids.count(c.character) == 0) {
+        d.Error("unlock_character " + Q(c.character) + " is not a character");
+    }
+}
+
+void ParseSkins(const Diag& file, const json& e, CharacterDef& c) {
+    const auto it = e.find("skins");
+    if (it == e.end()) return;
+    if (!it->is_array()) {
+        file.Error("field 'skins' must be a list");
+        return;
+    }
+    for (std::size_t i = 0; i < it->size(); ++i) {
+        const json& s = (*it)[i];
+        Diag d = file.Sub(": skins[" + std::to_string(i) + "]");
+        if (!s.is_object()) {
+            d.Error("entry must be an object");
+            continue;
+        }
+        SkinDef skin;
+        if (!ReadId(d, s, skin.id)) continue;
+        d = file.Sub(" skin " + Q(skin.id));
+        CheckKeys(d, s, {"id", "name", "costume_index", "starting_weapons", "starting_passive", "skill_pool",
+                         "unlock_kind", "unlock_count", "unlock_character", "unlock_text"});
+        GetString(d, s, "name", skin.name, true);
+        if (GetInt(d, s, "costume_index", skin.costume_index, false) && skin.costume_index < 0) {
+            d.Error("field 'costume_index' must be >= 0");
+        }
+        GetStringList(d, s, "starting_weapons", skin.starting_weapons, false);
+        GetString(d, s, "starting_passive", skin.starting_passive, false);
+        GetStringList(d, s, "skill_pool", skin.skill_pool, false);
+        ParseChallenge(d, s, skin.unlock);
+        c.skins.push_back(std::move(skin));
+    }
+}
+
 void ParseCharacters(const Diag& file, const json& doc, std::vector<CharacterDef>& out) {
     CheckKeys(file, doc, {"schema_version", "characters"});
     const json* list = ListField(file, doc, "characters");
@@ -687,7 +743,7 @@ void ParseCharacters(const Diag& file, const json& doc, std::vector<CharacterDef
         d = file.Sub(": character " + Q(c.id));
         CheckKeys(d, e, {"id", "name", "enabled", "starting_weapons", "starting_passive", "skill_pool",
                          "exclusive_mechanic", "unlock_cost_credits", "unlock_kind", "unlock_count",
-                         "unlock_character", "unlock_text"});
+                         "unlock_character", "unlock_text", "costume_index", "skins"});
         GetString(d, e, "name", c.name, true);
         GetBool(d, e, "enabled", c.enabled, false);
         GetStringList(d, e, "starting_weapons", c.starting_weapons, true);
@@ -697,35 +753,32 @@ void ParseCharacters(const Diag& file, const json& doc, std::vector<CharacterDef
         if (GetInt(d, e, "unlock_cost_credits", c.unlock_cost_credits, false) && c.unlock_cost_credits < 0) {
             d.Error("field 'unlock_cost_credits' must be >= 0");
         }
-        std::string kind;
-        GetString(d, e, "unlock_kind", kind, false);
-        if (!kind.empty()) {
-            const auto parsed = ParseChallengeKind(kind);
-            if (parsed) {
-                c.unlock_kind = *parsed;
-            } else {
-                d.Error("unknown unlock_kind " + Q(kind));
-            }
-        }
-        if (GetInt(d, e, "unlock_count", c.unlock_count, false) && c.unlock_count < 0) {
-            d.Error("field 'unlock_count' must be >= 0");
-        }
-        GetString(d, e, "unlock_character", c.unlock_character, false);
-        GetString(d, e, "unlock_text", c.unlock_text, false);
-        if (c.unlock_kind != ChallengeKind::None && c.unlock_count < 1) {
-            d.Error("unlock_count must be >= 1 with an unlock_kind");
-        }
-        if (c.unlock_kind == ChallengeKind::RunsCompletedAs && c.unlock_character.empty()) {
-            d.Error("unlock_kind runs_completed_as needs unlock_character");
+        ParseChallenge(d, e, c.unlock);
+        if (GetInt(d, e, "costume_index", c.costume_index, false) && c.costume_index < 0) {
+            d.Error("field 'costume_index' must be >= 0");
         }
         if (c.starting_weapons.empty()) d.Error("starting_weapons must list at least one weapon");
+        ParseSkins(d, e, c);
+        if (c.skins.empty()) {
+            // Every character has a default skin, so runs and the UI never special-case it.
+            SkinDef base;
+            base.id = c.id + "_base";
+            base.name = "Default";
+            base.costume_index = c.costume_index;
+            c.skins.push_back(std::move(base));
+        }
         out.push_back(std::move(c));
     }
+    std::set<std::string> ids;
+    for (const CharacterDef& c : out) ids.insert(c.id);
     for (const CharacterDef& c : out) {
-        if (c.unlock_kind != ChallengeKind::RunsCompletedAs) continue;
-        const bool known = std::any_of(out.begin(), out.end(),
-                                       [&](const CharacterDef& other) { return other.id == c.unlock_character; });
-        if (!known) file.Sub(": character " + Q(c.id)).Error("unlock_character " + Q(c.unlock_character) + " is not a character");
+        const Diag d = file.Sub(": character " + Q(c.id));
+        CheckChallengeTarget(d, c.unlock, ids);
+        for (const SkinDef& s : c.skins) {
+            CheckChallengeTarget(d.Sub(" skin " + Q(s.id)), s.unlock, ids);
+            // Skin ids share the profile's unlocked set with character ids.
+            if (!ids.insert(s.id).second) d.Error("skin id " + Q(s.id) + " duplicates a character or skin id");
+        }
     }
 }
 
@@ -776,6 +829,51 @@ void ParseRoutes(const Diag& file, const json& doc, std::vector<RouteDef>& out) 
 }
 
 // ---- economy -------------------------------------------------------------------------------
+
+void ParseLoadouts(const Diag& file, const json& doc, LoadoutConfig& out) {
+    CheckKeys(file, doc, {"schema_version", "budget", "default_weapon_cost", "weapon_cost", "equipment"});
+    if (GetInt(file, doc, "budget", out.budget, false) && out.budget < 0) file.Error("field 'budget' must be >= 0");
+    if (GetInt(file, doc, "default_weapon_cost", out.default_weapon_cost, false) && out.default_weapon_cost < 0) {
+        file.Error("field 'default_weapon_cost' must be >= 0");
+    }
+    if (const auto costs = doc.find("weapon_cost"); costs != doc.end()) {
+        if (!costs->is_object()) {
+            file.Error("field 'weapon_cost' must be an object of category -> points");
+        } else {
+            for (const auto& item : costs->items()) {
+                if (!ParseWeaponCategory(item.key())) file.Error("weapon_cost: unknown category " + Q(item.key()));
+                if (!item.value().is_number_integer() || item.value().get<std::int64_t>() < 0) {
+                    file.Error("weapon_cost " + Q(item.key()) + " must be a non-negative integer");
+                    continue;
+                }
+                out.weapon_cost[item.key()] = item.value().get<std::int64_t>();
+            }
+        }
+    }
+    const json* list = ListField(file, doc, "equipment");
+    if (list == nullptr) return;
+    for (std::size_t i = 0; i < list->size(); ++i) {
+        const json& e = (*list)[i];
+        Diag d = file.Sub(": equipment[" + std::to_string(i) + "]");
+        if (!e.is_object()) {
+            d.Error("entry must be an object");
+            continue;
+        }
+        EquipmentDef item;
+        if (!ReadId(d, e, item.id)) continue;
+        d = file.Sub(": equipment " + Q(item.id));
+        CheckKeys(d, e, {"id", "name", "cost", "max"});
+        GetString(d, e, "name", item.name, true);
+        if (GetInt(d, e, "cost", item.cost, true) && item.cost < 0) d.Error("field 'cost' must be >= 0");
+        std::int64_t max = 1;
+        if (GetInt(d, e, "max", max, false) && (max < 1 || max > 99)) d.Error("field 'max' must be 1..99");
+        item.max_count = static_cast<int>(max);
+        if (std::any_of(out.equipment.begin(), out.equipment.end(), [&](const EquipmentDef& o) { return o.id == item.id; })) {
+            d.Error("duplicate equipment id");
+        }
+        out.equipment.push_back(std::move(item));
+    }
+}
 
 void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     const Diag d = file.Sub("");
@@ -972,6 +1070,9 @@ public:
         }
         if (auto doc = ParseDocument(file("routes.json"), src.routes)) ParseRoutes(file("routes.json"), *doc, content->routes_);
         if (auto doc = ParseDocument(file("economy.json"), src.economy)) ParseEconomy(file("economy.json"), *doc, content->economy_);
+        if (!src.loadouts.empty()) {
+            if (auto doc = ParseDocument(file("loadouts.json"), src.loadouts)) ParseLoadouts(file("loadouts.json"), *doc, content->loadouts_);
+        }
 
         IndexById(file("perks.json"), content->perks_, content->perk_index_, "perk");
         IndexById(file("weapons.json"), content->weapons_, content->weapon_index_, "weapon");
@@ -1022,8 +1123,13 @@ private:
 
         // Characters.
         bool any_free = false;
-        for (const CharacterDef& ch : c.characters_) {
-            const Diag d = chars_d.Sub(": character " + Q(ch.id));
+        for (const CharacterDef& base : c.characters_) {
+          // The character itself and every skin's variant of it must be playable.
+          std::vector<std::pair<std::string, CharacterDef>> variants;
+          variants.emplace_back(std::string(), base);
+          for (const SkinDef& s : base.skins) variants.emplace_back(" skin " + Q(s.id), ApplySkin(base, s));
+          for (const auto& [suffix, ch] : variants) {
+            const Diag d = chars_d.Sub(": character " + Q(base.id) + suffix);
             for (const std::string& w : ch.starting_weapons) {
                 const WeaponBaseDef* def = c.FindWeapon(w);
                 if (def == nullptr) {
@@ -1054,7 +1160,8 @@ private:
                             Q(passive->id) + ", so it can never be picked");
                 }
             }
-            if (ch.enabled && ch.unlock_cost_credits == 0) any_free = true;
+          }
+          if (base.enabled && base.unlock_cost_credits == 0 && base.unlock.kind == ChallengeKind::None) any_free = true;
         }
         if (!c.characters_.empty() && !any_free) chars_d.Error("no enabled character is unlocked by default");
         if (c.characters_.empty()) chars_d.Error("at least one character is required");
@@ -1128,6 +1235,8 @@ ContentLoadResult Content::LoadFromDirectory(const std::filesystem::path& direct
         {"characters.json", &src.characters}, {"routes.json", &src.routes},
         {"economy.json", &src.economy},
     };
+    // Optional: defaults apply when the file is absent.
+    if (std::filesystem::exists(directory / "loadouts.json")) (void)ReadFile(directory / "loadouts.json", src.loadouts);
     for (const auto& [name, target] : files) {
         const std::filesystem::path p = directory / name;
         if (!ReadFile(p, *target)) io_errors.push_back(std::string(name) + ": cannot read " + p.string());

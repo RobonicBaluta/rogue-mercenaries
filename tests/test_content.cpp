@@ -95,9 +95,11 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
         if (other.id == "chris" || other.id == "sheva") continue;
         INFO(other.id);
         CHECK(other.enabled);
-        CHECK(other.unlock_kind != ChallengeKind::None);
-        CHECK(other.unlock_count >= 1);
-        CHECK_FALSE(other.unlock_text.empty());
+        CHECK(other.unlock.kind != ChallengeKind::None);
+        CHECK(other.unlock.count >= 1);
+        CHECK_FALSE(other.unlock.text.empty());
+        REQUIRE_FALSE(other.skins.empty());
+        CHECK(other.skins.front().unlock.kind == ChallengeKind::None);  // the default skin is free
         CHECK(other.unlock_cost_credits == 0);
         CHECK(CheckCharacter(&other, {}) == CharacterGate::Locked);
     }

@@ -8,10 +8,18 @@
       "description": "+8% damage per stack.",
       "category": "precision",
       "rarity": "common",
-      "tags": ["damage"],
+      "tags": [
+        "damage"
+      ],
       "max_stacks": 3,
       "effects": [
-        {"kind": "outgoing_damage_mult", "value": 0.08, "per_stack": {"value": 0.08}}
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.08,
+          "per_stack": {
+            "value": 0.08
+          }
+        }
       ]
     },
     {
@@ -20,10 +28,18 @@
       "description": "Take 8% less damage (+6% per extra stack).",
       "category": "defensive",
       "rarity": "common",
-      "tags": ["mitigation"],
+      "tags": [
+        "mitigation"
+      ],
       "max_stacks": 3,
       "effects": [
-        {"kind": "incoming_damage_mult", "value": -0.08, "per_stack": {"value": -0.06}}
+        {
+          "kind": "incoming_damage_mult",
+          "value": -0.08,
+          "per_stack": {
+            "value": -0.06
+          }
+        }
       ]
     },
     {
@@ -32,10 +48,19 @@
       "description": "Kills have a 30% chance (+15% per stack) to drop 2 supplies.",
       "category": "economy",
       "rarity": "common",
-      "tags": ["supplies"],
+      "tags": [
+        "supplies"
+      ],
       "max_stacks": 3,
       "effects": [
-        {"kind": "supplies_on_kill", "amount": 2, "chance": 0.3, "per_stack": {"chance": 0.15}}
+        {
+          "kind": "supplies_on_kill",
+          "amount": 2,
+          "chance": 0.3,
+          "per_stack": {
+            "chance": 0.15
+          }
+        }
       ]
     },
     {
@@ -44,11 +69,26 @@
       "description": "+35% damage to enemies below 30% health.",
       "category": "precision",
       "rarity": "uncommon",
-      "tags": ["damage", "execute"],
+      "tags": [
+        "damage",
+        "execute"
+      ],
       "max_stacks": 2,
-      "requires_capabilities": ["enemy_hp"],
+      "requires_capabilities": [
+        "enemy_hp"
+      ],
       "effects": [
-        {"kind": "outgoing_damage_mult", "value": 0.35, "condition": {"type": "target_hp_below", "fraction": 0.3}, "per_stack": {"value": 0.15}}
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.35,
+          "condition": {
+            "type": "target_hp_below",
+            "fraction": 0.3
+          },
+          "per_stack": {
+            "value": 0.15
+          }
+        }
       ]
     },
     {
@@ -57,10 +97,20 @@
       "description": "+30% damage while below 35% health.",
       "category": "offensive",
       "rarity": "uncommon",
-      "tags": ["damage", "low_health"],
+      "tags": [
+        "damage",
+        "low_health"
+      ],
       "max_stacks": 1,
       "effects": [
-        {"kind": "outgoing_damage_mult", "value": 0.3, "condition": {"type": "player_hp_below", "fraction": 0.35}}
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.3,
+          "condition": {
+            "type": "player_hp_below",
+            "fraction": 0.35
+          }
+        }
       ]
     },
     {
@@ -69,10 +119,19 @@
       "description": "8% crit chance (+5% per stack); crits deal x2.0.",
       "category": "precision",
       "rarity": "uncommon",
-      "tags": ["crit"],
+      "tags": [
+        "crit"
+      ],
       "max_stacks": 3,
       "effects": [
-        {"kind": "crit", "chance": 0.08, "multiplier": 2.0, "per_stack": {"chance": 0.05}}
+        {
+          "kind": "crit",
+          "chance": 0.08,
+          "multiplier": 2.0,
+          "per_stack": {
+            "chance": 0.05
+          }
+        }
       ]
     },
     {
@@ -81,12 +140,22 @@
       "description": "Each kill heals 3% of max health (+2% per stack).",
       "category": "utility",
       "rarity": "uncommon",
-      "tags": ["heal"],
+      "tags": [
+        "heal"
+      ],
       "max_stacks": 2,
       "unlock_cost_credits": 250,
-      "requires_capabilities": ["heal"],
+      "requires_capabilities": [
+        "heal"
+      ],
       "effects": [
-        {"kind": "heal_on_kill", "amount_fraction_of_max": 0.03, "per_stack": {"amount_fraction_of_max": 0.02}}
+        {
+          "kind": "heal_on_kill",
+          "amount_fraction_of_max": 0.03,
+          "per_stack": {
+            "amount_fraction_of_max": 0.02
+          }
+        }
       ]
     },
     {
@@ -95,10 +164,19 @@
       "description": "+15 supplies when an arena is cleared (+10 per stack).",
       "category": "economy",
       "rarity": "uncommon",
-      "tags": ["supplies"],
+      "tags": [
+        "supplies"
+      ],
       "max_stacks": 3,
       "effects": [
-        {"kind": "supplies_on_arena_clear", "amount": 15, "require_no_damage": false, "per_stack": {"amount": 10}}
+        {
+          "kind": "supplies_on_arena_clear",
+          "amount": 15,
+          "require_no_damage": false,
+          "per_stack": {
+            "amount": 10
+          }
+        }
       ]
     },
     {
@@ -107,10 +185,25 @@
       "description": "Each kill grants +5% damage for 6 seconds, stacking up to +30%.",
       "category": "offensive",
       "rarity": "rare",
-      "tags": ["damage", "kill_streak"],
+      "tags": [
+        "damage",
+        "kill_streak"
+      ],
       "max_stacks": 2,
       "effects": [
-        {"kind": "outgoing_damage_mult", "condition": {"type": "kill_streak", "window_seconds": 6, "per_kill": 0.05, "max_bonus": 0.3}, "per_stack": {"per_kill": 0.02, "max_bonus": 0.1}}
+        {
+          "kind": "outgoing_damage_mult",
+          "condition": {
+            "type": "kill_streak",
+            "window_seconds": 6,
+            "per_kill": 0.05,
+            "max_bonus": 0.3
+          },
+          "per_stack": {
+            "per_kill": 0.02,
+            "max_bonus": 0.1
+          }
+        }
       ]
     },
     {
@@ -119,10 +212,20 @@
       "description": "Take 35% less damage while below 30% health.",
       "category": "defensive",
       "rarity": "rare",
-      "tags": ["mitigation", "low_health"],
+      "tags": [
+        "mitigation",
+        "low_health"
+      ],
       "max_stacks": 1,
       "effects": [
-        {"kind": "incoming_damage_mult", "value": -0.35, "condition": {"type": "player_hp_below", "fraction": 0.3}}
+        {
+          "kind": "incoming_damage_mult",
+          "value": -0.35,
+          "condition": {
+            "type": "player_hp_below",
+            "fraction": 0.3
+          }
+        }
       ]
     },
     {
@@ -131,10 +234,17 @@
       "description": "+40 supplies for clearing an arena without taking damage.",
       "category": "economy",
       "rarity": "rare",
-      "tags": ["supplies", "no_damage"],
+      "tags": [
+        "supplies",
+        "no_damage"
+      ],
       "max_stacks": 1,
       "effects": [
-        {"kind": "supplies_on_arena_clear", "amount": 40, "require_no_damage": true}
+        {
+          "kind": "supplies_on_arena_clear",
+          "amount": 40,
+          "require_no_damage": true
+        }
       ]
     },
     {
@@ -143,10 +253,16 @@
       "description": "Once per arena, survive a lethal hit with 25% health.",
       "category": "defensive",
       "rarity": "epic",
-      "tags": ["survival"],
+      "tags": [
+        "survival"
+      ],
       "max_stacks": 1,
       "effects": [
-        {"kind": "cheat_death", "per_arena": 1, "leave_hp_fraction": 0.25}
+        {
+          "kind": "cheat_death",
+          "per_arena": 1,
+          "leave_hp_fraction": 0.25
+        }
       ]
     },
     {
@@ -155,12 +271,23 @@
       "description": "Take 30% less damage but deal 10% less. Cannot be combined with Glass Cannon.",
       "category": "defensive",
       "rarity": "epic",
-      "tags": ["mitigation", "tradeoff"],
+      "tags": [
+        "mitigation",
+        "tradeoff"
+      ],
       "max_stacks": 1,
-      "exclusive_with": ["glass_cannon"],
+      "exclusive_with": [
+        "glass_cannon"
+      ],
       "effects": [
-        {"kind": "incoming_damage_mult", "value": -0.3},
-        {"kind": "outgoing_damage_mult", "value": -0.1}
+        {
+          "kind": "incoming_damage_mult",
+          "value": -0.3
+        },
+        {
+          "kind": "outgoing_damage_mult",
+          "value": -0.1
+        }
       ]
     },
     {
@@ -169,12 +296,23 @@
       "description": "+60% damage, but take 25% more damage. Cannot be combined with Bulwark.",
       "category": "offensive",
       "rarity": "legendary",
-      "tags": ["damage", "tradeoff"],
+      "tags": [
+        "damage",
+        "tradeoff"
+      ],
       "max_stacks": 1,
-      "exclusive_with": ["bulwark"],
+      "exclusive_with": [
+        "bulwark"
+      ],
       "effects": [
-        {"kind": "outgoing_damage_mult", "value": 0.6},
-        {"kind": "incoming_damage_mult", "value": 0.25}
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.6
+        },
+        {
+          "kind": "incoming_damage_mult",
+          "value": 0.25
+        }
       ]
     },
     {
@@ -183,11 +321,17 @@
       "description": "15% crit chance; crits deal x2.5.",
       "category": "precision",
       "rarity": "legendary",
-      "tags": ["crit"],
+      "tags": [
+        "crit"
+      ],
       "max_stacks": 1,
       "unlock_cost_credits": 600,
       "effects": [
-        {"kind": "crit", "chance": 0.15, "multiplier": 2.5}
+        {
+          "kind": "crit",
+          "chance": 0.15,
+          "multiplier": 2.5
+        }
       ]
     },
     {
@@ -196,12 +340,26 @@
       "description": "Chris only. +50% damage for 6 seconds after a melee hit.",
       "category": "offensive",
       "rarity": "rare",
-      "tags": ["melee", "character"],
+      "tags": [
+        "melee",
+        "character"
+      ],
       "max_stacks": 1,
-      "characters": ["chris"],
-      "requires_capabilities": ["melee_detect"],
+      "characters": [
+        "chris"
+      ],
+      "requires_capabilities": [
+        "melee_detect"
+      ],
       "effects": [
-        {"kind": "outgoing_damage_mult", "value": 0.5, "condition": {"type": "after_melee", "window_seconds": 6}}
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.5,
+          "condition": {
+            "type": "after_melee",
+            "window_seconds": 6
+          }
+        }
       ]
     },
     {
@@ -210,11 +368,20 @@
       "description": "Sheva only. 12% crit chance; crits deal x2.25.",
       "category": "precision",
       "rarity": "rare",
-      "tags": ["crit", "character"],
+      "tags": [
+        "crit",
+        "character"
+      ],
       "max_stacks": 1,
-      "characters": ["sheva"],
+      "characters": [
+        "sheva"
+      ],
       "effects": [
-        {"kind": "crit", "chance": 0.12, "multiplier": 2.25}
+        {
+          "kind": "crit",
+          "chance": 0.12,
+          "multiplier": 2.25
+        }
       ]
     },
     {
@@ -223,11 +390,19 @@
       "description": "Chris's starting passive. Take 5% less damage.",
       "category": "defensive",
       "rarity": "common",
-      "tags": ["passive", "character"],
+      "tags": [
+        "passive",
+        "character"
+      ],
       "max_stacks": 1,
-      "characters": ["chris"],
+      "characters": [
+        "chris"
+      ],
       "effects": [
-        {"kind": "incoming_damage_mult", "value": -0.05}
+        {
+          "kind": "incoming_damage_mult",
+          "value": -0.05
+        }
       ]
     },
     {
@@ -236,11 +411,21 @@
       "description": "Sheva's starting passive. Kills have a 25% chance to drop 1 supply.",
       "category": "economy",
       "rarity": "common",
-      "tags": ["passive", "character", "supplies"],
+      "tags": [
+        "passive",
+        "character",
+        "supplies"
+      ],
       "max_stacks": 1,
-      "characters": ["sheva"],
+      "characters": [
+        "sheva"
+      ],
       "effects": [
-        {"kind": "supplies_on_kill", "amount": 1, "chance": 0.25}
+        {
+          "kind": "supplies_on_kill",
+          "amount": 1,
+          "chance": 0.25
+        }
       ]
     },
     {
@@ -249,10 +434,18 @@
       "description": "Take 25% more damage (+15% per extra stack).",
       "category": "curse",
       "rarity": "common",
-      "tags": ["curse"],
+      "tags": [
+        "curse"
+      ],
       "max_stacks": 2,
       "effects": [
-        {"kind": "incoming_damage_mult", "value": 0.25, "per_stack": {"value": 0.15}}
+        {
+          "kind": "incoming_damage_mult",
+          "value": 0.25,
+          "per_stack": {
+            "value": 0.15
+          }
+        }
       ]
     },
     {
@@ -261,10 +454,18 @@
       "description": "Deal 15% less damage (-10% per extra stack).",
       "category": "curse",
       "rarity": "common",
-      "tags": ["curse"],
+      "tags": [
+        "curse"
+      ],
       "max_stacks": 2,
       "effects": [
-        {"kind": "outgoing_damage_mult", "value": -0.15, "per_stack": {"value": -0.1}}
+        {
+          "kind": "outgoing_damage_mult",
+          "value": -0.15,
+          "per_stack": {
+            "value": -0.1
+          }
+        }
       ]
     },
     {
@@ -273,11 +474,151 @@
       "description": "Reserved for co-op: partner kills also grant supplies.",
       "category": "cooperative",
       "rarity": "rare",
-      "tags": ["coop", "reserved"],
+      "tags": [
+        "coop",
+        "reserved"
+      ],
       "max_stacks": 1,
       "enabled": false,
       "effects": [
-        {"kind": "supplies_on_kill", "amount": 1, "chance": 1.0}
+        {
+          "kind": "supplies_on_kill",
+          "amount": 1,
+          "chance": 1.0
+        }
+      ]
+    },
+    {
+      "id": "jill_battle_instinct",
+      "name": "Battle Instinct",
+      "description": "Jill only. 10% crit chance; crits deal x2.",
+      "category": "precision",
+      "rarity": "rare",
+      "tags": [
+        "crit",
+        "character"
+      ],
+      "max_stacks": 1,
+      "characters": [
+        "jill"
+      ],
+      "effects": [
+        {
+          "kind": "crit",
+          "chance": 0.1,
+          "multiplier": 2.0
+        }
+      ]
+    },
+    {
+      "id": "wesker_overdrive",
+      "name": "Overdrive",
+      "description": "Wesker only. 12% more damage.",
+      "category": "offensive",
+      "rarity": "rare",
+      "tags": [
+        "damage",
+        "character"
+      ],
+      "max_stacks": 1,
+      "characters": [
+        "wesker"
+      ],
+      "effects": [
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.12
+        }
+      ]
+    },
+    {
+      "id": "josh_squad_tactics",
+      "name": "Squad Tactics",
+      "description": "Josh only. Every kill gives 2 extra supplies.",
+      "category": "economy",
+      "rarity": "uncommon",
+      "tags": [
+        "supplies",
+        "character"
+      ],
+      "max_stacks": 1,
+      "characters": [
+        "josh"
+      ],
+      "effects": [
+        {
+          "kind": "supplies_on_kill",
+          "amount": 2,
+          "chance": 1.0
+        }
+      ]
+    },
+    {
+      "id": "barry_magnum_discipline",
+      "name": "Magnum Discipline",
+      "description": "Barry only. 20% more damage to enemies below half health.",
+      "category": "offensive",
+      "rarity": "rare",
+      "tags": [
+        "damage",
+        "character"
+      ],
+      "max_stacks": 1,
+      "characters": [
+        "barry"
+      ],
+      "effects": [
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.2,
+          "condition": {
+            "type": "target_hp_below",
+            "fraction": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "id": "rebecca_combat_medic",
+      "name": "Combat Medic",
+      "description": "Rebecca only. Each kill heals 4% of max health.",
+      "category": "defensive",
+      "rarity": "rare",
+      "tags": [
+        "heal",
+        "character"
+      ],
+      "max_stacks": 1,
+      "characters": [
+        "rebecca"
+      ],
+      "effects": [
+        {
+          "kind": "heal_on_kill",
+          "amount_fraction_of_max": 0.04
+        }
+      ]
+    },
+    {
+      "id": "excella_executive_bonus",
+      "name": "Executive Bonus",
+      "description": "Excella only. 25 extra supplies for every arena cleared.",
+      "category": "economy",
+      "rarity": "uncommon",
+      "tags": [
+        "supplies",
+        "character"
+      ],
+      "max_stacks": 1,
+      "characters": [
+        "excella"
+      ],
+      "effects": [
+        {
+          "kind": "supplies_on_arena_clear",
+          "amount": 25,
+          "require_no_damage": false
+        }
       ]
     }
   ]

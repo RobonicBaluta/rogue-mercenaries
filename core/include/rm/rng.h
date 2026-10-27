@@ -20,6 +20,7 @@ inline constexpr std::string_view kRoute = "route";
 inline constexpr std::string_view kLoot = "loot";
 inline constexpr std::string_view kShop = "shop";
 inline constexpr std::string_view kCombat = "combat";
+inline constexpr std::string_view kLoadout = "loadout";
 }  // namespace streams
 
 std::uint64_t SplitMix64(std::uint64_t& state);

@@ -1,106 +1,307 @@
 {
-  "_comment": "Playable characters. Only Chris and Sheva start unlocked; the others unlock by themed challenges (unlock_kind/unlock_count, see core/include/rm/characters.h). starting_weapons approximate the game's Mercenaries loadouts with the mod's weapon ids; the adapter applies only the first one as the sidearm damage class. unlock_text is rendered by the game's own menu font: letters, digits, space, comma and period only.",
+  "_comment": "Playable characters. Only Chris and Sheva start unlocked; the others unlock by themed challenges (unlock_kind/unlock_count, see core/include/rm/characters.h). Each character lists its skins: the first is the default; a skin may override starting_weapons (the loadout roll picks one of them) and starting_passive, add skill_pool perks, and may have its own challenge. costume_index is the game character-select slot used by direct start (verified: chris 0, 1 and 2, sheva 3; the others follow the expected Gold Edition order until a direct start confirms them). Text shown by the game font: letters, digits, space, comma and period only.",
   "schema_version": 1,
   "characters": [
     {
       "id": "chris",
       "name": "Chris Redfield",
       "enabled": true,
-      "starting_weapons": ["m92f", "ithaca_m37"],
+      "starting_weapons": [
+        "m92f",
+        "ithaca_m37"
+      ],
       "starting_passive": "chris_veteran",
-      "skill_pool": ["boulder_puncher"],
+      "skill_pool": [
+        "boulder_puncher"
+      ],
       "exclusive_mechanic": "",
-      "unlock_cost_credits": 0
+      "unlock_cost_credits": 0,
+      "costume_index": 0,
+      "skins": [
+        {
+          "id": "chris_bsaa",
+          "name": "BSAA",
+          "costume_index": 0
+        },
+        {
+          "id": "chris_safari",
+          "name": "Safari",
+          "costume_index": 1,
+          "starting_weapons": [
+            "ithaca_m37",
+            "m92f"
+          ],
+          "starting_passive": "scavenger",
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "chris",
+          "unlock_count": 1,
+          "unlock_text": "Complete a run as Chris"
+        },
+        {
+          "id": "chris_stars",
+          "name": "STARS",
+          "costume_index": 2,
+          "starting_weapons": [
+            "sig_p226",
+            "m92f"
+          ],
+          "starting_passive": "sharpshooter",
+          "skill_pool": [
+            "deadeye"
+          ],
+          "unlock_kind": "s_rank_arenas",
+          "unlock_count": 1,
+          "unlock_text": "Earn an S rating in an arena"
+        }
+      ]
     },
     {
       "id": "sheva",
       "name": "Sheva Alomar",
       "enabled": true,
-      "starting_weapons": ["h_and_k_p8", "vz61"],
+      "starting_weapons": [
+        "h_and_k_p8",
+        "vz61"
+      ],
       "starting_passive": "sheva_field_training",
-      "skill_pool": ["sheva_marksman"],
+      "skill_pool": [
+        "sheva_marksman"
+      ],
       "exclusive_mechanic": "",
-      "unlock_cost_credits": 0
+      "unlock_cost_credits": 0,
+      "costume_index": 3,
+      "skins": [
+        {
+          "id": "sheva_bsaa",
+          "name": "BSAA",
+          "costume_index": 3
+        },
+        {
+          "id": "sheva_clubbin",
+          "name": "Clubbin",
+          "costume_index": 4,
+          "starting_weapons": [
+            "vz61",
+            "h_and_k_p8"
+          ],
+          "starting_passive": "bloodrush",
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "sheva",
+          "unlock_count": 1,
+          "unlock_text": "Complete a run as Sheva"
+        },
+        {
+          "id": "sheva_tribal",
+          "name": "Tribal",
+          "costume_index": 5,
+          "starting_weapons": [
+            "s75",
+            "h_and_k_p8"
+          ],
+          "starting_passive": "keen_eye",
+          "unlock_kind": "total_kills",
+          "unlock_count": 200,
+          "unlock_text": "Kill 200 enemies in total"
+        },
+        {
+          "id": "sheva_business",
+          "name": "Business",
+          "costume_index": 6,
+          "starting_weapons": [
+            "h_and_k_mp5"
+          ],
+          "starting_passive": "quartermaster",
+          "unlock_kind": "credits_earned",
+          "unlock_count": 500,
+          "unlock_text": "Earn 500 credits in total"
+        }
+      ]
     },
     {
       "id": "jill",
       "name": "Jill Valentine",
       "enabled": true,
-      "starting_weapons": ["m92f", "h_and_k_mp5"],
+      "starting_weapons": [
+        "m92f",
+        "h_and_k_mp5"
+      ],
       "starting_passive": "",
-      "skill_pool": [],
+      "skill_pool": [
+        "jill_battle_instinct"
+      ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
       "unlock_kind": "runs_completed_as",
       "unlock_character": "chris",
       "unlock_count": 1,
-      "unlock_text": "Complete a run as Chris"
+      "unlock_text": "Complete a run as Chris",
+      "costume_index": 7,
+      "skins": [
+        {
+          "id": "jill_bsaa",
+          "name": "BSAA",
+          "costume_index": 7
+        },
+        {
+          "id": "jill_battle_suit",
+          "name": "Battle Suit",
+          "costume_index": 8,
+          "starting_weapons": [
+            "h_and_k_mp5",
+            "m92f"
+          ],
+          "starting_passive": "kevlar_vest",
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "jill",
+          "unlock_count": 1,
+          "unlock_text": "Complete a run as Jill"
+        }
+      ]
     },
     {
       "id": "josh",
       "name": "Josh Stone",
       "enabled": true,
-      "starting_weapons": ["vz61", "ithaca_m37"],
+      "starting_weapons": [
+        "vz61",
+        "ithaca_m37"
+      ],
       "starting_passive": "",
-      "skill_pool": [],
+      "skill_pool": [
+        "josh_squad_tactics"
+      ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
       "unlock_kind": "runs_completed_as",
       "unlock_character": "sheva",
       "unlock_count": 1,
-      "unlock_text": "Complete a run as Sheva"
+      "unlock_text": "Complete a run as Sheva",
+      "costume_index": 11,
+      "skins": [
+        {
+          "id": "josh_bsaa",
+          "name": "BSAA",
+          "costume_index": 11
+        }
+      ]
     },
     {
       "id": "barry",
       "name": "Barry Burton",
       "enabled": true,
-      "starting_weapons": ["sig_p226", "m3"],
+      "starting_weapons": [
+        "sig_p226",
+        "m3"
+      ],
       "starting_passive": "",
-      "skill_pool": [],
+      "skill_pool": [
+        "barry_magnum_discipline"
+      ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
       "unlock_kind": "total_kills",
       "unlock_count": 500,
-      "unlock_text": "Kill 500 enemies in total"
+      "unlock_text": "Kill 500 enemies in total",
+      "costume_index": 12,
+      "skins": [
+        {
+          "id": "barry_stars",
+          "name": "STARS",
+          "costume_index": 12
+        }
+      ]
     },
     {
       "id": "rebecca",
       "name": "Rebecca Chambers",
       "enabled": true,
-      "starting_weapons": ["m92f", "s75"],
+      "starting_weapons": [
+        "m92f",
+        "s75"
+      ],
       "starting_passive": "",
-      "skill_pool": [],
+      "skill_pool": [
+        "rebecca_combat_medic"
+      ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
       "unlock_kind": "s_rank_arenas",
       "unlock_count": 3,
-      "unlock_text": "Earn an S rating in 3 arenas"
+      "unlock_text": "Earn an S rating in 3 arenas",
+      "costume_index": 13,
+      "skins": [
+        {
+          "id": "rebecca_stars",
+          "name": "STARS",
+          "costume_index": 13
+        }
+      ]
     },
     {
       "id": "excella",
       "name": "Excella Gionne",
       "enabled": true,
-      "starting_weapons": ["h_and_k_p8", "sig556"],
+      "starting_weapons": [
+        "h_and_k_p8",
+        "sig556"
+      ],
       "starting_passive": "",
-      "skill_pool": [],
+      "skill_pool": [
+        "excella_executive_bonus"
+      ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
       "unlock_kind": "credits_earned",
       "unlock_count": 1500,
-      "unlock_text": "Earn 1500 credits in total"
+      "unlock_text": "Earn 1500 credits in total",
+      "costume_index": 14,
+      "skins": [
+        {
+          "id": "excella_dress",
+          "name": "Dress",
+          "costume_index": 14
+        }
+      ]
     },
     {
       "id": "wesker",
       "name": "Albert Wesker",
       "enabled": true,
-      "starting_weapons": ["sig_p226", "l_hawk"],
+      "starting_weapons": [
+        "sig_p226",
+        "l_hawk"
+      ],
       "starting_passive": "",
-      "skill_pool": [],
+      "skill_pool": [
+        "wesker_overdrive"
+      ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
       "unlock_kind": "no_damage_arenas",
       "unlock_count": 3,
-      "unlock_text": "Clear 3 arenas without taking damage"
+      "unlock_text": "Clear 3 arenas without taking damage",
+      "costume_index": 9,
+      "skins": [
+        {
+          "id": "wesker_midnight",
+          "name": "Midnight",
+          "costume_index": 9
+        },
+        {
+          "id": "wesker_stars",
+          "name": "STARS",
+          "costume_index": 10,
+          "starting_weapons": [
+            "l_hawk",
+            "sig_p226"
+          ],
+          "starting_passive": "finisher",
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "wesker",
+          "unlock_count": 1,
+          "unlock_text": "Complete a run as Wesker"
+        }
+      ]
     }
   ]
 }

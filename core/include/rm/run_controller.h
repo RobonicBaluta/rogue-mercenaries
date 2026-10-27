@@ -131,6 +131,18 @@ struct UnlockReceipt {
     std::int64_t balance_after = 0;
 };
 
+/// "M92F, Hand Grenade x2, Green Herb" for the HUD and telemetry.
+std::string FormatLoadout(const Loadout& loadout, const Content& content);
+
+struct SkinAvailability {
+    std::string id;
+    std::string name;
+    std::int64_t costume_index = -1;
+    CharacterGate gate = CharacterGate::Selectable;
+    std::string unlock_text;
+    ChallengeProgress challenge;
+};
+
 struct CharacterAvailability {
     std::string id;
     std::string name;
@@ -139,6 +151,8 @@ struct CharacterAvailability {
     /// Challenge text and progress while locked (target 0 = no challenge).
     std::string unlock_text;
     ChallengeProgress challenge;
+    std::int64_t costume_index = -1;  // the default skin's
+    std::vector<SkinAvailability> skins;
 };
 
 struct RunControllerOptions {
@@ -182,6 +196,8 @@ public:
     /// Fails for unknown, disabled or locked characters or while a run is active. Settles
     /// any interrupted run, resets all temporary state, increments runs_started and saves.
     Status StartRun(std::string_view character_id, std::uint64_t seed);
+    /// With a skin (empty id = the character's default skin). Locked skins are rejected.
+    Status StartRun(std::string_view character_id, std::uint64_t seed, std::string_view skin_id);
     /// Marks the active run failed ("abandoned"); call EndRun afterwards to bank.
     Status AbandonRun(double now);
     /// Valid from Idle with a fresh run (first arena) or RouteSelection after ChooseRoute.
@@ -245,6 +261,7 @@ private:
         Rng loot;
         Rng shop;
         Rng combat;
+        Rng loadout;
     };
 
     Event MakeEvent(EventType type, EventLevel level = EventLevel::Info) const;

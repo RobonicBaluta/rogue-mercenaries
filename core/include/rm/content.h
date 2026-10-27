@@ -25,6 +25,23 @@ struct ContentSources {
     std::string characters;  // characters.json
     std::string routes;      // routes.json
     std::string economy;     // economy.json
+    std::string loadouts;    // loadouts.json (optional; defaults apply when empty)
+};
+
+/// Starting loadout roll (configs/loadouts.json). A run spends `budget` points: the weapon
+/// first (by category), then random equipment while points remain; the rest becomes supplies.
+/// Without a loadouts file the budget is 0: one starting weapon is still rolled, nothing else.
+struct EquipmentDef {
+    std::string id;
+    std::string name;
+    std::int64_t cost = 0;
+    int max_count = 1;
+};
+struct LoadoutConfig {
+    std::int64_t budget = 0;
+    std::int64_t default_weapon_cost = 0;
+    StringMap<std::int64_t> weapon_cost;  // by weapon category name
+    std::vector<EquipmentDef> equipment;
 };
 
 /// `content` is set only when there are no errors. Errors are human-readable, one problem
@@ -53,6 +70,7 @@ public:
     [[nodiscard]] const std::vector<CharacterDef>& characters() const { return characters_; }
     [[nodiscard]] const std::vector<RouteDef>& routes() const { return routes_; }
     [[nodiscard]] const EconomyConfig& economy() const { return economy_; }
+    [[nodiscard]] const LoadoutConfig& loadouts() const { return loadouts_; }
 
     [[nodiscard]] const PerkDef* FindPerk(std::string_view id) const;
     [[nodiscard]] const WeaponBaseDef* FindWeapon(std::string_view id) const;
@@ -73,6 +91,7 @@ private:
     std::vector<CharacterDef> characters_;
     std::vector<RouteDef> routes_;
     EconomyConfig economy_;
+    LoadoutConfig loadouts_;
 
     StringMap<std::size_t> perk_index_;
     StringMap<std::size_t> weapon_index_;

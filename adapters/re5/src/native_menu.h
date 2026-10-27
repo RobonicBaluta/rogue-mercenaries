@@ -9,7 +9,7 @@
 
 namespace rmre5::nativemenu {
 
-enum class ScreenId { Main = 0, Characters, Perks, Credits };
+enum class ScreenId { Main = 0, Characters, Perks, Credits, Skins };
 
 struct Item {
     std::string label;  // one row; rendered in capitals by the game font

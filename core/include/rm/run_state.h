@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 
+#include "rm/characters.h"
 #include "rm/common.h"
 #include "rm/economy.h"
 #include "rm/rewards.h"
@@ -42,6 +43,19 @@ struct KillRecord {
 struct HealRequest {
     double fraction_of_max = 0.0;
     std::string source;  // perk id or "shop"
+};
+
+/// What a run starts with, rolled from the loadout point budget (see LoadoutConfig).
+struct LoadoutItem {
+    std::string id;
+    std::string name;
+    int count = 1;
+};
+struct Loadout {
+    std::string weapon_id;
+    std::vector<LoadoutItem> items;
+    std::int64_t budget = 0;
+    std::int64_t spent = 0;
 };
 
 struct ArenaMetrics {
@@ -101,6 +115,9 @@ struct RunState {
     std::string run_id;
     std::uint64_t seed = 0;
     std::string character_id;
+    std::string skin_id;
+    CharacterDef character;  // the character with the skin applied
+    Loadout loadout;
     Phase phase = Phase::Idle;
     int arena_index = 0;  // arenas begun so far; the current arena number while active
     int arena_count = 3;
@@ -174,6 +191,8 @@ struct RunSnapshot {
     std::string phase_name;
     std::string run_id;
     std::string character_id;
+    std::string skin_id;
+    std::string loadout;  // "M92F, Hand Grenade x2, Green Herb"
     std::string route_id;
     std::string route_name;
     int arena = 0;  // current arena number (1-based), 0 before the first

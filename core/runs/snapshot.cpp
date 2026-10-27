@@ -38,6 +38,8 @@ RunSnapshot RunController::Snapshot(double now) const {
     s.phase_name = std::string(PhaseName(run_.phase));
     s.run_id = run_.run_id;
     s.character_id = run_.character_id;
+    s.skin_id = run_.skin_id;
+    if (run_.active) s.loadout = FormatLoadout(run_.loadout, c);
     s.route_id = run_.route_id;
     if (const RouteDef* r = Route()) s.route_name = r->name;
     s.arena = run_.arena_index;

@@ -41,10 +41,24 @@ struct HookSlot {
 };
 std::array<HookSlot, kMaxHooks> g_hooks;
 
+// Fields every uIdMenu-derived screen seems to share, logged when they change.
+struct Fields {
+    std::uint8_t state = 0;    // +0x14
+    std::int32_t cursor = 0;   // +0x48
+    std::int32_t f16c = 0, f18c = 0, f194 = 0, f1a0 = 0;
+    std::uint8_t f1ad = 0;
+    bool operator==(const Fields& o) const {
+        return state == o.state && cursor == o.cursor && f16c == o.f16c && f18c == o.f18c && f194 == o.f194 &&
+               f1a0 == o.f1a0 && f1ad == o.f1ad;
+    }
+};
+
 struct Live {
     std::uintptr_t object = 0;
     DWORD lastSeen = 0;
     bool announced = false;
+    Fields fields;
+    bool haveFields = false;
 };
 std::mutex g_mutex;
 std::map<std::uintptr_t, Live> g_live;  // object -> state
@@ -57,10 +71,34 @@ void Seen(std::uintptr_t self) {
     entry.lastSeen = GetTickCount();
 }
 
+// After move(): log state/cursor changes (how each screen's state machine runs).
+void Observe(std::uintptr_t self) {
+    Fields f;
+    f.state = ReadOr<std::uint8_t>(self + 0x14, 0);
+    f.cursor = ReadOr<std::int32_t>(self + 0x48, 0);
+    f.f16c = ReadOr<std::int32_t>(self + 0x16C, 0);
+    f.f18c = ReadOr<std::int32_t>(self + 0x18C, 0);
+    f.f194 = ReadOr<std::int32_t>(self + 0x194, 0);
+    f.f1a0 = ReadOr<std::int32_t>(self + 0x1A0, 0);
+    f.f1ad = ReadOr<std::uint8_t>(self + 0x1AD, 0);
+    std::lock_guard lock(g_mutex);
+    auto& entry = g_live[self];
+    if (entry.haveFields && entry.fields == f) return;
+    const Fields old = entry.fields;
+    const bool first = !entry.haveFields;
+    entry.fields = f;
+    entry.haveFields = true;
+    if (first) return;
+    RM_LOGI("menu fields %s obj=%08X state %u->%u cursor %d->%d +16c %d +18c %d +194 %d +1a0 %d +1ad %u",
+            engine::ClassName(self).c_str(), static_cast<unsigned>(self), old.state, f.state, old.cursor, f.cursor,
+            f.f16c, f.f18c, f.f194, f.f1a0, f.f1ad);
+}
+
 template <int N>
 void __fastcall MoveDetour(std::uintptr_t self, void*) {
     Seen(self);
     g_hooks[N].original(self);
+    Observe(self);
 }
 
 template <int... N>
