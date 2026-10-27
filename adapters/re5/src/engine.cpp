@@ -105,6 +105,7 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.setupScreens = g_caps.gameWork && SignatureOk("menu_input") && SignatureOk("startup20_move") &&
                           SignatureOk("startup21_move") && SignatureOk("startup22_move") &&
                           SignatureOk("startup21_stage_write") && SignatureOk("startup22_character_write");
+    g_caps.fader = SignatureOk("startup22_fade_out");
     return all;
 }
 

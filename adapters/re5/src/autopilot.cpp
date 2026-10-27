@@ -27,6 +27,7 @@ namespace {
 
 using MoveFn = void(__thiscall*)(std::uintptr_t self);
 using MenuInputFn = std::uint32_t(__stdcall*)(int pad, int mode);
+using FadeFn = void(__thiscall*)(std::uintptr_t self, float alpha, int frames);
 
 constexpr std::uint8_t kStateInput = 2;
 constexpr std::uint8_t kStateModeInput = 10;  // uIdStartUp20's Solo/Duo page
@@ -51,13 +52,27 @@ std::atomic<DWORD> g_armedAt{0};
 std::atomic<int> g_stageCount{8};
 std::atomic<int> g_stageTries{0};
 std::atomic<bool> g_costumeFallback{false};
+std::atomic<bool> g_faded{false};
 std::atomic<DWORD> g_injectSince{0};  // first decide injected on the current screen
+std::atomic<unsigned> g_lockedStages{0};  // bit per stage the game refused this session
 // Set around one screen's move(): its own input query then reports decide.
 thread_local bool t_inject = false;
 
 std::uint32_t DecideMask() {
     const auto pad = ReadOr<std::uintptr_t>(re5::addr::kPadInstance, 0);
     return pad ? ReadOr<std::uint32_t>(pad + re5::off::kPadDecideMask, 0) : 0;
+}
+
+// The game's own fade to black (what the character screen does after its
+// decide), so the driven screens pass behind black.
+void FadeToBlack(int frames) {
+    if (!engine::Caps().fader) return;
+    const auto fader = ReadOr<std::uintptr_t>(re5::addr::kFadeInstance, 0);
+    const auto vtable = fader ? ReadOr<std::uintptr_t>(fader, 0) : 0;
+    const auto fn = vtable ? ReadOr<std::uintptr_t>(vtable + re5::off::kFadeVtableOut, 0) : 0;
+    if (!fn || fn < re5::kImageBase) return;
+    reinterpret_cast<FadeFn>(fn)(fader, 1.0f, frames);
+    RM_LOGI("autopilot: fade to black requested (%d frames)", frames);
 }
 
 std::uint32_t __stdcall MenuInputDetour(int pad, int mode) {
@@ -72,6 +87,7 @@ void Drive(std::uintptr_t self, MoveFn orig, int screen) {
         switch (screen) {
             case 20:
                 if (state == kStateInput) {
+                    if (!g_faded.exchange(true)) FadeToBlack(4);
                     SafeStore<std::int32_t>(self + re5::off::kMenuCursor, kItemStart);
                     inject = true;
                 } else if (state == kStateModeInput) {
@@ -83,8 +99,9 @@ void Drive(std::uintptr_t self, MoveFn orig, int screen) {
                 if (state == kStateInput) {
                     const DWORD now = GetTickCount();
                     if (g_screen.load() == 21 && now - g_injectSince.load() > kDenyMs) {
-                        // Locked stage: try the next one; stage 0 is always available.
+                        // Locked stage: remember it and try the next one; stage 0 is always available.
                         const int count = std::max(1, g_stageCount.load());
+                        g_lockedStages |= 1u << (g_stage.load() & 31);
                         const int next = g_stageTries.fetch_add(1) + 1 >= count ? 0 : (g_stage.load() + 1) % count;
                         RM_LOGI("autopilot: stage %d is locked in the game, trying %d", g_stage.load(), next);
                         g_stage = next;
@@ -161,11 +178,16 @@ bool Install() {
 bool Available() { return g_enabled.load(); }
 
 void Arm(const Plan& plan) {
-    g_stage = plan.stage;
+    // Skip stages the game refused earlier this session.
+    int stage = plan.stage;
+    const int count = std::max(1, plan.stage_count);
+    for (int i = 0; i < count && (g_lockedStages.load() & (1u << (stage & 31))); ++i) stage = (stage + 1) % count;
+    g_stage = stage;
     g_costume = plan.costume;
     g_stageCount = plan.stage_count;
     g_stageTries = 0;
     g_costumeFallback = false;
+    g_faded = false;
     g_screen = 0;
     g_armedAt = GetTickCount();
     g_armed = true;

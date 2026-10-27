@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "ghidra": {
+      "command": "python",
+      "args": ["G:/Projects/re5mod/scripts/ghidra_mcp.py"],
+      "env": {
+        "GHIDRA_INSTALL_DIR": "G:/tools/ghidra-dl/ghidra_12.2_PUBLIC",
+        "JAVA_HOME": "C:/Program Files/Eclipse Adoptium/jdk-25.0.5.8-hotspot",
+        "GHIDRA_PROJECT": "G:/tools/ghidra-proj",
+        "GHIDRA_PROJECT_NAME": "re5",
+        "GHIDRA_BINARY": "G:/Projects/re5mod/build/dump/re5dx9_mem.exe"
+      }
+    }
+  }
+}

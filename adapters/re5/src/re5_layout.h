@@ -69,6 +69,9 @@ constexpr std::uintptr_t kFnMenuSetBallIndex = 0x00A58170;
 constexpr std::uintptr_t kFnStartUp20Move = 0x00A47CE0;
 constexpr std::uintptr_t kFnStartUp21Move = 0x00A49C40;
 constexpr std::uintptr_t kFnStartUp22Move = 0x00A48260;
+// Screen fader singleton (uIdStartUp22 fades to black with vtable slot 12
+// `(float alpha, int frames)` after the character decide and polls slot 14).
+constexpr std::uintptr_t kFadeInstance = 0x011E8804;
 // void uIdMenu::DrawHelp(int message, int y): help line under a menu, shared by
 // most uId* screens. The Play menu draws rows at y = (item + 3) * 50 and its
 // help at y = 570, which a ninth row (y = 550) would sit under.
@@ -119,6 +122,7 @@ constexpr std::size_t kMenuItemCount = 0x190;  // int32: 7, or 8 with "Contenido
 constexpr std::size_t kMenuEnabledMask = 0x194; // uint32 bit per item; clear bits draw red
 constexpr std::size_t kMenuBlink = 0x3D;        // uint8: selected row pulses while set
 constexpr std::size_t kMenuTopMenu = 0x128;     // uIdTopMenu00* (planet and side labels)
+constexpr std::size_t kFadeVtableOut = 0x30;   // fader vtable slot 12: FadeOut(float alpha, int frames)
 constexpr std::size_t kMenuModeCursor = 0x18C;  // uIdStartUp20 Solo/Duo page: int32 cursor
 constexpr std::size_t kMenuCharacterIndex = 0x194;  // uIdStartUp22: int32 selected costume slot
 // game work: Mercenaries setup written by those screens
@@ -189,6 +193,8 @@ inline constexpr Signature kSignatures[] = {
     {"startup21_stage_write", 0x00A49F01, "8B 56 48 89 91 D4 05 00 00"},
     // uIdStartUp22 decide: `mov [eax+ecx*4+0x600], edx` (costume slot).
     {"startup22_character_write", 0x00A48573, "89 94 88 00 06 00 00"},
+    // uIdStartUp22: `fld1; mov ecx,[fader]; ...; push 0x20; push ecx; fstp; call [vt+0x30]`.
+    {"startup22_fade_out", 0x00A4867D, "D9 E8 8B 0D 04 88 1E 01 8B 11 8B 42 30 6A 20 51 D9 1C 24 FF D0"},
     {"menu_draw_help", addr::kFnMenuDrawHelp, "51 8B 51 78 69 D2 FF 00 00 00 B8 39 8E E3 38 F7 EA"},
     // Play menu draw: `push 570; push eax; mov ecx, esi; call DrawHelp`.
     {"playmenu_help_call", 0x00A37566, "68 3A 02 00 00 50 8B CE E8 7D 07 FE FF"},
