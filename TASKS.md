@@ -88,7 +88,7 @@ See `research/capabilities.md` (per-capability evidence) and `research/re5-engin
 ## Phase 6 — MVP (see MVP.md for the user's requirements)
 
 - [ ] True direct start through the title-flow script (Ghidra: `0x00BF7xxx`).
-- [ ] Inventory write: `uPlayer` item table and ammo; one verified in-game write; apply the rolled loadout.
+- [~] Inventory write (2026-10-28, Ghidra on `uPlayer::PickUpItem` `0x007E9DF0`). Layout verified live: inventory at `uPlayer+0x21A0`, 24 slots of 0x30 from `+4` (`+4` item id, `+8` count, `+0xC` max, `+0x29` valid). Chris BSAA Mercenaries loadout read back as handgun ammo `0x0201` 50/50, M92F `0x0102` 50/50 (the HUD's 50), Ithaca `0x0106` 5/5, shells `0x0203` 30/30, spray `0x0304` 1/1, knife `0x0101`. Verified write: the count poked to 40, then the game's own `AddToStacks(inv, 0x0201, 5)` (`0x00C4BEE0`) → 45, "0 not placed" (dev commands `dumpinv`, `give`, `ammo`). Still to do: item ids for grenades/herbs (category 3 table at `[0x010EACF0 + cat*4]`, 0x48-byte records), creating new slots (`0x00C4B480`, 18 parameters), then applying the rolled loadout at match start.
 - [ ] Perks rewritten as per-character playstyle traits (no % damage); perks only from the menu; shop and rewards sell items/upgrades only.
 - [ ] Arena-to-arena transition without the Mercenaries results screens.
 - [ ] Chests (pickup objects `uOm08xx`) as the reward/challenge carriers; in-world next-stage choice.

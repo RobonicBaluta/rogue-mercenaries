@@ -858,6 +858,36 @@ void PollDevCommand(double now) {
         autopilot::Plan plan;
         words >> plan.stage >> plan.costume;
         autopilot::Arm(plan);
+    } else if (command == "dumpinv") {
+        // The local player's inventory slots (item id, count, max).
+        const auto player = engine::LocalPlayer();
+        const auto inv = player ? player + re5::off::kPlayerInventory : 0;
+        for (int i = 0; inv && i < re5::off::kInventorySlots; ++i) {
+            const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+            if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+            RM_LOGW("dev inv slot %2d: item %04X count %d max %d", i,
+                    ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0), ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0),
+                    ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0));
+        }
+        if (!inv) RM_LOGW("dev inv: no local player");
+    } else if (command.rfind("give ", 0) == 0 || command.rfind("ammo ", 0) == 0) {
+        // "give <hex item> <count>" tops up an existing stack through the game's
+        // own inventory helper; "ammo <hex item> <count>" uses the ammo one.
+        std::istringstream words(command.substr(5));
+        std::string idText;
+        int count = 1;
+        words >> idText >> count;
+        const auto item = static_cast<int>(std::strtoul(idText.c_str(), nullptr, 16));
+        const auto player = engine::LocalPlayer();
+        if (!engine::Caps().inventory || !player) {
+            RM_LOGW("dev %s: inventory not available", command.c_str());
+        } else {
+            using InventoryFn = int(__thiscall*)(std::uintptr_t inventory, int item, int count);
+            const auto fn = reinterpret_cast<InventoryFn>(command[0] == 'g' ? re5::addr::kFnInventoryAddToStacks
+                                                                            : re5::addr::kFnInventoryAddAmmo);
+            const int left = fn(player + re5::off::kPlayerInventory, item, count);
+            RM_LOGW("dev %s item %04X x%d -> %d not placed", command[0] == 'g' ? "give" : "ammo", item, count, left);
+        }
     } else if (command.rfind("pokeb ", 0) == 0) {
         // "pokeb <hex addr> <hex byte>"
         std::istringstream words(command.substr(6));

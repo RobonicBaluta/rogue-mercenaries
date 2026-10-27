@@ -81,6 +81,14 @@ constexpr std::uintptr_t kFadeInstance = 0x011E8804;
 constexpr std::uintptr_t kFnFlowStep = 0x00BF2CF0;
 constexpr std::uintptr_t kFnFlowStep20 = 0x00BF2BD0;
 constexpr std::uintptr_t kFnFlowMercSetup = 0x00BF78B0;
+// Inventory (found with Ghidra from uPlayer::PickUpItem, FUN_007E9DF0): the
+// inventory object is uPlayer+0x21A0; __thiscall helpers on it:
+//   int AddToStacks(int item, int count): tops up existing stacks of `item`
+//     up to each slot's max, returns what did not fit;
+//   int AddAmmo(int item, int count).
+// Item ids are (category << 8) | index: 1 weapons, 2 ammo, 4 keys/treasure.
+constexpr std::uintptr_t kFnInventoryAddToStacks = 0x00C4BEE0;
+constexpr std::uintptr_t kFnInventoryAddAmmo = 0x00C4DA90;
 // void uIdMenu::DrawHelp(int message, int y): help line under a menu, shared by
 // most uId* screens. The Play menu draws rows at y = (item + 3) * 50 and its
 // help at y = 570, which a ninth row (y = 550) would sit under.
@@ -103,6 +111,15 @@ constexpr std::size_t kMaxHp = 0x1366;  // int16
 // uPlayer
 constexpr std::size_t kPlayerNumber = 0x2D9C;   // uint8, copied into enemy+0x136C on hit
 constexpr std::size_t kPlayerControl = 0x2DA8;  // int32; 0/1/2 observed in code paths (hypothesis: 2 = AI)
+// uPlayer inventory: 24 slots of 0x30 bytes starting at inventory+4.
+constexpr std::size_t kPlayerInventory = 0x21A0;
+constexpr int kInventorySlots = 0x18;
+constexpr std::size_t kInventoryFirstSlot = 0x4;
+constexpr std::size_t kInventorySlotSize = 0x30;
+constexpr std::size_t kSlotItemId = 0x4;   // int32
+constexpr std::size_t kSlotCount = 0x8;    // int32
+constexpr std::size_t kSlotMax = 0xC;      // int32 stack capacity
+constexpr std::size_t kSlotValid = 0x29;   // uint8 == 1 for a used slot
 // uEnemy
 constexpr std::size_t kEnemyLastHitPlayer = 0x136C;  // int32 player number or -1
 // sPlayer
@@ -211,6 +228,10 @@ inline constexpr Signature kSignatures[] = {
     {"flow_step", addr::kFnFlowStep, "56 8B F1 0F BE 46 25 83 E8 00 74 6A 83 E8 01 74"},
     {"flow_step20", addr::kFnFlowStep20, "56 8B F1 0F BE 46 25 83 E8 00 74 57 83 E8 01 74"},
     {"flow_merc_setup", addr::kFnFlowMercSetup, "56 8B F1 0F BE 46 24 83 F8 15 0F 87 AE 01 00 00"},
+    {"inventory_add_to_stacks", addr::kFnInventoryAddToStacks, "83 EC 64 53 8B 5C 24 6C 55 56 57 33 FF 33 C0 89"},
+    {"inventory_add_ammo", addr::kFnInventoryAddAmmo, "53 8B 5C 24 0C 55 8B 6C 24 0C 56 57 8B F9 33 F6"},
+    // uPlayer::PickUpItem: `lea ecx,[esi+0x21A0]; call AddToStacks`.
+    {"player_pickup_inventory", 0x007EA134, "8D 8E A0 21 00 00 E8 A1 1D 46 00"},
     {"menu_draw_help", addr::kFnMenuDrawHelp, "51 8B 51 78 69 D2 FF 00 00 00 B8 39 8E E3 38 F7 EA"},
     // Play menu draw: `push 570; push eax; mov ecx, esi; call DrawHelp`.
     {"playmenu_help_call", 0x00A37566, "68 3A 02 00 00 50 8B CE E8 7D 07 FE FF"},

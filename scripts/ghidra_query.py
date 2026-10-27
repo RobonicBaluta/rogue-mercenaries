@@ -88,5 +88,5 @@ with pyghidra.open_program(BINARY, project_location=PROJECT_DIR, project_name=PR
                     made += 1
         finally:
             program.endTransaction(tx, True)
-        program.save("seed", monitor)
         print("created", made, "functions; total", fm.getFunctionCount())
+        # pyghidra's context saves the program on exit.
