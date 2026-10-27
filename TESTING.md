@@ -78,21 +78,20 @@ and `$ctest` to `ctest.exe` in the same folder.
 - Content validation only: any `rm_tests "[content]"` run loads `configs/` and fails with the loader's error list if the data is invalid.
 - Runtime (RE5, game must be closed first; all scripts restore what they change):
   - Switch the game to 1280x720 windowed + VSync for tests / restore the player's config:
-    `scripts\game_config.ps1 -Mode test` / `-Mode restore` (original kept in `buildackup\config.ini.original`).
+    `scripts\game_config.ps1 -Mode test` / `-Mode restore` (original kept in `build\backup\config.ini.original`).
   - Install / uninstall with a manifest (never overwrites foreign files, checks the exe hash):
-    `scripts\deploy.ps1 -Mode install -AdapterConfig configsdapter.test.json [-ConfigDir <content>]`, `-Mode uninstall`, `-Mode status`.
-  - Unattended smoke run (Steam launch, muted, background; logs + in-process frame captures to `build
-uns\<stamp>-<label>\`):
-    `scripts\smoke.ps1 -Dll build\win32dapters
-e5\Release\dinput8.dll -AdapterConfig configsdapter.dev.json -Seconds 30 -CaptureAt "10,20"`.
+    `scripts\deploy.ps1 -Mode install -AdapterConfig configs\adapter.test.json [-ConfigDir <content>] [-FromZip dist\RogueMercenaries-<version>.zip]`, `-Mode uninstall`, `-Mode status`.
+  - Unattended smoke run (Steam launch, muted, background; logs + in-process frame captures to `build\runs\<stamp>-<label>\`):
+    `scripts\smoke.ps1 -Dll build\win32\adapters\re5\Release\dinput8.dll -AdapterConfig configs\adapter.dev.json -Seconds 30 -CaptureAt "10,20"`.
     With `dev.ui_demo: true` the mod walks a scripted run (sandbox profile) through every panel for UI captures.
   - Interactive control (needs an otherwise idle PC: sends input to the game): `scripts\gamectl.ps1 -Action launch|keys|capture|close|reap|status`;
     `-Keys` accepts key names, `down=`/`up=` holds, mouse buttons and `move=dx/dy`.
   - Full automated run with real kills (Mercenaries Solo, Public Assembly, Chris; small-budget test content):
-    `bash scripts/autoplay_run.sh build/testcontent configs/adapter.autoplay.json 3`
-    (`adapter.autoplay.json`: invulnerable, ×4 outgoing damage; never ship it).
-  - Developer test aids in `adapter.json` → `dev`: `invulnerable`, `outgoing_multiplier`, `incoming_multiplier`, `grant_perks`, `probe_hits`, `mute_audio`.
-- Diagnostic export: in game F7 → Developer → Export diagnostics writes `%LOCALAPPDATA%\RogueMercenaries
-ogue-mercenaries-diagnostics.zip`
+    `bash scripts/autoplay_run.sh build/testcontent configs/adapter.autoplay.json 3 [rounds]`
+    (`adapter.autoplay.json`: invulnerable, x4 outgoing damage; never ship it). Optional `PRE_COMMAND="unlock perk <id>"`.
+    Safety gate: the script aborts without further input if the game does not enter The Mercenaries (mode 0 -> 2).
+  - Developer test aids in `adapter.json` -> `dev`: `invulnerable`, `outgoing_multiplier`, `incoming_multiplier`, `grant_perks`, `probe_hits`, `mute_audio`, `ui_demo`;
+    `<data>\dev.command` accepts `force_complete` and `unlock perk|weapon <id>` (developer mode only, logged).
+- Diagnostic export: in game F7 -> Developer -> Export diagnostics writes `%LOCALAPPDATA%\RogueMercenaries\rogue-mercenaries-diagnostics.zip`
   (verified in game 2026-10-27; core API `rm::ExportDiagnostics`).
 - Release package: `scripts\package_release.ps1` → `dist\RogueMercenaries-<version>.zip` (DLL, configs, README, licenses, SHA256SUMS).

@@ -47,26 +47,50 @@ See `research/capabilities.md` (per-capability evidence) and `research/re5-engin
 - [x] Define the chosen existing arena and verified encounter entry procedure. Evidence: The Mercenaries Solo (any stage; tested on Public Assembly) — match start (countdown running, local player present) begins the arena.
 - [x] Start a run with reset temporary state and selected supported character. Evidence: F7 → Start run (Enter hotkey) in game; character from DTI class (`uPl00…` → chris); `run_0004` started by automation.
 - [x] Track kills, received damage, time and finite remaining enemies. Evidence: HUD "Enemies left" decreasing with real kills; telemetry `enemy_killed`, `player_damaged`, `arena_completed` with time.
-- [x] Offer and apply three reward choices using at least four tested perks across content. Evidence: reward/shop/route selections in game; combat changes verified in game for B.S.A.A. Veteran (−5% incoming), Sharpshooter (stacks ×1/×2/×3), M92F upgrade; perk-test run (Finisher, Keen Eye, Kevlar Vest, Field Medic) — see TASKS evidence below when complete.
+- [x] Offer and apply three reward choices using at least four tested perks across content. Evidence (in game, `build/runs/20261027-200845-autoplay/adapter.log` and `manual-t2`):
+  - B.S.A.A. Veteran: incoming ×0.95.
+  - Sharpshooter: outgoing ×1.16/×1.24 with 2/3 stacks.
+  - Finisher: +35% only below 30% target HP; applied at 50/150/200 of 800, not at 300.
+  - Keen Eye: crits ×2.0, stacking with Finisher to ×2.7.
+  - Kevlar Vest: incoming 0.87 combined with Veteran.
+  - Field Medic: unlocked with credits first; +30 HP heals on kills while hurt.
+  - Curse: Frailty: incoming ×1.25 on the harder route.
 - [x] Award/spend supplies without negative balances or duplicate transactions. Evidence: two in-game purchases (upgrade 30, perk 30); ledger tests; 10k-run sim.
 - [x] Show arena results and deterministic route choices. Evidence: results card and route offers in game (`build/runs/manual-t2/b11.png`, `b19.png`).
 - [x] Complete three successive rounds using a verified game transition. Evidence: `run_0003` arenas 1→2→3 through three Mercenaries matches; the mod ended each match via the countdown.
 - [x] Persist end-of-run credits and show final result. Evidence: "run_0003: complete, 3/3 arenas, 78 kills, +269 credits"; `profile.json` credits 269 after restart of the game.
-- [x] Verify the next run clears temporary progression. Evidence: core tests; in game the next run starts with only the character's starting perk (`91-second-run.png` in the autoplay run).
+- [x] Verify the next run clears temporary progression. Evidence: core tests; in game `run_0004` (after `run_0003` ended with Sharpshooter×3 and M92F Lv2) started with only B.S.A.A. Veteran and M92F Lv1 (`build/runs/20261027-193859-autoplay/a1-rewards.png`). Interrupted runs are settled on the next launch ("interrupted run settled: run_0004/run_0005").
 - [~] Produce manual installation, playthrough and diagnostic-export instructions. `README.md` + release `README.txt` (`scripts/package_release.ps1`); needs a human read-through.
 
 ## Phase 4 — Expansion
 
-- [ ] Expand to ten perks and rarity tiers.
-- [ ] Add weapon upgrades, shop offers and elite modifiers.
-- [ ] Add harder routes and character/skill unlock progression.
-- [ ] Add additional arenas only after repeatability and softlock checks.
+- [x] Expand to ten perks and rarity tiers. Evidence: 22 perks across 5 rarities in `configs/perks.json` (20 offerable with the RE5 adapter's capabilities); permanent perk/weapon unlocks purchasable with Credits (in game: `unlock perk field_medic -> ok`).
+- [~] Add weapon upgrades, shop offers and elite modifiers. Weapon upgrades and shop offers are done and verified in game (M92F Lv2 bought → +8% damage observed). Elite modifiers are not implemented: there is no verified way to control spawns, and content rejects `elite_chance` > 0.
+- [x] Add harder routes and character/skill unlock progression. Evidence:
+  - Route tiers 1–3 with reward multipliers and curses; the tier-3 Ruins Gauntlet with Curse: Frailty was played in game.
+  - Perk/weapon unlocks spend Credits (Unlocks panel; in game `unlock perk field_medic -> ok`).
+  - Character unlocks are in the panel. Jill and Wesker stay disabled until verified in game.
+- [ ] Add additional arenas only after repeatability and softlock checks. All Mercenaries stages should work (the arena is tied to the match, not the map), but only Public Assembly has been played.
 
 ## Phase 5 — Stabilization/release
 
-- [ ] Repeat three-round run and inspect crash logs.
-- [ ] Test save corruption and duplicate reward recovery.
-- [ ] Profile adapter and logging overhead.
-- [ ] Perform clean install/uninstall and Steam file verification.
-- [ ] Produce release ZIP, hash manifest and rollback guide.
-- [ ] Document unsupported engine features and tested game build.
+- [x] Repeat three-round run and inspect crash logs. Evidence:
+  - `run_0003` completed 3 arenas.
+  - Five more automated runs (`run_0004`–`run_0008`) with no crash and no unhandled exception in any adapter log.
+  - 5/5 stable launches after hook batching.
+- [x] Test save corruption and duplicate reward recovery. Evidence:
+  - Core tests: truncated JSON, bad checksum and wrong schema → `.bak` → default; v0 migration.
+  - `ChooseReward` twice fails; EndRun is idempotent.
+  - In game, interrupted runs were settled once on the next launch (`run_0004`, `run_0005`).
+- [x] Profile adapter and logging overhead. Evidence: `perf:` log lines from the packaged build:
+  - Menus: about 80 µs per frame.
+  - Matches: about 93–99 µs average, worst around 0.6 ms.
+  - One 4.2 ms hitch when "Start run" saves the profile synchronously. Accepted for v0.1; a background save would remove it.
+  - Per-hit logs are now at debug level.
+- [x] Perform clean install/uninstall and Steam file verification. Evidence:
+  - Install from `dist\RogueMercenaries-0.1.0-dev.zip` with player defaults loads and plays (`build/runs/package-install/`).
+  - Uninstall removes exactly the manifest files.
+  - A failed install rolls back.
+  - `re5dx9.exe` SHA-256 is unchanged after every uninstall. The Steam "verify integrity" step is left to the user; no game file is modified.
+- [x] Produce release ZIP, hash manifest and rollback guide. Evidence: `scripts/package_release.ps1` → ZIP with DLL, configs, README (install/play/uninstall/rollback), third-party licenses and `SHA256SUMS.txt`.
+- [x] Document unsupported engine features and tested game build. Evidence: `research/capabilities.md` lists the tested build and the untested paths (story mode with AI partner, explosion/environment kills, stage id).

@@ -38,9 +38,22 @@ $PS scripts/deploy.ps1 -Mode uninstall >/dev/null 2>&1   # previous test install
 $PS scripts/deploy.ps1 -Mode install -Dll build/win32/adapters/re5/Release/dinput8.dll \
     -AdapterConfig "$ADAPTER" -ConfigDir "$CONTENT" || exit 1
 $PS scripts/gamectl.ps1 -Action launch
-sleep 30
-note "title -> mercenaries character select"
-keys "enter+2500,enter+5000,enter+4000,enter+2500,down,down,down,down,down,down+600,enter+3000,enter+3000,enter+3500,enter+3500"
+sleep 40
+[ -n "${PRE_COMMAND:-}" ] && { echo "$PRE_COMMAND" > "$DATA/dev.command"; sleep 2; note "dev command: $PRE_COMMAND -> $(grep -E 'dev command' "$LOG" | tail -1 | cut -c40-)"; }
+note "title -> play menu -> Los Mercenarios"
+keys "enter+2500,enter+5000,enter+4000,enter+2500,down,down,down,down,down,down+600,enter+3000"
+# Safety gate: entering The Mercenaries switches game mode 0 -> 2. If the
+# menu path drifted (e.g. an early key press), stop instead of sending more
+# keys into unknown menus such as system settings.
+if ! wait_count "game work mode 0 -> 2" 1 8; then
+    note "ABORT: not in The Mercenaries menu (mode did not switch); no further input sent"
+    cap 98-abort
+    $PS scripts/gamectl.ps1 -Action close >/dev/null; sleep 7; $PS scripts/gamectl.ps1 -Action reap >/dev/null
+    cp "$DATA/logs/"* "$OUT/" 2>/dev/null
+    $PS scripts/deploy.ps1 -Mode uninstall
+    exit 2
+fi
+keys "enter+3000,enter+3500,enter+3500"   # Iniciar -> Solo -> stage -> character select
 cap 01-charselect
 note "start run via F7 + Enter hotkey"
 keys "f7+900,enter+1200"

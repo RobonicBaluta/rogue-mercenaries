@@ -11,6 +11,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -390,6 +391,13 @@ void PollDevCommand(double now) {
             run.OnEnemyKilled(kill);
         }
         RM_LOGW("dev command force_complete: %d synthetic kills", remaining);
+    } else if (command.rfind("unlock ", 0) == 0 && !run.HasActiveRun()) {
+        // "unlock perk <id>" / "unlock weapon <id>": the same purchase path as the Unlocks panel.
+        std::istringstream words(command.substr(7));
+        std::string kind, id;
+        words >> kind >> id;
+        const auto receipt = run.PurchaseUnlock(kind == "weapon" ? rm::UnlockKind::Weapon : rm::UnlockKind::Perk, id);
+        RM_LOGW("dev command %s -> %s", command.c_str(), receipt.ok() ? "ok" : receipt.status().message.c_str());
     } else {
         RM_LOGW("dev command '%s' ignored in phase %s", command.c_str(), std::string(rm::PhaseName(run.phase())).c_str());
     }
@@ -479,7 +487,7 @@ private:
     }
 
     void PlayerHit(const PlayerHitResult& r) {
-        RM_LOGI("player_hit raw=%d applied=%d hp %d->%d/%d", r.rawDamage, r.appliedDamage, r.hpBefore, r.hpAfter,
+        RM_LOGD("player_hit raw=%d applied=%d hp %d->%d/%d", r.rawDamage, r.appliedDamage, r.hpBefore, r.hpAfter,
                 r.maxHp);
         if (r.appliedDamage <= 0) return;  // absorbed (developer invulnerability)
         std::lock_guard lock(g->mutex);
@@ -600,6 +608,48 @@ void DrawHud(const rm::RunSnapshot& s) {
     ImGui::End();
 }
 
+// Permanent progression: perks and weapons that need Credits before they can
+// appear in runs. Only content the adapter can actually support is listed.
+void DrawUnlocks() {
+    rm::RunController& run = *g->run;
+    const rm::Profile& profile = run.profile();
+    const auto& caps = run.capabilities();
+    struct Entry {
+        rm::UnlockKind kind;
+        std::string id;
+        std::string name;
+        std::string detail;
+        std::int64_t cost;
+    };
+    std::vector<Entry> entries;
+    for (const auto& perk : run.content().perks()) {
+        if (!perk.enabled || perk.unlock_cost_credits <= 0 || profile.unlocked_perks.count(perk.id) ||
+            !caps.HasAll(perk.requires_capabilities)) {
+            continue;
+        }
+        entries.push_back({rm::UnlockKind::Perk, perk.id, perk.name, perk.description, perk.unlock_cost_credits});
+    }
+    for (const auto& weapon : run.content().weapons()) {
+        if (!weapon.enabled || weapon.unlock_cost_credits <= 0 || profile.unlocked_weapons.count(weapon.id)) continue;
+        entries.push_back({rm::UnlockKind::Weapon, weapon.id, weapon.name, "weapon", weapon.unlock_cost_credits});
+    }
+    if (entries.empty()) return;
+    if (!ImGui::CollapsingHeader("Unlocks (Credits)")) return;
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        const auto& e = entries[i];
+        ImGui::PushID(static_cast<int>(i));
+        ImGui::BeginDisabled(profile.credits.balance() < e.cost);
+        if (ImGui::SmallButton(("Unlock " + std::to_string(e.cost)).c_str())) {
+            const auto receipt = run.PurchaseUnlock(e.kind, e.id);
+            Report(receipt.ok() ? rm::Status::Success() : receipt.status(), ("unlock " + e.id).c_str());
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s - %s", e.name.c_str(), e.detail.c_str());
+        ImGui::PopID();
+    }
+}
+
 void DrawIdle(const rm::RunSnapshot& s) {
     rm::RunController& run = *g->run;
     ImGui::Text("Credits: %lld", static_cast<long long>(s.credits));
@@ -621,7 +671,10 @@ void DrawIdle(const rm::RunSnapshot& s) {
         ImGui::PushID(static_cast<int>(i));
         const bool available = c.gate == rm::CharacterGate::Selectable;
         ImGui::BeginDisabled(!available);
-        ImGui::RadioButton(c.name.c_str(), &g->selectedCharacter, static_cast<int>(i));
+        char label[96];
+        std::snprintf(label, sizeof(label), "[%zu] %s", i + 1, c.name.c_str());
+        ImGui::RadioButton(label, &g->selectedCharacter, static_cast<int>(i));
+        if (available && DigitPressed(i)) g->selectedCharacter = static_cast<int>(i);
         ImGui::EndDisabled();
         if (c.gate == rm::CharacterGate::Locked) {
             ImGui::SameLine();
@@ -635,6 +688,7 @@ void DrawIdle(const rm::RunSnapshot& s) {
         }
         ImGui::PopID();
     }
+    DrawUnlocks();
     ImGui::SeparatorText("Run");
     ImGui::TextWrapped(
         "Pick the same character in The Mercenaries, then start a match. Each match is one arena: defeat the "

@@ -26,6 +26,33 @@ ResetFn g_origReset = nullptr;
 SwapPresentFn g_origSwapPresent = nullptr;
 thread_local bool t_inPresent = false;
 
+LONGLONG QpcNow() {
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    return now.QuadPart;
+}
+
+// Time the mod adds to each presented frame (core tick + overlay), logged as
+// average and worst case every 600 frames.
+void RecordModFrameCost(LONGLONG ticks) {
+    static LONGLONG frequency = [] {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        return f.QuadPart;
+    }();
+    static double sumUs = 0.0;
+    static double maxUs = 0.0;
+    static int frames = 0;
+    const double us = static_cast<double>(ticks) * 1e6 / static_cast<double>(frequency);
+    sumUs += us;
+    maxUs = us > maxUs ? us : maxUs;
+    if (++frames == 600) {
+        RM_LOGI("perf: mod cost per frame avg %.1f us, max %.1f us (600 frames)", sumUs / frames, maxUs);
+        sumUs = maxUs = 0.0;
+        frames = 0;
+    }
+}
+
 HRESULT STDMETHODCALLTYPE PresentDetour(IDirect3DDevice9* device, const RECT* src, const RECT* dst, HWND window,
                                          const RGNDATA* dirty) {
     if (!t_inPresent) {
@@ -33,8 +60,10 @@ HRESULT STDMETHODCALLTYPE PresentDetour(IDirect3DDevice9* device, const RECT* sr
         if (++g_status.presents % 600 == 1) {
             RM_LOGD("present heartbeat %llu ticks %llu (device Present)", g_status.presents, g_status.ticks);
         }
+        const LONGLONG start = QpcNow();
         TickGame("present");
         overlay::OnPresent(device);
+        RecordModFrameCost(QpcNow() - start);
         t_inPresent = false;
     }
     return g_origPresent(device, src, dst, window, dirty);

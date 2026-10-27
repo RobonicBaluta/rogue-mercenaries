@@ -12,6 +12,10 @@ param(
     # Content configs to install (default: the repo's configs folder).
     [string]$ConfigDir = '',
 
+    # Install the contents of a release ZIP (dist\RogueMercenaries-*.zip) instead
+    # of build outputs; tests the player-facing package.
+    [string]$FromZip = '',
+
     [string]$GameDir = 'G:\SteamLibrary\steamapps\common\Resident Evil 5'
 )
 
@@ -46,6 +50,15 @@ switch ($Mode) {
     }
     'install' {
         if (Read-Manifest) { throw "Already installed per $manifestPath; uninstall first." }
+        if ($FromZip) {
+            $unpacked = Join-Path $repoRoot 'build\package-test'
+            if (Test-Path -LiteralPath $unpacked) { Remove-Item -LiteralPath $unpacked -Recurse -Force }
+            Expand-Archive -LiteralPath $FromZip -DestinationPath $unpacked
+            $payload = Join-Path $unpacked 'copy-into-game-folder'
+            $Dll = Join-Path $payload 'dinput8.dll'
+            $ConfigDir = Join-Path $payload 'RogueMercenaries\configs'
+            if (-not $AdapterConfig) { $AdapterConfig = Join-Path $payload 'RogueMercenaries\adapter.json' }
+        }
         if (-not $Dll) {
             foreach ($candidate in @('build\win32\adapters\re5\Release\dinput8.dll', 'build\adapter-diag\Release\dinput8.dll')) {
                 $full = Join-Path $repoRoot $candidate
@@ -59,23 +72,31 @@ switch ($Mode) {
         if (Test-Path -LiteralPath $modDir) { throw "$modDir exists without a manifest; refusing." }
 
         $files = @()
-        Copy-Item -LiteralPath $Dll -Destination $targetDll
-        $files += [pscustomobject]@{ path = $targetDll; sha256 = Get-Hash $targetDll }
-        $configSrc = if ($ConfigDir) { $ConfigDir } else { Join-Path $repoRoot 'configs' }
         $configDst = Join-Path $modDir 'configs'
-        New-Item -ItemType Directory -Force -Path $configDst | Out-Null
-        if (Test-Path -LiteralPath $configSrc) {
-            Get-ChildItem -LiteralPath $configSrc -Filter '*.json' -File | Where-Object { $_.Name -notlike 'adapter*.json' } | ForEach-Object {
-                $dst = Join-Path $configDst $_.Name
-                Copy-Item -LiteralPath $_.FullName -Destination $dst
-                $files += [pscustomobject]@{ path = $dst; sha256 = Get-Hash $dst }
+        try {
+            Copy-Item -LiteralPath $Dll -Destination $targetDll
+            $files += [pscustomobject]@{ path = $targetDll; sha256 = Get-Hash $targetDll }
+            $configSrc = if ($ConfigDir) { $ConfigDir } else { Join-Path $repoRoot 'configs' }
+            New-Item -ItemType Directory -Force -Path $configDst | Out-Null
+            if (Test-Path -LiteralPath $configSrc) {
+                Get-ChildItem -LiteralPath $configSrc -Filter '*.json' -File | Where-Object { $_.Name -notlike 'adapter*.json' } | ForEach-Object {
+                    $dst = Join-Path $configDst $_.Name
+                    Copy-Item -LiteralPath $_.FullName -Destination $dst
+                    $files += [pscustomobject]@{ path = $dst; sha256 = Get-Hash $dst }
+                }
             }
-        }
-        if (-not $AdapterConfig) { $AdapterConfig = Join-Path $repoRoot 'configs\adapter.json' }
-        if (Test-Path -LiteralPath $AdapterConfig) {
+            if (-not $AdapterConfig) { $AdapterConfig = Join-Path $repoRoot 'configs\adapter.json' }
+            if (-not (Test-Path -LiteralPath $AdapterConfig)) { throw "adapter config not found: $AdapterConfig" }
             $dst = Join-Path $modDir 'adapter.json'
             Copy-Item -LiteralPath $AdapterConfig -Destination $dst
             $files += [pscustomobject]@{ path = $dst; sha256 = Get-Hash $dst }
+        } catch {
+            # All-or-nothing: remove whatever this attempt copied, then report.
+            foreach ($f in $files) { Remove-Item -LiteralPath $f.path -ErrorAction SilentlyContinue }
+            foreach ($d in @($configDst, $modDir)) {
+                if ((Test-Path -LiteralPath $d) -and -not (Get-ChildItem -LiteralPath $d -Force)) { Remove-Item -LiteralPath $d }
+            }
+            throw "install failed and was rolled back: $_"
         }
         $manifest = [pscustomobject]@{
             installed = (Get-Date).ToString('o')

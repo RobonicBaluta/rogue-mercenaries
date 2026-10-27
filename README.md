@@ -56,24 +56,19 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
 
 While the menu is open the game receives no input. The mouse works too, and so do the arrow keys with Space.
 
-## Tests that need a human (a few minutes each)
+## What still needs a human
 
-These can't be automated, because the game window needs keyboard focus. Install with `adapter.test.json` (above) first.
+Already verified in game by automation (2026-10-27):
+- the combat hooks (T1);
+- the three-arena loop (T2);
+- death, unlocks, diagnostics export and crash recovery.
 
-**T1 — combat hooks (≈5 min).** In a Mercenaries match after **Start run**:
-1. Kill about 5 enemies with your handgun.
-2. Let enemies hit you 2–3 times.
-3. Press F7, then **Developer → Export diagnostics**, and quit.
+Automated aiming is blind, so these still need a person:
+1. **Feel and balance:** play one normal run (default content: 20–38 kills per arena) with Chris. Say whether the kill targets, the 90 s countdown hold and the reward pacing feel right.
+2. **Sheva:** start a run as Sheva in Mercenaries and clear one arena.
+3. **Story mode (optional):** start a chapter, then F7 → Start run → **Begin arena now (dev, any mode)**. Requires `developer_mode`, e.g. install with `adapter.test.json`. Do a few kills, and check that only *your* kills count, not Sheva's.
 
-If The Mercenaries is locked, start a story chapter and use F7 → **Begin arena now (dev, any mode)** instead.
-- **Expected:** *Enemies left* drops by one per kill; perk toasts appear.
-- **Evidence:** `%LOCALAPPDATA%\RogueMercenaries\logs\adapter.log` contains `enemy_hit ... local=1 ... killed=1` and `player_hit` lines, and `rm_events.jsonl` contains `enemy_killed` and `player_damaged`. The diagnostics ZIP is `%LOCALAPPDATA%\RogueMercenaries\rogue-mercenaries-diagnostics.zip`.
-
-**T2 — three-arena loop (≈15 min).** Play one run through all three arenas: Retry after each reward/shop/route selection.
-- **Expected:** after each kill target the match ends by itself, and the next match begins arena 2 and then 3. At the end, the F7 menu shows banked Credits.
-- **Evidence:** `rm_events.jsonl` has three `arena_completed` events and one `run_ended`.
-
-Send back the diagnostics ZIP, or the `logs` folder, plus one sentence on what you saw.
+Install with `adapter.test.json` to get the developer section and detailed logs. Afterwards send F7 → Developer → **Export diagnostics** (`%LOCALAPPDATA%\RogueMercenaries\rogue-mercenaries-diagnostics.zip`) and a sentence on how it felt.
 
 ## Developer automation
 
