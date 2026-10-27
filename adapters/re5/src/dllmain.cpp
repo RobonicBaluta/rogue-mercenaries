@@ -10,6 +10,8 @@
 #include "engine.h"
 #include "hooks.h"
 #include "log.h"
+#include "menu_probe.h"
+#include "native_menu.h"
 #include "mod.h"
 #include "overlay.h"
 #include "probe.h"
@@ -88,6 +90,12 @@ DWORD WINAPI Worker(LPVOID) {
     } else if (engine::Caps().buildIdentity) {
         InstallCombatHooks();
         InstallMercHooks();
+    }
+    if (settings.nativeMenu && engine::Caps().buildIdentity) {
+        nativemenu::Install();
+    }
+    if (settings.developerMode && settings.devMenuProbe && engine::Caps().buildIdentity) {
+        menuprobe::Install();
     }
     // Enable everything in one batch: MinHook suspends every thread per apply,
     // and repeated suspensions coincided with silent clean exits of the game.

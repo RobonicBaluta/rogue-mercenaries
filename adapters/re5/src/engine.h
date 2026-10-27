@@ -21,6 +21,7 @@ struct Verified {
     bool hitAttacker = false;
     bool gameWork = false;   // mode/stage/merc timer layout
     bool mercCountdown = false;
+    bool playMenu = false;  // native "Rogue Mercenaries" entry in the Play menu
 };
 const Verified& Caps();
 

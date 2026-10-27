@@ -63,6 +63,21 @@ Hook design: `OnHit` records HP before/after and the attacker in a thread-local 
 | Mercenaries timer | `float` seconds at game work `+0x680` | verified-static: `0x00718050` adds bonus seconds to it (`AddTime(int)`), sets `+0x688` (bonus) and `+0x68C` (popup flag) |
 | Mercenaries score | `int32` game work `+0x6B4` | hypothesis (trainer pointer path, not yet observed) |
 
+## Menus and messages (verified-runtime, 2026-10-27)
+
+Found with the developer menu probe (`dev.menu_probe`: hooks `move()`, vtable slot 6, of every `uId*` class under `uIdBase`), byte diffs while navigating, and static disassembly.
+
+| Fact | Value | Status |
+|---|---|---|
+| Play menu | `uIdStartUp01` (vtable `0x00FA89B0`); `move` `0x00A396C0`, init `0x00A39560`, draw `0x00A373B0` (called from inside `move`) | verified-runtime |
+| Play menu fields | `+0x14` state (u8, 2 = input; decide sets 3 → 90 → 91 → 92 within the same `move`), `+0x48` cursor, `+0x190` item count (8 Gold, 7 without Extra Content, 3 trial), `+0x194` enabled mask (copied from game work `+0x20` each `move`; a clear bit tints the row red), `+0x18C` row-0 variant (1/2 = "NUEVA PARTIDA") | verified-runtime |
+| Row layout | label y = (item + 3) × 50 at x 640 on a 1280×720 canvas; help line `DrawHelp(msg, 570)` at `0x00A17CF0`; row text `DrawMenuText(msg, x, y, argb*, scale)` at `0x00A17660` (ignores `ecx`) | verified-runtime |
+| Item → message | label table `0x01131D90` (item 8 → 936 "NUEVA PARTIDA"), help table `0x01131D78`. Row 0 reads label/help cell 8 when `+0x18C` = 1, so these cells are shared | verified-static |
+| Decide | `[[0x01249C40]+0x5B4] & 0x009E3420(-1, -1)`; `move` checks decide before navigation; on decide the game writes the item to game work `+0x1C` and re-opens the menu on it | verified-runtime |
+| Mouse | `sId` (`[0x011B20C4]`) hit-tests registered row areas (`0x007B5870`); only the game's own 8 rows have areas | verified-runtime |
+| Messages | `sMessage` `[0x011B26F0]`; `+0x11534` → `rMessage` for `etc\message\mes_system_<lang>` (type CRC `0x10C460E6`, path at `+4`, per-message pointer table at `+0x60`, raw MSG2 file at `+0x64` with u16 count at `+0x1C`: 2612) | verified-runtime |
+| MSG2 text | u16 pairs (glyph, width); end (0, 0x0401), line break (0, 0x0403). Latin font: `A`=0x38, `a`=0x6C (+2 per letter), space 0x1C, `,` 0x24, `.` 0x26. Widths are identical across messages | verified-runtime |
+
 ## Rendering and input (verified-runtime, 2026-10-27)
 
 - `IDirect3DDevice9::Present` is called on the game's main thread, the same thread that polls DirectInput (`t31988` / `t57312` in run logs), at ~120 Hz on the title screen with VSync on.

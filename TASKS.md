@@ -70,6 +70,13 @@ See `research/capabilities.md` (per-capability evidence) and `research/re5-engin
   - Route tiers 1–3 with reward multipliers and curses; the tier-3 Ruins Gauntlet with Curse: Frailty was played in game.
   - Perk/weapon unlocks spend Credits (Unlocks panel; in game `unlock perk field_medic -> ok`).
   - Character unlocks are in the panel. Jill and Wesker stay disabled until verified in game.
+- [x] Native "ROGUE MERCENARIES" entry in the game's Play menu. Evidence (in game, 2026-10-27, `build/shots/final_menu.png`, `final_match.png`):
+  - the row renders, highlights and is navigated by the game itself, with its own help line;
+  - decide opens the game's Mercenaries screen, and the match auto-starts the run (`decide on row 8 of 9` → `ROGUE MERCENARIES chosen` → `start run (chris): ok` → `begin arena: ok`);
+  - backing out to the Play menu cancels the choice, and plain LOS MERCENARIOS in the same session stays vanilla (`decide on row 6 of 9`, match with no run);
+  - row 0 ("CONTINUAR"/"NUEVA PARTIDA") is untouched.
+  - Not verified: other game languages; the trial-menu variant (left vanilla by design).
+  - Open question: one unexplained "chosen" after a back-out (cursor read 8 while row 6 had been drawn a second earlier), not reproduced in 4 attempts with cursor logging.
 - [ ] Add additional arenas only after repeatability and softlock checks. All Mercenaries stages should work (the arena is tied to the match, not the map), but only Public Assembly has been played.
 
 ## Phase 5 — Stabilization/release

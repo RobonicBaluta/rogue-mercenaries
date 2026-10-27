@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstring>
 #include <deque>
 #include <filesystem>
 #include <fstream>
@@ -16,11 +17,15 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "engine.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "log.h"
+#include "memory.h"
+#include "menu_probe.h"
+#include "native_menu.h"
 #include "mod.h"
 #include "overlay.h"
 #include "probe.h"
@@ -146,6 +151,9 @@ struct ModState {
     // Set when any mod code threw; the game keeps running with vanilla rules.
     std::atomic<bool> disabled{false};
     std::string disabledReason;
+    // Set when the player picks ROGUE MERCENARIES in the Play menu: the next
+    // Mercenaries match starts a run with the character chosen in game.
+    bool rogueModePending = false;
     // Developer UI demo (settings.uiDemo): scripted run on a sandbox profile.
     double demoStart = -1.0;
     int demoStep = 0;
@@ -234,6 +242,41 @@ void ObserveMatch(double now) {
         RM_LOGI("match %s (mode=%d stage=%d timer=%.1f local=%s)", m.inMatch ? "detected" : "ended", m.mode,
                 m.stage, m.timer, m.localClass.c_str());
     }
+}
+
+// Native menu flow: the run starts with the match, using the character the
+// player picked in the game's own character select.
+void HandleNativeMenu(double now) {
+    if (nativemenu::TakeChosen()) {
+        g->rogueModePending = true;
+        g->toasts.Push("Rogue Mercenaries: choose Solo, a stage and Chris or Sheva");
+    }
+    if (!g->rogueModePending) return;
+    rm::RunController& run = *g->run;
+    if (nativemenu::MenuAtInput() && run.phase() == rm::Phase::Idle && run.state().arena_index == 0) {
+        g->rogueModePending = false;  // backed out to the Play menu
+        return;
+    }
+    if (!g->match.inMatch) return;
+    g->rogueModePending = false;
+    if (run.HasActiveRun()) return;  // continue the run already in progress
+    if (g->match.localCharacter.empty()) {
+        g->toasts.Push("Rogue Mercenaries: this character is not supported");
+        return;
+    }
+    LARGE_INTEGER counter;
+    QueryPerformanceCounter(&counter);
+    const auto seed = static_cast<std::uint64_t>(counter.QuadPart) ^ 0x9E3779B97F4A7C15ull;
+    const rm::Status status = run.StartRun(g->match.localCharacter, seed);
+    Report(status, ("start run (" + g->match.localCharacter + ")").c_str());
+    if (!status.ok()) {
+        g->toasts.Push("Rogue Mercenaries: " + status.message);
+        return;
+    }
+    for (const auto& perk : g->settings.devGrantPerks) {
+        Report(run.DevGrantPerk(perk), ("dev grant " + perk).c_str());
+    }
+    (void)now;
 }
 
 void TryBeginArena(double now) {
@@ -391,6 +434,71 @@ void PollDevCommand(double now) {
             run.OnEnemyKilled(kill);
         }
         RM_LOGW("dev command force_complete: %d synthetic kills", remaining);
+    } else if (command.rfind("poke ", 0) == 0 || command.rfind("peek ", 0) == 0) {
+        // "poke <hex address> <hex dword>" / "peek <hex address>": raw dword access for
+        // reverse-engineering experiments (developer mode only, logged).
+        std::istringstream words(command.substr(5));
+        std::string addressText, valueText;
+        words >> addressText >> valueText;
+        const auto address = static_cast<std::uintptr_t>(std::strtoul(addressText.c_str(), nullptr, 16));
+        if (command[1] == 'o' && !valueText.empty()) {
+            const auto value = static_cast<std::uint32_t>(std::strtoul(valueText.c_str(), nullptr, 16));
+            RM_LOGW("dev poke %08X = %08X -> %s", static_cast<unsigned>(address), value,
+                    SafeStore(address, value) ? "ok" : "failed");
+        } else {
+            std::uint32_t value = 0;
+            const bool ok = SafeRead(address, value);
+            RM_LOGW("dev peek %08X = %08X (%s)", static_cast<unsigned>(address), value, ok ? "ok" : "unreadable");
+        }
+    } else if (command.rfind("dump ", 0) == 0) {
+        // "dump <hex address> <dword count>": logs dwords and the object's DTI class.
+        std::istringstream words(command.substr(5));
+        std::string addressText;
+        int count = 16;
+        words >> addressText >> count;
+        const auto address = static_cast<std::uintptr_t>(std::strtoul(addressText.c_str(), nullptr, 16));
+        RM_LOGW("dev dump %08X class=%s", static_cast<unsigned>(address), engine::ClassName(address).c_str());
+        for (int i = 0; i < count && i < 256; i += 4) {
+            std::uint32_t v[4]{};
+            for (int k = 0; k < 4; ++k) SafeRead(address + (i + k) * 4, v[k]);
+            RM_LOGW("  +%03X: %08X %08X %08X %08X", i * 4, v[0], v[1], v[2], v[3]);
+        }
+    } else if (command.rfind("find ", 0) == 0) {
+        // "find <hex bytes>": scans committed readable memory for a byte pattern.
+        std::vector<unsigned char> pattern;
+        std::istringstream words(command.substr(5));
+        std::string byte;
+        while (words >> byte) pattern.push_back(static_cast<unsigned char>(std::strtoul(byte.c_str(), nullptr, 16)));
+        int hits = 0;
+        MEMORY_BASIC_INFORMATION mbi;
+        for (std::uintptr_t a = 0x10000; !pattern.empty() && a < 0x7FFE0000 && hits < 24; a += mbi.RegionSize) {
+            if (!VirtualQuery(reinterpret_cast<void*>(a), &mbi, sizeof(mbi))) break;
+            const DWORD readable = PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE |
+                                   PAGE_WRITECOPY;
+            if (mbi.State != MEM_COMMIT || !(mbi.Protect & readable) || (mbi.Protect & PAGE_GUARD)) continue;
+            // Fixed-size chunks (overlapping by the pattern length): regions can be
+            // hundreds of MB, more than a 32-bit process can allocate at once.
+            constexpr std::size_t kChunk = 1 << 20;
+            static std::vector<unsigned char> buffer(kChunk + 256);
+            const auto base = reinterpret_cast<std::uintptr_t>(mbi.BaseAddress);
+            for (std::size_t offset = 0; offset < mbi.RegionSize && hits < 24; offset += kChunk) {
+                const std::size_t size = std::min<std::size_t>(mbi.RegionSize - offset, kChunk + pattern.size() - 1);
+                if (size < pattern.size() || !SafeCopy(buffer.data(), base + offset, size)) continue;
+                for (std::size_t i = 0; i + pattern.size() <= size && hits < 24; ++i) {
+                    if (buffer[i] == pattern[0] && std::memcmp(buffer.data() + i, pattern.data(), pattern.size()) == 0) {
+                        RM_LOGW("dev find hit %08X", static_cast<unsigned>(base + offset + i));
+                        ++hits;
+                    }
+                }
+            }
+        }
+        RM_LOGW("dev find: %d hits for %zu bytes", hits, pattern.size());
+    } else if (command == "menu_snapshot") {
+        menuprobe::Snapshot();
+    } else if (command == "menu_diff") {
+        menuprobe::Diff();
+    } else if (command == "menu_list") {
+        RM_LOGW("live menu screens: %s", menuprobe::Describe().c_str());
     } else if (command.rfind("unlock ", 0) == 0 && !run.HasActiveRun()) {
         // "unlock perk <id>" / "unlock weapon <id>": the same purchase path as the Unlocks panel.
         std::istringstream words(command.substr(7));
@@ -502,12 +610,15 @@ private:
 
     void Tick() {
         probe::OnGameTick();
+        if (g->settings.devMenuProbe) menuprobe::OnGameTick();
         std::lock_guard lock(g->mutex);
         const double now = Now();
         ObserveMatch(now);
+        nativemenu::OnGameTick();
         if (g->settings.uiDemo) {
             DriveUiDemo(now);
         } else {
+            HandleNativeMenu(now);
             TryBeginArena(now);
         }
         DriveArena(now);
@@ -599,8 +710,11 @@ void DrawHud(const rm::RunSnapshot& s) {
         if (s.phase != rm::Phase::ArenaActive) {
             ImGui::TextDisabled("F7: open run menu");
         }
+    } else if (g->rogueModePending) {
+        ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.4f, 1.0f), "ROGUE MERCENARIES");
+        ImGui::TextDisabled("Solo, any stage, Chris or Sheva - the run starts with the match");
     } else {
-        ImGui::TextDisabled("Rogue Mercenaries - F7 to start a run");
+        ImGui::TextDisabled("Rogue Mercenaries - Play menu or F7");
     }
     for (const auto& toast : g->toasts.Active()) {
         ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.4f, 1.0f), "%s", toast.text.c_str());
@@ -691,8 +805,9 @@ void DrawIdle(const rm::RunSnapshot& s) {
     DrawUnlocks();
     ImGui::SeparatorText("Run");
     ImGui::TextWrapped(
-        "Pick the same character in The Mercenaries, then start a match. Each match is one arena: defeat the "
-        "required enemies, pick a reward, shop, choose the next route and press Retry.");
+        "Easiest: choose ROGUE MERCENARIES in the game's Play menu - the run starts with your first match. "
+        "Or start a run here, then pick the same character in The Mercenaries. Each match is one arena: defeat "
+        "the required enemies, pick a reward, shop and choose the next route.");
     static char seedText[24] = "";
     ImGui::SetNextItemWidth(200.0f);
     ImGui::InputTextWithHint("Seed (optional)", "random", seedText, sizeof(seedText),

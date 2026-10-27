@@ -39,6 +39,10 @@ struct Settings {
     float devIncomingMultiplier = 1.0f;
     // Perks granted (under normal rules) right after a run starts.
     std::vector<std::string> devGrantPerks;
+    // Hooks every menu screen (uId*) to log which ones are live.
+    bool devMenuProbe = false;
+    // Adds ROGUE MERCENARIES to the game's Play menu.
+    bool nativeMenu = true;
     // Mercenaries timer handling while an arena is active:
     //   "hold"  keeps the countdown at or above timerHoldSeconds
     //   "game"  leaves the game's own countdown alone

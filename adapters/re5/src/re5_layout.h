@@ -38,6 +38,28 @@ constexpr std::uintptr_t kFnMercAddTime = 0x00718050;     // void ?::MercAddTime
 // time-up state [this+0x4D4] = 1 at zero (or at the 150/400 kill cap) and
 // mirrors the value into game work +0x680. Called once per frame in a match.
 constexpr std::uintptr_t kFnMercUpdateCountdown = 0x00717850;
+// Play menu screen (uIdStartUp01) per-frame move, and the menu input query
+// (__stdcall int(int pad, int mode)) it calls first.
+constexpr std::uintptr_t kFnPlayMenuMove = 0x00A396C0;
+constexpr std::uintptr_t kFnMenuInput = 0x009E3420;
+// Play menu row/help draw, called from inside its move(); reads the enabled mask.
+constexpr std::uintptr_t kFnPlayMenuDraw = 0x00A373B0;
+// void DrawMenuText(int message, int x, int y, const uint32_t* argb, float scale)
+// (ret 0x14, ignores ecx): draws one menu row label.
+constexpr std::uintptr_t kFnMenuDrawLabel = 0x00A17660;
+// void uIdMenu::DrawHelp(int message, int y): help line under a menu, shared by
+// most uId* screens. The Play menu draws rows at y = (item + 3) * 50 and its
+// help at y = 570, which a ninth row (y = 550) would sit under.
+constexpr std::uintptr_t kFnMenuDrawHelp = 0x00A17CF0;
+constexpr int kPlayMenuHelpY = 570;
+constexpr int kPlayMenuFirstRowY = 150;
+constexpr int kPlayMenuRowPitch = 50;
+constexpr std::uintptr_t kPadInstance = 0x01249C40;
+constexpr std::uintptr_t kSMessageInstance = 0x011B26F0;
+// Message ids: Play menu item 8 shows label 936 ("NUEVA PARTIDA") through the
+// item->label table at 0x01131D90. Row 0 reads the same table cell when it
+// turns into "NUEVA PARTIDA", so 936 itself must not be redirected.
+constexpr int kMessageItem8Label = 936;
 }  // namespace addr
 
 namespace off {
@@ -68,6 +90,20 @@ constexpr std::size_t kMercScore = 0x6B4;     // int32 (from the 2021 trainer's 
 // Mercenaries match object (`this` of kFnMercUpdateCountdown)
 constexpr std::size_t kMercCountdown = 0x4DC;  // float seconds remaining (authoritative)
 constexpr std::size_t kMercState = 0x4D4;      // int32: 0 running, 1 time up / finished
+// Play menu (uIdStartUp01: CONTINUAR ... CONTENIDO EXTRA)
+constexpr std::size_t kMenuState = 0x14;       // uint8 state machine; 2 = waiting for input
+constexpr std::size_t kMenuCursor = 0x48;      // int32 selected item
+constexpr std::size_t kMenuItemCount = 0x190;  // int32: 7, or 8 with "Contenido extra"
+constexpr std::size_t kMenuEnabledMask = 0x194; // uint32 bit per item; clear bits draw red
+// Pad singleton: decide-button mask for the menu input bits.
+constexpr std::size_t kPadDecideMask = 0x5B4;
+// sMessage -> rMessage for etc\message\mes_system_<lang>
+constexpr std::size_t kMessageSystemSlot = 0x11534;
+constexpr std::size_t kRMessagePath = 0x04;    // char[] resource path
+constexpr std::size_t kRMessageTypeCrc = 0x5C; // 0x10C460E6 for rMessage
+constexpr std::size_t kRMessageTable = 0x60;   // const uint16_t** per-message pointers
+constexpr std::size_t kRMessageData = 0x64;    // raw MSG2 file: "MSG2" magic, u16 count at +0x1C
+constexpr std::size_t kMsg2Count = 0x1C;
 // MtObject
 constexpr std::size_t kVtableGetDti = 0x10;  // vtable slot 4
 // MtDTI
@@ -96,6 +132,21 @@ inline constexpr Signature kSignatures[] = {
     {"splayer_get_player", 0x007E6220, "8B 44 24 04 83 F8 FF 7F 05 33 C0 C2 04 00 83 F8 04 7D F6 8B 44 81 24"},
     // uEnemy::ApplyDamage calls the SubHp virtual (+0x114) that the base hook covers.
     {"enemy_apply_damage_subhp", 0x009DEB02, "8B 06 8B 90 14 01 00 00 57 8B CE"},
+    // Play menu: move entry, decide-mask test, cursor/count use, label table.
+    {"playmenu_move", addr::kFnPlayMenuMove, "53 56 57 6A FF 6A FF 8B F1 E8 52 9D FA FF 8B F8"},
+    {"playmenu_decide_mask", 0x00A39745, "8B 0D 40 9C 24 01 85 B9 B4 05 00 00"},
+    {"playmenu_cursor_count", 0x00A397A2, "8B 86 90 01 00 00 8B 4E 48 50 51 8B"},
+    {"playmenu_label_table", 0x01131D90, "A9 03 AA 03 AB 03 AD 03 AC 03 B0 03 AF 03 AE 03 A8 03"},
+    {"menu_input", addr::kFnMenuInput, "A1 A4 40 23 01 80 B8 28 04 01 00 00 74 05 33 C0 C2 08 00"},
+    {"smessage_get_dti", 0x007E06E0, "B8 F4 26 1B 01 C3"},
+    {"playmenu_draw", addr::kFnPlayMenuDraw, "83 EC 0C 56 57 8B F1 E8 C4 C3 FA FF 33 FF 39 BE 90 01 00 00"},
+    // Row y = (item + 3) * 50, then `push 640; push label; mov ecx, esi; call DrawMenuText`.
+    {"playmenu_row_y", 0x00A373D2, "8D 5F 03 6B DB 32"},
+    {"playmenu_label_call", 0x00A374D4, "68 80 02 00 00 55 8B CE E8 7F 01 FE FF"},
+    {"menu_draw_label", addr::kFnMenuDrawLabel, "8B 44 24 04 8B 54 24 10 F3 0F 10 44 24 14 F3 0F 59 05 14 2E"},
+    {"menu_draw_help", addr::kFnMenuDrawHelp, "51 8B 51 78 69 D2 FF 00 00 00 B8 39 8E E3 38 F7 EA"},
+    // Play menu draw: `push 570; push eax; mov ecx, esi; call DrawHelp`.
+    {"playmenu_help_call", 0x00A37566, "68 3A 02 00 00 50 8B CE E8 7D 07 FE FF"},
     // getDTI stubs prove the DTI addresses above.
     {"splayer_get_dti", 0x007EA880, "B8 E0 27 1B 01 C3"},
     {"uplayer_get_dti", 0x00B7F080, "B8 D8 31 20 01 C3"},

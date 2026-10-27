@@ -43,10 +43,11 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
 
 ## Playing
 
-1. Launch RE5 from Steam. Top right shows *Rogue Mercenaries – F7 to start a run*.
-2. Go to **The Mercenaries → Solo**. Pick Chris or Sheva and a stage.
-3. Press **F7**, select the same character and press **Enter** (Start run). The menu closes by itself.
-4. Start the match. The HUD shows *Enemies left*. The Mercenaries countdown is held at 90 s, so the kill target decides the arena.
+1. Launch RE5 from Steam. Top right shows *Rogue Mercenaries – Play menu or F7*.
+2. In the game's **Play** menu choose **ROGUE MERCENARIES**, the last row (Up from the first row gets there). This opens the game's own Mercenaries screen.
+3. Choose **Solo**, a stage, and Chris or Sheva. Going back to the Play menu cancels the choice.
+   *Without the menu row:* go to **The Mercenaries → Solo**, press **F7**, select the same character and press **Enter** (Start run).
+4. The run starts with the match. The HUD shows *Enemies left*. The Mercenaries countdown is held at 90 s, so the kill target decides the arena.
 5. When the target is reached the match ends. The menu opens on the results screen:
    - **Enter** — continue;
    - **1–3** — take a reward;
@@ -55,6 +56,11 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
 6. Accept the game's results and start the next match (pick a stage and character again) to begin the next arena. After arena 3 the run ends and its Credits are banked.
 
 While the menu is open the game receives no input. The mouse works too, and so do the arrow keys with Space.
+
+About the Play menu row:
+- it appears only with Latin-alphabet game languages; with Japanese, Chinese or Russian text use F7;
+- reach it with the keyboard or a gamepad, because mouse hover does not select it;
+- set `"native_menu": false` in `adapter.json` to turn it off.
 
 ## What still needs a human
 

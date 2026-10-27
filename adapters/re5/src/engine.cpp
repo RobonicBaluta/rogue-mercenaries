@@ -92,6 +92,13 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.hitAttacker = SignatureOk("hit_get_attacker");
     g_caps.gameWork = SignatureOk("merc_add_time") && SignatureOk("merc_timer_store");
     g_caps.mercCountdown = g_caps.gameWork && SignatureOk("merc_update_countdown");
+    g_caps.playMenu = SignatureOk("playmenu_move") && SignatureOk("playmenu_decide_mask") &&
+                      SignatureOk("playmenu_cursor_count") && SignatureOk("playmenu_label_table") &&
+                      SignatureOk("menu_input") && SignatureOk("smessage_get_dti") &&
+                      SignatureOk("playmenu_draw") && SignatureOk("playmenu_row_y") &&
+                      SignatureOk("playmenu_label_call") && SignatureOk("menu_draw_label") &&
+                      SignatureOk("menu_draw_help") &&
+                      SignatureOk("playmenu_help_call");
     return all;
 }
 

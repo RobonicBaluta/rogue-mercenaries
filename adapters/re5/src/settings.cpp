@@ -47,6 +47,7 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
         settings.timerPolicy = json.value("timer_policy", settings.timerPolicy);
         settings.timerHoldSeconds = json.value("timer_hold_seconds", settings.timerHoldSeconds);
         settings.endMatchOnClear = json.value("end_match_on_clear", settings.endMatchOnClear);
+        settings.nativeMenu = json.value("native_menu", settings.nativeMenu);
         if (json.contains("dev")) {
             const auto& dev = json["dev"];
             settings.probeIntervalMs = dev.value("probe_interval_ms", settings.probeIntervalMs);
@@ -61,6 +62,7 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
             settings.devOutgoingMultiplier = dev.value("outgoing_multiplier", settings.devOutgoingMultiplier);
             settings.devIncomingMultiplier = dev.value("incoming_multiplier", settings.devIncomingMultiplier);
             settings.devGrantPerks = dev.value("grant_perks", settings.devGrantPerks);
+            settings.devMenuProbe = dev.value("menu_probe", settings.devMenuProbe);
         }
     } catch (const std::exception& e) {
         if (error) {

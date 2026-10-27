@@ -47,11 +47,12 @@ INSTALL
      re5dx9.exe (Steam: right-click RE5 > Manage > Browse local files).
      If a dinput8.dll is already there, it belongs to another mod: keep a copy of it,
      as only one dinput8.dll can be installed at a time.
-  3. Start the game from Steam. "Rogue Mercenaries - F7 to start a run" appears top right.
+  3. Start the game from Steam. "Rogue Mercenaries - Play menu or F7" appears top right.
 
 PLAY
-  The Mercenaries > Solo > pick Chris or Sheva and a stage. Press F7, choose the same
-  character, Start run (Enter), F7 to close. Start the match: each match is one arena.
+  Play menu > ROGUE MERCENARIES (last row) > Solo > pick a stage and Chris or Sheva.
+  The run starts with the match; each match is one arena. With Japanese, Chinese or
+  Russian game text: The Mercenaries > Solo, then F7 > Start run (same character).
   Clear the kill target, pick a reward (1-3), shop (digits buy, Enter leaves), choose
   the next route (digit). Then start the next match. Three arenas make a run;
   Credits are kept for unlocks.
