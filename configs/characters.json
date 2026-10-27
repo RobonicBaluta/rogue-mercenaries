@@ -1,0 +1,46 @@
+{
+  "_comment": "Playable characters. enabled=false entries are reserved until the adapter supports them; they can be neither selected nor unlocked.",
+  "schema_version": 1,
+  "characters": [
+    {
+      "id": "chris",
+      "name": "Chris Redfield",
+      "enabled": true,
+      "starting_weapons": ["m92f", "ithaca_m37"],
+      "starting_passive": "chris_veteran",
+      "skill_pool": ["boulder_puncher"],
+      "exclusive_mechanic": "",
+      "unlock_cost_credits": 0
+    },
+    {
+      "id": "sheva",
+      "name": "Sheva Alomar",
+      "enabled": true,
+      "starting_weapons": ["h_and_k_p8", "vz61"],
+      "starting_passive": "sheva_field_training",
+      "skill_pool": ["sheva_marksman"],
+      "exclusive_mechanic": "",
+      "unlock_cost_credits": 0
+    },
+    {
+      "id": "jill",
+      "name": "Jill Valentine",
+      "enabled": false,
+      "starting_weapons": ["m92f", "h_and_k_mp5"],
+      "starting_passive": "",
+      "skill_pool": [],
+      "exclusive_mechanic": "jill_reserved",
+      "unlock_cost_credits": 1500
+    },
+    {
+      "id": "wesker",
+      "name": "Albert Wesker",
+      "enabled": false,
+      "starting_weapons": ["sig_p226", "l_hawk"],
+      "starting_passive": "",
+      "skill_pool": [],
+      "exclusive_mechanic": "wesker_reserved",
+      "unlock_cost_credits": 3000
+    }
+  ]
+}

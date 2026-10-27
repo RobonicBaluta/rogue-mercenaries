@@ -1,0 +1,201 @@
+#pragma once
+
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "rm/common.h"
+#include "rm/economy.h"
+#include "rm/rewards.h"
+#include "rm/routes.h"
+#include "rm/shop.h"
+#include "rm/weapons.h"
+
+namespace rm {
+
+/// Run phase state machine:
+///   Idle --StartRun--> Idle(run active) --BeginArena--> ArenaActive --CompleteArena-->
+///   ArenaResults --ContinueToRewards--> RewardSelection --ChooseReward-->
+///   Shop --LeaveShop--> RouteSelection --ChooseRoute, BeginArena--> ArenaActive ...
+///   After the final arena's ChooseReward: RunComplete. OnPlayerDied/AbandonRun: RunFailed.
+///   EndRun (from RunComplete/RunFailed) banks credits and returns to Idle (no run active).
+enum class Phase {
+    Idle,
+    ArenaActive,
+    ArenaResults,
+    RewardSelection,
+    Shop,
+    RouteSelection,
+    RunComplete,
+    RunFailed,
+};
+std::string_view PhaseName(Phase p);
+
+struct KillRecord {
+    double time = 0.0;
+    double extra_seconds = 0.0;  // bloodhound-style window extensions
+};
+
+/// Heal the adapter should apply, as a fraction of the player's max hp.
+struct HealRequest {
+    double fraction_of_max = 0.0;
+    std::string source;  // perk id or "shop"
+};
+
+struct ArenaMetrics {
+    int arena = 0;  // 1-based
+    std::string route_id;
+    int budget = 0;
+    double start_time = 0.0;
+    double end_time = 0.0;
+    int player_kills = 0;
+    int budget_kills = 0;  // kills that reduced the budget (player kills, plus others if configured)
+    int non_player_kills = 0;
+    int duplicate_kills = 0;
+    int damage_events = 0;
+    double damage_taken = 0.0;
+    double hp_max_seen = 0.0;
+    int deaths = 0;
+    std::int64_t supplies_awarded = 0;
+    std::int64_t credits_accrued = 0;
+    int cheat_death_used = 0;
+    bool completed = false;
+};
+
+struct ArenaResult {
+    int arena = 0;
+    std::string route_id;
+    double time_seconds = 0.0;
+    int kills = 0;
+    double damage_taken = 0.0;
+    bool no_damage = true;
+    int deaths = 0;
+    Rating rating = Rating::C;
+    std::int64_t supplies_awarded = 0;
+    std::int64_t credits_accrued = 0;
+};
+
+struct RunSummary {
+    std::string run_id;
+    std::string character_id;
+    std::uint64_t seed = 0;
+    bool completed = false;
+    std::string end_reason;  // "complete", "died", "abandoned", "interrupted"
+    int arenas_cleared = 0;
+    int arena_count = 0;
+    std::int64_t total_kills = 0;
+    std::int64_t supplies_earned = 0;
+    std::int64_t supplies_spent = 0;
+    std::int64_t credits_pending = 0;
+    std::int64_t credits_banked = 0;
+    bool already_banked = false;  // EndRun called again / ledger already had this run
+    std::vector<ArenaResult> arenas;
+    StringMap<int> perks;
+};
+
+/// Complete temporary state of one run. Rebuilt from scratch by StartRun.
+struct RunState {
+    bool active = false;
+    std::string run_id;
+    std::uint64_t seed = 0;
+    std::string character_id;
+    Phase phase = Phase::Idle;
+    int arena_index = 0;  // arenas begun so far; the current arena number while active
+    int arena_count = 3;
+    std::string route_id;
+    bool route_chosen = false;
+
+    Ledger supplies;
+    std::int64_t supplies_earned = 0;
+    std::int64_t supplies_spent = 0;
+    std::int64_t credits_pending = 0;
+
+    StringMap<int> perks;  // perk id -> stacks
+    std::vector<WeaponInstance> weapons;
+    int next_weapon_serial = 1;
+    int reroll_tokens = 0;
+    int cheat_death_used_total = 0;
+
+    std::vector<ArenaMetrics> arenas;
+    std::vector<ArenaResult> results;
+
+    std::vector<RewardChoice> reward_offer;
+    double reward_rarity_shift = 0.0;
+    bool reward_chosen = false;
+    std::vector<ShopOffer> shop_offers;
+    std::vector<RouteChoice> route_choices;
+
+    // Combat bookkeeping (reset per arena).
+    std::vector<KillRecord> kill_records;
+    std::optional<double> last_melee_time;
+    std::optional<double> player_hp;
+    std::optional<double> player_hp_max;
+    StringSet seen_enemy_ids;
+    std::int64_t hits_computed = 0;
+    bool clamp_logged = false;  // first clamped hit per arena is always logged
+
+    std::vector<HealRequest> heal_requests;
+    std::string end_reason;
+};
+
+struct PerkView {
+    std::string id;
+    std::string name;
+    std::string category;
+    std::string rarity;
+    int stacks = 0;
+};
+
+struct WeaponView {
+    std::string instance_id;
+    std::string base_id;
+    std::string name;
+    std::string rarity;
+    int level = 1;
+    std::vector<std::string> affixes;  // DescribeAffix lines
+};
+
+struct OfferView {
+    std::string kind;    // "perk" | "weapon" | "supplies" | "heal" | "reroll" | "upgrade" | "route"
+    std::string id;      // perk id / weapon base id / route id / instance id
+    std::string title;
+    std::string detail;
+    std::string rarity;
+    std::int64_t price = 0;
+    bool purchased = false;
+};
+
+/// Plain data for UI rendering; never references internal state.
+struct RunSnapshot {
+    bool run_active = false;
+    Phase phase = Phase::Idle;
+    std::string phase_name;
+    std::string run_id;
+    std::string character_id;
+    std::string route_id;
+    std::string route_name;
+    int arena = 0;  // current arena number (1-based), 0 before the first
+    int arena_count = 0;
+    int kills = 0;
+    int budget = 0;
+    int remaining = 0;  // enemies still needed to clear the arena
+    std::int64_t supplies = 0;
+    std::int64_t credits = 0;          // profile balance
+    std::int64_t credits_pending = 0;  // earned this run, banked at EndRun
+    int reroll_tokens = 0;
+    int cheat_death_remaining = 0;
+    double kill_streak_bonus = 0.0;  // current kill-streak damage bonus (fraction)
+    int kill_streak_kills = 0;       // kills inside the longest owned streak window
+    double pending_heal = 0.0;
+    std::vector<PerkView> perks;
+    std::vector<WeaponView> weapons;
+    std::optional<ArenaResult> last_result;
+    bool reward_chosen = false;
+    std::vector<OfferView> reward_offers;
+    std::vector<OfferView> shop_offers;
+    std::vector<OfferView> route_offers;
+};
+
+}  // namespace rm

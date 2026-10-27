@@ -1,0 +1,70 @@
+#include "settings.h"
+
+#include <windows.h>
+
+#include <shlobj.h>
+
+#include <fstream>
+
+#include "nlohmann/json.hpp"
+
+namespace rmre5 {
+
+Paths ResolvePaths(void* module) {
+    Paths paths;
+    wchar_t buffer[MAX_PATH];
+    GetModuleFileNameW(static_cast<HMODULE>(module), buffer, MAX_PATH);
+    paths.gameDir = std::filesystem::path(buffer).parent_path();
+    paths.modDir = paths.gameDir / L"RogueMercenaries";
+    paths.configDir = paths.modDir / L"configs";
+
+    PWSTR local = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local))) {
+        paths.dataDir = std::filesystem::path(local) / L"RogueMercenaries";
+        CoTaskMemFree(local);
+    } else {
+        paths.dataDir = paths.modDir / L"data";
+    }
+    paths.logDir = paths.dataDir / L"logs";
+    return paths;
+}
+
+Settings LoadSettings(const Paths& paths, std::string* error) {
+    Settings settings;
+    const auto file = paths.modDir / L"adapter.json";
+    std::ifstream in(file);
+    if (!in) {
+        if (error) {
+            *error = "adapter.json not found; using defaults";
+        }
+        return settings;
+    }
+    try {
+        const auto json = nlohmann::json::parse(in);
+        settings.logLevel = json.value("log_level", settings.logLevel);
+        settings.overlayKey = json.value("overlay_key_vk", settings.overlayKey);
+        settings.developerMode = json.value("developer_mode", settings.developerMode);
+        settings.timerPolicy = json.value("timer_policy", settings.timerPolicy);
+        settings.timerHoldSeconds = json.value("timer_hold_seconds", settings.timerHoldSeconds);
+        settings.endMatchOnClear = json.value("end_match_on_clear", settings.endMatchOnClear);
+        if (json.contains("dev")) {
+            const auto& dev = json["dev"];
+            settings.probeIntervalMs = dev.value("probe_interval_ms", settings.probeIntervalMs);
+            settings.probeHits = dev.value("probe_hits", settings.probeHits);
+            settings.muteAudio = dev.value("mute_audio", settings.muteAudio);
+            settings.disableInputHooks = dev.value("disable_input_hooks", settings.disableInputHooks);
+            settings.disableD3d9Hooks = dev.value("disable_d3d9_hooks", settings.disableD3d9Hooks);
+            settings.disableCombatHooks = dev.value("disable_combat_hooks", settings.disableCombatHooks);
+            settings.disableOverlayDraw = dev.value("disable_overlay_draw", settings.disableOverlayDraw);
+            settings.uiDemo = dev.value("ui_demo", settings.uiDemo);
+        }
+    } catch (const std::exception& e) {
+        if (error) {
+            *error = std::string("adapter.json invalid: ") + e.what();
+        }
+        return Settings{};
+    }
+    return settings;
+}
+
+}  // namespace rmre5

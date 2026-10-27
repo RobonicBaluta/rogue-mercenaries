@@ -1,0 +1,157 @@
+#include "rm/rewards.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+
+#include "rm/content.h"
+
+namespace rm {
+namespace {
+
+std::int64_t SuppliesBundle(const EconomyConfig& eco, Rarity rarity, double reward_mult, int pad) {
+    const double tier_scale = 1.0 + 0.5 * static_cast<double>(RarityIndex(rarity));
+    const double pad_scale = 1.0 + 0.5 * static_cast<double>(pad);
+    const double amount =
+        static_cast<double>(eco.rewards.supplies_bundle) * reward_mult * tier_scale * pad_scale;
+    return std::max<std::int64_t>(1, static_cast<std::int64_t>(std::llround(amount)));
+}
+
+}  // namespace
+
+std::string_view RewardKindName(RewardKind k) {
+    switch (k) {
+        case RewardKind::Perk: return "perk";
+        case RewardKind::Weapon: return "weapon";
+        case RewardKind::Supplies: return "supplies";
+    }
+    return "supplies";
+}
+
+std::vector<const PerkDef*> OfferablePerks(const OfferContext& ctx) {
+    std::vector<const PerkDef*> out;
+    if (ctx.content == nullptr) return out;
+    PerkGateInput gate;
+    gate.character = ctx.character;
+    gate.capabilities = ctx.capabilities;
+    gate.unlocked_perks = ctx.unlocked_perks;
+    gate.owned = ctx.owned_perks;
+    gate.curses = CursePolicy::Exclude;
+    for (const PerkDef& p : ctx.content->perks()) {
+        if (CheckPerk(p, gate) == PerkGate::Eligible) out.push_back(&p);
+    }
+    return out;
+}
+
+std::vector<const WeaponBaseDef*> OfferableWeapons(const OfferContext& ctx) {
+    std::vector<const WeaponBaseDef*> out;
+    if (ctx.content == nullptr) return out;
+    // A weapon instance only changes outgoing damage; without that capability it is inert.
+    if (ctx.capabilities != nullptr && !ctx.capabilities->Has(cap::kOutgoingDamage)) return out;
+    for (const WeaponBaseDef& w : ctx.content->weapons()) {
+        if (!w.enabled) continue;
+        if (w.unlock_cost_credits > 0 &&
+            (ctx.unlocked_weapons == nullptr ||
+             ctx.unlocked_weapons->find(w.id) == ctx.unlocked_weapons->end())) {
+            continue;
+        }
+        out.push_back(&w);
+    }
+    return out;
+}
+
+Rarity RollRarity(Rng& rng, const RarityWeights& weights) {
+    const std::size_t i = rng.WeightedIndex(weights);
+    return i < kRarityCount ? kAllRarities[i] : Rarity::Common;
+}
+
+const PerkDef* PickPerkNearRarity(Rng& rng, const std::vector<const PerkDef*>& pool, Rarity rarity,
+                                  const StringSet& taken) {
+    const int target = static_cast<int>(RarityIndex(rarity));
+    const int count = static_cast<int>(kRarityCount);
+    std::vector<const PerkDef*> candidates;
+    for (int dist = 0; dist < count; ++dist) {
+        for (const int sign : {-1, 1}) {
+            if (dist == 0 && sign == 1) continue;
+            const int r = target + sign * dist;
+            if (r < 0 || r >= count) continue;
+            candidates.clear();
+            for (const PerkDef* p : pool) {
+                if (static_cast<int>(RarityIndex(p->rarity)) == r && taken.find(p->id) == taken.end()) {
+                    candidates.push_back(p);
+                }
+            }
+            if (!candidates.empty()) return candidates[rng.Index(candidates.size())];
+        }
+    }
+    return nullptr;
+}
+
+std::vector<RewardChoice> GenerateRewardOffer(Rng& rng, const OfferContext& ctx,
+                                              const InstanceIdSource& next_instance_id) {
+    std::vector<RewardChoice> out;
+    if (ctx.content == nullptr) return out;
+    const EconomyConfig& eco = ctx.content->economy();
+    const Capabilities all = Capabilities::All();
+    const Capabilities& caps = ctx.capabilities != nullptr ? *ctx.capabilities : all;
+    const RarityWeights weights = ShiftRarityWeights(eco.rewards.rarity_weights, ctx.rarity_shift);
+    const std::vector<const PerkDef*> perks = OfferablePerks(ctx);
+    const std::vector<const WeaponBaseDef*> weapons = OfferableWeapons(ctx);
+
+    StringSet taken;
+    bool has_weapon = false;
+    bool has_supplies = false;
+    int pad = 1;
+    const auto wanted = static_cast<std::size_t>(std::max(1, eco.rewards.choices));
+    while (out.size() < wanted) {
+        const bool perk_left = std::any_of(perks.begin(), perks.end(), [&taken](const PerkDef* p) {
+            return taken.find(p->id) == taken.end();
+        });
+        const std::array<double, 3> kind_weights = {
+            perk_left ? eco.rewards.perk_weight : 0.0,
+            (!has_weapon && !weapons.empty()) ? eco.rewards.weapon_weight : 0.0,
+            !has_supplies ? eco.rewards.supplies_weight : 0.0,
+        };
+        const std::size_t kind = rng.WeightedIndex(kind_weights);
+        const Rarity rarity = RollRarity(rng, weights);
+        RewardChoice choice;
+        choice.rarity = rarity;
+        if (kind == 0) {
+            const PerkDef* p = PickPerkNearRarity(rng, perks, rarity, taken);
+            if (p == nullptr) break;  // unreachable: perk_left guarantees a candidate
+            choice.kind = RewardKind::Perk;
+            choice.perk_id = p->id;
+            choice.rarity = p->rarity;
+            taken.insert(p->id);
+        } else if (kind == 1) {
+            const WeaponBaseDef* base = weapons[rng.Index(weapons.size())];
+            choice.kind = RewardKind::Weapon;
+            choice.weapon = GenerateWeapon(rng, *ctx.content, caps, base->id, rarity,
+                                           next_instance_id ? next_instance_id() : std::string("w"));
+            has_weapon = true;
+        } else if (kind == 2) {
+            choice.kind = RewardKind::Supplies;
+            choice.supplies = SuppliesBundle(eco, rarity, ctx.reward_mult, 0);
+            has_supplies = true;
+        } else {
+            // Every pool is exhausted: pad with progressively larger, distinct bundles.
+            choice.kind = RewardKind::Supplies;
+            choice.supplies = SuppliesBundle(eco, rarity, ctx.reward_mult, pad++);
+        }
+        if (choice.kind == RewardKind::Supplies) {
+            for (bool clash = true; clash;) {
+                clash = false;
+                for (const RewardChoice& c : out) {
+                    if (c.kind == RewardKind::Supplies && c.supplies == choice.supplies) {
+                        ++choice.supplies;
+                        clash = true;
+                    }
+                }
+            }
+        }
+        out.push_back(std::move(choice));
+    }
+    return out;
+}
+
+}  // namespace rm

@@ -1,0 +1,17 @@
+/build/
+/dist/
+/logs/
+/research/references/*/
+/research/tools/
+/research/scratch/
+/research/tmp/
+*.user
+*.suo
+*.pdb
+*.ilk
+*.obj
+*.pch
+*.dll
+*.lib
+*.exp
+*.exe

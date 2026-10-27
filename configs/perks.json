@@ -1,0 +1,284 @@
+{
+  "_comment": "Perk definitions. Damage 'value' is an additive fraction (0.10 = +10%). per_stack adds to a parameter for every stack beyond the first. requires_capabilities is merged with capabilities implied by the effects; a perk is never offered unless the adapter reports all of them.",
+  "schema_version": 1,
+  "perks": [
+    {
+      "id": "sharpshooter",
+      "name": "Sharpshooter",
+      "description": "+8% damage per stack.",
+      "category": "precision",
+      "rarity": "common",
+      "tags": ["damage"],
+      "max_stacks": 3,
+      "effects": [
+        {"kind": "outgoing_damage_mult", "value": 0.08, "per_stack": {"value": 0.08}}
+      ]
+    },
+    {
+      "id": "kevlar_vest",
+      "name": "Kevlar Vest",
+      "description": "Take 8% less damage (+6% per extra stack).",
+      "category": "defensive",
+      "rarity": "common",
+      "tags": ["mitigation"],
+      "max_stacks": 3,
+      "effects": [
+        {"kind": "incoming_damage_mult", "value": -0.08, "per_stack": {"value": -0.06}}
+      ]
+    },
+    {
+      "id": "scavenger",
+      "name": "Scavenger",
+      "description": "Kills have a 30% chance (+15% per stack) to drop 2 supplies.",
+      "category": "economy",
+      "rarity": "common",
+      "tags": ["supplies"],
+      "max_stacks": 3,
+      "effects": [
+        {"kind": "supplies_on_kill", "amount": 2, "chance": 0.3, "per_stack": {"chance": 0.15}}
+      ]
+    },
+    {
+      "id": "finisher",
+      "name": "Finisher",
+      "description": "+35% damage to enemies below 30% health.",
+      "category": "precision",
+      "rarity": "uncommon",
+      "tags": ["damage", "execute"],
+      "max_stacks": 2,
+      "requires_capabilities": ["enemy_hp"],
+      "effects": [
+        {"kind": "outgoing_damage_mult", "value": 0.35, "condition": {"type": "target_hp_below", "fraction": 0.3}, "per_stack": {"value": 0.15}}
+      ]
+    },
+    {
+      "id": "last_stand",
+      "name": "Last Stand",
+      "description": "+30% damage while below 35% health.",
+      "category": "offensive",
+      "rarity": "uncommon",
+      "tags": ["damage", "low_health"],
+      "max_stacks": 1,
+      "effects": [
+        {"kind": "outgoing_damage_mult", "value": 0.3, "condition": {"type": "player_hp_below", "fraction": 0.35}}
+      ]
+    },
+    {
+      "id": "keen_eye",
+      "name": "Keen Eye",
+      "description": "8% crit chance (+5% per stack); crits deal x2.0.",
+      "category": "precision",
+      "rarity": "uncommon",
+      "tags": ["crit"],
+      "max_stacks": 3,
+      "effects": [
+        {"kind": "crit", "chance": 0.08, "multiplier": 2.0, "per_stack": {"chance": 0.05}}
+      ]
+    },
+    {
+      "id": "field_medic",
+      "name": "Field Medic",
+      "description": "Each kill heals 3% of max health (+2% per stack).",
+      "category": "utility",
+      "rarity": "uncommon",
+      "tags": ["heal"],
+      "max_stacks": 2,
+      "unlock_cost_credits": 250,
+      "requires_capabilities": ["heal"],
+      "effects": [
+        {"kind": "heal_on_kill", "amount_fraction_of_max": 0.03, "per_stack": {"amount_fraction_of_max": 0.02}}
+      ]
+    },
+    {
+      "id": "quartermaster",
+      "name": "Quartermaster",
+      "description": "+15 supplies when an arena is cleared (+10 per stack).",
+      "category": "economy",
+      "rarity": "uncommon",
+      "tags": ["supplies"],
+      "max_stacks": 3,
+      "effects": [
+        {"kind": "supplies_on_arena_clear", "amount": 15, "require_no_damage": false, "per_stack": {"amount": 10}}
+      ]
+    },
+    {
+      "id": "bloodrush",
+      "name": "Bloodrush",
+      "description": "Each kill grants +5% damage for 6 seconds, stacking up to +30%.",
+      "category": "offensive",
+      "rarity": "rare",
+      "tags": ["damage", "kill_streak"],
+      "max_stacks": 2,
+      "effects": [
+        {"kind": "outgoing_damage_mult", "condition": {"type": "kill_streak", "window_seconds": 6, "per_kill": 0.05, "max_bonus": 0.3}, "per_stack": {"per_kill": 0.02, "max_bonus": 0.1}}
+      ]
+    },
+    {
+      "id": "adrenaline_shield",
+      "name": "Adrenaline Shield",
+      "description": "Take 35% less damage while below 30% health.",
+      "category": "defensive",
+      "rarity": "rare",
+      "tags": ["mitigation", "low_health"],
+      "max_stacks": 1,
+      "effects": [
+        {"kind": "incoming_damage_mult", "value": -0.35, "condition": {"type": "player_hp_below", "fraction": 0.3}}
+      ]
+    },
+    {
+      "id": "clean_sweep",
+      "name": "Clean Sweep",
+      "description": "+40 supplies for clearing an arena without taking damage.",
+      "category": "economy",
+      "rarity": "rare",
+      "tags": ["supplies", "no_damage"],
+      "max_stacks": 1,
+      "effects": [
+        {"kind": "supplies_on_arena_clear", "amount": 40, "require_no_damage": true}
+      ]
+    },
+    {
+      "id": "second_wind",
+      "name": "Second Wind",
+      "description": "Once per arena, survive a lethal hit with 25% health.",
+      "category": "defensive",
+      "rarity": "epic",
+      "tags": ["survival"],
+      "max_stacks": 1,
+      "effects": [
+        {"kind": "cheat_death", "per_arena": 1, "leave_hp_fraction": 0.25}
+      ]
+    },
+    {
+      "id": "bulwark",
+      "name": "Bulwark",
+      "description": "Take 30% less damage but deal 10% less. Cannot be combined with Glass Cannon.",
+      "category": "defensive",
+      "rarity": "epic",
+      "tags": ["mitigation", "tradeoff"],
+      "max_stacks": 1,
+      "exclusive_with": ["glass_cannon"],
+      "effects": [
+        {"kind": "incoming_damage_mult", "value": -0.3},
+        {"kind": "outgoing_damage_mult", "value": -0.1}
+      ]
+    },
+    {
+      "id": "glass_cannon",
+      "name": "Glass Cannon",
+      "description": "+60% damage, but take 25% more damage. Cannot be combined with Bulwark.",
+      "category": "offensive",
+      "rarity": "legendary",
+      "tags": ["damage", "tradeoff"],
+      "max_stacks": 1,
+      "exclusive_with": ["bulwark"],
+      "effects": [
+        {"kind": "outgoing_damage_mult", "value": 0.6},
+        {"kind": "incoming_damage_mult", "value": 0.25}
+      ]
+    },
+    {
+      "id": "deadeye",
+      "name": "Deadeye",
+      "description": "15% crit chance; crits deal x2.5.",
+      "category": "precision",
+      "rarity": "legendary",
+      "tags": ["crit"],
+      "max_stacks": 1,
+      "unlock_cost_credits": 600,
+      "effects": [
+        {"kind": "crit", "chance": 0.15, "multiplier": 2.5}
+      ]
+    },
+    {
+      "id": "boulder_puncher",
+      "name": "Boulder Puncher",
+      "description": "Chris only. +50% damage for 6 seconds after a melee hit.",
+      "category": "offensive",
+      "rarity": "rare",
+      "tags": ["melee", "character"],
+      "max_stacks": 1,
+      "characters": ["chris"],
+      "requires_capabilities": ["melee_detect"],
+      "effects": [
+        {"kind": "outgoing_damage_mult", "value": 0.5, "condition": {"type": "after_melee", "window_seconds": 6}}
+      ]
+    },
+    {
+      "id": "sheva_marksman",
+      "name": "Marksman Training",
+      "description": "Sheva only. 12% crit chance; crits deal x2.25.",
+      "category": "precision",
+      "rarity": "rare",
+      "tags": ["crit", "character"],
+      "max_stacks": 1,
+      "characters": ["sheva"],
+      "effects": [
+        {"kind": "crit", "chance": 0.12, "multiplier": 2.25}
+      ]
+    },
+    {
+      "id": "chris_veteran",
+      "name": "B.S.A.A. Veteran",
+      "description": "Chris's starting passive. Take 5% less damage.",
+      "category": "defensive",
+      "rarity": "common",
+      "tags": ["passive", "character"],
+      "max_stacks": 1,
+      "characters": ["chris"],
+      "effects": [
+        {"kind": "incoming_damage_mult", "value": -0.05}
+      ]
+    },
+    {
+      "id": "sheva_field_training",
+      "name": "Field Training",
+      "description": "Sheva's starting passive. Kills have a 25% chance to drop 1 supply.",
+      "category": "economy",
+      "rarity": "common",
+      "tags": ["passive", "character", "supplies"],
+      "max_stacks": 1,
+      "characters": ["sheva"],
+      "effects": [
+        {"kind": "supplies_on_kill", "amount": 1, "chance": 0.25}
+      ]
+    },
+    {
+      "id": "curse_frailty",
+      "name": "Curse: Frailty",
+      "description": "Take 25% more damage (+15% per extra stack).",
+      "category": "curse",
+      "rarity": "common",
+      "tags": ["curse"],
+      "max_stacks": 2,
+      "effects": [
+        {"kind": "incoming_damage_mult", "value": 0.25, "per_stack": {"value": 0.15}}
+      ]
+    },
+    {
+      "id": "curse_dull_blades",
+      "name": "Curse: Dull Rounds",
+      "description": "Deal 15% less damage (-10% per extra stack).",
+      "category": "curse",
+      "rarity": "common",
+      "tags": ["curse"],
+      "max_stacks": 2,
+      "effects": [
+        {"kind": "outgoing_damage_mult", "value": -0.15, "per_stack": {"value": -0.1}}
+      ]
+    },
+    {
+      "id": "coop_shared_supplies",
+      "name": "Shared Supplies",
+      "description": "Reserved for co-op: partner kills also grant supplies.",
+      "category": "cooperative",
+      "rarity": "rare",
+      "tags": ["coop", "reserved"],
+      "max_stacks": 1,
+      "enabled": false,
+      "effects": [
+        {"kind": "supplies_on_kill", "amount": 1, "chance": 1.0}
+      ]
+    }
+  ]
+}

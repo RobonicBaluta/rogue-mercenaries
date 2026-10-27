@@ -1,0 +1,289 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "rm/capabilities.h"
+#include "rm/content.h"
+#include "rm/events.h"
+#include "rm/profile.h"
+#include "rm/rng.h"
+#include "rm/run_state.h"
+#include "rm/status.h"
+
+namespace rm {
+
+// ---------------------------------------------------------------------------------------
+// Adapter contract
+//
+//  * Threading: RunController is single-threaded. The adapter must serialise all calls
+//    (e.g. queue engine callbacks and drain them on one thread).
+//  * Time: every `now` is monotonic seconds supplied by the adapter (game or QPC clock).
+//    The core never reads a clock. Kill-streak and after-melee windows compare these values.
+//  * Capabilities: call SetCapabilities() with only runtime-verified features. Perks, weapon
+//    affixes and shop offers whose capabilities are missing are never offered.
+//  * Weapon ids: with "weapon_id", pass the weapon base id from weapons.json (e.g. "m92f")
+//    in HitContext/KillEvent; instance modifiers apply only to matching hits/kills. Without
+//    it the run has one sidearm instance that applies to every non-melee player hit/kill.
+//  * Melee: is_melee/was_melee == true marks melee; weapon modifiers never apply to melee.
+//    nullopt means "unknown" (treated as not melee).
+//  * Heals: the core never heals directly. heal_on_kill and shop heals queue HealRequests
+//    (fraction of max hp). Poll PendingHeal() / ConsumeHealRequests() and apply them in game;
+//    consumed requests are gone, so apply exactly once.
+//  * Damage hooks: call ComputeOutgoingMultiplier once per player hit (it may roll a crit) and
+//    ComputeIncoming once per incoming hit before applying it (it may consume a cheat-death
+//    charge). Then report the actual result with OnPlayerDamaged. Outside ArenaActive both
+//    return a neutral 1.0 and never roll.
+//  * Kills: only by_player kills count toward the enemy budget, perks and rewards unless
+//    economy run.non_player_kills_count_toward_budget is true. Repeated reports of the same
+//    enemy_id within one arena are ignored.
+// ---------------------------------------------------------------------------------------
+
+struct KillEvent {
+    double now = 0.0;
+    bool by_player = false;
+    std::optional<std::string> weapon_id;
+    std::optional<bool> was_melee;
+    std::optional<std::string> enemy_id;
+};
+
+struct KillOutcome {
+    bool counted = false;    // reduced the enemy budget
+    bool duplicate = false;  // enemy_id already reported this arena
+    bool ignored = false;    // no arena active
+    std::int64_t supplies_awarded = 0;
+    double heal_fraction_queued = 0.0;
+    int remaining = 0;
+    bool arena_complete = false;
+    std::vector<std::string> triggered;  // perk ids / unique affix ids that fired
+};
+
+struct DamageEvent {
+    double now = 0.0;
+    double amount = 0.0;  // damage actually taken (after ComputeIncoming)
+    double hp_before = 0.0;
+    double hp_after = 0.0;
+    double hp_max = 0.0;
+};
+
+struct HitContext {
+    double now = 0.0;
+    double base_damage = 0.0;
+    std::optional<double> target_hp;      // needs "enemy_hp"
+    std::optional<double> target_hp_max;
+    std::optional<std::string> weapon_id;  // needs "weapon_id"
+    std::optional<bool> is_melee;          // needs "melee_detect"
+    std::optional<double> player_hp;       // optional; else last value seen in damage events
+    std::optional<double> player_hp_max;
+};
+
+/// Telemetry breakdown: final = clamp(raw, outgoing_min, outgoing_max) where
+/// raw = route_mult * max(0, 1 + perk_bonus + kill_streak_bonus) * weapon_base_mult
+///       * max(0, 1 + weapon_bonus) * (crit ? crit_multiplier : 1).
+struct OutgoingBreakdown {
+    double route_mult = 1.0;
+    double perk_bonus = 0.0;
+    double kill_streak_bonus = 0.0;
+    double weapon_base_mult = 1.0;
+    double weapon_bonus = 0.0;
+    double crit_chance = 0.0;
+    double crit_multiplier = 1.0;
+    bool crit = false;
+    double raw = 1.0;
+    double clamped = 1.0;
+    std::string weapon_instance_id;  // empty when no instance applied
+};
+
+struct OutgoingResult {
+    double multiplier = 1.0;  // clamped; multiply the engine's damage by this
+    bool crit = false;
+    OutgoingBreakdown breakdown;
+};
+
+struct IncomingContext {
+    double now = 0.0;
+    double amount = 0.0;  // engine damage before modification
+    double hp = 0.0;      // player hp before the hit
+    double hp_max = 0.0;
+};
+
+struct IncomingResult {
+    double multiplier = 1.0;  // clamped [incoming_min, incoming_max]
+    double raw_multiplier = 1.0;
+    /// The modified hit would kill but a cheat_death charge was consumed: set hp to leave_hp
+    /// instead of applying lethal damage.
+    bool prevent_death = false;
+    double leave_hp = 0.0;
+};
+
+enum class UnlockKind { Character, Perk, Weapon };
+std::string_view UnlockKindName(UnlockKind k);
+
+struct UnlockReceipt {
+    UnlockKind kind = UnlockKind::Character;
+    std::string id;
+    std::int64_t cost = 0;
+    std::int64_t balance_after = 0;
+};
+
+struct CharacterAvailability {
+    std::string id;
+    std::string name;
+    CharacterGate gate = CharacterGate::Unknown;
+    std::int64_t unlock_cost_credits = 0;
+};
+
+struct RunControllerOptions {
+    /// Verified engine features. Default: none (safe for an adapter that has verified nothing).
+    Capabilities capabilities;
+    IEventSink* sink = nullptr;
+    /// Optional persistence; when null the profile lives only in memory (simulator/tests).
+    ProfileStore* store = nullptr;
+    /// Emit a damage_modified event for every Nth ComputeOutgoingMultiplier call (and always
+    /// when the clamp changed the value). 0 disables sampling except clamped hits.
+    int damage_sample_every = 50;
+};
+
+/// Single facade the game adapter (and the simulator) drives.
+class RunController {
+public:
+    RunController(std::shared_ptr<const Content> content, Profile profile,
+                  RunControllerOptions options = {});
+
+    // --- configuration ---------------------------------------------------------------
+    void SetCapabilities(Capabilities caps);
+    [[nodiscard]] const Capabilities& capabilities() const { return caps_; }
+    void SetEventSink(IEventSink* sink) { sink_ = sink; }
+    [[nodiscard]] const Content& content() const { return *content_; }
+
+    // --- meta progression --------------------------------------------------------------
+    [[nodiscard]] const Profile& profile() const { return profile_; }
+    [[nodiscard]] std::vector<CharacterAvailability> Characters() const;
+    /// Spends credits on a character/perk/weapon unlock (tx "unlock:<kind>:<id>") and saves.
+    /// Not allowed while a run is active. Rolled back if saving fails.
+    Result<UnlockReceipt> PurchaseUnlock(UnlockKind kind, std::string_view id);
+    /// A crash-interrupted run left in the profile (see ActiveRunCheckpoint).
+    [[nodiscard]] const std::optional<ActiveRunCheckpoint>& interrupted_run() const;
+    /// Banks an interrupted run's pending credits at the death rate (idempotent by run id).
+    Result<RunSummary> RecoverInterruptedRun();
+
+    // --- run lifecycle -----------------------------------------------------------------
+    /// Fails for unknown, disabled or locked characters or while a run is active. Settles
+    /// any interrupted run, resets all temporary state, increments runs_started and saves.
+    Status StartRun(std::string_view character_id, std::uint64_t seed);
+    /// Marks the active run failed ("abandoned"); call EndRun afterwards to bank.
+    Status AbandonRun(double now);
+    /// Valid from Idle with a fresh run (first arena) or RouteSelection after ChooseRoute.
+    Status BeginArena(double now);
+    KillOutcome OnEnemyKilled(const KillEvent& kill);
+    void OnPlayerDamaged(const DamageEvent& damage);
+    /// Fails the run (no further arenas). Pending credits are banked at the death rate by EndRun.
+    Status OnPlayerDied(double now);
+    OutgoingResult ComputeOutgoingMultiplier(const HitContext& hit);
+    IncomingResult ComputeIncoming(const IncomingContext& incoming);
+    /// Sum of queued heal fractions (capped at 1.0).
+    [[nodiscard]] double PendingHeal() const;
+    std::vector<HealRequest> ConsumeHealRequests();
+
+    [[nodiscard]] bool IsArenaComplete() const;
+    [[nodiscard]] int RemainingEnemies() const;
+    /// Requires ArenaActive and IsArenaComplete(). Grades the arena, awards clear supplies,
+    /// accrues credits, generates the reward offer and moves to ArenaResults.
+    Result<ArenaResult> CompleteArena(double now);
+    /// ArenaResults -> RewardSelection.
+    Status ContinueToRewards();
+
+    [[nodiscard]] const std::vector<RewardChoice>& RewardOffer() const { return run_.reward_offer; }
+    /// Spends a reroll token to regenerate the current offer (RewardSelection, before choosing).
+    Status RerollReward();
+    /// Exactly once per arena; a second call fails with AlreadyChosen. Moves to Shop, or to
+    /// RunComplete after the final arena.
+    Status ChooseReward(std::size_t index);
+
+    [[nodiscard]] const std::vector<ShopOffer>& ShopOffers() const { return run_.shop_offers; }
+    /// Validates phase, index, not-yet-bought and balance; debit and grant are all-or-nothing.
+    Status Purchase(std::size_t index);
+    /// Shop -> RouteSelection (route choices are generated here).
+    Status LeaveShop();
+
+    [[nodiscard]] const std::vector<RouteChoice>& RouteChoices() const { return run_.route_choices; }
+    /// Once per RouteSelection; grants the route's curse if it carries one.
+    Status ChooseRoute(std::size_t index);
+
+    /// From RunComplete/RunFailed: banks credits into the profile exactly once per run id and
+    /// saves. Calling again returns the same summary with already_banked = true.
+    Result<RunSummary> EndRun();
+
+    // --- developer commands (debug menu / tests) -----------------------------------------
+    /// Grants a perk to the active run under the normal rules (character, capabilities,
+    /// unlocks, stacks, exclusions); curses are allowed. Emits perk_acquired with source "dev".
+    Status DevGrantPerk(std::string_view perk_id);
+    /// Adds a weapon instance under the normal slot rules (see weapons.h).
+    Status DevGrantWeapon(WeaponInstance weapon);
+
+    [[nodiscard]] RunSnapshot Snapshot(double now) const;
+    [[nodiscard]] Phase phase() const { return run_.phase; }
+    [[nodiscard]] bool HasActiveRun() const { return run_.active; }
+    [[nodiscard]] const RunState& state() const { return run_; }
+    [[nodiscard]] const std::optional<RunSummary>& last_summary() const { return last_summary_; }
+
+private:
+    struct Streams {
+        Rng reward;
+        Rng route;
+        Rng loot;
+        Rng shop;
+        Rng combat;
+    };
+
+    Event MakeEvent(EventType type, EventLevel level = EventLevel::Info) const;
+    void Emit(Event event) const;
+    void EmitError(std::string_view operation, const Status& status) const;
+    Status Fail(std::string_view operation, ErrorCode code, std::string message) const;
+
+    Status SaveProfile(std::string_view reason);
+    const CharacterDef* Character() const;
+    const RouteDef* Route() const;
+    ArenaMetrics* CurrentArena();
+    const ArenaMetrics* CurrentArena() const;
+    bool WeaponIdMode() const;
+    const WeaponInstance* ApplicableWeapon(const std::optional<std::string>& weapon_id,
+                                           const std::optional<bool>& melee) const;
+    std::string NextInstanceId();
+    OfferContext MakeOfferContext(double rarity_shift) const;
+    PerkGateInput MakeGateInput(CursePolicy curses) const;
+
+    bool CreditSupplies(const std::string& tx, std::int64_t amount, std::string_view reason);
+    TxResult DebitSupplies(const std::string& tx, std::int64_t amount, std::string_view reason);
+    Status GrantPerk(std::string_view perk_id, std::string_view source, CursePolicy curses,
+                     bool ignore_unlock);
+    void GrantWeapon(WeaponInstance weapon, std::string_view source);
+
+    int ActiveKills(double now, double window) const;
+    double KillStreakBonus(double now, int* kills_in_longest_window) const;
+    int CheatDeathCharges() const;
+    void UpdateCheckpoint();
+    Result<RunSummary> SettleCheckpoint(const ActiveRunCheckpoint& checkpoint,
+                                        std::string_view reason);
+    void EnterShop();
+    void EnterRouteSelection();
+    void FailRun(double now, std::string_view reason);
+
+    std::shared_ptr<const Content> content_;
+    Profile profile_;
+    Capabilities caps_;
+    IEventSink* sink_ = nullptr;
+    ProfileStore* store_ = nullptr;
+    int damage_sample_every_ = 50;
+
+    RunState run_;
+    std::optional<Streams> streams_;
+    std::optional<RunSummary> last_summary_;
+};
+
+}  // namespace rm

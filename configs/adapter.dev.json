@@ -1,0 +1,13 @@
+{
+  "log_level": "debug",
+  "developer_mode": true,
+  "overlay_key_vk": 118,
+  "timer_policy": "hold",
+  "timer_hold_seconds": 90.0,
+  "end_match_on_clear": true,
+  "dev": {
+    "probe_interval_ms": 2000,
+    "probe_hits": true,
+    "mute_audio": true
+  }
+}
