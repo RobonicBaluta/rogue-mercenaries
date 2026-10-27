@@ -107,7 +107,8 @@ bool VerifySignatures(unsigned timeoutMs) {
                           SignatureOk("startup21_stage_write") && SignatureOk("startup22_character_write");
     g_caps.fader = SignatureOk("startup22_fade_out");
     g_caps.inventory = g_caps.players && SignatureOk("inventory_add_to_stacks") && SignatureOk("inventory_add_ammo") &&
-                       SignatureOk("player_pickup_inventory");
+                       SignatureOk("inventory_create") && SignatureOk("player_pickup_inventory") &&
+                       SignatureOk("game_notify_item");
     g_caps.flowScript = g_caps.gameWork && SignatureOk("flow_step") && SignatureOk("flow_step20") &&
                         SignatureOk("flow_merc_setup") && SignatureOk("startup21_stage_write") &&
                         SignatureOk("startup22_character_write");

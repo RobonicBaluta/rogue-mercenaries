@@ -89,6 +89,14 @@ constexpr std::uintptr_t kFnFlowMercSetup = 0x00BF78B0;
 // Item ids are (category << 8) | index: 1 weapons, 2 ammo, 4 keys/treasure.
 constexpr std::uintptr_t kFnInventoryAddToStacks = 0x00C4BEE0;
 constexpr std::uintptr_t kFnInventoryAddAmmo = 0x00C4DA90;
+//   void* Create(int item, int count, int a, int b, int c, int flags, int attr[9],
+//                uPlayer* player, int position, int zero): new slot; PickUpItem
+//     passes (-1, -1, -1, 0xD = find a free slot, the world item's 9 attribute
+//     bytes, the player, a default position, 0). Returns the slot or 0.
+constexpr std::uintptr_t kFnInventoryCreate = 0x00C4B480;
+// void aGame::NotifyItemGet(int item, int count): the game's "item acquired"
+// notice (uIdItemGet00) with the item's own name and icon.
+constexpr std::uintptr_t kFnGameNotifyItem = 0x00719B60;
 // void uIdMenu::DrawHelp(int message, int y): help line under a menu, shared by
 // most uId* screens. The Play menu draws rows at y = (item + 3) * 50 and its
 // help at y = 570, which a ninth row (y = 550) would sit under.
@@ -230,6 +238,8 @@ inline constexpr Signature kSignatures[] = {
     {"flow_merc_setup", addr::kFnFlowMercSetup, "56 8B F1 0F BE 46 24 83 F8 15 0F 87 AE 01 00 00"},
     {"inventory_add_to_stacks", addr::kFnInventoryAddToStacks, "83 EC 64 53 8B 5C 24 6C 55 56 57 33 FF 33 C0 89"},
     {"inventory_add_ammo", addr::kFnInventoryAddAmmo, "53 8B 5C 24 0C 55 8B 6C 24 0C 56 57 8B F9 33 F6"},
+    {"inventory_create", addr::kFnInventoryCreate, "8B 44 24 48 8B 54 24 44 50 8B 44 24 44 52 8B 54"},
+    {"game_notify_item", addr::kFnGameNotifyItem, "8B 44 24 04 8B 54 24 08 89 81 F8 00 00 00 89 91"},
     // uPlayer::PickUpItem: `lea ecx,[esi+0x21A0]; call AddToStacks`.
     {"player_pickup_inventory", 0x007EA134, "8D 8E A0 21 00 00 E8 A1 1D 46 00"},
     {"menu_draw_help", addr::kFnMenuDrawHelp, "51 8B 51 78 69 D2 FF 00 00 00 B8 39 8E E3 38 F7 EA"},

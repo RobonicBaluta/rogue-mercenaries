@@ -888,6 +888,42 @@ void PollDevCommand(double now) {
             const int left = fn(player + re5::off::kPlayerInventory, item, count);
             RM_LOGW("dev %s item %04X x%d -> %d not placed", command[0] == 'g' ? "give" : "ammo", item, count, left);
         }
+    } else if (command.rfind("create ", 0) == 0) {
+        // "create <hex item> <count>": a new inventory slot through the game's own
+        // creator, as PickUpItem calls it (flags 0xD = find a free slot).
+        std::istringstream words(command.substr(7));
+        std::string idText;
+        int count = 1;
+        words >> idText >> count;
+        const auto item = static_cast<int>(std::strtoul(idText.c_str(), nullptr, 16));
+        const auto player = engine::LocalPlayer();
+        if (!engine::Caps().inventory || !player) {
+            RM_LOGW("dev create: inventory not available");
+        } else {
+            using CreateFn = std::uintptr_t(__thiscall*)(std::uintptr_t inventory, int item, int count, int a, int b,
+                                                         int c, int flags, int a1, int a2, int a3, int a4, int a5,
+                                                         int a6, int a7, int a8, int a9, std::uintptr_t player,
+                                                         int position, int zero);
+            const auto fn = reinterpret_cast<CreateFn>(re5::addr::kFnInventoryCreate);
+            const auto slot = fn(player + re5::off::kPlayerInventory, item, count, -1, -1, -1, 0xD, 0, 0, 0, 0, 0, 0,
+                                 0, 0, 0, player, 0, 0);
+            RM_LOGW("dev create item %04X x%d -> slot %08X", item, count, static_cast<unsigned>(slot));
+        }
+    } else if (command.rfind("notify ", 0) == 0) {
+        // "notify <hex item> <count>": the game's own "item acquired" notice.
+        std::istringstream words(command.substr(7));
+        std::string idText;
+        int count = 1;
+        words >> idText >> count;
+        const auto item = static_cast<int>(std::strtoul(idText.c_str(), nullptr, 16));
+        const auto game = ReadMercTimer().object;
+        if (!engine::Caps().inventory || !game) {
+            RM_LOGW("dev notify: game object or signatures not available");
+        } else {
+            using NotifyFn = void(__thiscall*)(std::uintptr_t game, int item, int count);
+            reinterpret_cast<NotifyFn>(re5::addr::kFnGameNotifyItem)(game, item, count);
+            RM_LOGW("dev notify item %04X x%d", item, count);
+        }
     } else if (command.rfind("pokeb ", 0) == 0) {
         // "pokeb <hex addr> <hex byte>"
         std::istringstream words(command.substr(6));
