@@ -84,6 +84,15 @@ See `research/capabilities.md` (per-capability evidence) and `research/re5-engin
 - [x] Skins, per-character skills and a point-budget starting loadout (core + menu). Evidence: `tests/test_skins.cpp` (default skin per character, challenge-locked skins, skin overrides of weapon pool and passive, deterministic loadout within budget, unspent points → supplies); 6 new character perks in `configs/perks.json`; SKINS screen in game (`build/shots/skins_sheet.png`: locked skins red with "84 of 200 done"). Not exercised in game: starting a run with a non-default skin (none was unlocked on the test profile); applying rolled equipment to the game inventory (no verified inventory write).
 - [ ] Remove the Mercenaries countdown display. The time pressure is already gone (countdown held at 90 s, match ended by the kill target), but the digits still show. Ruled out in game on 2026-10-27 (`build/shots/timer_sheet.png`): the ten draw helpers called from `uIdMerce00`'s draw (ret-patched one at a time; `0x00A1D520` is the score panel), and the HUD's two GUI page handles (`+0x44`/`+0x48` = 0x51/0x52, blanked). Next: the 97 `cSprite*` children at `uIdMerce00+0x180` (dev commands `patch_ret`, `pokeb`, `dump`).
 - [ ] Native in-match HUD and results/reward screens (the overlay still draws them).
+
+## Phase 6 — MVP (see MVP.md for the user's requirements)
+
+- [ ] True direct start through the title-flow script (Ghidra: `0x00BF7xxx`).
+- [ ] Inventory write: `uPlayer` item table and ammo; one verified in-game write; apply the rolled loadout.
+- [ ] Perks rewritten as per-character playstyle traits (no % damage); perks only from the menu; shop and rewards sell items/upgrades only.
+- [ ] Arena-to-arena transition without the Mercenaries results screens.
+- [ ] Chests (pickup objects `uOm08xx`) as the reward/challenge carriers; in-world next-stage choice.
+- [ ] Shop in the style of the game's item screen.
 - [ ] Add additional arenas only after repeatability and softlock checks. All Mercenaries stages should work (the arena is tied to the match, not the map), but only Public Assembly has been played.
 
 ## Phase 5 — Stabilization/release

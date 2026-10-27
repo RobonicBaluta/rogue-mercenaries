@@ -10,7 +10,7 @@ inventory can be mapped with a decompiler instead of capstone sweeps.
 | JDK 25 (Temurin, winget) | `C:\Program Files\Eclipse Adoptium\jdk-25.0.5.8-hotspot` |
 | Project | `G:\tools\ghidra-proj\re5` with program `re5dx9_mem.exe` |
 | Program file | `build/dump/re5dx9_mem.exe`: the runtime dump (`build/dump/re5dx9.flat`) rewritten as a 1:1 mapped PE by `scripts/dump_to_pe.py` (section raw pointers = virtual addresses), so every address matches the live game |
-| Analysis | `support/analyzeHeadless.bat G:/tools/ghidra-proj re5 -import build/dump/re5dx9_mem.exe` (log in `G:\tools\ghidra-proj\headless.log`) |
+| Analysis | `GHIDRA_HEADLESS_MAXMEM=12G support/analyzeHeadless.bat G:/tools/ghidra-proj re5 -import build/dump/re5dx9_mem.exe -analysisTimeoutPerFile 7200` (log in `G:\tools\ghidra-proj\headless.log`). The default 2 GB heap dies with `OutOfMemoryError` in the operand-reference analyzer on this 25 MB image |
 | Queries | `python scripts/ghidra_query.py count | decompile 0x... | callers | callees | xrefs | disasm | seed FILE` (PyGhidra from PyPI, `pip install pyghidra`) |
 | MCP server | `scripts/ghidra_mcp.py`, registered in `.mcp.json` as `ghidra` (tools: decompile, disassemble, xrefs_to, callers, callees, function_info, read_bytes, search_functions, rename_function). Claude Code loads it on the next session start |
 
