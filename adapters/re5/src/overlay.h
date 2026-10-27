@@ -19,6 +19,11 @@ void SetFocused(bool focused);
 
 bool IsInitialized();
 
+// Menu hotkeys pressed while focused since the last call: bit n (1..9) for the
+// digit keys, kHotkeyEnter for Enter. Read by the draw callback.
+inline constexpr unsigned kHotkeyEnter = 1u << 10;
+unsigned TakeHotkeys();
+
 // Called by the input hooks with the game's own DirectInput state before it
 // is blanked. Works even when the game holds the devices exclusively.
 void FeedKeyboard(const unsigned char* keys256);

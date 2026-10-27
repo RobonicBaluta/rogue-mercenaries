@@ -34,6 +34,10 @@ constexpr std::uintptr_t kFnCharacterSubHp = 0x0084F7C0;  // void uCharacter::Su
 constexpr std::uintptr_t kFnPlayerSubHp = 0x00B7C950;     // void uPlayer::SubHp(short)
 constexpr std::uintptr_t kFnHitGetAttacker = 0x00C49530;  // cUnit* cHit::GetAttacker()
 constexpr std::uintptr_t kFnMercAddTime = 0x00718050;     // void ?::MercAddTime(int seconds)
+// void cMercs::UpdateCountdown(float dt): counts [this+0x4DC] down, sets the
+// time-up state [this+0x4D4] = 1 at zero (or at the 150/400 kill cap) and
+// mirrors the value into game work +0x680. Called once per frame in a match.
+constexpr std::uintptr_t kFnMercUpdateCountdown = 0x00717850;
 }  // namespace addr
 
 namespace off {
@@ -58,8 +62,12 @@ constexpr std::size_t kGameWork = 0x1042C;
 // game work
 constexpr std::size_t kGameMode = 0x58;       // int32; Mercenaries code checks 2 and 5
 constexpr std::size_t kGameStage = 0x574;     // int32 (hypothesis: stage/area id)
-constexpr std::size_t kMercTimer = 0x680;     // float seconds remaining
+constexpr std::size_t kMercTimer = 0x680;     // float seconds remaining (display mirror, rewritten each frame)
+constexpr std::size_t kMercKills = 0x58C;     // int32 Mercenaries kill counter (150/400 cap ends the match)
 constexpr std::size_t kMercScore = 0x6B4;     // int32 (from the 2021 trainer's pointer path)
+// Mercenaries match object (`this` of kFnMercUpdateCountdown)
+constexpr std::size_t kMercCountdown = 0x4DC;  // float seconds remaining (authoritative)
+constexpr std::size_t kMercState = 0x4D4;      // int32: 0 running, 1 time up / finished
 // MtObject
 constexpr std::size_t kVtableGetDti = 0x10;  // vtable slot 4
 // MtDTI
@@ -82,6 +90,8 @@ inline constexpr Signature kSignatures[] = {
     // MercAddTime reads [kGameRoot]+kGameWork and adds to +kMercTimer.
     {"merc_add_time", addr::kFnMercAddTime, "A1 A4 40 23 01 56 8B 74 24 08 57 8B F9 8B 88 2C 04 01 00"},
     {"merc_timer_store", 0x007180E6, "F3 0F 11 89 80 06 00 00"},
+    {"merc_update_countdown", addr::kFnMercUpdateCountdown,
+     "A1 A4 40 23 01 8B 80 2C 04 01 00 57 8B F9 8B 88 74 05 00 00 3B 88 78 05 00 00"},
     // sPlayer::GetPlayer(i) returns [this + i*4 + 0x24] for i in [0,4).
     {"splayer_get_player", 0x007E6220, "8B 44 24 04 83 F8 FF 7F 05 33 C0 C2 04 00 83 F8 04 7D F6 8B 44 81 24"},
     // uEnemy::ApplyDamage calls the SubHp virtual (+0x114) that the base hook covers.

@@ -129,8 +129,11 @@ void __fastcall PlayerSubHpDetour(std::uintptr_t self, void*, std::int16_t amoun
     hit.hp = before ? before->hp : 0;
     hit.maxHp = before ? before->max : 0;
     const IncomingDecision decision = g_sink->Incoming(hit);
-    int applied = std::isfinite(decision.multiplier) ? ClampDamage(amount * static_cast<double>(decision.multiplier))
-                                                     : amount;
+    int applied = amount;
+    if (std::isfinite(decision.multiplier)) {
+        // A zero multiplier (developer invulnerability) skips the hit entirely.
+        applied = decision.multiplier <= 0.0f ? 0 : ClampDamage(amount * static_cast<double>(decision.multiplier));
+    }
     if (decision.preventDeath && before && applied >= before->hp) {
         applied = before->hp > decision.leaveHp ? before->hp - decision.leaveHp : 0;
     }

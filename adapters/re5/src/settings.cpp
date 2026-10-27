@@ -57,6 +57,10 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
             settings.disableCombatHooks = dev.value("disable_combat_hooks", settings.disableCombatHooks);
             settings.disableOverlayDraw = dev.value("disable_overlay_draw", settings.disableOverlayDraw);
             settings.uiDemo = dev.value("ui_demo", settings.uiDemo);
+            settings.devInvulnerable = dev.value("invulnerable", settings.devInvulnerable);
+            settings.devOutgoingMultiplier = dev.value("outgoing_multiplier", settings.devOutgoingMultiplier);
+            settings.devIncomingMultiplier = dev.value("incoming_multiplier", settings.devIncomingMultiplier);
+            settings.devGrantPerks = dev.value("grant_perks", settings.devGrantPerks);
         }
     } catch (const std::exception& e) {
         if (error) {

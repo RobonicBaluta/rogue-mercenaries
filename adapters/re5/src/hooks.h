@@ -81,6 +81,18 @@ struct HookStatus {
 };
 const HookStatus& Status();
 
+// Mercenaries countdown (applied inside the game's countdown update).
+struct MercTimerView {
+    std::uintptr_t object = 0;
+    bool recent = false;  // updated within the last 500 ms (a match is running)
+    float countdown = 0.0f;
+    int state = -1;       // 0 running, 1 finished
+};
+void SetMercTimerFloor(float seconds);  // <= 0 disables the floor
+void RequestMercMatchEnd();
+MercTimerView ReadMercTimer();
+bool InstallMercHooks();
+
 // Drives HookSink::GameTick from the game's main thread.
 void TickGame(const char* source);
 

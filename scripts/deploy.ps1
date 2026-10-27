@@ -9,6 +9,9 @@ param(
     # adapter.json to install (e.g. configs\adapter.dev.json for test runs).
     [string]$AdapterConfig = '',
 
+    # Content configs to install (default: the repo's configs folder).
+    [string]$ConfigDir = '',
+
     [string]$GameDir = 'G:\SteamLibrary\steamapps\common\Resident Evil 5'
 )
 
@@ -58,7 +61,7 @@ switch ($Mode) {
         $files = @()
         Copy-Item -LiteralPath $Dll -Destination $targetDll
         $files += [pscustomobject]@{ path = $targetDll; sha256 = Get-Hash $targetDll }
-        $configSrc = Join-Path $repoRoot 'configs'
+        $configSrc = if ($ConfigDir) { $ConfigDir } else { Join-Path $repoRoot 'configs' }
         $configDst = Join-Path $modDir 'configs'
         New-Item -ItemType Directory -Force -Path $configDst | Out-Null
         if (Test-Path -LiteralPath $configSrc) {

@@ -2,7 +2,7 @@
 
 ## Current test status
 
-The portable core (`rm_core`) has an automated Catch2 suite (`rm_tests`, 63 test cases) and a headless simulator (`rm_sim`); both build and pass on x64 and Win32 (see Commands). These results say nothing about in-game behaviour. The target executable identity is measured locally and reference projects have been inspected. A game runtime test must be recorded separately from any build or simulation result.
+The portable core (`rm_core`) has an automated Catch2 suite (`rm_tests`, 63 test cases) and a headless simulator (`rm_sim`); both build and pass on x64 and Win32 (see Commands). These results say nothing about in-game behaviour on their own. In-game behaviour is verified separately with adapter logs, JSONL telemetry and in-process frame captures from the installed game (`research/capabilities.md` lists the evidence per capability; runs are stored under `build/runs/`).
 
 ## Core automated tests
 
@@ -76,5 +76,23 @@ and `$ctest` to `ctest.exe` in the same folder.
   Other options: `--capabilities all|none|<comma list>` (e.g. drop `heal` to check capability gating), `--policy mix|random|greedy|safe`.
   Publish: `Copy-Item build\sim\summary.md research\sim\summary-<date>.md` (current: `research/sim/summary-2026-10-27.md`).
 - Content validation only: any `rm_tests "[content]"` run loads `configs/` and fails with the loader's error list if the data is invalid.
-- Runtime launch/log collection: pending (RE5 adapter, Phase 1).
-- Diagnostic export: core API `rm::ExportDiagnostics(outZip, logDir, configDir, extraFiles, summaryText)` is implemented and tested (`[zip]`); the in-game command that calls it is pending in the adapter.
+- Runtime (RE5, game must be closed first; all scripts restore what they change):
+  - Switch the game to 1280x720 windowed + VSync for tests / restore the player's config:
+    `scripts\game_config.ps1 -Mode test` / `-Mode restore` (original kept in `buildackup\config.ini.original`).
+  - Install / uninstall with a manifest (never overwrites foreign files, checks the exe hash):
+    `scripts\deploy.ps1 -Mode install -AdapterConfig configsdapter.test.json [-ConfigDir <content>]`, `-Mode uninstall`, `-Mode status`.
+  - Unattended smoke run (Steam launch, muted, background; logs + in-process frame captures to `build
+uns\<stamp>-<label>\`):
+    `scripts\smoke.ps1 -Dll build\win32dapters
+e5\Release\dinput8.dll -AdapterConfig configsdapter.dev.json -Seconds 30 -CaptureAt "10,20"`.
+    With `dev.ui_demo: true` the mod walks a scripted run (sandbox profile) through every panel for UI captures.
+  - Interactive control (needs an otherwise idle PC: sends input to the game): `scripts\gamectl.ps1 -Action launch|keys|capture|close|reap|status`;
+    `-Keys` accepts key names, `down=`/`up=` holds, mouse buttons and `move=dx/dy`.
+  - Full automated run with real kills (Mercenaries Solo, Public Assembly, Chris; small-budget test content):
+    `bash scripts/autoplay_run.sh build/testcontent configs/adapter.autoplay.json 3`
+    (`adapter.autoplay.json`: invulnerable, ×4 outgoing damage; never ship it).
+  - Developer test aids in `adapter.json` → `dev`: `invulnerable`, `outgoing_multiplier`, `incoming_multiplier`, `grant_perks`, `probe_hits`, `mute_audio`.
+- Diagnostic export: in game F7 → Developer → Export diagnostics writes `%LOCALAPPDATA%\RogueMercenaries
+ogue-mercenaries-diagnostics.zip`
+  (verified in game 2026-10-27; core API `rm::ExportDiagnostics`).
+- Release package: `scripts\package_release.ps1` → `dist\RogueMercenaries-<version>.zip` (DLL, configs, README, licenses, SHA256SUMS).

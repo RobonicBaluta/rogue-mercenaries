@@ -44,19 +44,106 @@ bool Blocking() { return g_sink && g_sink->BlockGameInput(); }
 
 void Tick() { TickGame("dinput"); }
 
+// Device kind by object pointer, learned once through GetCapabilities.
+enum class Kind { Unknown, Keyboard, Mouse, Other };
+struct KnownDevice {
+    void* device = nullptr;
+    Kind kind = Kind::Unknown;
+};
+KnownDevice g_devices[16];
+
+const char* KindName(Kind kind) {
+    switch (kind) {
+        case Kind::Keyboard: return "keyboard";
+        case Kind::Mouse: return "mouse";
+        case Kind::Other: return "other";
+        default: return "unknown";
+    }
+}
+
+Kind KindOf(void* device, const char* via, DWORD size) {
+    for (const auto& known : g_devices) {
+        if (known.device == device) return known.kind;
+    }
+    using GetCapabilitiesFn = HRESULT(STDMETHODCALLTYPE*)(void*, LPDIDEVCAPS);
+    auto getCaps = reinterpret_cast<GetCapabilitiesFn>((*reinterpret_cast<void***>(device))[3]);
+    DIDEVCAPS caps{};
+    caps.dwSize = sizeof(caps);
+    Kind kind = Kind::Other;
+    if (SUCCEEDED(getCaps(device, &caps))) {
+        const BYTE type = GET_DIDEVICE_TYPE(caps.dwDevType);
+        kind = type == DI8DEVTYPE_KEYBOARD ? Kind::Keyboard : type == DI8DEVTYPE_MOUSE ? Kind::Mouse : Kind::Other;
+    }
+    for (auto& known : g_devices) {
+        if (!known.device) {
+            known.device = device;
+            known.kind = kind;
+            RM_LOGI("dinput device %p is %s (first seen via %s, size %lu)", device, KindName(kind), via, size);
+            break;
+        }
+    }
+    return kind;
+}
+
+// Keys and buttons pressed while the overlay owned input stay hidden from the
+// game until released, so the key that closes the menu never leaks through.
+bool g_heldKeys[256]{};
+bool g_heldButtons[8]{};
+bool g_bufferedButtons[8]{};
+
+void FilterKeyboard(unsigned char* keys, bool blocking) {
+    for (int i = 0; i < 256; ++i) {
+        const bool down = (keys[i] & 0x80) != 0;
+        if (blocking) {
+            g_heldKeys[i] = g_heldKeys[i] || down;
+            keys[i] = 0;
+        } else if (g_heldKeys[i]) {
+            if (down) {
+                keys[i] = 0;
+            } else {
+                g_heldKeys[i] = false;
+            }
+        }
+    }
+}
+
+void FilterMouse(void* data, DWORD size, bool blocking) {
+    auto* mouse = static_cast<DIMOUSESTATE*>(data);
+    const int buttons = size == sizeof(DIMOUSESTATE2) ? 8 : 4;
+    BYTE* rgb = mouse->rgbButtons;
+    if (blocking) {
+        for (int i = 0; i < buttons; ++i) g_heldButtons[i] = g_heldButtons[i] || (rgb[i] & 0x80);
+        std::memset(data, 0, size);
+        return;
+    }
+    for (int i = 0; i < buttons; ++i) {
+        if (!g_heldButtons[i]) continue;
+        if (rgb[i] & 0x80) {
+            rgb[i] = 0;
+        } else {
+            g_heldButtons[i] = false;
+        }
+    }
+}
+
 template <int Index>
 HRESULT STDMETHODCALLTYPE GetDeviceStateDetour(void* self, DWORD size, LPVOID data) {
     const HRESULT hr = g_stateHooks[Index].originalState(self, size, data);
+    if (FAILED(hr) || !data) {
+        if (size == 256) Tick();
+        return hr;
+    }
+    const Kind kind = KindOf(self, "GetDeviceState", size);
+    const bool blocking = Blocking();
     if (size == 256) {  // keyboard state array: the once-per-frame poll
-        if (SUCCEEDED(hr) && data) {
-            overlay::FeedKeyboard(static_cast<const unsigned char*>(data));
-        }
+        overlay::FeedKeyboard(static_cast<const unsigned char*>(data));
         Tick();
-    } else if ((size == sizeof(DIMOUSESTATE) || size == sizeof(DIMOUSESTATE2)) && SUCCEEDED(hr) && data) {
+        FilterKeyboard(static_cast<unsigned char*>(data), Blocking());
+    } else if (kind == Kind::Mouse && (size == sizeof(DIMOUSESTATE) || size == sizeof(DIMOUSESTATE2))) {
         const auto* mouse = static_cast<const DIMOUSESTATE*>(data);
         overlay::FeedMouse(mouse->lX, mouse->lY, mouse->lZ, mouse->rgbButtons);
-    }
-    if (Blocking() && data && SUCCEEDED(hr)) {
+        FilterMouse(data, size, blocking);
+    } else if (blocking) {
         std::memset(data, 0, size);
         if (size == sizeof(DIJOYSTATE) || size == sizeof(DIJOYSTATE2)) {
             // Centered POV hats are 0xFFFFFFFF, not 0.
@@ -69,12 +156,60 @@ HRESULT STDMETHODCALLTYPE GetDeviceStateDetour(void* self, DWORD size, LPVOID da
     return hr;
 }
 
+// Buffered mouse records feed the overlay cursor; records for keys or buttons
+// that must stay hidden are removed from the batch the game receives.
+void FilterBuffered(Kind kind, DWORD objectSize, LPDIDEVICEOBJECTDATA data, LPDWORD inOut, bool blocking) {
+    auto* base = reinterpret_cast<unsigned char*>(data);
+    long dx = 0, dy = 0, wheel = 0;
+    bool mouseEvents = false;
+    DWORD kept = 0;
+    for (DWORD i = 0; i < *inOut; ++i) {
+        auto* record = reinterpret_cast<DIDEVICEOBJECTDATA*>(base + i * objectSize);
+        const DWORD ofs = record->dwOfs;
+        const bool pressed = (record->dwData & 0x80) != 0;
+        bool drop = blocking;
+        if (kind == Kind::Mouse) {
+            mouseEvents = true;
+            if (ofs == DIMOFS_X) dx += static_cast<LONG>(record->dwData);
+            else if (ofs == DIMOFS_Y) dy += static_cast<LONG>(record->dwData);
+            else if (ofs == DIMOFS_Z) wheel += static_cast<LONG>(record->dwData);
+            else if (ofs >= DIMOFS_BUTTON0 && ofs <= DIMOFS_BUTTON7) {
+                const DWORD button = ofs - DIMOFS_BUTTON0;
+                g_bufferedButtons[button] = pressed;
+                if (blocking && pressed) g_heldButtons[button] = true;
+                if (!blocking && g_heldButtons[button]) {
+                    drop = true;
+                    if (!pressed) g_heldButtons[button] = false;
+                }
+            }
+        } else if (kind == Kind::Keyboard && ofs < 256) {
+            if (blocking && pressed) g_heldKeys[ofs] = true;
+            if (!blocking && g_heldKeys[ofs]) {
+                drop = true;
+                if (!pressed) g_heldKeys[ofs] = false;
+            }
+        }
+        if (!drop) {
+            if (kept != i) std::memcpy(base + kept * objectSize, record, objectSize);
+            ++kept;
+        }
+    }
+    *inOut = kept;
+    if (mouseEvents) {
+        unsigned char buttons[4];
+        for (int i = 0; i < 4; ++i) buttons[i] = g_bufferedButtons[i] ? 0x80 : 0;
+        overlay::FeedMouse(dx, dy, wheel, buttons);
+    }
+}
+
 template <int Index>
 HRESULT STDMETHODCALLTYPE GetDeviceDataDetour(void* self, DWORD objectSize, LPDIDEVICEOBJECTDATA data, LPDWORD inOut,
                                               DWORD flags) {
     const HRESULT hr = g_dataHooks[Index].originalData(self, objectSize, data, inOut, flags);
-    if (Blocking() && SUCCEEDED(hr) && inOut && !(flags & DIGDD_PEEK)) {
-        *inOut = 0;  // drop buffered events while the overlay has input
+    if (SUCCEEDED(hr) && inOut && data && !(flags & DIGDD_PEEK) && objectSize >= sizeof(DIDEVICEOBJECTDATA)) {
+        FilterBuffered(KindOf(self, "GetDeviceData", objectSize), objectSize, data, inOut, Blocking());
+    } else if (SUCCEEDED(hr) && inOut && !data && Blocking() && !(flags & DIGDD_PEEK)) {
+        *inOut = 0;  // flush-only call
     }
     return hr;
 }

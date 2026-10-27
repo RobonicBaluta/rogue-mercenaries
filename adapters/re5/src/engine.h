@@ -20,6 +20,7 @@ struct Verified {
     bool playerSubHp = false;
     bool hitAttacker = false;
     bool gameWork = false;   // mode/stage/merc timer layout
+    bool mercCountdown = false;
 };
 const Verified& Caps();
 
@@ -67,6 +68,7 @@ struct GameWork {
     int stage = -1;
     float mercTimer = 0.0f;
     int mercScore = 0;
+    int mercKills = 0;
 };
 std::optional<GameWork> ReadGameWork();
 bool WriteMercTimer(float seconds);

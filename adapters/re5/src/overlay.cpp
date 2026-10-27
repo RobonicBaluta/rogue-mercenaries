@@ -34,6 +34,18 @@ WNDPROC g_originalWndProc = nullptr;
 unsigned char g_prevKeys[256]{};
 float g_cursorX = -1.0f;
 float g_cursorY = -1.0f;
+std::atomic<bool> g_directInputMouseSeen{false};
+
+// Without DirectInput mouse data (e.g. the game reads the mouse another way)
+// the overlay follows the Windows cursor inside the game window.
+void FeedOsCursor() {
+    POINT point;
+    if (!g_window || !GetCursorPos(&point) || !ScreenToClient(g_window, &point)) return;
+    ImGuiIO& io = ImGui::GetIO();
+    io.AddMousePosEvent(static_cast<float>(point.x), static_cast<float>(point.y));
+    io.AddMouseButtonEvent(0, (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0);
+    io.AddMouseButtonEvent(1, (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0);
+}
 
 void Toggle() {
     // Both the WndProc and DirectInput paths can see the same key press.
@@ -79,13 +91,23 @@ struct KeyMap {
     int dik;
     ImGuiKey key;
 };
+// Digits and Enter are not forwarded to ImGui: they are menu hotkeys (see
+// TakeHotkeys) and would otherwise also activate the focused widget.
 constexpr KeyMap kKeys[] = {
-    {0xC8, ImGuiKey_UpArrow},   {0xD0, ImGuiKey_DownArrow}, {0xCB, ImGuiKey_LeftArrow}, {0xCD, ImGuiKey_RightArrow},
-    {0x1C, ImGuiKey_Enter},     {0x9C, ImGuiKey_KeypadEnter}, {0x39, ImGuiKey_Space},   {0x01, ImGuiKey_Escape},
-    {0x0F, ImGuiKey_Tab},       {0x0E, ImGuiKey_Backspace}, {0x11, ImGuiKey_W},         {0x1E, ImGuiKey_A},
-    {0x1F, ImGuiKey_S},         {0x20, ImGuiKey_D},         {0x02, ImGuiKey_1},         {0x03, ImGuiKey_2},
-    {0x04, ImGuiKey_3},         {0x05, ImGuiKey_4},         {0x2A, ImGuiKey_LeftShift}, {0x1D, ImGuiKey_LeftCtrl},
+    {0xC8, ImGuiKey_UpArrow}, {0xD0, ImGuiKey_DownArrow}, {0xCB, ImGuiKey_LeftArrow}, {0xCD, ImGuiKey_RightArrow},
+    {0x39, ImGuiKey_Space},   {0x01, ImGuiKey_Escape},    {0x0F, ImGuiKey_Tab},       {0x0E, ImGuiKey_Backspace},
+    {0x2A, ImGuiKey_LeftShift}, {0x1D, ImGuiKey_LeftCtrl},
 };
+
+// DIK_1..DIK_9 are 0x02..0x0A; DIK_RETURN 0x1C, DIK_NUMPADENTER 0x9C.
+std::atomic<unsigned> g_hotkeys{0};
+
+// The menu can open by itself (arena cleared) while the player is still
+// firing; input that started before it opened must not click anything.
+std::atomic<DWORD> g_focusSince{0};
+bool g_buttonsArmed = false;  // all mouse buttons seen released since focus
+constexpr DWORD kFocusGraceMs = 600;
+bool InGrace() { return GetTickCount() - g_focusSince.load() < kFocusGraceMs; }
 
 bool Initialize(IDirect3DDevice9* device) {
     D3DDEVICE_CREATION_PARAMETERS params{};
@@ -128,12 +150,18 @@ bool Initialize(IDirect3DDevice9* device) {
 }  // namespace
 
 void SetDrawCallback(DrawCallback callback) { g_draw = callback; }
+unsigned TakeHotkeys() { return g_hotkeys.exchange(0); }
 void SetToggleKey(int virtualKey) { g_toggleKey = virtualKey; }
 bool IsFocused() { return g_focused.load(); }
 bool IsInitialized() { return g_initialized; }
 
 void SetFocused(bool focused) {
+    if (focused && !g_focused.load()) {
+        g_focusSince = GetTickCount();
+        g_buttonsArmed = false;
+    }
     g_focused = focused;
+    g_hotkeys = 0;
     RM_LOGD("overlay focus %s", focused ? "on" : "off");
 }
 
@@ -142,6 +170,15 @@ void FeedKeyboard(const unsigned char* keys) {
     const int toggle = ToggleScancode();
     if (toggle > 0 && toggle < 256 && (keys[toggle] & 0x80) && !(g_prevKeys[toggle] & 0x80)) {
         Toggle();
+    }
+    if (g_focused.load()) {
+        auto pressed = [&](int dik) { return (keys[dik] & 0x80) && !(g_prevKeys[dik] & 0x80); };
+        unsigned bits = 0;
+        for (int digit = 1; digit <= 9; ++digit) {
+            if (pressed(0x01 + digit)) bits |= 1u << digit;
+        }
+        if (pressed(0x1C) || pressed(0x9C)) bits |= kHotkeyEnter;
+        if (bits && !InGrace()) g_hotkeys.fetch_or(bits);
     }
     if (g_initialized && g_focused.load()) {
         std::lock_guard lock(g_mutex);
@@ -157,6 +194,7 @@ void FeedKeyboard(const unsigned char* keys) {
 }
 
 void FeedMouse(long dx, long dy, long wheel, const unsigned char* buttons) {
+    g_directInputMouseSeen = true;
     if (!g_initialized || !g_focused.load()) {
         return;
     }
@@ -168,9 +206,17 @@ void FeedMouse(long dx, long dy, long wheel, const unsigned char* buttons) {
     }
     g_cursorX = std::clamp(g_cursorX + static_cast<float>(dx), 0.0f, io.DisplaySize.x - 1.0f);
     g_cursorY = std::clamp(g_cursorY + static_cast<float>(dy), 0.0f, io.DisplaySize.y - 1.0f);
-    io.AddMousePosEvent(g_cursorX, g_cursorY);
+    static DWORD lastLog = 0;
+    if ((dx || dy) && GetTickCount() - lastLog > 2000) {
+        lastLog = GetTickCount();
+        RM_LOGD("overlay mouse delta %ld,%ld -> %.0f,%.0f", dx, dy, g_cursorX, g_cursorY);
+    }
+    const bool anyDown = (buttons[0] | buttons[1] | buttons[2]) & 0x80;
+    if (!g_buttonsArmed) {
+        g_buttonsArmed = !anyDown && !InGrace();
+    }
     for (int i = 0; i < 3; ++i) {
-        io.AddMouseButtonEvent(i, (buttons[i] & 0x80) != 0);
+        io.AddMouseButtonEvent(i, g_buttonsArmed && (buttons[i] & 0x80) != 0);
     }
     if (wheel) {
         io.AddMouseWheelEvent(0.0f, static_cast<float>(wheel) / 120.0f);
@@ -205,6 +251,21 @@ void OnPresent(IDirect3DDevice9* device) {
     ImGui_ImplDX9_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::GetIO().MouseDrawCursor = g_focused.load();
+    if (g_focused.load()) {
+        if (g_directInputMouseSeen.load()) {
+            // The Win32 backend queues the OS cursor position, which this game
+            // hides and recentres; the DirectInput-driven cursor is queued last
+            // so it wins.
+            ImGuiIO& io = ImGui::GetIO();
+            if (g_cursorX < 0.0f) {
+                g_cursorX = io.DisplaySize.x * 0.5f;
+                g_cursorY = io.DisplaySize.y * 0.5f;
+            }
+            io.AddMousePosEvent(g_cursorX, g_cursorY);
+        } else {
+            FeedOsCursor();
+        }
+    }
     ImGui::NewFrame();
     if (g_draw) {
         g_draw();

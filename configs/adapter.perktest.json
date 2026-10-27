@@ -1,0 +1,17 @@
+{
+  "log_level": "debug",
+  "developer_mode": true,
+  "overlay_key_vk": 118,
+  "timer_policy": "hold",
+  "timer_hold_seconds": 90.0,
+  "end_match_on_clear": true,
+  "dev": {
+    "probe_interval_ms": 5000,
+    "probe_hits": true,
+    "mute_audio": true,
+    "invulnerable": false,
+    "incoming_multiplier": 0.05,
+    "outgoing_multiplier": 1.0,
+    "grant_perks": ["finisher", "keen_eye", "kevlar_vest", "field_medic"]
+  }
+}

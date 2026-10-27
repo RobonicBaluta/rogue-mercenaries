@@ -29,28 +29,28 @@ core/persistence/ ── versioned mod save (separate from the game's save)
 - `simulation`: fake adapter and multi-run balance model; no engine addresses.
 - `telemetry`: structured events, configurable verbosity, bounded log rotation and safe diagnostic ZIP.
 
-## Adapter contract (initial draft)
+## Adapter contract (as built)
 
-Keep observations distinct from commands. Return an unavailable/unknown result rather than inventing a default when an engine feature is not verified.
+The core facade is `rm::RunController` (`core/include/rm/run_controller.h`); the adapter reports verified engine features through `rm::Capabilities` and receives typed events through `rm::IEventSink`. Content needing a missing capability is never offered.
 
-```cpp
-struct GameSnapshot {
-    bool gameplayActive;
-    std::optional<float> playerHealth;
-    std::optional<int> aliveEnemyCount;
-    std::optional<std::string> stageId;
-};
+`adapters/re5` (builds `dinput8.dll`, x86, static CRT):
 
-class IGameAdapter {
-public:
-    virtual ~IGameAdapter() = default;
-    virtual GameSnapshot Observe() = 0;
-    virtual bool ApplyDamageModifier(float multiplier) = 0;
-    virtual bool ShowNotification(std::string_view text) = 0;
-};
-```
+| File | Role |
+|---|---|
+| `proxy.cpp`, `dinput8.def` | Forwards the five dinput8 exports to `SysWOW64\dinput8.dll` |
+| `dllmain.cpp` | Worker thread: settings, log, crash handler, signature verification, hook installation in one `MH_ApplyQueued` batch |
+| `re5_layout.h` | Every address/offset for build 11465250, each guarded by an expected-bytes signature |
+| `engine.cpp` | Fault-tolerant reads: players, enemies, HP, DTI type checks, game work |
+| `hooks_combat.cpp` | `uEnemy::OnHit` scope + base `uCharacter::SubHp` (outgoing), `uPlayer::SubHp` (incoming) |
+| `hooks_merc.cpp` | Mercenaries countdown update: arena time floor, end-of-arena time-up |
+| `hooks_input.cpp` | DirectInput/XInput: game tick, overlay input, blocking while the menu is open (held keys stay hidden after closing) |
+| `hooks_d3d9.cpp`, `overlay.cpp` | Present/Reset hooks, Dear ImGui HUD and menu, digit/Enter hotkeys |
+| `mod.cpp` | Maps engine events to `RunController`, arena state machine on Mercenaries matches, UI panels, developer tools; every entry point is exception-guarded |
+| `probe.cpp`, `crash.cpp`, `dev_*.cpp` | Diagnostics, crash logging, test-only audio mute and frame capture |
 
-Actual hook callbacks emit typed events such as `PlayerDamaged`, `EnemyKilled`, `ArenaStarted`, `ArenaFinished`, `PerkActivated`, `PurchaseCommitted` and `RewardSelected`. Event payloads include source confidence/build identity when relevant. Core code consumes events on a safe queue; engine memory is never read from UI or simulation threads unless the callback is verified thread-safe.
+Arena mapping: a Mercenaries match whose countdown runs while the run waits for an arena begins that arena. Player kills reduce the kill budget. On clear the mod zeroes the authoritative countdown and the game shows its own results. The reward → shop → route flow happens on that screen, and the next match begins the next arena.
+
+Threading: Present and the input poll run on the game's main thread (the core tick); enemy hits are processed on game worker threads. All `RunController` calls take one mutex.
 
 ## State and persistence
 

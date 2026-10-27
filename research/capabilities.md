@@ -12,19 +12,20 @@ Engine facts and their derivation are in [re5-engine-map.md](re5-engine-map.md).
 
 | # | Capability | Status | Evidence | Remaining proof |
 |---|---|---|---|---|
-| 1 | Load a custom DLL without breaking startup | **Verified (runtime)** | `dinput8.dll` proxy (x86, 5 forwarded exports) loaded in 9 launches on 2026-10-27; game alive 20–45 s; clean `process detach (process exit)` on WM_CLOSE; executable hash unchanged after uninstall (`scripts/deploy.ps1`) | Long session; coexistence with other proxies (RE5Patch/RE5VR) |
-| 2 | Safe periodic callback / game-loop hook | **Verified (runtime)** | Present (device) runs on the game's main thread at ~120 Hz; `TickGame` drives core updates from Present/DirectInput on that thread (`*-overlay` run: ticks 2047, presents 3828) | Behaviour during loading screens and cutscenes |
-| 3 | Identify the local player | Partially verified | `sPlayer` list/count (static); `IsKindOf(uPlayer)` via DTI. At the title screen the runtime read shows count=0 | In-match read of count, class (`uPl00Chris`…) and `+0x2DA8` control value; the "control == 0 means local" hypothesis is untested |
-| 4 | Read player health | Verified (static) | HP `int16 +0x1364` / max `+0x1366` from the base and player SetHp/SubHp code | Observe HP in a match and compare it with the HUD bar |
-| 5 | Detect player damage | Verified (static); hook installed | `uPlayer::SubHp` at `0x00B7C950` hooked in every run since `*-sig1` | One controlled hit logs `player_hit` with the matching HP change |
-| 6 | Detect enemy death and attacker | Verified (static); hook installed | `uEnemy::OnHit` at `0x009E0840` hooked; attacker from `cHit::GetAttacker` `0x00C49530`; kill = HP crossing to ≤0 inside OnHit | In-match kill logs `killed=1 local=1`; check explosions, burning and partner kills |
-| 7 | Modify outgoing weapon damage | Verified (static); hook installed | Base `uCharacter::SubHp` `0x0084F7C0` scaled only inside the OnHit scope for the same enemy; `uEnemy::ApplyDamage` calls it through vtable `+0x114` | Same weapon and enemy with modifier off/on; compare `raw`/`applied` against shots-to-kill |
-| 8 | Read gameplay stage / mission state | Partially verified | Game work `[[0x012340A4]+0x1042C]`, read at runtime (mode=0, stage=0 at the title); Mercenaries timer `+0x680` from `AddTime` code | Values in a Mercenaries match and in story mode |
-| 9 | Count living enemies | Verified (static) | `sEnemy+0x24` count / `+0x30` array (loops in game code) | Compare the listed/alive count with a known group in a match |
-| 10 | Control the spawn sequence / reset the arena | Partially verified (design) | No runtime spawn API. Plan: one Mercenaries match = one arena. The kill budget is enforced by the mod, and the match is ended by writing the countdown (`+0x680` = 0). Retry restarts the stage | Confirm that a timer write of 0 ends the match and that Retry starts a new match detected by the mod |
-| 11 | Display an overlay | **Verified (runtime)** | Dear ImGui panel rendered over the title screen (`build/runs/20261027-183850-overlay/window.png`); Present/Reset/SwapChain Present hooked with the Steam overlay active | Behaviour in exclusive fullscreen and on device reset (alt-tab) |
-| 12 | Cleanly return to the next round | Unverified | Depends on #10 | Three Retry cycles without a softlock |
-| 13 | Export logs/diagnostics | Partially verified | Core `ExportDiagnostics` writes a ZIP (unit-tested); the in-game button is implemented | Press the button in game and inspect the ZIP |
+| 1 | Load a custom DLL without breaking startup | **Verified (runtime)** | `dinput8.dll` proxy (x86, 5 forwarded exports) loaded in 30+ launches on 2026-10-27; clean `process detach` on exit; exe hash unchanged after every uninstall | Coexistence with other proxies (RE5Patch/RE5VR) |
+| 2 | Safe periodic callback / game-loop hook | **Verified (runtime)** | Present on the game main thread (~120 Hz) drives `TickGame`; hit callbacks arrive on a game worker thread (t56396/t48932) and are serialized by the mod mutex | Loading screens and cutscenes in story mode |
+| 3 | Identify the local player | **Verified (runtime, Mercenaries solo)** | In match: `sPlayer` count=1, class `uPl00ChrisNormal`, number=0, control=0 (`build/runs/manual-session1-adapter.log`) | Story mode with the AI partner (the control-value hypothesis) |
+| 4 | Read player health | **Verified (runtime)** | HP 1000/1000 → 814 → 628 … → 0 on successive hits; matches the HUD bar | — |
+| 5 | Detect player damage | **Verified (runtime)** | `player_hit raw=196 applied=186` per enemy hit; death detected (HP 0 for 2 s → run failed, banked 0) | Damage from explosions/falls |
+| 5b | Modify incoming damage | **Verified (runtime)** | Chris starting perk (−5%): raw 196 → applied 186 on every hit; developer invulnerability → applied 0 | — |
+| 6 | Detect enemy death and attacker | **Verified (runtime)** | `enemy_hit class=uEm10 local=1 hp 800->0 killed=1` → `kill counted`; tougher `uEm21` (1400 HP) killed by the second hit | Kills by explosions and environment (no attacker) |
+| 7 | Modify outgoing weapon damage | **Verified (runtime)** | Handgun hit raw 250: ×4 test multiplier → 1000; + Sharpshooter×2 and M92F Lv2 → 1253 (×1.2528); Sharpshooter×3 → 1339 (×1.3392). Matches the core formula exactly | Shotgun pellets, melee and grenade paths |
+| 8 | Read gameplay stage / mission state | Partially verified | `mode` = 2 in Mercenaries solo (0 at title). `+0x574` is **not** a stage id (it is compared with `+0x578` as a sync counter); stage id unknown | Stage id if routes ever map to specific maps |
+| 9 | Count living enemies | **Verified (runtime)** | `sEnemy` listed=12 alive=12 at match start, alive 11 after a kill | — |
+| 10 | Control the encounter / end an arena | **Verified (runtime)** | Authoritative countdown is `[mercs+0x4DC]` (game work `+0x680` is a per-frame mirror). Hooking `0x00717850` holds it at 90 s during an arena and zeroes it on clear, and the game then shows its own results screen | — |
+| 11 | Display an overlay | **Verified (runtime)** | HUD and run menu drawn in menus and matches; keyboard navigation, digit/Enter hotkeys | Mouse cursor fix (DirectInput-driven) needs a re-test |
+| 12 | Cleanly return to the next round | **Verified (runtime)** | `run_0003`: 3 consecutive matches → arenas 1→2→3 (routes outskirts_patrol → market_sweep → ruins_gauntlet), run complete, 269 credits banked and persisted (`build/runs/manual-t2/`) | — |
+| 13 | Export logs/diagnostics | **Verified (runtime)** | In-game button wrote `rogue-mercenaries-diagnostics.zip` (summary, adapter logs, configs; `zipfile.testzip()` OK). The live JSONL was skipped (opened unshared) — fixed with `_wfsopen(_SH_DENYWR)` | Re-check that the JSONL is included |
 
 ## Static observations versus runtime facts
 
@@ -41,6 +42,9 @@ Engine facts and their derivation are in [re5-engine-map.md](re5-engine-map.md).
 | 2026-10-27 | Three signatures read as all-zero | Verification started before the packer finished unpacking the higher code pages | Wait until every signature site is non-zero before comparing |
 | 2026-10-27 | One full-hook run ended with exit code 0 about 20 s after start | Happened only on the double-process relaunch path; did not reproduce in 7 later Steam launches covering every component combination | Keep monitoring; crash diagnostics (VEH + detach log) now in place |
 | 2026-10-27 | Probe ticks stop after boot while the window is unfocused | The game stops polling DirectInput without focus | Tick also from Present on the main thread |
+| 2026-10-27 | Countdown "hold" had no effect | Game work `+0x680` is rewritten every frame from `[mercs+0x4DC]` | Hook the countdown update and write the authoritative field |
+| 2026-10-27 | The key that closed the menu leaked into the game (Space confirmed character select) | Input blocking stopped while the key was still held | Keys/buttons pressed while the menu is open stay hidden until released |
+| 2026-10-27 | Keyboard navigation lost its target when panel content changed | ImGui nav id disappears with the widget | Digit/Enter hotkeys handled by the mod, independent of ImGui navigation |
 
 ## Failure logging requirements
 

@@ -6,13 +6,17 @@ A single-player roguelite mod for **Resident Evil 5 Gold Edition (Steam, build 1
 
 | Area | State |
 |---|---|
-| Portable core (rules, economy, saves, telemetry) | Built and tested: 63 test cases on x64 and Win32; 10,000-run simulation passes all invariants ([research/sim](research/sim/summary-2026-10-27.md)) |
-| RE5 loader (`dinput8.dll` proxy) | Verified in game: loads, verifies 12 engine signatures, exits cleanly |
-| Overlay (HUD + run menu) | Verified in game, including the full results → reward → shop → route flow (scripted demo) |
-| Combat hooks (kills, damage in/out, heals) | Installed and statically verified; **not yet observed in a real fight** — see test T1 |
-| Arena loop on Mercenaries matches | Implemented; **not yet played** — see test T2 |
+| Portable core (rules, economy, saves, telemetry) | 63 test cases pass on x64 and Win32; the 10,000-run simulation passes all invariants ([research/sim](research/sim/summary-2026-10-27.md)) |
+| RE5 loader (`dinput8.dll` proxy) | Verified in game: loads, checks 13 engine signatures, exits cleanly |
+| Combat hooks | Verified in game in The Mercenaries:<br>• real kills are attributed to the player<br>• incoming damage is modified (perk −5%)<br>• outgoing damage is modified (Sharpshooter stacks + weapon upgrade)<br>• death ends the run |
+| Arena loop | Verified in game:<br>• each match is an arena<br>• the mod ends the match through the game's countdown when the kill target is met<br>• three arenas, then credits are banked and still there after a game restart |
+| Overlay | HUD and run menu; digit/Enter hotkeys and mouse |
+| Not yet tested | Story mode with the AI partner; Sheva and other characters in game; balance with real players |
 
-Details: [research/capabilities.md](research/capabilities.md) (what is verified and how), [research/re5-engine-map.md](research/re5-engine-map.md) (engine addresses), [TASKS.md](TASKS.md) (checklist with evidence).
+Details:
+- [research/capabilities.md](research/capabilities.md): what is verified and how.
+- [research/re5-engine-map.md](research/re5-engine-map.md): engine addresses.
+- [TASKS.md](TASKS.md): checklist with evidence.
 
 ## Build
 
@@ -41,12 +45,16 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
 
 1. Launch RE5 from Steam. Top right shows *Rogue Mercenaries – F7 to start a run*.
 2. Go to **The Mercenaries → Solo**. Pick Chris or Sheva and a stage.
-3. Press **F7**, select the same character and press **Start run**. Press F7 again to close the menu.
+3. Press **F7**, select the same character and press **Enter** (Start run). The menu closes by itself.
 4. Start the match. The HUD shows *Enemies left*. The Mercenaries countdown is held at 90 s, so the kill target decides the arena.
-5. When the target is reached the match ends. Results and rewards open automatically: take a reward, shop, choose the next route.
-6. Press **Retry** (or start another match) to begin the next arena. After arena 3 the run ends and its Credits are banked.
+5. When the target is reached the match ends. The menu opens on the results screen:
+   - **Enter** — continue;
+   - **1–3** — take a reward;
+   - digits buy in the shop, **Enter** leaves it;
+   - a digit picks the next route.
+6. Accept the game's results and start the next match (pick a stage and character again) to begin the next arena. After arena 3 the run ends and its Credits are banked.
 
-While the menu is open the game receives no input. Use the arrow keys and Enter, or the mouse.
+While the menu is open the game receives no input. The mouse works too, and so do the arrow keys with Space.
 
 ## Tests that need a human (a few minutes each)
 

@@ -1,4 +1,8 @@
 #include <chrono>
+#include <cstdio>
+#if defined(_WIN32)
+#include <share.h>
+#endif
 #include <system_error>
 #include <variant>
 
@@ -26,7 +30,9 @@ bool IsReserved(std::string_view key) {
 std::FILE* OpenAppend(const fs::path& path) {
     std::FILE* f = nullptr;
 #if defined(_WIN32)
-    if (_wfopen_s(&f, path.c_str(), L"ab") != 0) f = nullptr;
+    // _wfopen_s opens files unshared; readers (diagnostic export, log
+    // viewers) must be able to open the live log, so allow shared reads.
+    f = _wfsopen(path.c_str(), L"ab", _SH_DENYWR);
 #else
     f = std::fopen(path.c_str(), "ab");
 #endif

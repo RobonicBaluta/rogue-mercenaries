@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace rmre5 {
 
@@ -32,6 +33,12 @@ struct Settings {
     bool disableOverlayDraw = false;
     // Scripted run with synthetic kills on a sandbox profile, for UI captures.
     bool uiDemo = false;
+    // Test aids for automated play: no damage taken, extra outgoing damage.
+    bool devInvulnerable = false;
+    float devOutgoingMultiplier = 1.0f;
+    float devIncomingMultiplier = 1.0f;
+    // Perks granted (under normal rules) right after a run starts.
+    std::vector<std::string> devGrantPerks;
     // Mercenaries timer handling while an arena is active:
     //   "hold"  keeps the countdown at or above timerHoldSeconds
     //   "game"  leaves the game's own countdown alone

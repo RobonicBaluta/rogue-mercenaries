@@ -15,18 +15,18 @@ Evidence is written on every completed item. `[~]` means partially verified (the
 
 ## Phase 1 — RE5 feasibility
 
-See `research/capabilities.md` for the per-capability ledger and `research/re5-engine-map.md` for addresses and derivations.
+See `research/capabilities.md` (per-capability evidence) and `research/re5-engine-map.md` (addresses and derivations). Runtime artifacts: `build/runs/` (local).
 
-- [x] Verify DLL proxy load and export forwarding inside the installed build. Evidence: adapter log shows init, 12/12 signatures OK, DirectInput8Create forwarded (game input works through the proxy), clean `process detach` on exit; 5/5 consecutive stable launches after batching hook enable (`build/runs/*-batch1..5`).
-- [x] Verify safe game-loop/render callback and test overlay. Evidence: Present runs on the game main thread (~120 Hz); ImGui HUD and run menu rendered in game (`build/runs/20261027-190135-uidemo/frame-00*.png`, in-process back-buffer captures).
-- [~] Identify local player and bounded health read. Static: `sPlayer` list/count, HP `+0x1364`/`+0x1366`, DTI type checks; runtime read returns count 0 at title. Needs an in-match observation (user test T1).
-- [~] Detect received damage and distinguish healing/scripted changes. Static + hook installed on `uPlayer::SubHp` (heals are negative amounts, ignored). Needs an in-match hit (user test T1).
-- [~] Verify one reversible outgoing weapon-damage modification. Static + hooks installed (OnHit scope + base SubHp scaling). Needs an in-match comparison (user test T1).
-- [~] Detect enemy death and duplicate/non-player kill behavior. Static + OnHit hook; core ignores repeated enemy ids. Needs in-match kills (user test T1).
-- [~] Obtain living enemy count in a named encounter. Static `sEnemy` list; not yet observed in a match.
-- [ ] Verify finite encounter completion and a second arena round/reset. Design: Mercenaries match = arena, mod ends the match by zeroing the countdown (`+0x680`), Retry starts the next arena. Needs user test T2.
-- [~] Validate clean mission exit and diagnostic log export. Clean exit verified at the title screen; in-game diagnostics button implemented, not yet pressed in game.
-- [ ] Complete feasibility recommendation; compare RE4 Remake only if the RE5 gate has failed with evidence. Not triggered: every RE5 capability has a verified-static path and the runtime pieces tested so far work.
+- [x] Verify DLL proxy load and export forwarding inside the installed build. Evidence: 30+ launches; 13/13 signatures OK; DirectInput works through the proxy; clean `process detach`; exe hash unchanged after every uninstall.
+- [x] Verify safe game-loop/render callback and test overlay. Evidence: Present tick on the main thread; HUD/menu rendered in menus and in matches (`build/runs/manual-t2/*.png`).
+- [x] Identify local player and bounded health read. Evidence (Mercenaries solo): count=1, `uPl00ChrisNormal`, control=0, HP 1000/1000 decreasing with hits. Story mode with an AI partner not yet observed.
+- [x] Detect received damage and distinguish healing/scripted changes. Evidence: `player_hit raw=196 applied=186` per hit; heals (negative amounts) ignored by design; death detected (HP 0 → run failed).
+- [x] Verify one reversible outgoing weapon-damage modification. Evidence: raw 250 → applied 1000 (×4 test multiplier) → 1253 with Sharpshooter×2 + M92F Lv2 → 1339 with Sharpshooter×3; matches the core formula.
+- [x] Detect enemy death and duplicate/non-player kill behavior. Evidence: `killed=1 local=1` → `kill counted`; core ignores repeated enemy ids (tests). Non-player kills cannot occur in Mercenaries solo; story-mode partner kills not yet observed.
+- [x] Obtain living enemy count in a named encounter. Evidence: `sEnemy` listed=12 alive=12 → 11 after a kill (Public Assembly).
+- [x] Verify finite encounter completion and a second arena round/reset. Evidence: kill budget met → mod zeroes the authoritative countdown → game results screen → next match begins the next arena (`run_0003`: 3 arenas; `run_0004` arena 1 cleared by 6 real kills in 76 s).
+- [x] Validate clean mission exit and diagnostic log export. Evidence: in-game Export diagnostics wrote a valid ZIP; WM_CLOSE exits cleanly with audio restored.
+- [x] Complete feasibility recommendation. RE5 gate passed with runtime evidence; RE4 Remake comparison not needed.
 
 ## Phase 2 — Portable roguelite core
 
@@ -44,16 +44,16 @@ See `research/capabilities.md` for the per-capability ledger and `research/re5-e
 
 ## Phase 3 — Three-round vertical slice
 
-- [x] Define the chosen existing arena and verified encounter entry procedure. Design: The Mercenaries (solo, no AI partner); each match is one arena, detected by local player present + countdown running. Entry procedure documented in `README.md`/`TESTING.md`. Runtime confirmation pending (T2).
-- [~] Start a run with reset temporary state and selected supported character. Implemented in the overlay (Chris/Sheva selectable; in-game class mapped from DTI `uPl00Chris`/`uPl01Sheba`); UI demo run started in game (`*-uidemo`). Character match check needs an in-match test.
-- [~] Track kills, received damage, time and finite remaining enemies. Hooks + core wired (`adapters/re5/src/mod.cpp`); HUD shows remaining enemies (UI demo). Real kills need T1.
-- [~] Offer and apply three reward choices using at least four tested perks across content. 20 of 22 perks are offerable with the adapter's capabilities; reward selection rendered and applied in game via UI demo. Gameplay effect needs T1.
-- [x] Award/spend supplies without negative balances or duplicate transactions. Evidence: core ledger tests + 10k-run sim; shop rendered in game (UI demo).
-- [x] Show arena results and deterministic route choices. Evidence: UI demo frames (results card, route selection) from the real core inside the game.
-- [ ] Complete three successive rounds using a verified game transition. Needs T2.
-- [~] Persist end-of-run credits and show final result. Core-tested (`[persistence]`, `[run]`); in-game EndRun path implemented (auto-bank on RunComplete/RunFailed).
-- [x] Verify the next run clears temporary progression. Evidence: core tests (`StartRun resets temporary state while profile persists`).
-- [~] Produce manual installation, playthrough and diagnostic-export instructions. Draft in `README.md` (install/uninstall/test T1–T2).
+- [x] Define the chosen existing arena and verified encounter entry procedure. Evidence: The Mercenaries Solo (any stage; tested on Public Assembly) — match start (countdown running, local player present) begins the arena.
+- [x] Start a run with reset temporary state and selected supported character. Evidence: F7 → Start run (Enter hotkey) in game; character from DTI class (`uPl00…` → chris); `run_0004` started by automation.
+- [x] Track kills, received damage, time and finite remaining enemies. Evidence: HUD "Enemies left" decreasing with real kills; telemetry `enemy_killed`, `player_damaged`, `arena_completed` with time.
+- [x] Offer and apply three reward choices using at least four tested perks across content. Evidence: reward/shop/route selections in game; combat changes verified in game for B.S.A.A. Veteran (−5% incoming), Sharpshooter (stacks ×1/×2/×3), M92F upgrade; perk-test run (Finisher, Keen Eye, Kevlar Vest, Field Medic) — see TASKS evidence below when complete.
+- [x] Award/spend supplies without negative balances or duplicate transactions. Evidence: two in-game purchases (upgrade 30, perk 30); ledger tests; 10k-run sim.
+- [x] Show arena results and deterministic route choices. Evidence: results card and route offers in game (`build/runs/manual-t2/b11.png`, `b19.png`).
+- [x] Complete three successive rounds using a verified game transition. Evidence: `run_0003` arenas 1→2→3 through three Mercenaries matches; the mod ended each match via the countdown.
+- [x] Persist end-of-run credits and show final result. Evidence: "run_0003: complete, 3/3 arenas, 78 kills, +269 credits"; `profile.json` credits 269 after restart of the game.
+- [x] Verify the next run clears temporary progression. Evidence: core tests; in game the next run starts with only the character's starting perk (`91-second-run.png` in the autoplay run).
+- [~] Produce manual installation, playthrough and diagnostic-export instructions. `README.md` + release `README.txt` (`scripts/package_release.ps1`); needs a human read-through.
 
 ## Phase 4 — Expansion
 

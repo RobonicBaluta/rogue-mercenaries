@@ -9,6 +9,8 @@
 #include <atomic>
 #include <cmath>
 #include <deque>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -220,8 +222,13 @@ void ObserveMatch(double now) {
     } else {
         m.zeroHpSince = -1.0;
     }
+    const MercTimerView merc = ReadMercTimer();
+    if (merc.recent) {
+        m.timer = merc.countdown;
+    }
     const bool wasInMatch = m.inMatch;
-    m.inMatch = local != nullptr && m.timer > 0.0f && std::isfinite(m.timer);
+    // A running Mercenaries countdown (state 0) with a local player is a match.
+    m.inMatch = local != nullptr && m.timer > 0.0f && std::isfinite(m.timer) && (!merc.recent || merc.state == 0);
     if (m.inMatch != wasInMatch) {
         RM_LOGI("match %s (mode=%d stage=%d timer=%.1f local=%s)", m.inMatch ? "detected" : "ended", m.mode,
                 m.stage, m.timer, m.localClass.c_str());
@@ -262,18 +269,22 @@ void DriveArena(double now) {
         const auto result = run.CompleteArena(now);
         if (result.ok()) {
             SetStatus("arena cleared in " + std::to_string(static_cast<int>(result->time_seconds)) + " s");
-            if (g->settings.endMatchOnClear && g->match.inMatch && engine::WriteMercTimer(0.0f)) {
+            if (g->settings.endMatchOnClear && g->match.inMatch) {
+                RequestMercMatchEnd();
                 g->arenaEndRequested = true;
-                RM_LOGI("arena clear: mercenaries timer set to 0 to end the match");
+                RM_LOGI("arena clear: requested mercenaries time-up to end the match");
             }
         } else {
             Report(result.status(), "complete arena");
         }
         return;
     }
-    if (g->match.inMatch && g->settings.timerPolicy == "hold" && g->match.timer < g->settings.timerHoldSeconds) {
-        engine::WriteMercTimer(g->settings.timerHoldSeconds);
-    }
+}
+
+// The countdown floor only applies while an arena is being fought.
+void UpdateTimerPolicy() {
+    const bool hold = g->settings.timerPolicy == "hold" && g->run->phase() == rm::Phase::ArenaActive;
+    SetMercTimerFloor(hold ? g->settings.timerHoldSeconds : -1.0f);
 }
 
 void ApplyHeals() {
@@ -281,7 +292,9 @@ void ApplyHeals() {
     if (run.PendingHeal() <= 0.0) return;
     const std::uintptr_t local = engine::LocalPlayer();
     const auto hp = local ? engine::ReadHp(local) : std::nullopt;
-    if (!hp || hp->hp <= 0) return;  // keep requests until the player can receive them
+    // Mercenaries refills HP at every match start, so a heal is kept until the
+    // player is alive and hurt; a shop heal therefore carries into the fight.
+    if (!hp || hp->hp <= 0 || hp->hp >= hp->max) return;
     for (const auto& request : run.ConsumeHealRequests()) {
         const auto current = engine::ReadHp(local);
         if (!current) break;
@@ -351,6 +364,37 @@ void DriveUiDemo(double now) {
     step(6, 25.0, [&] { Report(run.ChooseRoute(run.RouteChoices().size() > 1 ? 1 : 0), "demo choose route"); });
 }
 
+// Developer automation: <data>\dev.command holds one command per file drop.
+// Only in developer mode; every command is logged.
+void PollDevCommand(double now) {
+    static double lastCheck = 0.0;
+    if (!g->settings.developerMode || now - lastCheck < 0.5) return;
+    lastCheck = now;
+    const auto file = g->paths.dataDir / L"dev.command";
+    std::error_code ec;
+    if (!std::filesystem::exists(file, ec)) return;
+    std::string command;
+    {
+        std::ifstream in(file);
+        std::getline(in, command);
+    }
+    std::filesystem::remove(file, ec);
+    rm::RunController& run = *g->run;
+    if (command == "force_complete" && run.phase() == rm::Phase::ArenaActive) {
+        const int remaining = run.RemainingEnemies();
+        for (int i = 0; i < remaining; ++i) {
+            rm::KillEvent kill;
+            kill.now = now;
+            kill.by_player = true;
+            kill.enemy_id = "devcmd_" + std::to_string(i) + "_" + std::to_string(static_cast<long long>(now * 1000));
+            run.OnEnemyKilled(kill);
+        }
+        RM_LOGW("dev command force_complete: %d synthetic kills", remaining);
+    } else {
+        RM_LOGW("dev command '%s' ignored in phase %s", command.c_str(), std::string(rm::PhaseName(run.phase())).c_str());
+    }
+}
+
 class RogueSink final : public HookSink {
 public:
     float OutgoingMultiplier(const OutgoingHit& hit) override {
@@ -384,7 +428,12 @@ private:
             ctx.player_hp_max = g->match.localMaxHp;
         }
         const auto result = g->run->ComputeOutgoingMultiplier(ctx);
-        return static_cast<float>(result.multiplier);
+        if (g->settings.probeHits && g->run->phase() == rm::Phase::ArenaActive) {
+            RM_LOGD("outgoing core=%.4f crit=%d perk=%+.3f streak=%+.3f weapon=%+.3f target %d/%d dev=%.2f",
+                    result.multiplier, result.crit, result.breakdown.perk_bonus, result.breakdown.kill_streak_bonus,
+                    result.breakdown.weapon_bonus, hit.targetHp, hit.targetMaxHp, g->settings.devOutgoingMultiplier);
+        }
+        return static_cast<float>(result.multiplier) * g->settings.devOutgoingMultiplier;
     }
 
     void EnemyHit(const EnemyHitResult& r) {
@@ -417,7 +466,13 @@ private:
         ctx.hp_max = hit.maxHp;
         const auto result = g->run->ComputeIncoming(ctx);
         IncomingDecision decision;
-        decision.multiplier = static_cast<float>(result.multiplier);
+        decision.multiplier = g->settings.devInvulnerable
+                                  ? 0.0f
+                                  : static_cast<float>(result.multiplier) * g->settings.devIncomingMultiplier;
+        if (g->settings.probeHits && g->run->phase() == rm::Phase::ArenaActive) {
+            RM_LOGD("incoming core=%.4f (raw %.4f) prevent_death=%d dev=%.2f", result.multiplier,
+                    result.raw_multiplier, result.prevent_death, g->settings.devIncomingMultiplier);
+        }
         decision.preventDeath = result.prevent_death;
         decision.leaveHp = std::max(1, static_cast<int>(std::lround(result.leave_hp)));
         return decision;
@@ -426,6 +481,7 @@ private:
     void PlayerHit(const PlayerHitResult& r) {
         RM_LOGI("player_hit raw=%d applied=%d hp %d->%d/%d", r.rawDamage, r.appliedDamage, r.hpBefore, r.hpAfter,
                 r.maxHp);
+        if (r.appliedDamage <= 0) return;  // absorbed (developer invulnerability)
         std::lock_guard lock(g->mutex);
         rm::DamageEvent damage;
         damage.now = Now();
@@ -448,7 +504,9 @@ private:
         }
         DriveArena(now);
         ApplyHeals();
+        PollDevCommand(now);
         SettleFinishedRun();
+        UpdateTimerPolicy();
         const rm::Phase phase = g->run->phase();
         if (phase != g->lastPhase) {
             RM_LOGI("phase %s -> %s", std::string(rm::PhaseName(g->lastPhase)).c_str(),
@@ -472,7 +530,12 @@ ImVec4 RarityColor(const std::string& rarity) {
     return ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
 }
 
-// Draws offer cards; returns the clicked index or -1.
+// Menu hotkeys pressed this frame (overlay::TakeHotkeys bits).
+unsigned g_hotkeys = 0;
+bool DigitPressed(std::size_t index) { return index < 9 && (g_hotkeys & (1u << (index + 1))) != 0; }
+bool EnterPressed() { return (g_hotkeys & overlay::kHotkeyEnter) != 0; }
+
+// Draws offer cards; returns the clicked index or -1. Digit N picks card N.
 int OfferCards(const std::vector<rm::OfferView>& offers, const char* buttonLabel, bool showPrice) {
     int clicked = -1;
     for (std::size_t i = 0; i < offers.size(); ++i) {
@@ -487,7 +550,9 @@ int OfferCards(const std::vector<rm::OfferView>& offers, const char* buttonLabel
             ImGui::Text("Price: %lld supplies", static_cast<long long>(o.price));
         }
         ImGui::BeginDisabled(o.purchased);
-        if (ImGui::Button(o.purchased ? "Bought" : buttonLabel)) clicked = static_cast<int>(i);
+        char label[64];
+        std::snprintf(label, sizeof(label), "[%zu] %s", i + 1, o.purchased ? "Bought" : buttonLabel);
+        if (ImGui::Button(label) || (!o.purchased && DigitPressed(i))) clicked = static_cast<int>(i);
         ImGui::EndDisabled();
         ImGui::EndGroup();
         ImGui::Separator();
@@ -578,7 +643,8 @@ void DrawIdle(const rm::RunSnapshot& s) {
     ImGui::SetNextItemWidth(200.0f);
     ImGui::InputTextWithHint("Seed (optional)", "random", seedText, sizeof(seedText),
                              ImGuiInputTextFlags_CharsDecimal);
-    if (ImGui::Button("Start run") && g->selectedCharacter < static_cast<int>(characters.size())) {
+    if ((ImGui::Button("[Enter] Start run") || EnterPressed()) &&
+        g->selectedCharacter < static_cast<int>(characters.size())) {
         std::uint64_t seed = std::strtoull(seedText, nullptr, 10);
         if (seed == 0) {
             LARGE_INTEGER counter;
@@ -586,6 +652,9 @@ void DrawIdle(const rm::RunSnapshot& s) {
             seed = static_cast<std::uint64_t>(counter.QuadPart) ^ 0x9E3779B97F4A7C15ull;
         }
         Report(run.StartRun(characters[g->selectedCharacter].id, seed), "start run");
+        for (const auto& perk : g->settings.devGrantPerks) {
+            Report(run.DevGrantPerk(perk), ("dev grant " + perk).c_str());
+        }
         if (run.HasActiveRun()) overlay::SetFocused(false);
     }
 }
@@ -623,7 +692,9 @@ void DrawRunPanel(const rm::RunSnapshot& s) {
                 ImGui::Text("Supplies +%lld   credits +%lld", static_cast<long long>(r.supplies_awarded),
                             static_cast<long long>(r.credits_accrued));
             }
-            if (ImGui::Button("Continue to rewards")) Report(run.ContinueToRewards(), "continue");
+            if (ImGui::Button("[Enter] Continue to rewards") || EnterPressed()) {
+                Report(run.ContinueToRewards(), "continue");
+            }
             break;
         case rm::Phase::RewardSelection: {
             ImGui::SeparatorText("Choose one reward");
@@ -636,14 +707,22 @@ void DrawRunPanel(const rm::RunSnapshot& s) {
             ImGui::SeparatorText("Shop");
             const int pick = OfferCards(s.shop_offers, "Buy", true);
             if (pick >= 0) Report(run.Purchase(static_cast<std::size_t>(pick)), "purchase");
-            if (ImGui::Button("Leave shop")) Report(run.LeaveShop(), "leave shop");
+            if (ImGui::Button("[Enter] Leave shop") || EnterPressed()) Report(run.LeaveShop(), "leave shop");
             break;
         }
         case rm::Phase::RouteSelection: {
             if (!run.state().route_chosen) {
                 ImGui::SeparatorText("Choose the next route");
                 const int pick = OfferCards(s.route_offers, "Take route", false);
-                if (pick >= 0) Report(run.ChooseRoute(static_cast<std::size_t>(pick)), "choose route");
+                if (pick >= 0) {
+                    const rm::Status status = run.ChooseRoute(static_cast<std::size_t>(pick));
+                    Report(status, "choose route");
+                    if (status.ok()) {
+                        // Hand input back so the player can press Retry.
+                        overlay::SetFocused(false);
+                        g->toasts.Push("Press Retry to start arena " + std::to_string(s.arena + 1));
+                    }
+                }
             } else {
                 ImGui::TextColored(ImVec4(0.6f, 0.9f, 1.0f, 1.0f),
                                    "Route set. Press Retry (or start a new match) to begin arena %d.", s.arena + 1);
@@ -673,8 +752,16 @@ void DrawRunPanel(const rm::RunSnapshot& s) {
         }
     }
     ImGui::Separator();
-    if (ImGui::Button("Abandon run")) {
-        Report(run.AbandonRun(Now()), "abandon run");
+    // Two clicks within 3 s: a stray click must never end a run.
+    static double armedAt = -10.0;
+    const bool armed = Now() - armedAt < 3.0;
+    if (ImGui::Button(armed ? "Click again to abandon the run" : "Abandon run")) {
+        if (armed) {
+            Report(run.AbandonRun(Now()), "abandon run");
+            armedAt = -10.0;
+        } else {
+            armedAt = Now();
+        }
     }
 }
 
@@ -805,6 +892,7 @@ void DrawUnguarded() {
     const rm::RunSnapshot snapshot = g->run->Snapshot(Now());
     DrawHud(snapshot);
     if (!overlay::IsFocused()) return;
+    g_hotkeys = overlay::TakeHotkeys();
 
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     // Re-centred every frame: the window auto-sizes as panels change.
@@ -822,7 +910,10 @@ void DrawUnguarded() {
         ImGui::TextDisabled("%s", g->lastStatus.c_str());
     }
     if (g->settings.developerMode) DrawDeveloper(snapshot);
-    ImGui::TextDisabled("F7 closes this menu; the game is paused for input while it is open.");
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("Keys: 1-9 pick, Enter confirms, arrows/Space navigate, F7 closes. The game gets no input "
+                       "while this menu is open.");
+    ImGui::PopStyleColor();
     ImGui::End();
 }
 

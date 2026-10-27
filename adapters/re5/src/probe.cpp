@@ -78,9 +78,10 @@ void OnGameTick() {
         g_lastProbe = now;
         const auto& status = Status();
         RM_LOGI("probe tick=%llu presents=%llu enemy_hits=%llu player_hits=%llu enemies listed=%d alive=%d "
-                "mode=%d stage=%d merc_timer=%.2f merc_score=%d",
+                "mode=%d stage=%d merc_timer=%.2f merc_score=%d merc_kills=%d countdown=%.2f state=%d",
                 status.ticks, status.presents, status.enemyHits, status.playerHits, enemies.listed, enemies.alive,
-                mode, stage, work ? work->mercTimer : 0.0f, work ? work->mercScore : 0);
+                mode, stage, work ? work->mercTimer : 0.0f, work ? work->mercScore : 0, work ? work->mercKills : 0,
+                ReadMercTimer().countdown, ReadMercTimer().state);
         if (players.count > 0) {
             LogPlayers(players);
         }

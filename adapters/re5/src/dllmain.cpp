@@ -87,6 +87,7 @@ DWORD WINAPI Worker(LPVOID) {
         RM_LOGW("dev: combat hooks disabled");
     } else if (engine::Caps().buildIdentity) {
         InstallCombatHooks();
+        InstallMercHooks();
     }
     // Enable everything in one batch: MinHook suspends every thread per apply,
     // and repeated suspensions coincided with silent clean exits of the game.

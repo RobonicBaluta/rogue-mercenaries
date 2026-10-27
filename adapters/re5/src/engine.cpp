@@ -91,6 +91,7 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.playerSubHp = SignatureOk("player_sub_hp");
     g_caps.hitAttacker = SignatureOk("hit_get_attacker");
     g_caps.gameWork = SignatureOk("merc_add_time") && SignatureOk("merc_timer_store");
+    g_caps.mercCountdown = g_caps.gameWork && SignatureOk("merc_update_countdown");
     return all;
 }
 
@@ -232,6 +233,7 @@ std::optional<GameWork> ReadGameWork() {
     work.stage = ReadOr<std::int32_t>(work.object + re5::off::kGameStage, -1);
     work.mercTimer = ReadOr<float>(work.object + re5::off::kMercTimer, 0.0f);
     work.mercScore = ReadOr<std::int32_t>(work.object + re5::off::kMercScore, 0);
+    work.mercKills = ReadOr<std::int32_t>(work.object + re5::off::kMercKills, 0);
     return work;
 }
 
@@ -253,16 +255,17 @@ std::uintptr_t HitAttacker(std::uintptr_t hit) {
 }
 
 std::string CharacterIdForClass(const std::string& className) {
+    // Costume variants are subclasses (e.g. uPl00ChrisNormal), so match on the
+    // uPlNN number prefix.
     static constexpr struct {
-        const char* cls;
+        const char* prefix;
         const char* id;
     } kMap[] = {
-        {"uPl00Chris", "chris"},     {"uPl01Sheba", "sheva"},       {"uPl02Jill", "jill"},
-        {"uPl03Wesker", "wesker"},   {"uPl04Josh", "josh"},         {"uPl05Excella", "excella"},
-        {"uPl06Barry", "barry"},     {"uPl07Rebecca", "rebecca"},   {"uPl86Irving", "irving"},
+        {"uPl00", "chris"}, {"uPl01", "sheva"},   {"uPl02", "jill"},    {"uPl03", "wesker"}, {"uPl04", "josh"},
+        {"uPl05", "excella"}, {"uPl06", "barry"}, {"uPl07", "rebecca"}, {"uPl86", "irving"},
     };
     for (const auto& entry : kMap) {
-        if (className == entry.cls) {
+        if (className.rfind(entry.prefix, 0) == 0) {
             return entry.id;
         }
     }

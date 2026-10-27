@@ -38,6 +38,7 @@ set(RM_RE5_SOURCES
     src/memory.cpp
     src/engine.cpp
     src/hooks_combat.cpp
+    src/hooks_merc.cpp
     src/hooks_input.cpp
     src/hooks_d3d9.cpp
     src/overlay.cpp
