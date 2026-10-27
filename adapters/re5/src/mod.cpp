@@ -6,7 +6,9 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <deque>
@@ -91,6 +93,7 @@ public:
                 text = "Bought " + field("kind") + (field("perk").empty() ? "" : ": " + field("perk"));
                 break;
             case rm::EventType::Error: text = "Error: " + field("message"); break;
+            case rm::EventType::CharacterUnlocked: text = "Character unlocked: " + field("character"); break;
             default: return;
         }
         if (text.size() < 4) return;
@@ -244,9 +247,209 @@ void ObserveMatch(double now) {
     }
 }
 
+// --- native mod menu content -------------------------------------------------
+
+std::string Upper(std::string s) {
+    for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    return s;
+}
+
+std::string Plural(std::int64_t n, const char* unit) {
+    return std::to_string(n) + " " + unit + (n == 1 ? "" : "s");
+}
+
+// The game's menu font has no '%', '+', ':' or '/' glyphs; spell them out.
+std::string Plain(const std::string& s) {
+    std::string out;
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        const char c = s[i];
+        const bool digitNext = i + 1 < s.size() && std::isdigit(static_cast<unsigned char>(s[i + 1]));
+        if (c == '%') out += " percent";
+        else if (c == '+' && digitNext) out += "plus ";
+        else if (c == '-' && digitNext) out += "minus ";
+        else if (c == ':') out += ",";
+        else if (c == '/') out += " or ";
+        else if (c == '\'') continue;
+        else out += c;
+    }
+    return out;
+}
+
+// Screens of the native menu, built from the run controller. Called on the
+// game's menu thread, so everything happens under the mod mutex.
+class MenuModel final : public nativemenu::Model {
+public:
+    nativemenu::Screen Build(nativemenu::ScreenId id) override {
+        std::lock_guard lock(g->mutex);
+        return Guarded("menu build", nativemenu::Screen{}, [&] { return BuildLocked(id); });
+    }
+
+    nativemenu::Decision Decide(nativemenu::ScreenId id, int index) override {
+        std::lock_guard lock(g->mutex);
+        return Guarded("menu decide", nativemenu::Decision{}, [&] { return DecideLocked(id, index); });
+    }
+
+private:
+    using Item = nativemenu::Item;
+    using Outcome = nativemenu::Outcome;
+    using ScreenId = nativemenu::ScreenId;
+
+    std::string CreditsLine() const { return Plural(g->run->profile().credits.balance(), "credit"); }
+
+    nativemenu::Screen BuildLocked(ScreenId id) {
+        rm::RunController& run = *g->run;
+        const rm::Profile& profile = run.profile();
+        nativemenu::Screen screen;
+        switch (id) {
+            case ScreenId::Main:
+                screen.header = "ROGUE MERCENARIES   " + Upper(CreditsLine());
+                screen.items = {
+                    {"START RUN", "Solo Mercenaries on any stage. Pick your character,\nthe run starts with the match."},
+                    {"CHARACTERS", "Choose who you play. Locked characters show\nhow to unlock them."},
+                    {"PERKS", "Permanent perks. Locked ones are bought with credits."},
+                    {"CREDITS", "Your credits, lifetime records and weapon unlocks."},
+                };
+                break;
+            case ScreenId::Characters: {
+                screen.header = "CHARACTERS";
+                const auto characters = run.Characters();
+                for (std::size_t i = 0; i < characters.size(); ++i) {
+                    const auto& c = characters[i];
+                    Item item;
+                    item.label = Upper(c.name);
+                    if (c.gate == rm::CharacterGate::Selectable) {
+                        const bool selected = static_cast<int>(i) == g->selectedCharacter;
+                        if (selected) item.label += "   SELECTED";
+                        item.help = selected ? "Your character for the next run." : "Press to select this character.";
+                    } else if (c.gate == rm::CharacterGate::Locked) {
+                        item.locked = true;
+                        item.help = c.unlock_text.empty() ? "Locked." : c.unlock_text + ".";
+                        if (c.challenge.target > 0) {
+                            item.help += "\n" + std::to_string(c.challenge.current) + " of " +
+                                         std::to_string(c.challenge.target) + " done.";
+                        } else if (c.unlock_cost_credits > 0) {
+                            item.help += "\nUnlock for " + Plural(c.unlock_cost_credits, "credit") + ".";
+                        }
+                    } else {
+                        item.locked = true;
+                        item.help = "Not available in this version.";
+                    }
+                    screen.items.push_back(std::move(item));
+                }
+                break;
+            }
+            case ScreenId::Perks: {
+                screen.header = "PERKS   " + Upper(CreditsLine());
+                for (const auto& perk : run.content().perks()) {
+                    if (!perk.enabled || !run.capabilities().HasAll(perk.requires_capabilities)) continue;
+                    Item item;
+                    item.label = Upper(Plain(perk.name));
+                    const bool locked = perk.unlock_cost_credits > 0 && !profile.unlocked_perks.count(perk.id);
+                    item.locked = locked;
+                    item.help = Plain(perk.description);
+                    if (locked) item.help += "\nUnlock for " + Plural(perk.unlock_cost_credits, "credit") + ".";
+                    screen.items.push_back(std::move(item));
+                }
+                break;
+            }
+            case ScreenId::Credits: {
+                const auto& stats = profile.stats;
+                screen.header = "CREDITS";
+                screen.items = {
+                    {Upper(CreditsLine()), "Earned by finishing runs. Spent on perks,\nweapons and characters."},
+                    {Upper(Plural(stats.credits_earned, "credit")) + " EARNED", "All credits earned by your runs so far."},
+                    {Upper(Plural(stats.runs_completed, "run")) + " COMPLETED", Plural(stats.runs_failed, "run") + " ended early."},
+                    {Upper(Plural(stats.total_kills, "kill")), "Enemies killed in all runs."},
+                    {"BEST RUN " + Upper(Plural(stats.best_arena, "arena")), "Most arenas cleared in one run."},
+                    {Upper(Plural(stats.s_rank_arenas, "S rating")), Plural(stats.no_damage_arenas, "arena") +
+                                                                       " cleared without taking damage."},
+                };
+                for (const auto& weapon : run.content().weapons()) {
+                    if (!weapon.enabled || weapon.unlock_cost_credits <= 0) continue;
+                    Item item;
+                    const bool owned = profile.unlocked_weapons.count(weapon.id) > 0;
+                    item.label = Upper(weapon.name) + (owned ? "   UNLOCKED" : "");
+                    item.locked = !owned;
+                    item.help = owned ? "This weapon can appear in your runs."
+                                      : "Weapon. Unlock for " + Plural(weapon.unlock_cost_credits, "credit") + ".";
+                    screen.items.push_back(std::move(item));
+                }
+                break;
+            }
+        }
+        return screen;
+    }
+
+    nativemenu::Decision DecideLocked(ScreenId id, int index) {
+        rm::RunController& run = *g->run;
+        nativemenu::Decision d;
+        auto purchase = [&](rm::UnlockKind kind, const std::string& unlockId, std::int64_t cost) {
+            if (run.profile().credits.balance() < cost) {
+                d.outcome = Outcome::Denied;
+                return;
+            }
+            const auto receipt = run.PurchaseUnlock(kind, unlockId);
+            Report(receipt.ok() ? rm::Status::Success() : receipt.status(), ("menu unlock " + unlockId).c_str());
+            d.outcome = receipt.ok() ? Outcome::Refresh : Outcome::Denied;
+        };
+        switch (id) {
+            case ScreenId::Main:
+                if (index == 0) {
+                    d.outcome = Outcome::StartRun;
+                } else {
+                    d.outcome = Outcome::Push;
+                    d.next = index == 1 ? ScreenId::Characters : index == 2 ? ScreenId::Perks : ScreenId::Credits;
+                }
+                break;
+            case ScreenId::Characters: {
+                const auto characters = run.Characters();
+                if (index < 0 || index >= static_cast<int>(characters.size())) break;
+                const auto& c = characters[index];
+                if (c.gate == rm::CharacterGate::Selectable) {
+                    g->selectedCharacter = index;
+                    d.outcome = Outcome::Refresh;
+                } else if (c.gate == rm::CharacterGate::Locked && c.unlock_cost_credits > 0) {
+                    purchase(rm::UnlockKind::Character, c.id, c.unlock_cost_credits);
+                } else {
+                    d.outcome = Outcome::Denied;
+                }
+                break;
+            }
+            case ScreenId::Perks: {
+                int row = 0;
+                for (const auto& perk : run.content().perks()) {
+                    if (!perk.enabled || !run.capabilities().HasAll(perk.requires_capabilities)) continue;
+                    if (row++ != index) continue;
+                    if (perk.unlock_cost_credits > 0 && !run.profile().unlocked_perks.count(perk.id)) {
+                        purchase(rm::UnlockKind::Perk, perk.id, perk.unlock_cost_credits);
+                    }
+                    break;
+                }
+                break;
+            }
+            case ScreenId::Credits: {
+                int row = 6;  // rows before the weapon list
+                for (const auto& weapon : run.content().weapons()) {
+                    if (!weapon.enabled || weapon.unlock_cost_credits <= 0) continue;
+                    if (row++ != index) continue;
+                    if (!run.profile().unlocked_weapons.count(weapon.id)) {
+                        purchase(rm::UnlockKind::Weapon, weapon.id, weapon.unlock_cost_credits);
+                    }
+                    break;
+                }
+                break;
+            }
+        }
+        return d;
+    }
+};
+
+MenuModel g_menuModel;
+
 // Native menu flow: the run starts with the match, using the character the
 // player picked in the game's own character select.
 void HandleNativeMenu(double now) {
+    nativemenu::SetModel(&g_menuModel);
     if (nativemenu::TakeChosen()) {
         g->rogueModePending = true;
         g->toasts.Push("Rogue Mercenaries: choose Solo, a stage and Chris or Sheva");
@@ -493,6 +696,52 @@ void PollDevCommand(double now) {
             }
         }
         RM_LOGW("dev find: %d hits for %zu bytes", hits, pattern.size());
+    } else if (command.rfind("patch_ret ", 0) == 0 || command.rfind("unpatch ", 0) == 0) {
+        // "patch_ret <hex addr>" makes a function return at once (its first byte
+        // is kept and put back by "unpatch <hex addr>"): finds which draw routine
+        // paints what. Developer mode only, logged.
+        // "patch_ret <addr> [bytes]" writes `ret <bytes>` (3 bytes; plain ret with 0).
+        static std::vector<std::pair<std::uintptr_t, std::array<unsigned char, 3>>> saved;
+        const bool patch = command[0] == 'p';
+        std::istringstream words(command.substr(patch ? 10 : 8));
+        std::string addressText;
+        unsigned popBytes = 0;
+        words >> addressText >> popBytes;
+        const auto address = static_cast<std::uintptr_t>(std::strtoul(addressText.c_str(), nullptr, 16));
+        auto* p = reinterpret_cast<unsigned char*>(address);
+        DWORD old = 0;
+        if (address < re5::kImageBase || !VirtualProtect(p, 3, PAGE_EXECUTE_READWRITE, &old)) {
+            RM_LOGW("dev %s %08X: not writable", patch ? "patch_ret" : "unpatch", static_cast<unsigned>(address));
+        } else {
+            if (patch) {
+                saved.emplace_back(address, std::array<unsigned char, 3>{p[0], p[1], p[2]});
+                if (popBytes == 0) {
+                    p[0] = 0xC3;
+                } else {
+                    p[0] = 0xC2;
+                    p[1] = static_cast<unsigned char>(popBytes & 0xFF);
+                    p[2] = static_cast<unsigned char>(popBytes >> 8);
+                }
+            } else {
+                for (auto it = saved.begin(); it != saved.end(); ++it) {
+                    if (it->first != address) continue;
+                    std::memcpy(p, it->second.data(), 3);
+                    saved.erase(it);
+                    break;
+                }
+            }
+            VirtualProtect(p, 3, old, &old);
+            FlushInstructionCache(GetCurrentProcess(), p, 3);
+            RM_LOGW("dev %s %08X -> %02X %02X %02X", patch ? "patch_ret" : "unpatch", static_cast<unsigned>(address), p[0], p[1], p[2]);
+        }
+    } else if (command.rfind("pokeb ", 0) == 0) {
+        // "pokeb <hex addr> <hex byte>"
+        std::istringstream words(command.substr(6));
+        std::string addressText, valueText;
+        words >> addressText >> valueText;
+        const auto address = static_cast<std::uintptr_t>(std::strtoul(addressText.c_str(), nullptr, 16));
+        const auto value = static_cast<std::uint8_t>(std::strtoul(valueText.c_str(), nullptr, 16));
+        RM_LOGW("dev pokeb %08X = %02X (%s)", static_cast<unsigned>(address), value, SafeStore(address, value) ? "ok" : "failed");
     } else if (command == "menu_snapshot") {
         menuprobe::Snapshot();
     } else if (command == "menu_diff") {

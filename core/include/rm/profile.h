@@ -22,6 +22,11 @@ struct ProfileStats {
     std::int64_t runs_failed = 0;
     std::int64_t best_arena = 0;  // most arenas cleared in one run
     std::int64_t total_kills = 0;
+    // Lifetime counters behind character challenges (schema 1, optional fields).
+    std::int64_t credits_earned = 0;    // credits banked by runs (not spent)
+    std::int64_t no_damage_arenas = 0;  // arenas cleared without taking damage
+    std::int64_t s_rank_arenas = 0;     // arenas rated S
+    StringMap<std::int64_t> runs_completed_as;  // completed runs per character id
 };
 
 /// Snapshot of the run in progress, saved at StartRun and after each arena so earned credits

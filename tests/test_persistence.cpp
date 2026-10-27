@@ -20,6 +20,10 @@ Profile SampleProfile() {
     p.unlocked_weapons = {"rifle"};
     p.cosmetics = {"hat"};
     p.stats = {3, 1, 1, 3, 77};
+    p.stats.credits_earned = 195;
+    p.stats.no_damage_arenas = 2;
+    p.stats.s_rank_arenas = 1;
+    p.stats.runs_completed_as = {{"alpha", 1}};
     p.next_run_number = 4;
     p.active_run = ActiveRunCheckpoint{"run_0003", "alpha", 0xFFFFFFFFFFFFFFFFull, 1, 9, 31};
     return p;
@@ -39,6 +43,10 @@ void CheckEqual(const Profile& a, const Profile& b) {
     CHECK(a.stats.runs_failed == b.stats.runs_failed);
     CHECK(a.stats.best_arena == b.stats.best_arena);
     CHECK(a.stats.total_kills == b.stats.total_kills);
+    CHECK(a.stats.credits_earned == b.stats.credits_earned);
+    CHECK(a.stats.no_damage_arenas == b.stats.no_damage_arenas);
+    CHECK(a.stats.s_rank_arenas == b.stats.s_rank_arenas);
+    CHECK(a.stats.runs_completed_as == b.stats.runs_completed_as);
     CHECK(a.next_run_number == b.next_run_number);
     REQUIRE(a.active_run.has_value() == b.active_run.has_value());
     if (a.active_run) {

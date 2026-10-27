@@ -44,8 +44,13 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
 ## Playing
 
 1. Launch RE5 from Steam. Top right shows *Rogue Mercenaries – Play menu or F7*.
-2. In the game's **Play** menu choose **ROGUE MERCENARIES**, the last row (Up from the first row gets there). This opens the game's own Mercenaries screen.
-3. Choose **Solo**, a stage, and Chris or Sheva. Going back to the Play menu cancels the choice.
+2. In the game's **Play** menu choose **ROGUE MERCENARIES**, the last row (Up from the first row gets there). It opens the mod's own menu, drawn by the game itself:
+   - **START RUN** opens the game's Mercenaries screen: choose **Solo**, a stage and your character, and the run starts with the match. (Choosing the stage yourself is temporary; random stages are planned.)
+   - **CHARACTERS**: pick who you play. Only Chris and Sheva start unlocked; every other character shows the challenge that unlocks them (for example *Complete a run as Chris* unlocks Jill). The game's own character select must also have them unlocked.
+   - **PERKS**: every perk with its description; locked ones are bought with Credits.
+   - **CREDITS**: your balance, lifetime records and weapon unlocks.
+   Esc goes back one screen; locked entries are red, like the game's own disabled rows.
+3. Going back to the Play menu after START RUN cancels the choice.
    *Without the menu row:* go to **The Mercenaries → Solo**, press **F7**, select the same character and press **Enter** (Start run).
 4. The run starts with the match. The HUD shows *Enemies left*. The Mercenaries countdown is held at 90 s, so the kill target decides the arena.
 5. When the target is reached the match ends. The menu opens on the results screen:

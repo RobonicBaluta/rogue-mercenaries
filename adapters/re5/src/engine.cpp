@@ -97,8 +97,11 @@ bool VerifySignatures(unsigned timeoutMs) {
                       SignatureOk("menu_input") && SignatureOk("smessage_get_dti") &&
                       SignatureOk("playmenu_draw") && SignatureOk("playmenu_row_y") &&
                       SignatureOk("playmenu_label_call") && SignatureOk("menu_draw_label") &&
-                      SignatureOk("menu_draw_help") &&
-                      SignatureOk("playmenu_help_call");
+                      SignatureOk("menu_draw_help") && SignatureOk("playmenu_help_call") &&
+                      SignatureOk("menu_navigate") && SignatureOk("menu_row_color") &&
+                      SignatureOk("menu_sound_decide") && SignatureOk("menu_sound_cancel") &&
+                      SignatureOk("menu_sound_deny") && SignatureOk("menu_ball_index") &&
+                      SignatureOk("playmenu_cancel_mask");
     return all;
 }
 

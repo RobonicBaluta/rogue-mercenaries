@@ -90,8 +90,17 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
     CHECK(sheva->enabled);
     CHECK(chris->unlock_cost_credits == 0);
     CHECK(sheva->unlock_cost_credits == 0);
-    CHECK_FALSE(c.FindCharacter("jill")->enabled);
-    CHECK_FALSE(c.FindCharacter("wesker")->enabled);
+    // Everyone else is enabled but locked behind a challenge, never behind credits.
+    for (const CharacterDef& other : c.characters()) {
+        if (other.id == "chris" || other.id == "sheva") continue;
+        INFO(other.id);
+        CHECK(other.enabled);
+        CHECK(other.unlock_kind != ChallengeKind::None);
+        CHECK(other.unlock_count >= 1);
+        CHECK_FALSE(other.unlock_text.empty());
+        CHECK(other.unlock_cost_credits == 0);
+        CHECK(CheckCharacter(&other, {}) == CharacterGate::Locked);
+    }
     const PerkDef* boulder = c.FindPerk("boulder_puncher");
     const PerkDef* marksman = c.FindPerk("sheva_marksman");
     REQUIRE(boulder != nullptr);

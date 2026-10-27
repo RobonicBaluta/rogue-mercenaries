@@ -58,7 +58,13 @@ json Body(const Profile& p) {
         {"runs_failed", p.stats.runs_failed},
         {"best_arena", p.stats.best_arena},
         {"total_kills", p.stats.total_kills},
+        {"credits_earned", p.stats.credits_earned},
+        {"no_damage_arenas", p.stats.no_damage_arenas},
+        {"s_rank_arenas", p.stats.s_rank_arenas},
     };
+    json by_character = json::object();
+    for (const auto& [id, n] : p.stats.runs_completed_as) by_character[id] = n;
+    j["stats"]["runs_completed_as"] = std::move(by_character);
     j["next_run_number"] = p.next_run_number;
     if (p.active_run) {
         const ActiveRunCheckpoint& a = *p.active_run;
@@ -166,8 +172,24 @@ Result<ParsedProfile> ParseV1(const json& doc) {
         !NonNegInt(*stats, "runs_completed", p.stats.runs_completed, err) ||
         !NonNegInt(*stats, "runs_failed", p.stats.runs_failed, err, false) ||
         !NonNegInt(*stats, "best_arena", p.stats.best_arena, err) ||
-        !NonNegInt(*stats, "total_kills", p.stats.total_kills, err)) {
+        !NonNegInt(*stats, "total_kills", p.stats.total_kills, err) ||
+        !NonNegInt(*stats, "credits_earned", p.stats.credits_earned, err, false) ||
+        !NonNegInt(*stats, "no_damage_arenas", p.stats.no_damage_arenas, err, false) ||
+        !NonNegInt(*stats, "s_rank_arenas", p.stats.s_rank_arenas, err, false)) {
         return fail();
+    }
+    if (const auto by_character = stats->find("runs_completed_as"); by_character != stats->end()) {
+        if (!by_character->is_object()) {
+            err = "field 'stats.runs_completed_as' must be an object";
+            return fail();
+        }
+        for (const auto& item : by_character->items()) {
+            if (!item.value().is_number_integer() || item.value().get<std::int64_t>() < 0) {
+                err = "stats.runs_completed_as entries must be non-negative integers";
+                return fail();
+            }
+            p.stats.runs_completed_as[item.key()] = item.value().get<std::int64_t>();
+        }
     }
     if (!NonNegInt(doc, "next_run_number", p.next_run_number, err)) return fail();
     if (p.next_run_number < 1) {

@@ -55,6 +55,8 @@ RunController::RunController(std::shared_ptr<const Content> content, Profile pro
       store_(options.store),
       damage_sample_every_(options.damage_sample_every) {
     if (content_ == nullptr) throw std::invalid_argument("RunController requires loaded content");
+    // Challenges added after a profile was written, or met by an older build, unlock on load.
+    if (!EvaluateCharacterUnlocks().empty()) (void)SaveProfile("character_unlocks");
 }
 
 void RunController::SetCapabilities(Capabilities caps) { caps_ = std::move(caps); }
@@ -220,9 +222,25 @@ void RunController::UpdateCheckpoint() {
 std::vector<CharacterAvailability> RunController::Characters() const {
     std::vector<CharacterAvailability> out;
     for (const CharacterDef& c : content_->characters()) {
-        out.push_back({c.id, c.name, CheckCharacter(&c, profile_.unlocked_characters), c.unlock_cost_credits});
+        out.push_back({c.id, c.name, CheckCharacter(&c, profile_.unlocked_characters), c.unlock_cost_credits,
+                       c.unlock_text, CheckChallenge(c, profile_.stats)});
     }
     return out;
+}
+
+std::vector<std::string> RunController::EvaluateCharacterUnlocks() {
+    std::vector<std::string> unlocked;
+    for (const CharacterDef& c : content_->characters()) {
+        if (!c.enabled || c.unlock_kind == ChallengeKind::None || profile_.unlocked_characters.count(c.id)) continue;
+        const ChallengeProgress progress = CheckChallenge(c, profile_.stats);
+        if (!progress.met()) continue;
+        profile_.unlocked_characters.insert(c.id);
+        unlocked.push_back(c.id);
+        Event e = MakeEvent(EventType::CharacterUnlocked);
+        e.Add("character", c.id).Add("challenge", std::string(ChallengeKindName(c.unlock_kind))).Add("target", progress.target);
+        Emit(std::move(e));
+    }
+    return unlocked;
 }
 
 Result<UnlockReceipt> RunController::PurchaseUnlock(UnlockKind kind, std::string_view id) {
@@ -313,8 +331,10 @@ Result<RunSummary> RunController::SettleCheckpoint(const ActiveRunCheckpoint& ch
         ++profile_.stats.runs_failed;
         profile_.stats.best_arena = std::max<std::int64_t>(profile_.stats.best_arena, checkpoint.arenas_cleared);
         profile_.stats.total_kills += checkpoint.kills;
+        profile_.stats.credits_earned += amount;
     }
     profile_.active_run.reset();
+    (void)EvaluateCharacterUnlocks();
     (void)SaveProfile("settle_interrupted_run");
     Event e;
     e.type = EventType::RunEnded;
@@ -987,12 +1007,19 @@ Result<RunSummary> RunController::EndRun() {
         }
         profile_.stats.best_arena = std::max<std::int64_t>(profile_.stats.best_arena, s.arenas_cleared);
         profile_.stats.total_kills += s.total_kills;
+        profile_.stats.credits_earned += amount;
+        if (completed) ++profile_.stats.runs_completed_as[run_.character_id];
+        for (const ArenaResult& a : s.arenas) {
+            if (a.no_damage) ++profile_.stats.no_damage_arenas;
+            if (a.rating == Rating::S) ++profile_.stats.s_rank_arenas;
+        }
         Event c = MakeEvent(EventType::CurrencyChanged);
         c.Add("currency", "credits").Add("delta", amount).Add("balance", profile_.credits.balance())
             .Add("tx", BankTxId(run_.run_id)).Add("reason", completed ? "run_complete" : "run_failed");
         Emit(std::move(c));
     }
     profile_.active_run.reset();
+    (void)EvaluateCharacterUnlocks();
     (void)SaveProfile("end_run");
 
     Event e = MakeEvent(EventType::RunEnded);

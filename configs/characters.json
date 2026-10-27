@@ -1,5 +1,5 @@
 {
-  "_comment": "Playable characters. enabled=false entries are reserved until the adapter supports them; they can be neither selected nor unlocked.",
+  "_comment": "Playable characters. Only Chris and Sheva start unlocked; the others unlock by themed challenges (unlock_kind/unlock_count, see core/include/rm/characters.h). starting_weapons approximate the game's Mercenaries loadouts with the mod's weapon ids; the adapter applies only the first one as the sidearm damage class. unlock_text is rendered by the game's own menu font: letters, digits, space, comma and period only.",
   "schema_version": 1,
   "characters": [
     {
@@ -25,22 +25,82 @@
     {
       "id": "jill",
       "name": "Jill Valentine",
-      "enabled": false,
+      "enabled": true,
       "starting_weapons": ["m92f", "h_and_k_mp5"],
       "starting_passive": "",
       "skill_pool": [],
-      "exclusive_mechanic": "jill_reserved",
-      "unlock_cost_credits": 1500
+      "exclusive_mechanic": "",
+      "unlock_cost_credits": 0,
+      "unlock_kind": "runs_completed_as",
+      "unlock_character": "chris",
+      "unlock_count": 1,
+      "unlock_text": "Complete a run as Chris"
+    },
+    {
+      "id": "josh",
+      "name": "Josh Stone",
+      "enabled": true,
+      "starting_weapons": ["vz61", "ithaca_m37"],
+      "starting_passive": "",
+      "skill_pool": [],
+      "exclusive_mechanic": "",
+      "unlock_cost_credits": 0,
+      "unlock_kind": "runs_completed_as",
+      "unlock_character": "sheva",
+      "unlock_count": 1,
+      "unlock_text": "Complete a run as Sheva"
+    },
+    {
+      "id": "barry",
+      "name": "Barry Burton",
+      "enabled": true,
+      "starting_weapons": ["sig_p226", "m3"],
+      "starting_passive": "",
+      "skill_pool": [],
+      "exclusive_mechanic": "",
+      "unlock_cost_credits": 0,
+      "unlock_kind": "total_kills",
+      "unlock_count": 500,
+      "unlock_text": "Kill 500 enemies in total"
+    },
+    {
+      "id": "rebecca",
+      "name": "Rebecca Chambers",
+      "enabled": true,
+      "starting_weapons": ["m92f", "s75"],
+      "starting_passive": "",
+      "skill_pool": [],
+      "exclusive_mechanic": "",
+      "unlock_cost_credits": 0,
+      "unlock_kind": "s_rank_arenas",
+      "unlock_count": 3,
+      "unlock_text": "Earn an S rating in 3 arenas"
+    },
+    {
+      "id": "excella",
+      "name": "Excella Gionne",
+      "enabled": true,
+      "starting_weapons": ["h_and_k_p8", "sig556"],
+      "starting_passive": "",
+      "skill_pool": [],
+      "exclusive_mechanic": "",
+      "unlock_cost_credits": 0,
+      "unlock_kind": "credits_earned",
+      "unlock_count": 1500,
+      "unlock_text": "Earn 1500 credits in total"
     },
     {
       "id": "wesker",
       "name": "Albert Wesker",
-      "enabled": false,
+      "enabled": true,
       "starting_weapons": ["sig_p226", "l_hawk"],
       "starting_passive": "",
       "skill_pool": [],
-      "exclusive_mechanic": "wesker_reserved",
-      "unlock_cost_credits": 3000
+      "exclusive_mechanic": "",
+      "unlock_cost_credits": 0,
+      "unlock_kind": "no_damage_arenas",
+      "unlock_count": 3,
+      "unlock_text": "Clear 3 arenas without taking damage"
     }
   ]
 }

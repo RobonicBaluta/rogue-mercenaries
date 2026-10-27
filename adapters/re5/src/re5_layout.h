@@ -47,6 +47,19 @@ constexpr std::uintptr_t kFnPlayMenuDraw = 0x00A373B0;
 // void DrawMenuText(int message, int x, int y, const uint32_t* argb, float scale)
 // (ret 0x14, ignores ecx): draws one menu row label.
 constexpr std::uintptr_t kFnMenuDrawLabel = 0x00A17660;
+// uIdMenu helpers shared by the uId* screens (all __thiscall on the screen):
+//   int Navigate(int cursor, int count): applies up/down (with repeat and
+//     wrap) from the pad and returns the new cursor;
+//   void RowColor(uint32_t* argb, bool selected, uint8_t alpha, int fade):
+//     the list's gray/white row colour with the screen's fade-in alpha;
+//   SoundDecide/SoundCancel/SoundDeny: the menu's three UI sounds.
+constexpr std::uintptr_t kFnMenuNavigate = 0x009E4BD0;
+constexpr std::uintptr_t kFnMenuRowColor = 0x00A17350;
+constexpr std::uintptr_t kFnMenuSoundDecide = 0x009E4A70;
+constexpr std::uintptr_t kFnMenuSoundCancel = 0x009E4A50;
+constexpr std::uintptr_t kFnMenuSoundDeny = 0x009E4AC0;
+// void uIdTopMenu00::SetBallIndex(int item): the planet's highlighted node.
+constexpr std::uintptr_t kFnMenuSetBallIndex = 0x00A58170;
 // void uIdMenu::DrawHelp(int message, int y): help line under a menu, shared by
 // most uId* screens. The Play menu draws rows at y = (item + 3) * 50 and its
 // help at y = 570, which a ninth row (y = 550) would sit under.
@@ -95,8 +108,11 @@ constexpr std::size_t kMenuState = 0x14;       // uint8 state machine; 2 = waiti
 constexpr std::size_t kMenuCursor = 0x48;      // int32 selected item
 constexpr std::size_t kMenuItemCount = 0x190;  // int32: 7, or 8 with "Contenido extra"
 constexpr std::size_t kMenuEnabledMask = 0x194; // uint32 bit per item; clear bits draw red
-// Pad singleton: decide-button mask for the menu input bits.
+constexpr std::size_t kMenuBlink = 0x3D;        // uint8: selected row pulses while set
+constexpr std::size_t kMenuTopMenu = 0x128;     // uIdTopMenu00* (planet and side labels)
+// Pad singleton: decide/cancel button masks for the menu input bits.
 constexpr std::size_t kPadDecideMask = 0x5B4;
+constexpr std::size_t kPadCancelMask = 0x5B8;
 // sMessage -> rMessage for etc\message\mes_system_<lang>
 constexpr std::size_t kMessageSystemSlot = 0x11534;
 constexpr std::size_t kRMessagePath = 0x04;    // char[] resource path
@@ -144,6 +160,14 @@ inline constexpr Signature kSignatures[] = {
     {"playmenu_row_y", 0x00A373D2, "8D 5F 03 6B DB 32"},
     {"playmenu_label_call", 0x00A374D4, "68 80 02 00 00 55 8B CE E8 7F 01 FE FF"},
     {"menu_draw_label", addr::kFnMenuDrawLabel, "8B 44 24 04 8B 54 24 10 F3 0F 10 44 24 14 F3 0F 59 05 14 2E"},
+    {"menu_navigate", addr::kFnMenuNavigate, "A1 A4 40 23 01 80 B8 28 04 01 00 00 53 56 57 8B D9"},
+    {"menu_row_color", addr::kFnMenuRowColor, "0F B6 54 24 0C 8B 44 24 10 0F AF 54 81 78"},
+    {"menu_sound_decide", addr::kFnMenuSoundDecide, "51 8B 0D 0C 1D 1B 01 6A 45 E8"},
+    {"menu_sound_cancel", addr::kFnMenuSoundCancel, "51 8B 0D 0C 1D 1B 01 6A 4E E8"},
+    {"menu_sound_deny", addr::kFnMenuSoundDeny, "51 8B 0D 0C 1D 1B 01 6A 47 E8"},
+    {"menu_ball_index", addr::kFnMenuSetBallIndex, "8B 41 5C 85 C0 74 0A 8B 4C 24 04 89 88 58 0D 00 00"},
+    // Play menu move: `test [edx+0x5B8], edi` is the cancel check after decide.
+    {"playmenu_cancel_mask", 0x00A39774, "85 BA B8 05 00 00 75 6A"},
     {"menu_draw_help", addr::kFnMenuDrawHelp, "51 8B 51 78 69 D2 FF 00 00 00 B8 39 8E E3 38 F7 EA"},
     // Play menu draw: `push 570; push eax; mov ecx, esi; call DrawHelp`.
     {"playmenu_help_call", 0x00A37566, "68 3A 02 00 00 50 8B CE E8 7D 07 FE FF"},

@@ -72,11 +72,16 @@ See `research/capabilities.md` (per-capability evidence) and `research/re5-engin
   - Character unlocks are in the panel. Jill and Wesker stay disabled until verified in game.
 - [x] Native "ROGUE MERCENARIES" entry in the game's Play menu. Evidence (in game, 2026-10-27, `build/shots/final_menu.png`, `final_match.png`):
   - the row renders, highlights and is navigated by the game itself, with its own help line;
-  - decide opens the game's Mercenaries screen, and the match auto-starts the run (`decide on row 8 of 9` → `ROGUE MERCENARIES chosen` → `start run (chris): ok` → `begin arena: ok`);
+  - decide opens the mod's own menu inside the same screen (`build/shots/m01.png`..`m05.png`, `p02.png`): START RUN / CHARACTERS / PERKS / CREDITS, drawn by the game's row/help routines with its highlight bar, planet node and sounds; lists longer than 8 rows scroll; locked rows use the game's red; a perk purchase from the menu (`menu unlock field_medic: ok`, 287 → 37 credits) refreshed the row and header;
+  - START RUN opens the game's Mercenaries screen, and the match auto-starts the run (`START RUN chosen` → `start run (chris): ok` → `begin arena: ok`);
   - backing out to the Play menu cancels the choice, and plain LOS MERCENARIOS in the same session stays vanilla (`decide on row 6 of 9`, match with no run);
   - row 0 ("CONTINUAR"/"NUEVA PARTIDA") is untouched.
-  - Not verified: other game languages; the trial-menu variant (left vanilla by design).
+  - Not verified: other game languages; the trial-menu variant (left vanilla by design); a gamepad (keyboard only).
   - Open question: one unexplained "chosen" after a back-out (cursor read 8 while row 6 had been drawn a second earlier), not reproduced in 4 attempts with cursor logging.
+- [x] Character roster and themed unlocks. Evidence: 8 characters in `configs/characters.json` (uPl00..uPl07 class names in the DTI tree); only Chris and Sheva free; challenges (`runs_completed_as`, `total_kills`, `s_rank_arenas`, `credits_earned`, `no_damage_arenas`) evaluated at profile load and run end from new lifetime stats (`tests/test_characters.cpp`, 5 cases; 68 cases / 120,381 assertions pass on Win32 and x64). Not verified in game: a run as any character other than Chris/Sheva, and the game's own character select must offer them.
+- [ ] Start a run from the mod menu with a random stage, without the game's Solo/stage/character screens. Needs the fields `uIdStartUp20`..`22` write before `uIdNowLoading00` opens (menu probe diffs), then the mod sets them itself.
+- [ ] Remove the Mercenaries countdown display. The time pressure is already gone (countdown held at 90 s, match ended by the kill target), but the digits still show. Ruled out in game on 2026-10-27 (`build/shots/timer_sheet.png`): the ten draw helpers called from `uIdMerce00`'s draw (ret-patched one at a time; `0x00A1D520` is the score panel), and the HUD's two GUI page handles (`+0x44`/`+0x48` = 0x51/0x52, blanked). Next: the 97 `cSprite*` children at `uIdMerce00+0x180` (dev commands `patch_ret`, `pokeb`, `dump`).
+- [ ] Native in-match HUD and results/reward screens (the overlay still draws them).
 - [ ] Add additional arenas only after repeatability and softlock checks. All Mercenaries stages should work (the arena is tied to the match, not the map), but only Public Assembly has been played.
 
 ## Phase 5 — Stabilization/release

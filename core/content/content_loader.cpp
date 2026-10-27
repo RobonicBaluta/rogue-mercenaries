@@ -686,7 +686,8 @@ void ParseCharacters(const Diag& file, const json& doc, std::vector<CharacterDef
         if (!ReadId(d, e, c.id)) continue;
         d = file.Sub(": character " + Q(c.id));
         CheckKeys(d, e, {"id", "name", "enabled", "starting_weapons", "starting_passive", "skill_pool",
-                         "exclusive_mechanic", "unlock_cost_credits"});
+                         "exclusive_mechanic", "unlock_cost_credits", "unlock_kind", "unlock_count",
+                         "unlock_character", "unlock_text"});
         GetString(d, e, "name", c.name, true);
         GetBool(d, e, "enabled", c.enabled, false);
         GetStringList(d, e, "starting_weapons", c.starting_weapons, true);
@@ -696,8 +697,35 @@ void ParseCharacters(const Diag& file, const json& doc, std::vector<CharacterDef
         if (GetInt(d, e, "unlock_cost_credits", c.unlock_cost_credits, false) && c.unlock_cost_credits < 0) {
             d.Error("field 'unlock_cost_credits' must be >= 0");
         }
+        std::string kind;
+        GetString(d, e, "unlock_kind", kind, false);
+        if (!kind.empty()) {
+            const auto parsed = ParseChallengeKind(kind);
+            if (parsed) {
+                c.unlock_kind = *parsed;
+            } else {
+                d.Error("unknown unlock_kind " + Q(kind));
+            }
+        }
+        if (GetInt(d, e, "unlock_count", c.unlock_count, false) && c.unlock_count < 0) {
+            d.Error("field 'unlock_count' must be >= 0");
+        }
+        GetString(d, e, "unlock_character", c.unlock_character, false);
+        GetString(d, e, "unlock_text", c.unlock_text, false);
+        if (c.unlock_kind != ChallengeKind::None && c.unlock_count < 1) {
+            d.Error("unlock_count must be >= 1 with an unlock_kind");
+        }
+        if (c.unlock_kind == ChallengeKind::RunsCompletedAs && c.unlock_character.empty()) {
+            d.Error("unlock_kind runs_completed_as needs unlock_character");
+        }
         if (c.starting_weapons.empty()) d.Error("starting_weapons must list at least one weapon");
         out.push_back(std::move(c));
+    }
+    for (const CharacterDef& c : out) {
+        if (c.unlock_kind != ChallengeKind::RunsCompletedAs) continue;
+        const bool known = std::any_of(out.begin(), out.end(),
+                                       [&](const CharacterDef& other) { return other.id == c.unlock_character; });
+        if (!known) file.Sub(": character " + Q(c.id)).Error("unlock_character " + Q(c.unlock_character) + " is not a character");
     }
 }
 

@@ -35,6 +35,7 @@ enum class EventType {
     UnlockPurchased,
     ShopEntered,
     RewardRerolled,
+    CharacterUnlocked,  // a character challenge was met
 };
 std::string_view EventTypeName(EventType type);
 

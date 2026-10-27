@@ -136,6 +136,9 @@ struct CharacterAvailability {
     std::string name;
     CharacterGate gate = CharacterGate::Unknown;
     std::int64_t unlock_cost_credits = 0;
+    /// Challenge text and progress while locked (target 0 = no challenge).
+    std::string unlock_text;
+    ChallengeProgress challenge;
 };
 
 struct RunControllerOptions {
@@ -164,6 +167,9 @@ public:
     // --- meta progression --------------------------------------------------------------
     [[nodiscard]] const Profile& profile() const { return profile_; }
     [[nodiscard]] std::vector<CharacterAvailability> Characters() const;
+    /// Unlocks every character whose challenge the profile stats now meet (character_unlocked
+    /// events) and returns their ids. Runs at construction and after each run ends.
+    std::vector<std::string> EvaluateCharacterUnlocks();
     /// Spends credits on a character/perk/weapon unlock (tx "unlock:<kind>:<id>") and saves.
     /// Not allowed while a run is active. Rolled back if saving fails.
     Result<UnlockReceipt> PurchaseUnlock(UnlockKind kind, std::string_view id);
