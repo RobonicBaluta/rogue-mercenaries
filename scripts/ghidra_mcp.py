@@ -19,11 +19,13 @@ PROJECT_NAME = os.environ.get("GHIDRA_PROJECT_NAME", "re5")
 BINARY = os.environ.get("GHIDRA_BINARY", r"G:\Projects\re5mod\build\dump\re5dx9_mem.exe")
 
 pyghidra.start()
-_ctx = pyghidra.open_program(BINARY, project_location=PROJECT_DIR, project_name=PROJECT_NAME, analyze=False)
+_ctx = pyghidra.open_program(BINARY, project_location=PROJECT_DIR, project_name=PROJECT_NAME, analyze=False,
+                             nested_project_location=False)
 flat = _ctx.__enter__()
 program = flat.getCurrentProgram()
 
 from ghidra.app.decompiler import DecompInterface  # noqa: E402  (needs the JVM)
+from ghidra.program.model.symbol import SourceType  # noqa: E402
 from ghidra.util.task import ConsoleTaskMonitor  # noqa: E402
 
 monitor = ConsoleTaskMonitor()
@@ -120,7 +122,7 @@ def rename_function(address: str, name: str) -> str:
         return f"no function at {address}"
     tx = program.startTransaction("rename")
     try:
-        f.setName(name, program.getSymbolTable().getSymbol(f.getEntryPoint().toString()).getSource() if False else __import__("ghidra.program.model.symbol", fromlist=["SourceType"]).SourceType.USER_DEFINED)
+        f.setName(name, SourceType.USER_DEFINED)
     finally:
         program.endTransaction(tx, True)
     return f"renamed {f.getEntryPoint()} -> {name}"

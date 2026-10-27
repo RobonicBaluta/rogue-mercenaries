@@ -21,7 +21,8 @@ pyghidra.start()
 cmd = sys.argv[1] if len(sys.argv) > 1 else "count"
 args = sys.argv[2:]
 
-with pyghidra.open_program(BINARY, project_location=PROJECT_DIR, project_name=PROJECT_NAME, analyze=False) as flat:
+with pyghidra.open_program(BINARY, project_location=PROJECT_DIR, project_name=PROJECT_NAME, analyze=False,
+                           nested_project_location=False) as flat:
     program = flat.getCurrentProgram()
     from ghidra.app.decompiler import DecompInterface
     from ghidra.util.task import ConsoleTaskMonitor
@@ -41,16 +42,21 @@ with pyghidra.open_program(BINARY, project_location=PROJECT_DIR, project_name=PR
     if cmd == "count":
         print("program", program.getName(), "functions", fm.getFunctionCount(), "instructions", listing.getNumInstructions())
     elif cmd == "decompile":
-        f = fm.getFunctionContaining(addr(args[0]))
-        if f is None:
-            print("no function at", args[0])
-        else:
-            d = DecompInterface()
-            d.openProgram(program)
+        # decompile ADDR... [max_lines]  (several functions in one JVM session)
+        limit = 400
+        targets = list(args)
+        if len(targets) > 1 and targets[-1].isdigit():
+            limit = int(targets.pop())
+        d = DecompInterface()
+        d.openProgram(program)
+        for target in targets:
+            f = fm.getFunctionContaining(addr(target))
+            if f is None:
+                print("// no function at", target)
+                continue
             r = d.decompileFunction(f, 120, monitor)
             text = r.getDecompiledFunction().getC() if r.decompileCompleted() else "FAILED " + str(r.getErrorMessage())
             lines = text.splitlines()
-            limit = int(args[1]) if len(args) > 1 else 400
             print(f"// {f.getName()} @ {f.getEntryPoint()} ({len(lines)} lines)")
             print("\n".join(lines[:limit]))
     elif cmd in ("callers", "callees"):

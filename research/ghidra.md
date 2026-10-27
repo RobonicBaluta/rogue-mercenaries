@@ -18,7 +18,8 @@ Notes:
 - The imports table is already resolved in the dump, so API calls show as calls through the
   IAT addresses; names can be recovered later from the original PE's import directory.
 - The packer's sections are unnamed; the code lives in the first section (`0x401000`..`0xF4A000`).
-- Open questions this tooling is for: the title-flow script that creates `uIdStartUp20..22`
-  and starts the match (`0x00BF7773`, `0x00BF78B0`, `0x00BF7AA0`, `0x00BF808E`, `0x00BF9360`,
-  step functions `0x00BF29C0`/`0x00BF2BD0`/`0x00BF2CF0`), the countdown digits' draw, and the
-  player inventory table.
+- First result (2026-10-28): the title-flow script (`FUN_00BF9360` → `FUN_00BF78B0`, step
+  functions `0x00BF2BD0`/`0x00BF2CF0`) decompiled in minutes and gave the screenless direct
+  start (`research/re5-engine-map.md`, "Title-flow script").
+- Next targets: the player inventory table (item id/count per slot, ammo), the countdown
+  digits' draw, the pickup objects (`uOm08xx`) for the chest mechanic, the item shop screen.

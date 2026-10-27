@@ -24,6 +24,7 @@ struct Verified {
     bool playMenu = false;  // native "Rogue Mercenaries" entry in the Play menu
     bool setupScreens = false;  // Mercenaries setup screens (direct start)
     bool fader = false;         // the game's screen fader (black-out while the autopilot runs)
+    bool flowScript = false;    // title-flow script steps (direct start without screens)
 };
 const Verified& Caps();
 

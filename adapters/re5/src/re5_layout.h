@@ -72,6 +72,15 @@ constexpr std::uintptr_t kFnStartUp22Move = 0x00A48260;
 // Screen fader singleton (uIdStartUp22 fades to black with vtable slot 12
 // `(float alpha, int frames)` after the character decide and polls slot 14).
 constexpr std::uintptr_t kFadeInstance = 0x011E8804;
+// Title-flow script (found with Ghidra, research/ghidra.md). The Mercenaries
+// setup script FUN_00BF78B0 runs: state 10 = Step(ctx, 0) (stage screen),
+// state 0xB = Step(ctx, 1) (character screen), state 0x14 = start the match.
+// Step(ctx, kind) and Step20(ctx) (the Iniciar/Solo screen) create a screen
+// when [ctx+0x25] == 0 and return its result (+1 accepted, -1 back, -2) once
+// it closes; returning +1 at once skips the screen.
+constexpr std::uintptr_t kFnFlowStep = 0x00BF2CF0;
+constexpr std::uintptr_t kFnFlowStep20 = 0x00BF2BD0;
+constexpr std::uintptr_t kFnFlowMercSetup = 0x00BF78B0;
 // void uIdMenu::DrawHelp(int message, int y): help line under a menu, shared by
 // most uId* screens. The Play menu draws rows at y = (item + 3) * 50 and its
 // help at y = 570, which a ninth row (y = 550) would sit under.
@@ -126,8 +135,12 @@ constexpr std::size_t kFadeVtableOut = 0x30;   // fader vtable slot 12: FadeOut(
 constexpr std::size_t kMenuModeCursor = 0x18C;  // uIdStartUp20 Solo/Duo page: int32 cursor
 constexpr std::size_t kMenuCharacterIndex = 0x194;  // uIdStartUp22: int32 selected costume slot
 // game work: Mercenaries setup written by those screens
+constexpr std::size_t kGameWorkMercItem = 0x5C8;   // int32: 0 Iniciar, 1 Marcadores
+constexpr std::size_t kGameWorkMercMode = 0x5CC;   // int32: 0 Solo, 1 Duo split, 2 Duo online
 constexpr std::size_t kGameWorkStage = 0x5D4;      // int32 stage index (0..7)
 constexpr std::size_t kGameWorkCharacter = 0x600;  // int32[4] costume slot per player
+constexpr std::size_t kGameWorkMercFlag = 0x79E;   // uint8 set by the Solo/Duo page's 4th option
+constexpr std::size_t kFlowStepState = 0x25;       // script ctx: 0 create, 1 wait, 2 done
 // Pad singleton: decide/cancel button masks for the menu input bits.
 constexpr std::size_t kPadDecideMask = 0x5B4;
 constexpr std::size_t kPadCancelMask = 0x5B8;
@@ -195,6 +208,9 @@ inline constexpr Signature kSignatures[] = {
     {"startup22_character_write", 0x00A48573, "89 94 88 00 06 00 00"},
     // uIdStartUp22: `fld1; mov ecx,[fader]; ...; push 0x20; push ecx; fstp; call [vt+0x30]`.
     {"startup22_fade_out", 0x00A4867D, "D9 E8 8B 0D 04 88 1E 01 8B 11 8B 42 30 6A 20 51 D9 1C 24 FF D0"},
+    {"flow_step", addr::kFnFlowStep, "56 8B F1 0F BE 46 25 83 E8 00 74 6A 83 E8 01 74"},
+    {"flow_step20", addr::kFnFlowStep20, "56 8B F1 0F BE 46 25 83 E8 00 74 57 83 E8 01 74"},
+    {"flow_merc_setup", addr::kFnFlowMercSetup, "56 8B F1 0F BE 46 24 83 F8 15 0F 87 AE 01 00 00"},
     {"menu_draw_help", addr::kFnMenuDrawHelp, "51 8B 51 78 69 D2 FF 00 00 00 B8 39 8E E3 38 F7 EA"},
     // Play menu draw: `push 570; push eax; mov ecx, esi; call DrawHelp`.
     {"playmenu_help_call", 0x00A37566, "68 3A 02 00 00 50 8B CE E8 7D 07 FE FF"},

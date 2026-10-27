@@ -45,7 +45,7 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
 
 1. Launch RE5 from Steam. Top right shows *Rogue Mercenaries – Play menu or F7*.
 2. In the game's **Play** menu choose **ROGUE MERCENARIES**, the last row (Up from the first row gets there). It opens the mod's own menu, drawn by the game itself:
-   - **START RUN**: the mod drives the game's own setup screens for you: Solo, a random stage and your character and skin. The match loads about three seconds later and the run starts with it.
+   - **START RUN**: Solo, a random stage (any of the eight) and your character and skin are handed to the game's own menu script, so no setup screen appears; the screen fades to black and the match loads about 1.5 s later. The run starts with it.
    - **CHARACTERS**: pick who you play. Only Chris and Sheva start unlocked; every other character shows the challenge that unlocks them (for example *Complete a run as Chris* unlocks Jill). The game's own character select must also have them unlocked. Choosing a character opens its **SKINS**: a skin changes the archetype a little (the weapons a run can start with, the starting perk, extra character skills), and most skins have their own challenge.
    - **PERKS**: every perk with its description; locked ones are bought with Credits.
    - **CREDITS**: your balance, lifetime records and weapon unlocks.

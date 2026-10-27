@@ -28,6 +28,8 @@ namespace {
 using MoveFn = void(__thiscall*)(std::uintptr_t self);
 using MenuInputFn = std::uint32_t(__stdcall*)(int pad, int mode);
 using FadeFn = void(__thiscall*)(std::uintptr_t self, float alpha, int frames);
+using FlowStepFn = int(__thiscall*)(std::uintptr_t ctx, int kind);
+using FlowStep20Fn = int(__thiscall*)(std::uintptr_t ctx);
 
 constexpr std::uint8_t kStateInput = 2;
 constexpr std::uint8_t kStateModeInput = 10;  // uIdStartUp20's Solo/Duo page
@@ -40,6 +42,9 @@ constexpr DWORD kTimeoutMs = 20000;
 constexpr DWORD kDenyMs = 1500;
 
 MenuInputFn g_origMenuInput = nullptr;
+FlowStepFn g_origFlowStep = nullptr;
+FlowStep20Fn g_origFlowStep20 = nullptr;
+std::atomic<bool> g_flowHooks{false};
 MoveFn g_origMove20 = nullptr;
 MoveFn g_origMove21 = nullptr;
 MoveFn g_origMove22 = nullptr;
@@ -73,6 +78,44 @@ void FadeToBlack(int frames) {
     if (!fn || fn < re5::kImageBase) return;
     reinterpret_cast<FadeFn>(fn)(fader, 1.0f, frames);
     RM_LOGI("autopilot: fade to black requested (%d frames)", frames);
+}
+
+std::uintptr_t GameWork() {
+    return ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
+}
+
+// Title-flow script: the Iniciar/Solo screen. Answer "Iniciar, Solo" at once.
+int __fastcall FlowStep20Detour(std::uintptr_t ctx, void*) {
+    if (g_armed.load() && ReadOr<std::uint8_t>(ctx + re5::off::kFlowStepState, 1) == 0) {
+        if (const auto gw = GameWork()) {
+            SafeStore<std::int32_t>(gw + re5::off::kGameWorkMercItem, 0);
+            SafeStore<std::int32_t>(gw + re5::off::kGameWorkMercMode, 0);
+            SafeStore<std::uint8_t>(gw + re5::off::kGameWorkMercFlag, 0);
+            RM_LOGI("autopilot: flow Iniciar/Solo answered, screen skipped");
+            return 1;
+        }
+    }
+    return g_origFlowStep20(ctx);
+}
+
+// Title-flow script: stage (kind 0) and character (kind 1) screens. Write the
+// choice and report "accepted" without creating the screen; the script then
+// starts the match itself (its state 0x14).
+int __fastcall FlowStepDetour(std::uintptr_t ctx, void*, int kind) {
+    if (g_armed.load() && (kind == 0 || kind == 1) && ReadOr<std::uint8_t>(ctx + re5::off::kFlowStepState, 1) == 0) {
+        if (const auto gw = GameWork()) {
+            if (kind == 0) {
+                SafeStore<std::int32_t>(gw + re5::off::kGameWorkStage, g_stage.load());
+                RM_LOGI("autopilot: flow stage %d written, stage screen skipped", g_stage.load());
+            } else {
+                SafeStore<std::int32_t>(gw + re5::off::kGameWorkCharacter, g_costume.load());
+                RM_LOGI("autopilot: flow costume slot %d written, character screen skipped", g_costume.load());
+                Disarm("match requested by the flow script");
+            }
+            return 1;
+        }
+    }
+    return g_origFlowStep(ctx, kind);
 }
 
 std::uint32_t __stdcall MenuInputDetour(int pad, int mode) {
@@ -172,6 +215,14 @@ bool Install() {
     }
     g_enabled = true;
     RM_LOGI("autopilot: hooks on the Mercenaries setup screens queued");
+    if (engine::Caps().flowScript &&
+        QueueHook(re5::addr::kFnFlowStep, reinterpret_cast<void*>(&FlowStepDetour),
+                  reinterpret_cast<void**>(&g_origFlowStep)) &&
+        QueueHook(re5::addr::kFnFlowStep20, reinterpret_cast<void*>(&FlowStep20Detour),
+                  reinterpret_cast<void**>(&g_origFlowStep20))) {
+        g_flowHooks = true;
+        RM_LOGI("autopilot: title-flow script hooks queued (screens are skipped)");
+    }
     return true;
 }
 
@@ -192,6 +243,8 @@ void Arm(const Plan& plan) {
     g_armedAt = GetTickCount();
     g_armed = true;
     RM_LOGI("autopilot: armed (stage %d, costume slot %d)", plan.stage, plan.costume);
+    // With the flow hooks no screen ever takes input; black out from here.
+    if (g_flowHooks.load() && !g_faded.exchange(true)) FadeToBlack(4);
 }
 
 void Disarm(const char* reason) {

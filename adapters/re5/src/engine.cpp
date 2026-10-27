@@ -106,6 +106,9 @@ bool VerifySignatures(unsigned timeoutMs) {
                           SignatureOk("startup21_move") && SignatureOk("startup22_move") &&
                           SignatureOk("startup21_stage_write") && SignatureOk("startup22_character_write");
     g_caps.fader = SignatureOk("startup22_fade_out");
+    g_caps.flowScript = g_caps.gameWork && SignatureOk("flow_step") && SignatureOk("flow_step20") &&
+                        SignatureOk("flow_merc_setup") && SignatureOk("startup21_stage_write") &&
+                        SignatureOk("startup22_character_write");
     return all;
 }
 
