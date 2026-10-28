@@ -27,6 +27,8 @@ enum class EffectKind {
     SuppliesOnKill,
     SuppliesOnArenaClear,
     CheatDeath,
+    ItemOnKill,        // puts `amount` of game item `game_item` in the inventory every `every_kills` kills
+    ItemOnArenaClear,  // puts `amount` of `game_item` in the inventory when an arena is cleared
 };
 std::string_view EffectKindName(EffectKind k);
 std::optional<EffectKind> ParseEffectKind(std::string_view name);
@@ -46,8 +48,12 @@ std::optional<ConditionKind> ParseConditionKind(std::string_view name);
 ///   supplies_on_kill      amount, chance
 ///   supplies_on_arena_clear amount (+ require_no_damage flag)
 ///   cheat_death           per_arena, leave_hp_fraction
+///   item_on_kill          game_item, amount, every_kills (default 1), chance
+///   item_on_arena_clear   game_item, amount
 /// Damage "value" is an additive fraction: 0.15 = +15 %, -0.10 = -10 %.
 struct EffectParams {
+    double game_item = -1.0;   // adapter item id (RE5: (category << 8) | index)
+    double every_kills = 1.0;
     double value = 0.0;
     double fraction = 0.0;
     double window_seconds = 0.0;

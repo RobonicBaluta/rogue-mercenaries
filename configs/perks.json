@@ -336,40 +336,35 @@
     },
     {
       "id": "boulder_puncher",
-      "name": "Boulder Puncher",
-      "description": "Chris only. +50% damage for 6 seconds after a melee hit.",
-      "category": "offensive",
+      "name": "Pocket Grenades",
+      "description": "Chris only. Every 4 kills put a hand grenade in your pocket.",
+      "category": "utility",
       "rarity": "rare",
       "tags": [
-        "melee",
+        "items",
         "character"
       ],
       "max_stacks": 1,
       "characters": [
         "chris"
       ],
-      "requires_capabilities": [
-        "melee_detect"
-      ],
       "effects": [
         {
-          "kind": "outgoing_damage_mult",
-          "value": 0.5,
-          "condition": {
-            "type": "after_melee",
-            "window_seconds": 6
-          }
+          "kind": "item_on_kill",
+          "game_item": 262,
+          "amount": 1,
+          "every_kills": 4
         }
       ]
     },
     {
       "id": "sheva_marksman",
-      "name": "Marksman Training",
-      "description": "Sheva only. 12% crit chance; crits deal x2.25.",
-      "category": "precision",
+      "name": "Flash Tactics",
+      "description": "Sheva only. Every 3 kills hand you a flash grenade.",
+      "category": "utility",
       "rarity": "rare",
       "tags": [
-        "crit",
+        "items",
         "character"
       ],
       "max_stacks": 1,
@@ -378,20 +373,21 @@
       ],
       "effects": [
         {
-          "kind": "crit",
-          "chance": 0.12,
-          "multiplier": 2.25
+          "kind": "item_on_kill",
+          "game_item": 264,
+          "amount": 1,
+          "every_kills": 3
         }
       ]
     },
     {
       "id": "chris_veteran",
       "name": "B.S.A.A. Veteran",
-      "description": "Chris's starting passive. Take 5% less damage.",
+      "description": "Chris only. Clearing an arena restocks a first aid spray.",
       "category": "defensive",
       "rarity": "common",
       "tags": [
-        "passive",
+        "items",
         "character"
       ],
       "max_stacks": 1,
@@ -400,21 +396,21 @@
       ],
       "effects": [
         {
-          "kind": "incoming_damage_mult",
-          "value": -0.05
+          "kind": "item_on_arena_clear",
+          "game_item": 772,
+          "amount": 1
         }
       ]
     },
     {
       "id": "sheva_field_training",
       "name": "Field Training",
-      "description": "Sheva's starting passive. Kills have a 25% chance to drop 1 supply.",
-      "category": "economy",
+      "description": "Sheva only. Each kill heals 3% of max health.",
+      "category": "defensive",
       "rarity": "common",
       "tags": [
-        "passive",
-        "character",
-        "supplies"
+        "heal",
+        "character"
       ],
       "max_stacks": 1,
       "characters": [
@@ -422,9 +418,8 @@
       ],
       "effects": [
         {
-          "kind": "supplies_on_kill",
-          "amount": 1,
-          "chance": 0.25
+          "kind": "heal_on_kill",
+          "amount_fraction_of_max": 0.03
         }
       ]
     },
@@ -512,12 +507,12 @@
     },
     {
       "id": "wesker_overdrive",
-      "name": "Overdrive",
-      "description": "Wesker only. 12% more damage.",
-      "category": "offensive",
+      "name": "Firestarter",
+      "description": "Wesker only. Every 3 kills hand you an incendiary grenade.",
+      "category": "utility",
       "rarity": "rare",
       "tags": [
-        "damage",
+        "items",
         "character"
       ],
       "max_stacks": 1,
@@ -526,8 +521,10 @@
       ],
       "effects": [
         {
-          "kind": "outgoing_damage_mult",
-          "value": 0.12
+          "kind": "item_on_kill",
+          "game_item": 263,
+          "amount": 1,
+          "every_kills": 3
         }
       ]
     },
@@ -555,12 +552,12 @@
     },
     {
       "id": "barry_magnum_discipline",
-      "name": "Magnum Discipline",
-      "description": "Barry only. 20% more damage to enemies below half health.",
-      "category": "offensive",
+      "name": "Demolition Man",
+      "description": "Barry only. Every 5 kills hand you a hand grenade, and clearing an arena two more.",
+      "category": "utility",
       "rarity": "rare",
       "tags": [
-        "damage",
+        "items",
         "character"
       ],
       "max_stacks": 1,
@@ -569,23 +566,27 @@
       ],
       "effects": [
         {
-          "kind": "outgoing_damage_mult",
-          "value": 0.2,
-          "condition": {
-            "type": "target_hp_below",
-            "fraction": 0.5
-          }
+          "kind": "item_on_kill",
+          "game_item": 262,
+          "amount": 1,
+          "every_kills": 5
+        },
+        {
+          "kind": "item_on_arena_clear",
+          "game_item": 262,
+          "amount": 2
         }
       ]
     },
     {
       "id": "rebecca_combat_medic",
       "name": "Combat Medic",
-      "description": "Rebecca only. Each kill heals 4% of max health.",
+      "description": "Rebecca only. Each kill heals 4% of max health; clearing an arena restocks a spray.",
       "category": "defensive",
       "rarity": "rare",
       "tags": [
         "heal",
+        "items",
         "character"
       ],
       "max_stacks": 1,
@@ -596,6 +597,11 @@
         {
           "kind": "heal_on_kill",
           "amount_fraction_of_max": 0.04
+        },
+        {
+          "kind": "item_on_arena_clear",
+          "game_item": 772,
+          "amount": 1
         }
       ]
     },

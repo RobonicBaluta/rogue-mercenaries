@@ -167,6 +167,15 @@ struct RunControllerOptions {
 };
 
 /// Single facade the game adapter (and the simulator) drives.
+/// The adapter's inventory, when it can place items at once (in a match). Rewards and shop
+/// purchases then succeed only when the item fits; without a port, grants queue up in
+/// RunController::ConsumeItemGrants() for the adapter to apply later.
+struct InventoryPort {
+    virtual ~InventoryPort() = default;
+    /// Returns the units placed (0 = nothing fit).
+    virtual int Give(std::int64_t game_item, int count, std::string_view source) = 0;
+};
+
 class RunController {
 public:
     RunController(std::shared_ptr<const Content> content, Profile profile,
@@ -174,6 +183,7 @@ public:
 
     // --- configuration ---------------------------------------------------------------
     void SetCapabilities(Capabilities caps);
+    void SetInventory(InventoryPort* port) { inventory_ = port; }
     [[nodiscard]] const Capabilities& capabilities() const { return caps_; }
     void SetEventSink(IEventSink* sink) { sink_ = sink; }
     [[nodiscard]] const Content& content() const { return *content_; }
@@ -210,6 +220,8 @@ public:
     IncomingResult ComputeIncoming(const IncomingContext& incoming);
     /// Sum of queued heal fractions (capped at 1.0).
     [[nodiscard]] double PendingHeal() const;
+    /// Items earned by perks since the last call (item_on_kill / item_on_arena_clear).
+    std::vector<ItemGrant> ConsumeItemGrants();
     std::vector<HealRequest> ConsumeHealRequests();
 
     [[nodiscard]] bool IsArenaComplete() const;
@@ -285,6 +297,8 @@ private:
     TxResult DebitSupplies(const std::string& tx, std::int64_t amount, std::string_view reason);
     Status GrantPerk(std::string_view perk_id, std::string_view source, CursePolicy curses,
                      bool ignore_unlock);
+    /// Queues an inventory item (loadouts.json equipment) for the adapter; needs the inventory capability.
+    Status GrantItem(std::string_view equipment_id, int count, std::string_view source);
     void GrantWeapon(WeaponInstance weapon, std::string_view source);
 
     int ActiveKills(double now, double window) const;
@@ -300,6 +314,7 @@ private:
     std::shared_ptr<const Content> content_;
     Profile profile_;
     Capabilities caps_;
+    InventoryPort* inventory_ = nullptr;
     IEventSink* sink_ = nullptr;
     ProfileStore* store_ = nullptr;
     int damage_sample_every_ = 50;

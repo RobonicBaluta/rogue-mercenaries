@@ -19,9 +19,10 @@ inline constexpr std::string_view kHeal = "heal";                       // adapt
 inline constexpr std::string_view kMeleeDetect = "melee_detect";        // hits/kills flag melee reliably
 inline constexpr std::string_view kWeaponId = "weapon_id";              // hits/kills report weapon base id
 inline constexpr std::string_view kEnemyHp = "enemy_hp";                // hits report target hp / max hp
+inline constexpr std::string_view kInventory = "inventory";             // adapter can put items in the inventory
 
-inline constexpr std::array<std::string_view, 7> kAll = {
-    kOutgoingDamage, kIncomingDamage, kKillEvents, kHeal, kMeleeDetect, kWeaponId, kEnemyHp,
+inline constexpr std::array<std::string_view, 8> kAll = {
+    kOutgoingDamage, kIncomingDamage, kKillEvents, kHeal, kMeleeDetect, kWeaponId, kEnemyHp, kInventory,
 };
 }  // namespace cap
 

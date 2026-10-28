@@ -153,3 +153,52 @@ TEST_CASE("skin definitions are validated", "[characters]") {
               }),
               "costume_index"));
 }
+
+TEST_CASE("item perks grant inventory items on kills and arena clears", "[characters]") {
+    const auto content = test::Load(test::EditFixture([](json& perks, json&, json& characters, json&, json&) {
+        perks["perks"].push_back(json{
+            {"id", "pocket_grenades"},
+            {"name", "Pocket Grenades"},
+            {"description", "Every 2 kills, a grenade; a spray per arena."},
+            {"category", "utility"},
+            {"rarity", "common"},
+            {"max_stacks", 1},
+            {"effects", json::array({json{{"kind", "item_on_kill"}, {"game_item", 262}, {"amount", 1}, {"every_kills", 2}},
+                                     json{{"kind", "item_on_arena_clear"}, {"game_item", 772}, {"amount", 1}}})}});
+        characters["characters"][0]["starting_passive"] = "pocket_grenades";
+    }));
+    const PerkDef* def = content->FindPerk("pocket_grenades");
+    REQUIRE(def != nullptr);
+    CHECK(std::find(def->requires_capabilities.begin(), def->requires_capabilities.end(), cap::kInventory) !=
+          def->requires_capabilities.end());
+
+    test::Harness h(content);
+    REQUIRE(h.rc.StartRun("alpha", 3).ok());
+    REQUIRE(h.rc.state().perks.count("pocket_grenades") == 1);
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    test::KillN(h.rc, 1, 1.0);
+    CHECK(h.rc.ConsumeItemGrants().empty());
+    test::KillN(h.rc, 1, 2.0);
+    auto grants = h.rc.ConsumeItemGrants();
+    REQUIRE(grants.size() == 1);
+    CHECK(grants[0].game_item == 262);
+    CHECK(grants[0].count == 1);
+    CHECK(grants[0].source == "pocket_grenades");
+    CHECK(h.rc.ConsumeItemGrants().empty());
+    test::KillN(h.rc, h.rc.RemainingEnemies(), 3.0);
+    REQUIRE(h.rc.IsArenaComplete());
+    REQUIRE(h.rc.CompleteArena(30.0).ok());
+    grants = h.rc.ConsumeItemGrants();
+    REQUIRE_FALSE(grants.empty());
+    CHECK(grants.back().game_item == 772);
+    CHECK(grants.back().source == "pocket_grenades");
+
+    // Without the inventory capability the perk is never granted (and so stays silent).
+    Capabilities caps = Capabilities::All();
+    caps.Remove(cap::kInventory);
+    test::Harness quiet(content, {}, caps);
+    REQUIRE(quiet.rc.StartRun("alpha", 3).ok());
+    REQUIRE(quiet.rc.BeginArena(0.0).ok());
+    test::KillN(quiet.rc, 2, 1.0);
+    CHECK(quiet.rc.ConsumeItemGrants().empty());
+}

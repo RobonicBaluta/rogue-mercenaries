@@ -11,6 +11,7 @@ std::string_view ShopOfferKindName(ShopOfferKind k) {
         case ShopOfferKind::WeaponUpgrade: return "upgrade";
         case ShopOfferKind::Weapon: return "weapon";
         case ShopOfferKind::Perk: return "perk";
+        case ShopOfferKind::Item: return "item";
     }
     return "heal";
 }
@@ -81,6 +82,18 @@ std::vector<ShopOffer> GenerateShopOffers(Rng& rng, const OfferContext& ctx,
         o.perk_id = p->id;
         o.rarity = p->rarity;
         o.price = eco.shop.perk_price[RarityIndex(p->rarity)];
+        out.push_back(std::move(o));
+    }
+
+    std::vector<const EquipmentDef*> items = OfferableItems(ctx);
+    for (int i = 0; i < eco.shop.item_offers && !items.empty(); ++i) {
+        const std::size_t pick = rng.Index(items.size());
+        const EquipmentDef* e = items[pick];
+        items.erase(items.begin() + static_cast<std::ptrdiff_t>(pick));
+        ShopOffer o;
+        o.kind = ShopOfferKind::Item;
+        o.item_id = e->id;
+        o.price = e->price;
         out.push_back(std::move(o));
     }
     return out;

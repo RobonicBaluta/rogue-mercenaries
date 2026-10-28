@@ -94,6 +94,9 @@ constexpr std::uintptr_t kFnInventoryAddAmmo = 0x00C4DA90;
 //     passes (-1, -1, -1, 0xD = find a free slot, the world item's 9 attribute
 //     bytes, the player, a default position, 0). Returns the slot or 0.
 constexpr std::uintptr_t kFnInventoryCreate = 0x00C4B480;
+// Scene manager singleton: the title-flow script requests the Mercenaries match with
+// FUN_007F1610(this = [kSceneManager], 0xD, 0), which writes this+0xF8 / this+0xFC.
+constexpr std::uintptr_t kSceneManager = 0x011B1DD8;
 // void aGame::NotifyItemGet(int item, int count): the game's "item acquired"
 // notice (uIdItemGet00) with the item's own name and icon.
 constexpr std::uintptr_t kFnGameNotifyItem = 0x00719B60;
@@ -128,6 +131,9 @@ constexpr std::size_t kSlotItemId = 0x4;   // int32
 constexpr std::size_t kSlotCount = 0x8;    // int32
 constexpr std::size_t kSlotMax = 0xC;      // int32 stack capacity
 constexpr std::size_t kSlotValid = 0x29;   // uint8 == 1 for a used slot
+// Scene manager ([addr::kSceneManager]): pending scene request and its argument.
+constexpr std::size_t kSceneRequest = 0xF8;
+constexpr std::size_t kSceneRequestArg = 0xFC;
 // uEnemy
 constexpr std::size_t kEnemyLastHitPlayer = 0x136C;  // int32 player number or -1
 // sPlayer

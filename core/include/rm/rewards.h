@@ -18,7 +18,7 @@ class Content;
 struct CharacterDef;
 struct PerkDef;
 
-enum class RewardKind { Perk, Weapon, Supplies };
+enum class RewardKind { Perk, Weapon, Supplies, Item };
 std::string_view RewardKindName(RewardKind k);
 
 struct RewardChoice {
@@ -27,7 +27,11 @@ struct RewardChoice {
     std::string perk_id;        // kind == Perk
     WeaponInstance weapon;      // kind == Weapon (fully rolled; what you see is what you get)
     std::int64_t supplies = 0;  // kind == Supplies
+    std::string item_id;        // kind == Item: loadouts.json equipment id
+    int item_count = 0;         // kind == Item
 };
+
+struct EquipmentDef;
 
 /// Run/profile facts used by reward and shop generation.
 struct OfferContext {
@@ -49,6 +53,10 @@ std::vector<const PerkDef*> OfferablePerks(const OfferContext& ctx);
 
 /// Enabled weapon bases that are free or unlocked in the profile.
 std::vector<const WeaponBaseDef*> OfferableWeapons(const OfferContext& ctx);
+
+/// Equipment the shop and the rewards may hand out: priced, backed by a game item, and only
+/// when the adapter can write the inventory.
+std::vector<const EquipmentDef*> OfferableItems(const OfferContext& ctx);
 
 Rarity RollRarity(Rng& rng, const RarityWeights& weights);
 

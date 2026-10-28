@@ -24,6 +24,7 @@ std::string_view RewardKindName(RewardKind k) {
         case RewardKind::Perk: return "perk";
         case RewardKind::Weapon: return "weapon";
         case RewardKind::Supplies: return "supplies";
+        case RewardKind::Item: return "item";
     }
     return "supplies";
 }
@@ -56,6 +57,16 @@ std::vector<const WeaponBaseDef*> OfferableWeapons(const OfferContext& ctx) {
             continue;
         }
         out.push_back(&w);
+    }
+    return out;
+}
+
+std::vector<const EquipmentDef*> OfferableItems(const OfferContext& ctx) {
+    std::vector<const EquipmentDef*> out;
+    if (ctx.content == nullptr) return out;
+    if (ctx.capabilities != nullptr && !ctx.capabilities->Has(cap::kInventory)) return out;
+    for (const EquipmentDef& e : ctx.content->loadouts().equipment) {
+        if (e.Offerable()) out.push_back(&e);
     }
     return out;
 }
@@ -97,8 +108,10 @@ std::vector<RewardChoice> GenerateRewardOffer(Rng& rng, const OfferContext& ctx,
     const RarityWeights weights = ShiftRarityWeights(eco.rewards.rarity_weights, ctx.rarity_shift);
     const std::vector<const PerkDef*> perks = OfferablePerks(ctx);
     const std::vector<const WeaponBaseDef*> weapons = OfferableWeapons(ctx);
+    const std::vector<const EquipmentDef*> items = OfferableItems(ctx);
 
     StringSet taken;
+    StringSet taken_items;
     bool has_weapon = false;
     bool has_supplies = false;
     int pad = 1;
@@ -107,10 +120,14 @@ std::vector<RewardChoice> GenerateRewardOffer(Rng& rng, const OfferContext& ctx,
         const bool perk_left = std::any_of(perks.begin(), perks.end(), [&taken](const PerkDef* p) {
             return taken.find(p->id) == taken.end();
         });
-        const std::array<double, 3> kind_weights = {
+        const bool item_left = std::any_of(items.begin(), items.end(), [&taken_items](const EquipmentDef* e) {
+            return taken_items.find(e->id) == taken_items.end();
+        });
+        const std::array<double, 4> kind_weights = {
             perk_left ? eco.rewards.perk_weight : 0.0,
             (!has_weapon && !weapons.empty()) ? eco.rewards.weapon_weight : 0.0,
             !has_supplies ? eco.rewards.supplies_weight : 0.0,
+            item_left ? eco.rewards.item_weight : 0.0,
         };
         const std::size_t kind = rng.WeightedIndex(kind_weights);
         const Rarity rarity = RollRarity(rng, weights);
@@ -133,6 +150,17 @@ std::vector<RewardChoice> GenerateRewardOffer(Rng& rng, const OfferContext& ctx,
             choice.kind = RewardKind::Supplies;
             choice.supplies = SuppliesBundle(eco, rarity, ctx.reward_mult, 0);
             has_supplies = true;
+        } else if (kind == 3) {
+            std::vector<const EquipmentDef*> left;
+            for (const EquipmentDef* e : items) {
+                if (taken_items.find(e->id) == taken_items.end()) left.push_back(e);
+            }
+            const EquipmentDef* e = left[rng.Index(left.size())];
+            choice.kind = RewardKind::Item;
+            choice.rarity = Rarity::Common;
+            choice.item_id = e->id;
+            choice.item_count = e->bundle;
+            taken_items.insert(e->id);
         } else {
             // Every pool is exhausted: pad with progressively larger, distinct bundles.
             choice.kind = RewardKind::Supplies;

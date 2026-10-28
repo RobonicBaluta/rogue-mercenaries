@@ -59,6 +59,13 @@ struct Loadout {
     std::int64_t spent = 0;
 };
 
+/// An item a perk earned; the adapter puts it in the game inventory (ConsumeItemGrants).
+struct ItemGrant {
+    std::int64_t game_item = -1;
+    int count = 1;
+    std::string source;  // perk id
+};
+
 struct ArenaMetrics {
     int arena = 0;  // 1-based
     std::string route_id;
@@ -119,6 +126,8 @@ struct RunState {
     std::string skin_id;
     CharacterDef character;  // the character with the skin applied
     Loadout loadout;
+    std::vector<ItemGrant> item_grants;  // earned, not yet handed to the adapter
+    StringMap<int> perk_kill_counts;     // counted kills per perk, for every_kills
     Phase phase = Phase::Idle;
     int arena_index = 0;  // arenas begun so far; the current arena number while active
     int arena_count = 3;

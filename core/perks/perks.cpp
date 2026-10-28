@@ -13,7 +13,7 @@ struct ParamEntry {
     double EffectParams::*field;
 };
 
-constexpr std::array<ParamEntry, 11> kParamFields = {{
+constexpr std::array<ParamEntry, 13> kParamFields = {{
     {"value", &EffectParams::value},
     {"fraction", &EffectParams::fraction},
     {"window_seconds", &EffectParams::window_seconds},
@@ -25,6 +25,8 @@ constexpr std::array<ParamEntry, 11> kParamFields = {{
     {"amount", &EffectParams::amount},
     {"per_arena", &EffectParams::per_arena},
     {"leave_hp_fraction", &EffectParams::leave_hp_fraction},
+    {"game_item", &EffectParams::game_item},
+    {"every_kills", &EffectParams::every_kills},
 }};
 
 bool Contains(const std::vector<std::string>& list, std::string_view item) {
@@ -64,6 +66,8 @@ std::string_view EffectKindName(EffectKind k) {
         case EffectKind::SuppliesOnKill: return "supplies_on_kill";
         case EffectKind::SuppliesOnArenaClear: return "supplies_on_arena_clear";
         case EffectKind::CheatDeath: return "cheat_death";
+        case EffectKind::ItemOnKill: return "item_on_kill";
+        case EffectKind::ItemOnArenaClear: return "item_on_arena_clear";
     }
     return "outgoing_damage_mult";
 }
@@ -71,7 +75,8 @@ std::string_view EffectKindName(EffectKind k) {
 std::optional<EffectKind> ParseEffectKind(std::string_view name) {
     for (EffectKind k : {EffectKind::OutgoingDamageMult, EffectKind::IncomingDamageMult,
                          EffectKind::Crit, EffectKind::HealOnKill, EffectKind::SuppliesOnKill,
-                         EffectKind::SuppliesOnArenaClear, EffectKind::CheatDeath}) {
+                         EffectKind::SuppliesOnArenaClear, EffectKind::CheatDeath, EffectKind::ItemOnKill,
+                         EffectKind::ItemOnArenaClear}) {
         if (EffectKindName(k) == name) return k;
     }
     return std::nullopt;
@@ -138,6 +143,11 @@ std::vector<std::string> ImpliedCapabilities(const EffectDef& effect) {
             if (effect.require_no_damage) add(cap::kIncomingDamage);
             break;
         case EffectKind::CheatDeath: add(cap::kIncomingDamage); break;
+        case EffectKind::ItemOnKill:
+            add(cap::kKillEvents);
+            add(cap::kInventory);
+            break;
+        case EffectKind::ItemOnArenaClear: add(cap::kInventory); break;
     }
     return caps;
 }

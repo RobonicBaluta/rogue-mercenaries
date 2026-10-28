@@ -344,6 +344,16 @@ std::vector<ParamRule> EffectRules(EffectKind kind, ConditionKind cond) {
             rules.push_back({"per_arena", true, 1.0, 10.0, false});
             rules.push_back({"leave_hp_fraction", true, 0.0, 1.0, true});
             break;
+        case EffectKind::ItemOnKill:
+            rules.push_back({"game_item", true, 0.0, 65535.0, false});
+            rules.push_back({"amount", true, 1.0, 99.0, false});
+            rules.push_back({"every_kills", false, 1.0, 100.0, false});
+            rules.push_back({"chance", false, 0.0, 1.0, true});
+            break;
+        case EffectKind::ItemOnArenaClear:
+            rules.push_back({"game_item", true, 0.0, 65535.0, false});
+            rules.push_back({"amount", true, 1.0, 99.0, false});
+            break;
     }
     switch (cond) {
         case ConditionKind::TargetHpBelow:
@@ -375,7 +385,10 @@ void ValidateParams(const Diag& d, const EffectParams& p, const std::vector<Para
     for (const ParamRule& r : rules) {
         const double v = p.*(*EffectParamField(r.name));
         if (r.name == "multiplier" && v == 0.0) continue;  // 0 = economy default crit multiplier
-        if (r.name == "chance" && v == 0.0 && kind == EffectKind::SuppliesOnKill) continue;
+        if (r.name == "chance" && v == 0.0 &&
+            (kind == EffectKind::SuppliesOnKill || kind == EffectKind::ItemOnKill)) {
+            continue;
+        }
         if (!r.required && v == 0.0 && r.name != "chance") continue;
         CheckRange(d, r.name, v, r.lo, r.hi, r.lo_open);
     }
@@ -470,9 +483,16 @@ bool ParseEffect(const Diag& d, const json& obj, EffectDef& effect) {
                          : std::string()));
         }
     }
-    if (effect.kind == EffectKind::SuppliesOnKill &&
+    if ((effect.kind == EffectKind::SuppliesOnKill || effect.kind == EffectKind::ItemOnKill) &&
         std::find(seen.begin(), seen.end(), "chance") == seen.end()) {
         effect.params.chance = 1.0;
+    }
+    if (effect.kind == EffectKind::ItemOnKill && std::floor(effect.params.every_kills) != effect.params.every_kills) {
+        d.Error("field 'every_kills' must be a whole number");
+    }
+    if ((effect.kind == EffectKind::ItemOnKill || effect.kind == EffectKind::ItemOnArenaClear) &&
+        std::floor(effect.params.game_item) != effect.params.game_item) {
+        d.Error("field 'game_item' must be a whole number");
     }
     if (effect.kind == EffectKind::CheatDeath && std::floor(effect.params.per_arena) != effect.params.per_arena) {
         d.Error("field 'per_arena' must be a whole number");
@@ -831,8 +851,13 @@ void ParseRoutes(const Diag& file, const json& doc, std::vector<RouteDef>& out) 
 // ---- economy -------------------------------------------------------------------------------
 
 void ParseLoadouts(const Diag& file, const json& doc, LoadoutConfig& out) {
-    CheckKeys(file, doc, {"schema_version", "budget", "default_weapon_cost", "weapon_cost", "equipment"});
+    CheckKeys(file, doc, {"schema_version", "budget", "default_weapon_cost", "max_items", "weapon_cost", "equipment"});
     if (GetInt(file, doc, "budget", out.budget, false) && out.budget < 0) file.Error("field 'budget' must be >= 0");
+    std::int64_t max_items = 0;
+    if (GetInt(file, doc, "max_items", max_items, false) && (max_items < 0 || max_items > 24)) {
+        file.Error("field 'max_items' must be 0..24");
+    }
+    out.max_items = static_cast<int>(max_items);
     if (GetInt(file, doc, "default_weapon_cost", out.default_weapon_cost, false) && out.default_weapon_cost < 0) {
         file.Error("field 'default_weapon_cost' must be >= 0");
     }
@@ -862,12 +887,17 @@ void ParseLoadouts(const Diag& file, const json& doc, LoadoutConfig& out) {
         EquipmentDef item;
         if (!ReadId(d, e, item.id)) continue;
         d = file.Sub(": equipment " + Q(item.id));
-        CheckKeys(d, e, {"id", "name", "cost", "max", "game_item"});
+        CheckKeys(d, e, {"id", "name", "cost", "max", "game_item", "price", "bundle"});
         GetString(d, e, "name", item.name, true);
         if (GetInt(d, e, "cost", item.cost, true) && item.cost < 0) d.Error("field 'cost' must be >= 0");
+        if (GetInt(d, e, "price", item.price, false) && item.price < 0) d.Error("field 'price' must be >= 0");
+        std::int64_t bundle = 1;
+        if (GetInt(d, e, "bundle", bundle, false) && (bundle < 1 || bundle > 99)) d.Error("field 'bundle' must be 1..99");
+        item.bundle = static_cast<int>(bundle);
         if (GetInt(d, e, "game_item", item.game_item, false) && item.game_item < 0) {
             d.Error("field 'game_item' must be >= 0");
         }
+        if (item.price > 0 && item.game_item < 0) d.Error("a priced item needs a game_item");
         std::int64_t max = 1;
         if (GetInt(d, e, "max", max, false) && (max < 1 || max > 99)) d.Error("field 'max' must be 1..99");
         item.max_count = static_cast<int>(max);
@@ -905,11 +935,12 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
         ReadRatingTable(sd, *s, "rating_rarity_bonus", eco.rewards.rating_rarity_bonus, -0.9, 3.0);
         if (const json* k = Section(sd, *s, "kind_weights")) {
             const Diag kd = sd.Sub(".kind_weights");
-            CheckKeys(kd, *k, {"perk", "weapon", "supplies"});
+            CheckKeys(kd, *k, {"perk", "weapon", "supplies", "item"});
             if (GetNumber(kd, *k, "perk", eco.rewards.perk_weight, true)) CheckRange(kd, "perk", eco.rewards.perk_weight, 0.0, 1.0e6);
             if (GetNumber(kd, *k, "weapon", eco.rewards.weapon_weight, true)) CheckRange(kd, "weapon", eco.rewards.weapon_weight, 0.0, 1.0e6);
             if (GetNumber(kd, *k, "supplies", eco.rewards.supplies_weight, true)) CheckRange(kd, "supplies", eco.rewards.supplies_weight, 0.0, 1.0e6);
-            if (!(eco.rewards.perk_weight + eco.rewards.weapon_weight + eco.rewards.supplies_weight > 0.0)) {
+            if (GetNumber(kd, *k, "item", eco.rewards.item_weight, false)) CheckRange(kd, "item", eco.rewards.item_weight, 0.0, 1.0e6);
+            if (!(eco.rewards.perk_weight + eco.rewards.weapon_weight + eco.rewards.supplies_weight + eco.rewards.item_weight > 0.0)) {
                 kd.Error("kind weights must have a positive total");
             }
         }
@@ -1016,7 +1047,9 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     }
     if (const json* s = Section(d, doc, "shop")) {
         const Diag sd = d.Sub(": shop");
-        CheckKeys(sd, *s, {"heal_fraction", "heal_price", "reroll_price", "perk_price", "weapon_price", "perk_offers"});
+        CheckKeys(sd, *s, {"heal_fraction", "heal_price", "reroll_price", "perk_price", "weapon_price", "perk_offers",
+                           "item_offers"});
+        GetIntRange(sd, *s, "item_offers", eco.shop.item_offers, false, 0, 6);
         if (GetNumber(sd, *s, "heal_fraction", eco.shop.heal_fraction, true)) {
             CheckRange(sd, "heal_fraction", eco.shop.heal_fraction, 0.0, 1.0, true);
         }

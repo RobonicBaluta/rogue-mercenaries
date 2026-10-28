@@ -12,7 +12,7 @@
 
 namespace rm {
 
-enum class ShopOfferKind { Heal, RerollToken, WeaponUpgrade, Weapon, Perk };
+enum class ShopOfferKind { Heal, RerollToken, WeaponUpgrade, Weapon, Perk, Item };
 std::string_view ShopOfferKindName(ShopOfferKind k);
 
 struct ShopOffer {
@@ -22,6 +22,7 @@ struct ShopOffer {
     Rarity rarity = Rarity::Common;
     double heal_fraction = 0.0;      // Heal: fraction of max hp queued as a heal request
     std::string perk_id;             // Perk
+    std::string item_id;             // Item: loadouts.json equipment id (one unit)
     std::string target_instance_id;  // WeaponUpgrade
     int target_level = 0;            // WeaponUpgrade: level before the upgrade
     WeaponInstance weapon;           // Weapon

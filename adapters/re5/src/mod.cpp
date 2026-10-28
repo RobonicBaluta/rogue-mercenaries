@@ -201,6 +201,7 @@ rm::Capabilities VerifiedCapabilities() {
         out.Add(rm::cap::kIncomingDamage);
         out.Add(rm::cap::kHeal);
     }
+    if (caps.inventory) out.Add(rm::cap::kInventory);
     return out;
 }
 
@@ -561,46 +562,79 @@ void HandleNativeMenu(double now) {
     (void)now;
 }
 
-// Puts the rolled loadout's equipment into the game's inventory through the
+// Puts `count` of game item `id` into the local player's inventory through the
 // game's own helpers (verified: AddToStacks tops up a stack, Create makes a
-// new slot the way PickUpItem does). Items without a game id stay run-only.
-void ApplyLoadoutToInventory() {
+// new slot the way PickUpItem does). Returns false when nothing could be placed.
+// Returns the units placed (stacked or in new slots); 0 when nothing fit or no player.
+int GiveItem(const char* source, std::int64_t gameItem, int count) {
     const auto player = engine::LocalPlayer();
-    if (!engine::Caps().inventory || !player) {
-        RM_LOGW("loadout: inventory not available; items stay run-only");
-        return;
-    }
+    if (!engine::Caps().inventory || !player || gameItem < 0 || count <= 0) return 0;
     const auto inventory = player + re5::off::kPlayerInventory;
-    auto stackOf = [&](std::int64_t item) -> std::uintptr_t {
-        for (int i = 0; i < re5::off::kInventorySlots; ++i) {
-            const auto slot = inventory + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
-            if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) == 1 &&
-                ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) == static_cast<std::uint32_t>(item)) {
-                return slot;
-            }
+    const int id = static_cast<int>(gameItem);
+    std::uintptr_t stack = 0;
+    for (int i = 0; i < re5::off::kInventorySlots && !stack; ++i) {
+        const auto slot = inventory + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) == 1 &&
+            ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) == static_cast<std::uint32_t>(id)) {
+            stack = slot;
         }
-        return 0;
-    };
+    }
     using AddFn = int(__thiscall*)(std::uintptr_t inventory, int item, int count);
     using CreateFn = std::uintptr_t(__thiscall*)(std::uintptr_t inventory, int item, int count, int a, int b, int c,
                                                  int flags, int a1, int a2, int a3, int a4, int a5, int a6, int a7,
                                                  int a8, int a9, std::uintptr_t player, int position, int zero);
-    const auto add = reinterpret_cast<AddFn>(re5::addr::kFnInventoryAddToStacks);
+    const auto addToStacks = reinterpret_cast<AddFn>(re5::addr::kFnInventoryAddToStacks);
     const auto create = reinterpret_cast<CreateFn>(re5::addr::kFnInventoryCreate);
+    // Top up existing stacks first; whatever does not fit goes into new slots (one unit each,
+    // then topped up to the slot's own maximum), so a full grenade stack or a spray (max 1 per
+    // slot) still receives the item while the 24-slot case has room.
+    int left = stack ? addToStacks(inventory, id, count) : count;
+    const int stacked = count - left;
+    int createdSlots = 0;
+    for (int attempt = 0; left > 0 && attempt < 8; ++attempt) {
+        const auto made = create(inventory, id, 1, -1, -1, -1, 0xD, 0, 0, 0, 0, 0, 0, 0, 0, 0, player, 0, 0);
+        if (!made) break;
+        ++createdSlots;
+        --left;
+        if (left > 0) left = addToStacks(inventory, id, left);
+    }
+    RM_LOGI("%s: item %04X x%d -> %d stacked, %d new slot(s), %d did not fit", source, id, count, stacked,
+            createdSlots, left);
+    return count - left;
+}
+
+// The rolled loadout's equipment, at the first arena. Items without a game id stay run-only.
+void ApplyLoadoutToInventory() {
+    if (!engine::Caps().inventory || !engine::LocalPlayer()) {
+        RM_LOGW("loadout: inventory not available; items stay run-only");
+        return;
+    }
     for (const rm::LoadoutItem& item : g->run->state().loadout.items) {
-        if (item.game_item < 0) continue;
-        const int id = static_cast<int>(item.game_item);
-        if (const auto slot = stackOf(id)) {
-            // The game's own stack: add on top of what the character starts with.
-            const int left = add(inventory, id, item.count);
-            RM_LOGI("loadout: %s x%d added to stack %04X (count now %d, %d did not fit)", item.id.c_str(), item.count, id,
-                    ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0), left);
-        } else {
-            const auto made = create(inventory, id, item.count, -1, -1, -1, 0xD, 0, 0, 0, 0, 0, 0, 0, 0, 0, player, 0, 0);
-            RM_LOGI("loadout: %s x%d created as %04X -> %s", item.id.c_str(), item.count, id, made ? "ok" : "no slot");
+        if (item.game_item >= 0) GiveItem(("loadout " + item.id).c_str(), item.game_item, item.count);
+    }
+}
+
+// Items perks earned since the last tick.
+void ApplyItemGrants() {
+    for (const rm::ItemGrant& grant : g->run->ConsumeItemGrants()) {
+        const bool fromPerk = grant.source != "reward" && grant.source != "shop";
+        const std::string label = (fromPerk ? "perk " : "") + grant.source;
+        if (GiveItem(label.c_str(), grant.game_item, grant.count) == 0) {
+            g->toasts.Push(label + ": inventory full");
         }
     }
 }
+
+// Rewards and shop purchases place their item at once; the core fails the purchase
+// (and refunds it) when nothing fits.
+class InventoryBridge final : public rm::InventoryPort {
+public:
+    int Give(std::int64_t gameItem, int count, std::string_view source) override {
+        if (!g->match.inMatch) return 0;
+        return GiveItem(std::string(source).c_str(), gameItem, count);
+    }
+};
+InventoryBridge g_inventoryBridge;
 
 void TryBeginArena(double now) {
     rm::RunController& run = *g->run;
@@ -651,8 +685,28 @@ void DriveArena(double now) {
 
 // The countdown floor only applies while an arena is being fought.
 void UpdateTimerPolicy() {
-    const bool hold = g->settings.timerPolicy == "hold" && g->run->phase() == rm::Phase::ArenaActive;
+    // The whole run (arenas, rewards, shop, route choice) happens inside one match, so the
+    // countdown is held for as long as the run is alive; it is released when the run ends.
+    const rm::Phase phase = g->run->phase();
+    const bool alive = g->run->HasActiveRun() && phase != rm::Phase::RunComplete && phase != rm::Phase::RunFailed;
+    const bool hold = g->settings.timerPolicy == "hold" && alive;
     SetMercTimerFloor(hold ? g->settings.timerHoldSeconds : -1.0f);
+}
+
+// Developer probe: the scene request fields of the scene manager (what the game's own
+// Retry/Quit paths write), logged on change.
+void ProbeScene() {
+    static std::uint32_t lastRequest = 0xFFFFFFFF;
+    static std::uint32_t lastArg = 0xFFFFFFFF;
+    const auto scene = ReadOr<std::uintptr_t>(re5::addr::kSceneManager, 0);
+    if (!scene) return;
+    const auto request = ReadOr<std::uint32_t>(scene + re5::off::kSceneRequest, 0);
+    const auto arg = ReadOr<std::uint32_t>(scene + re5::off::kSceneRequestArg, 0);
+    if (request != lastRequest || arg != lastArg) {
+        RM_LOGI("scene request %08X arg %08X (was %08X/%08X)", request, arg, lastRequest, lastArg);
+        lastRequest = request;
+        lastArg = arg;
+    }
 }
 
 void ApplyHeals() {
@@ -677,6 +731,12 @@ void SettleFinishedRun() {
     rm::RunController& run = *g->run;
     const rm::Phase phase = run.phase();
     if (phase == rm::Phase::RunComplete || phase == rm::Phase::RunFailed) {
+        // The run is over: let the match end (the game's own time-up path, once).
+        if (g->match.inMatch && !g->arenaEndRequested) {
+            RequestMercMatchEnd();
+            g->arenaEndRequested = true;
+            RM_LOGI("run over (%s): requested mercenaries time-up to end the match", std::string(rm::PhaseName(phase)).c_str());
+        }
         const auto summary = run.EndRun();
         if (summary.ok()) {
             SetStatus("run ended (" + summary->end_reason + "): +" + std::to_string(summary->credits_banked) +
@@ -878,22 +938,34 @@ void PollDevCommand(double now) {
             if (!ok) snapData.clear();
             RM_LOGW("dev snap %08X %zu bytes -> %s", static_cast<unsigned>(address), bytes, ok ? "ok" : "failed");
         } else {
-            std::vector<std::uint32_t> now(snapData.size());
-            if (snapData.empty() || !SafeCopy(now.data(), snapAddress, now.size() * 4)) {
+            std::vector<std::uint32_t> current(snapData.size());
+            if (snapData.empty() || !SafeCopy(current.data(), snapAddress, current.size() * 4)) {
                 RM_LOGW("dev diff: no snapshot or unreadable");
             } else {
                 int changes = 0;
-                for (std::size_t i = 0; i < now.size(); ++i) {
-                    if (now[i] == snapData[i]) continue;
+                for (std::size_t i = 0; i < current.size(); ++i) {
+                    if (current[i] == snapData[i]) continue;
                     if (changes < 120) {
-                        RM_LOGW("dev diff +%05X: %08X -> %08X", static_cast<unsigned>(i * 4), snapData[i], now[i]);
+                        RM_LOGW("dev diff +%05X: %08X -> %08X", static_cast<unsigned>(i * 4), snapData[i], current[i]);
                     }
                     ++changes;
                 }
                 RM_LOGW("dev diff %08X: %d dwords changed", static_cast<unsigned>(snapAddress), changes);
-                snapData = std::move(now);
+                snapData = std::move(current);
             }
         }
+    } else if (command.rfind("scene ", 0) == 0) {
+        // "scene <hex id> [hex arg]": a scene request through the scene manager, as the
+        // title-flow script makes it (0xB = Mercenaries menu, 0xD = Mercenaries match).
+        std::istringstream words(command.substr(6));
+        std::string idText, argText;
+        words >> idText >> argText;
+        const auto scene = ReadOr<std::uintptr_t>(re5::addr::kSceneManager, 0);
+        const auto id = static_cast<std::uint32_t>(std::strtoul(idText.c_str(), nullptr, 16));
+        const auto arg = static_cast<std::uint32_t>(std::strtoul(argText.c_str(), nullptr, 16));
+        const bool ok = scene && SafeStore(scene + re5::off::kSceneRequest, id) &&
+                        SafeStore(scene + re5::off::kSceneRequestArg, arg);
+        RM_LOGW("dev scene request %X arg %X -> %s", id, arg, ok ? "written" : "failed");
     } else if (command.rfind("arm ", 0) == 0) {
         // "arm <stage> <costume slot>": the next START RUN uses this plan.
         std::istringstream words(command.substr(4));
@@ -907,9 +979,12 @@ void PollDevCommand(double now) {
         for (int i = 0; inv && i < re5::off::kInventorySlots; ++i) {
             const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
             if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
-            RM_LOGW("dev inv slot %2d: item %04X count %d max %d", i,
-                    ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0), ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0),
-                    ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0));
+            std::uint32_t raw[12]{};
+            for (int k = 0; k < 12; ++k) SafeRead(slot + k * 4, raw[k]);
+            RM_LOGW("dev inv slot %2d: item %04X count %d max %d | %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X",
+                    i, ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0),
+                    ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0), ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0),
+                    raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7], raw[8], raw[9], raw[10], raw[11]);
         }
         if (!inv) RM_LOGW("dev inv: no local player");
     } else if (command.rfind("give ", 0) == 0 || command.rfind("ammo ", 0) == 0) {
@@ -931,12 +1006,14 @@ void PollDevCommand(double now) {
             RM_LOGW("dev %s item %04X x%d -> %d not placed", command[0] == 'g' ? "give" : "ammo", item, count, left);
         }
     } else if (command.rfind("create ", 0) == 0) {
-        // "create <hex item> <count>": a new inventory slot through the game's own
-        // creator, as PickUpItem calls it (flags 0xD = find a free slot).
+        // "create <hex item> <count> [position] [hex flags]": a new inventory slot through the
+        // game's own creator, as PickUpItem calls it (flags 0xD = find a free slot).
         std::istringstream words(command.substr(7));
-        std::string idText;
+        std::string idText, flagsText;
         int count = 1;
-        words >> idText >> count;
+        int position = 0;
+        words >> idText >> count >> position >> flagsText;
+        const int flags = flagsText.empty() ? 0xD : static_cast<int>(std::strtoul(flagsText.c_str(), nullptr, 16));
         const auto item = static_cast<int>(std::strtoul(idText.c_str(), nullptr, 16));
         const auto player = engine::LocalPlayer();
         if (!engine::Caps().inventory || !player) {
@@ -947,9 +1024,10 @@ void PollDevCommand(double now) {
                                                          int a6, int a7, int a8, int a9, std::uintptr_t player,
                                                          int position, int zero);
             const auto fn = reinterpret_cast<CreateFn>(re5::addr::kFnInventoryCreate);
-            const auto slot = fn(player + re5::off::kPlayerInventory, item, count, -1, -1, -1, 0xD, 0, 0, 0, 0, 0, 0,
-                                 0, 0, 0, player, 0, 0);
-            RM_LOGW("dev create item %04X x%d -> slot %08X", item, count, static_cast<unsigned>(slot));
+            const auto slot = fn(player + re5::off::kPlayerInventory, item, count, -1, -1, -1, flags, 0, 0, 0, 0, 0,
+                                 0, 0, 0, 0, player, position, 0);
+            RM_LOGW("dev create item %04X x%d position %d flags %X -> slot %08X", item, count, position, flags,
+                    static_cast<unsigned>(slot));
         }
     } else if (command.rfind("notify ", 0) == 0) {
         // "notify <hex item> <count>": the game's own "item acquired" notice.
@@ -987,6 +1065,22 @@ void PollDevCommand(double now) {
         words >> kind >> id;
         const auto receipt = run.PurchaseUnlock(kind == "weapon" ? rm::UnlockKind::Weapon : rm::UnlockKind::Perk, id);
         RM_LOGW("dev command %s -> %s", command.c_str(), receipt.ok() ? "ok" : receipt.status().message.c_str());
+    } else if (command.rfind("grant ", 0) == 0 && run.HasActiveRun()) {
+        // "grant <perk id>": adds the perk to the active run (eligibility still applies).
+        const rm::Status status = run.DevGrantPerk(command.substr(6));
+        RM_LOGW("dev command %s -> %s", command.c_str(), status.ok() ? "ok" : status.message.c_str());
+    } else if (command.rfind("kill ", 0) == 0 && run.phase() == rm::Phase::ArenaActive) {
+        // "kill <n>": n synthetic player kills, to exercise kill-triggered perks without fighting.
+        const int wanted = std::clamp(std::atoi(command.c_str() + 5), 1, 500);
+        const int count = std::min(wanted, run.RemainingEnemies());
+        for (int i = 0; i < count; ++i) {
+            rm::KillEvent kill;
+            kill.now = now;
+            kill.by_player = true;
+            kill.enemy_id = "devkill_" + std::to_string(i) + "_" + std::to_string(static_cast<long long>(now * 1000));
+            run.OnEnemyKilled(kill);
+        }
+        RM_LOGW("dev command kill: %d synthetic kills (%d remain)", count, run.RemainingEnemies());
     } else {
         RM_LOGW("dev command '%s' ignored in phase %s", command.c_str(), std::string(rm::PhaseName(run.phase())).c_str());
     }
@@ -1105,6 +1199,9 @@ private:
         }
         DriveArena(now);
         ApplyHeals();
+        // Items earned by perks, rewards and the shop wait until the player is in a match.
+        if (g->match.inMatch && engine::LocalPlayer()) ApplyItemGrants();
+        if (g->settings.developerMode) ProbeScene();
         PollDevCommand(now);
         SettleFinishedRun();
         UpdateTimerPolicy();
@@ -1497,6 +1594,7 @@ void ModCapabilitiesReady() {
     if (!g || !g->run) return;
     std::lock_guard lock(g->mutex);
     g->run->SetCapabilities(VerifiedCapabilities());
+    g->run->SetInventory(&g_inventoryBridge);
     RM_LOGI("core capabilities: %s", g->run->capabilities().ToString().c_str());
 }
 

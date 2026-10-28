@@ -53,7 +53,7 @@ struct Settings {
     std::string timerPolicy = "hold";
     float timerHoldSeconds = 90.0f;
     // End the Mercenaries match (timer -> 0) once the arena's kill budget is met.
-    bool endMatchOnClear = true;
+    bool endMatchOnClear = false;  // true: the game's time-up ends the match after every arena
 };
 
 Paths ResolvePaths(void* module);

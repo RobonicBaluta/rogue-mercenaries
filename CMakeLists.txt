@@ -89,13 +89,14 @@ if(RM_BUILD_TESTS)
         tests/test_telemetry.cpp
         tests/test_characters.cpp
         tests/test_skins.cpp
+        tests/test_items.cpp
     )
     target_link_libraries(rm_tests PRIVATE rm_core rm_json rm_catch2)
     target_compile_definitions(rm_tests PRIVATE RM_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     rm_project_warnings(rm_tests)
 
     set(RM_TEST_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/test_output)
-    foreach(tag rng content perks weapons economy shop rewards routes run persistence telemetry characters)
+    foreach(tag rng content perks weapons economy shop rewards routes run persistence telemetry characters items)
         add_test(NAME rm_tests.${tag} COMMAND rm_tests "[${tag}]" --reporter compact)
     endforeach()
     # Safety net: any test without one of the tags above still runs.

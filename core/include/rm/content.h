@@ -38,12 +38,27 @@ struct EquipmentDef {
     int max_count = 1;
     /// Adapter item id to put into the game's inventory (-1 = tracked by the run only).
     std::int64_t game_item = -1;
+    /// Shop price in supplies; 0 = never sold or offered as a reward.
+    std::int64_t price = 0;
+    /// Units handed out by one reward pick.
+    int bundle = 1;
+    /// Items the shop and the rewards can hand out: priced and backed by a game item.
+    [[nodiscard]] bool Offerable() const { return price > 0 && game_item >= 0; }
 };
 struct LoadoutConfig {
     std::int64_t budget = 0;
     std::int64_t default_weapon_cost = 0;
+    /// Distinct equipment entries one roll may add (0 = no cap). The game's inventory has
+    /// few free slots next to the character's own weapons and ammo.
+    int max_items = 0;
     StringMap<std::int64_t> weapon_cost;  // by weapon category name
     std::vector<EquipmentDef> equipment;
+    [[nodiscard]] const EquipmentDef* FindEquipment(std::string_view id) const {
+        for (const EquipmentDef& e : equipment) {
+            if (e.id == id) return &e;
+        }
+        return nullptr;
+    }
 };
 
 /// `content` is set only when there are no errors. Errors are human-readable, one problem

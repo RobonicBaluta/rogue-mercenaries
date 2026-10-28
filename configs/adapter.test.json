@@ -4,7 +4,7 @@
   "overlay_key_vk": 118,
   "timer_policy": "hold",
   "timer_hold_seconds": 90.0,
-  "end_match_on_clear": true,
+  "end_match_on_clear": false,
   "dev": {
     "probe_interval_ms": 2000,
     "probe_hits": true,

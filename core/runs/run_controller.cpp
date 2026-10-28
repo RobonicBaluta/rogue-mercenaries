@@ -389,15 +389,20 @@ Loadout RollLoadout(const CharacterDef& ch, const Content& content, Rng& rng) {
     }
     out.spent = std::min(cost, out.budget);
     std::vector<int> counts(cfg.equipment.size(), 0);
+    int distinct = 0;
     for (int guard = 0; guard < 64; ++guard) {
         std::vector<std::size_t> options;
         for (std::size_t i = 0; i < cfg.equipment.size(); ++i) {
             const EquipmentDef& e = cfg.equipment[i];
-            if (counts[i] < e.max_count && out.spent + e.cost <= out.budget) options.push_back(i);
+            if (counts[i] >= e.max_count || out.spent + e.cost > out.budget) continue;
+            // The inventory has few free slots: past the cap only top up what was already picked.
+            if (cfg.max_items > 0 && counts[i] == 0 && distinct >= cfg.max_items) continue;
+            options.push_back(i);
         }
         if (options.empty()) break;
         const std::size_t i =
             options[static_cast<std::size_t>(rng.UniformInt(0, static_cast<std::int64_t>(options.size()) - 1))];
+        if (counts[i] == 0) ++distinct;
         ++counts[i];
         out.spent += cfg.equipment[i].cost;
     }
@@ -699,6 +704,15 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
                             out.supplies_awarded += amount;
                             out.triggered.push_back(id);
                         }
+                    } else if (ef.kind == EffectKind::ItemOnKill && caps_.Has(cap::kInventory)) {
+                        const int every = std::max(1, static_cast<int>(std::lround(p.every_kills)));
+                        int& kills = run_.perk_kill_counts[id];
+                        if (++kills % every != 0) continue;
+                        if (p.chance > 0.0 && p.chance < 1.0 && streams_->loot.NextDouble() >= p.chance) continue;
+                        run_.item_grants.push_back(
+                            ItemGrant{static_cast<std::int64_t>(std::lround(p.game_item)),
+                                      std::max(1, static_cast<int>(std::lround(p.amount))), id});
+                        out.triggered.push_back(id);
                     }
                 }
             }
@@ -758,6 +772,30 @@ double RunController::PendingHeal() const {
     return std::min(total, 1.0);
 }
 
+Status RunController::GrantItem(std::string_view equipment_id, int count, std::string_view source) {
+    const EquipmentDef* def = content_->loadouts().FindEquipment(equipment_id);
+    if (def == nullptr) return Status::Error(ErrorCode::NotEligible, "unknown item " + std::string(equipment_id));
+    if (def->game_item < 0) return Status::Error(ErrorCode::NotEligible, "item " + def->id + " has no game item");
+    if (!caps_.Has(cap::kInventory)) return Status::Error(ErrorCode::NotEligible, "inventory capability is not available");
+    int placed = std::max(1, count);
+    if (inventory_ != nullptr) {
+        placed = inventory_->Give(def->game_item, placed, source);
+        if (placed <= 0) return Status::Error(ErrorCode::GrantFailed, "inventory full: " + def->name + " did not fit");
+    } else {
+        run_.item_grants.push_back(ItemGrant{def->game_item, placed, std::string(source)});
+    }
+    Event e = MakeEvent(EventType::ItemGranted);
+    e.Add("item", def->id).Add("count", placed).Add("source", source);
+    Emit(std::move(e));
+    return Status::Success();
+}
+
+std::vector<ItemGrant> RunController::ConsumeItemGrants() {
+    std::vector<ItemGrant> out;
+    out.swap(run_.item_grants);
+    return out;
+}
+
 std::vector<HealRequest> RunController::ConsumeHealRequests() {
     std::vector<HealRequest> out;
     out.swap(run_.heal_requests);
@@ -801,6 +839,15 @@ Result<ArenaResult> RunController::CompleteArena(double now) {
         const PerkDef* def = content_->FindPerk(id);
         if (def == nullptr) continue;
         for (const EffectDef& ef : def->effects) {
+            if (ef.kind == EffectKind::ItemOnArenaClear && caps_.Has(cap::kInventory)) {
+                const EffectParams p = ef.AtStacks(stacks);
+                run_.item_grants.push_back(ItemGrant{static_cast<std::int64_t>(std::lround(p.game_item)),
+                                                     std::max(1, static_cast<int>(std::lround(p.amount))), id});
+                Event t = MakeEvent(EventType::PerkTriggered);
+                t.Add("source", id).Add("trigger", "arena_clear");
+                Emit(std::move(t));
+                continue;
+            }
             if (ef.kind != EffectKind::SuppliesOnArenaClear) continue;
             if (ef.require_no_damage && a.damage_taken > 0.0) continue;
             if (CreditSupplies(ArenaTx(a.arena, "clear:perk:" + id), RoundAmount(ef.AtStacks(stacks).amount), id)) {
@@ -896,11 +943,17 @@ Status RunController::ChooseReward(std::size_t index) {
                 return Fail(op, ErrorCode::GrantFailed, "supplies reward could not be credited");
             }
             break;
+        case RewardKind::Item: {
+            const Status s = GrantItem(choice.item_id, choice.item_count, "reward");
+            if (!s.ok()) return Fail(op, ErrorCode::GrantFailed, s.message);
+            break;
+        }
     }
     run_.reward_chosen = true;
     Event e = MakeEvent(EventType::RewardSelected);
     e.Add("index", index).Add("kind", RewardKindName(choice.kind)).Add("rarity", RarityName(choice.rarity));
     if (choice.kind == RewardKind::Perk) e.Add("perk", choice.perk_id);
+    if (choice.kind == RewardKind::Item) e.Add("item", choice.item_id).Add("count", choice.item_count);
     if (choice.kind == RewardKind::Weapon) e.Add("weapon", choice.weapon.base_id).Add("weapon_instance", choice.weapon.instance_id);
     if (choice.kind == RewardKind::Supplies) e.Add("supplies", choice.supplies);
     Emit(std::move(e));
@@ -976,6 +1029,7 @@ Status RunController::Purchase(std::size_t index) {
         }
         case ShopOfferKind::Weapon: GrantWeapon(offer.weapon, "shop"); break;
         case ShopOfferKind::Perk: grant = GrantPerk(offer.perk_id, "shop", CursePolicy::Exclude, false); break;
+        case ShopOfferKind::Item: grant = GrantItem(offer.item_id, 1, "shop"); break;
     }
     if (!grant.ok()) {
         // All-or-nothing: undo the debit so a failed grant never costs supplies.
@@ -992,6 +1046,7 @@ Status RunController::Purchase(std::size_t index) {
     e.Add("index", index).Add("kind", ShopOfferKindName(offer.kind)).Add("price", offer.price)
         .Add("balance", run_.supplies.balance());
     if (!offer.perk_id.empty()) e.Add("perk", offer.perk_id);
+    if (!offer.item_id.empty()) e.Add("item", offer.item_id);
     if (!offer.target_instance_id.empty()) e.Add("weapon_instance", offer.target_instance_id);
     if (offer.kind == ShopOfferKind::Weapon) e.Add("weapon", offer.weapon.base_id);
     Emit(std::move(e));

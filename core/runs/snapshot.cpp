@@ -104,6 +104,15 @@ RunSnapshot RunController::Snapshot(double now) const {
                 v.id = "supplies";
                 v.title = "+" + std::to_string(r.supplies) + " supplies";
                 break;
+            case RewardKind::Item:
+                v.id = r.item_id;
+                if (const EquipmentDef* e = c.loadouts().FindEquipment(r.item_id)) {
+                    v.title = e->name + (r.item_count > 1 ? " x" + std::to_string(r.item_count) : std::string());
+                } else {
+                    v.title = r.item_id;
+                }
+                v.detail = "Goes straight into your inventory";
+                break;
         }
         s.reward_offers.push_back(std::move(v));
     }
@@ -143,6 +152,12 @@ RunSnapshot RunController::Snapshot(double now) const {
                     v.title = p->name;
                     v.detail = p->description;
                 }
+                break;
+            case ShopOfferKind::Item:
+                v.id = o.item_id;
+                if (const EquipmentDef* e = c.loadouts().FindEquipment(o.item_id)) v.title = e->name;
+                else v.title = o.item_id;
+                v.detail = "Goes straight into your inventory";
                 break;
         }
         s.shop_offers.push_back(std::move(v));

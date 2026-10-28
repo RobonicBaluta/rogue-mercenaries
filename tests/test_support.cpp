@@ -133,9 +133,21 @@ constexpr const char* kEconomy = R"JSON({
   "routes": {"third_choice_chance": 0.5}
 })JSON";
 
+constexpr const char* kLoadouts = R"JSON({
+  "schema_version": 1,
+  "budget": 0,
+  "equipment": [
+    {"id": "grenade", "name": "Grenade", "cost": 5, "max": 3, "game_item": 262, "price": 10, "bundle": 2},
+    {"id": "spray", "name": "Spray", "cost": 10, "max": 1, "game_item": 772, "price": 20},
+    {"id": "herb", "name": "Herb", "cost": 3, "max": 2}
+  ]
+})JSON";
+
 }  // namespace
 
-ContentSources FixtureSources() { return ContentSources{kPerks, kWeapons, kCharacters, kRoutes, kEconomy}; }
+ContentSources FixtureSources() {
+    return ContentSources{kPerks, kWeapons, kCharacters, kRoutes, kEconomy, kLoadouts};
+}
 
 std::shared_ptr<const Content> Load(const ContentSources& sources) {
     ContentLoadResult r = Content::LoadFromStrings(sources);
@@ -154,7 +166,7 @@ ContentSources EditFixture(const std::function<void(nlohmann::json&, nlohmann::j
     nlohmann::json routes = nlohmann::json::parse(kRoutes);
     nlohmann::json economy = nlohmann::json::parse(kEconomy);
     edit(perks, weapons, characters, routes, economy);
-    return ContentSources{perks.dump(), weapons.dump(), characters.dump(), routes.dump(), economy.dump()};
+    return ContentSources{perks.dump(), weapons.dump(), characters.dump(), routes.dump(), economy.dump(), kLoadouts};
 }
 
 std::filesystem::path ConfigDir() { return std::filesystem::path(RM_SOURCE_DIR) / "configs"; }

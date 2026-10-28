@@ -115,7 +115,10 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
         return std::find(p.requires_capabilities.begin(), p.requires_capabilities.end(), cap) !=
                p.requires_capabilities.end();
     };
-    CHECK(requires_cap(*boulder, cap::kMeleeDetect));
+    // Character traits hand out items instead of scaling damage: the loader derives the inventory need.
+    CHECK(requires_cap(*boulder, cap::kInventory));
+    CHECK(requires_cap(*boulder, cap::kKillEvents));
+    CHECK(requires_cap(*marksman, cap::kInventory));
     CHECK(requires_cap(*c.FindPerk("field_medic"), cap::kHeal));
     CHECK(c.weapons().size() >= 8);
     CHECK(c.unique_affixes().size() >= 2);

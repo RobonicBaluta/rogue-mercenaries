@@ -40,6 +40,7 @@ struct EconomyConfig {
         double perk_weight = 70.0;
         double weapon_weight = 20.0;
         double supplies_weight = 10.0;
+        double item_weight = 0.0;  // inventory items from loadouts.json (needs the inventory capability)
         std::int64_t supplies_bundle = 30;
     } rewards;
 
@@ -94,6 +95,7 @@ struct EconomyConfig {
         std::array<std::int64_t, kRarityCount> perk_price{};
         std::array<std::int64_t, kRarityCount> weapon_price{};
         int perk_offers = 2;
+        int item_offers = 0;  // distinct inventory items on sale (price from loadouts.json)
     } shop;
 
     struct Routes {
