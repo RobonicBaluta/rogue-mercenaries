@@ -26,6 +26,7 @@ struct Verified {
     bool fader = false;         // the game's screen fader (black-out while the autopilot runs)
     bool flowScript = false;    // title-flow script steps (direct start without screens)
     bool inventory = false;     // uPlayer inventory layout and add helpers
+    bool resultsScreen = false; // Mercenaries results screen move (auto-accept between stages)
 };
 const Verified& Caps();
 

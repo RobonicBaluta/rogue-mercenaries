@@ -6,6 +6,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <map>
 #include <array>
 #include <atomic>
 #include <cctype>
@@ -146,6 +147,14 @@ struct ModState {
     std::unique_ptr<rm::RunController> run;
     MatchState match;
     bool arenaEndRequested = false;  // timer forced to 0 after a clear
+    int matchGeneration = 0;         // +1 on every match detected
+    int currentStage = -1;           // stage the autopilot armed for the current match
+    struct StageTransition {
+        bool pending = false;
+        int generation = 0;     // matchGeneration when the match end was requested
+        double startedAt = 0.0;
+        std::vector<std::pair<std::uint32_t, int>> carry;  // (item id, count) per slot record
+    } transition;
     bool autoOpenedForPhase = false;
     rm::Phase lastPhase = rm::Phase::Idle;
     std::string lastStatus;
@@ -247,6 +256,7 @@ void ObserveMatch(double now) {
     if (m.inMatch != wasInMatch) {
         RM_LOGI("match %s (mode=%d stage=%d timer=%.1f local=%s)", m.inMatch ? "detected" : "ended", m.mode,
                 m.stage, m.timer, m.localClass.c_str());
+        if (m.inMatch) ++g->matchGeneration;
     }
 }
 
@@ -455,7 +465,7 @@ private:
                         LARGE_INTEGER counter;
                         QueryPerformanceCounter(&counter);
                         const int stages = std::max(1, g->settings.stageCount);
-                        autopilot::Arm({static_cast<int>(static_cast<std::uint64_t>(counter.QuadPart) % stages),
+                        autopilot::Arm({(g->currentStage = static_cast<int>(static_cast<std::uint64_t>(counter.QuadPart) % stages)),
                                         static_cast<int>(costume), stages});
                     }
                     d.outcome = Outcome::StartRun;
@@ -615,6 +625,118 @@ void ApplyLoadoutToInventory() {
 }
 
 // Items perks earned since the last tick.
+constexpr double kStageChangeTimeoutSeconds = 75.0;
+
+std::uintptr_t GameWorkPtr() {
+    return ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
+}
+
+// Every used slot record as (item id, count), in slot order.
+std::vector<std::pair<std::uint32_t, int>> ReadInventory() {
+    std::vector<std::pair<std::uint32_t, int>> out;
+    const auto player = engine::LocalPlayer();
+    if (!engine::Caps().inventory || !player) return out;
+    const auto inv = player + re5::off::kPlayerInventory;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        out.emplace_back(ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0), ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0));
+    }
+    return out;
+}
+
+// Sets the total count of `id` across its slot records to `total` by lowering the last
+// records first (0 = used up). Returns the amount removed.
+int ShrinkItem(std::uint32_t id, int total) {
+    const auto player = engine::LocalPlayer();
+    if (!player) return 0;
+    const auto inv = player + re5::off::kPlayerInventory;
+    int current = 0;
+    std::vector<std::uintptr_t> records;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        if (ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != id) continue;
+        records.push_back(slot);
+        current += ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0);
+    }
+    int excess = current - total;
+    const int removed = std::max(0, excess);
+    for (auto it = records.rbegin(); it != records.rend() && excess > 0; ++it) {
+        const int count = ReadOr<std::int32_t>(*it + re5::off::kSlotCount, 0);
+        const int take = std::min(count, excess);
+        SafeStore<std::int32_t>(*it + re5::off::kSlotCount, count - take);
+        excess -= take;
+    }
+    return removed;
+}
+
+// Before the match ends for the next stage: remember every item and count.
+void SnapshotInventory() {
+    g->transition.carry = ReadInventory();
+    std::string text;
+    for (const auto& [id, count] : g->transition.carry) {
+        char buf[24];
+        std::snprintf(buf, sizeof(buf), "%s%04X x%d", text.empty() ? "" : ", ", id, count);
+        text += buf;
+    }
+    RM_LOGI("stage change: inventory snapshot (%zu records): %s", g->transition.carry.size(), text.c_str());
+}
+
+// In the new match: make the inventory match the snapshot. The game recreates the
+// character's own loadout, so stacks are topped up or shrunk and extra items re-created;
+// items that were used up are set to 0.
+void ApplyCarriedInventory() {
+    if (!engine::Caps().inventory || !engine::LocalPlayer()) return;
+    std::map<std::uint32_t, int> wanted;
+    for (const auto& [id, count] : g->transition.carry) wanted[id] += count;
+    std::map<std::uint32_t, int> have;
+    for (const auto& [id, count] : ReadInventory()) have[id] += count;
+    for (const auto& [id, total] : wanted) {
+        const int current = have.count(id) ? have[id] : 0;
+        if (total > current) {
+            GiveItem("carried", id, total - current);
+        } else if (total < current) {
+            ShrinkItem(id, total);
+            RM_LOGI("carried: item %04X shrunk %d -> %d", id, current, total);
+        }
+    }
+    for (const auto& [id, current] : have) {
+        if (wanted.count(id) == 0 && current > 0) {
+            ShrinkItem(id, 0);
+            RM_LOGI("carried: item %04X was used up, set to 0", id);
+        }
+    }
+    g->transition.carry.clear();
+}
+
+// A different random stage for the next arena (session-locked stages are skipped by Arm()).
+int NextStage() {
+    LARGE_INTEGER counter{};
+    QueryPerformanceCounter(&counter);
+    const int stages = std::max(1, g->settings.stageCount);
+    int stage = static_cast<int>(static_cast<std::uint64_t>(counter.QuadPart) % stages);
+    if (stages > 1 && stage == g->currentStage) stage = (stage + 1) % stages;
+    return stage;
+}
+
+// Route chosen: end this match through the game's own time-up, accept its results screen
+// behind the fader and let the title-flow script restart the match on another stage.
+void StartStageTransition(double now) {
+    SnapshotInventory();
+    const auto gw = GameWorkPtr();
+    const int costume = gw ? std::max(0, ReadOr<std::int32_t>(gw + re5::off::kGameWorkCharacter, 0)) : 0;
+    const int stage = NextStage();
+    g->transition.pending = true;
+    g->transition.generation = g->matchGeneration;
+    g->transition.startedAt = now;
+    RM_LOGI("stage change: stage %d -> %d (costume slot %d), ending the match", g->currentStage, stage, costume);
+    g->currentStage = stage;
+    autopilot::Arm({stage, costume, std::max(1, g->settings.stageCount)});
+    g->arenaEndRequested = true;
+    RequestMercMatchEnd();
+}
+
 void ApplyItemGrants() {
     for (const rm::ItemGrant& grant : g->run->ConsumeItemGrants()) {
         const bool fromPerk = grant.source != "reward" && grant.source != "shop";
@@ -652,6 +774,34 @@ void TryBeginArena(double now) {
         }
         return;
     }
+    // The inventory is complete only once the match object runs (the game adds the
+    // character's own loadout after the player appears), so item writes wait for it.
+    const bool matchRunning = ReadMercTimer().recent;
+    if (waitingNext && g->transition.pending) {
+        if (now - g->transition.startedAt > kStageChangeTimeoutSeconds && g->matchGeneration == g->transition.generation) {
+            RM_LOGW("stage change: no new match after %.0f s; continuing in the current match",
+                    now - g->transition.startedAt);
+            g->toasts.Push("Stage change failed; the run continues here");
+            g->transition.pending = false;
+        } else {
+            // Waiting for the match on the next stage.
+            if (g->matchGeneration == g->transition.generation || !matchRunning) return;
+            const rm::Status status = run.BeginArena(now);
+            Report(status, "begin arena");
+            g->arenaEndRequested = false;
+            if (status.ok()) {
+                ApplyCarriedInventory();
+                g->transition.pending = false;
+                RM_LOGI("stage change: arena %d started on stage %d", run.state().arena_index, g->currentStage);
+            }
+            return;
+        }
+    }
+    if (waitingNext && g->settings.stagePerArena && autopilot::CanChangeStage() && engine::Caps().inventory) {
+        StartStageTransition(now);
+        return;
+    }
+    if (waitingFirst && !matchRunning) return;
     const rm::Status status = run.BeginArena(now);
     Report(status, "begin arena");
     g->arenaEndRequested = false;
@@ -689,7 +839,7 @@ void UpdateTimerPolicy() {
     // countdown is held for as long as the run is alive; it is released when the run ends.
     const rm::Phase phase = g->run->phase();
     const bool alive = g->run->HasActiveRun() && phase != rm::Phase::RunComplete && phase != rm::Phase::RunFailed;
-    const bool hold = g->settings.timerPolicy == "hold" && alive;
+    const bool hold = g->settings.timerPolicy == "hold" && alive && !g->transition.pending;
     SetMercTimerFloor(hold ? g->settings.timerHoldSeconds : -1.0f);
 }
 

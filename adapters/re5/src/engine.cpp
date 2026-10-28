@@ -112,6 +112,7 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.flowScript = g_caps.gameWork && SignatureOk("flow_step") && SignatureOk("flow_step20") &&
                         SignatureOk("flow_merc_setup") && SignatureOk("startup21_stage_write") &&
                         SignatureOk("startup22_character_write");
+    g_caps.resultsScreen = g_caps.flowScript && SignatureOk("merce_results_move");
     return all;
 }
 

@@ -1,6 +1,6 @@
 # Rogue Mercenaries
 
-A single-player roguelite mod for **Resident Evil 5 Gold Edition (Steam, build 11465250, `re5dx9.exe` 1.0.0.129)**. Each run is three arenas inside one Mercenaries match. Between arenas you take a reward (items, a weapon or supplies), shop with temporary Supplies and choose a route; perks are per-character traits unlocked only in the mod's menu, and a run banks permanent Credits for unlocks.
+A single-player roguelite mod for **Resident Evil 5 Gold Edition (Steam, build 11465250, `re5dx9.exe` 1.0.0.129)**. Each run is three arenas on three random Mercenaries stages, with no game screens in between. Between arenas you take a reward (items, a weapon or supplies), shop with temporary Supplies and choose a route; perks are per-character traits unlocked only in the mod's menu, and a run banks permanent Credits for unlocks.
 
 ## Status (2026-10-27)
 
@@ -57,7 +57,7 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
    - **Enter** — continue;
    - **1–3** — take a reward (items go straight into your inventory; if nothing fits you get the item's value in supplies);
    - digits buy in the shop (items, a weapon, an upgrade, a heal), **Enter** leaves it; a purchase that does not fit is refunded;
-   - a digit picks the next route, and the next arena starts at once in the same match.
+   - a digit picks the next route; the mod then ends the match, skips the game's results screen and restarts on another random stage with your inventory carried over (set `"stage_per_arena": false` in `adapter.json` to stay on one map and start the next arena at once).
 6. After arena 3 the run ends, its Credits are banked and the game's own results screen closes the match. Character perks (for example Chris's *Pocket Grenades*: a hand grenade every four kills) trigger during the arenas; a grant that does not fit shows "inventory full".
 
 While the menu is open the game receives no input. The mouse works too, and so do the arrow keys with Space.

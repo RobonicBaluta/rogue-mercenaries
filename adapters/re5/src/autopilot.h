@@ -15,6 +15,9 @@ struct Plan {
 bool Install();
 bool Available();
 // Starts driving the next screens (uIdStartUp20 -> 21 -> 22) with this plan.
+/// True when a match can be restarted on another stage without any screen: the flow
+/// script hooks and the results screen hook are in place.
+bool CanChangeStage();
 void Arm(const Plan& plan);
 void Disarm(const char* reason);
 bool Armed();

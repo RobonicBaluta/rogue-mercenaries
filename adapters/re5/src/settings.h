@@ -54,6 +54,10 @@ struct Settings {
     float timerHoldSeconds = 90.0f;
     // End the Mercenaries match (timer -> 0) once the arena's kill budget is met.
     bool endMatchOnClear = false;  // true: the game's time-up ends the match after every arena
+    // Each route leads to a new random stage: the match is ended by the game's time-up, its
+    // results screen is accepted behind a black fade, the title-flow script restarts the
+    // match on the next stage and the inventory is carried over. false: one map per run.
+    bool stagePerArena = true;
 };
 
 Paths ResolvePaths(void* module);

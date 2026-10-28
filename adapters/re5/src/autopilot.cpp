@@ -36,7 +36,7 @@ constexpr std::uint8_t kStateModeInput = 10;  // uIdStartUp20's Solo/Duo page
 constexpr std::uint8_t kStateLoading = 80;    // uIdStartUp22 after the character decide
 constexpr int kItemStart = 0;                 // "Iniciar"
 constexpr int kModeSolo = 0;
-constexpr DWORD kTimeoutMs = 20000;
+constexpr DWORD kTimeoutMs = 45000;  // a stage change passes the time-up and the results screen
 // A decide the screen has not taken after this long means the row is locked
 // in the game's own save (stages and costumes unlock with ranks).
 constexpr DWORD kDenyMs = 1500;
@@ -61,7 +61,8 @@ std::atomic<bool> g_faded{false};
 std::atomic<DWORD> g_injectSince{0};  // first decide injected on the current screen
 std::atomic<unsigned> g_lockedStages{0};  // bit per stage the game refused this session
 // Set around one screen's move(): its own input query then reports decide.
-thread_local bool t_inject = false;
+thread_local std::uint32_t t_injectBits = 0;  // menu input bits added for this frame
+std::atomic<bool> g_resultsHook{false};
 
 std::uint32_t DecideMask() {
     const auto pad = ReadOr<std::uintptr_t>(re5::addr::kPadInstance, 0);
@@ -120,7 +121,7 @@ int __fastcall FlowStepDetour(std::uintptr_t ctx, void*, int kind) {
 
 std::uint32_t __stdcall MenuInputDetour(int pad, int mode) {
     const std::uint32_t bits = g_origMenuInput(pad, mode);
-    return t_inject ? (bits | DecideMask()) : bits;
+    return bits | t_injectBits;
 }
 
 void Drive(std::uintptr_t self, MoveFn orig, int screen) {
@@ -176,9 +177,48 @@ void Drive(std::uintptr_t self, MoveFn orig, int screen) {
             RM_LOGI("autopilot: driving uIdStartUp%d (state %u)", screen, state);
         }
     }
-    t_inject = inject;
+    t_injectBits = inject ? DecideMask() : 0;
     orig(self);
-    t_inject = false;
+    t_injectBits = 0;
+}
+
+// Mercenaries results screen (uIdMerceEd00) between the stages of one run: while the
+// autopilot is armed the screen is accepted at once (a decide press is fed to its input
+// query every frame) and kept behind the fader, so the game returns to its Mercenaries
+// menu scene, where the title-flow script restarts the match on the armed stage.
+MoveFn g_origResultsMove = nullptr;
+std::atomic<int> g_resultsState{-1};
+
+void __fastcall ResultsMoveDetour(std::uintptr_t self, void*) {
+    std::uint32_t inject = 0;
+    if (g_enabled.load() && g_armed.load()) {
+        const auto state = ReadOr<std::uint8_t>(self + re5::off::kMenuState, 0);
+        const bool optionsPhase = state == 10;
+        const int last = g_resultsState.exchange(state);
+        if (last != state) {
+            if (last < 0) FadeToBlack(1);
+            RM_LOGI("autopilot: results screen state %d -> %u%s", last, state, optionsPhase ? " (options)" : "");
+        }
+        // "Aceptar" reads the decide bits straight from the menu input query; the option
+        // list that follows checks cancel before its fade gate, so cancel closes it even
+        // behind the fader.
+        if (state == 0x1E) inject = DecideMask();
+        if (optionsPhase) inject = DecideMask() | re5::off::kMenuInputCancelBit;
+    } else {
+        g_resultsState = -1;
+    }
+    t_injectBits = inject;
+    g_origResultsMove(self);
+    t_injectBits = 0;
+    if (g_enabled.load() && g_armed.load()) {
+        // Once initialised (state 0 done), jump to the screen's own exit states (0x5A..0x5C:
+        // flow request, wait, close) so the stats page and the record save never run.
+        const auto after = ReadOr<std::uint8_t>(self + re5::off::kMenuState, 0);
+        if (after >= 1 && after <= 0x1F) {
+            SafeStore<std::uint8_t>(self + re5::off::kMenuState, re5::off::kResultsExitState);
+            RM_LOGI("autopilot: results screen skipped (state %u -> 0x5A)", after);
+        }
+    }
 }
 
 void __fastcall Move20Detour(std::uintptr_t self, void*) { Drive(self, g_origMove20, 20); }
@@ -223,8 +263,16 @@ bool Install() {
         g_flowHooks = true;
         RM_LOGI("autopilot: title-flow script hooks queued (screens are skipped)");
     }
+    if (g_flowHooks.load() && engine::Caps().resultsScreen &&
+        QueueHook(re5::addr::kFnMerceResultsMove, reinterpret_cast<void*>(&ResultsMoveDetour),
+                  reinterpret_cast<void**>(&g_origResultsMove))) {
+        g_resultsHook = true;
+        RM_LOGI("autopilot: results screen hook queued (accepted while armed)");
+    }
     return true;
 }
+
+bool CanChangeStage() { return g_enabled.load() && g_flowHooks.load() && g_resultsHook.load(); }
 
 bool Available() { return g_enabled.load(); }
 

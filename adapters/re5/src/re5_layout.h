@@ -80,6 +80,10 @@ constexpr std::uintptr_t kFadeInstance = 0x011E8804;
 // it closes; returning +1 at once skips the screen.
 constexpr std::uintptr_t kFnFlowStep = 0x00BF2CF0;
 constexpr std::uintptr_t kFnFlowStep20 = 0x00BF2BD0;
+// Mercenaries results screen uIdMerceEd00 (vtable 0x00FA71D0): move() = slot 6. It reads
+// the menu input query like the setup screens, so a decide can be fed to it; "Aceptar"
+// sends the game back to its Mercenaries menu scene (0xB), where the setup script runs again.
+constexpr std::uintptr_t kFnMerceResultsMove = 0x00A20890;
 constexpr std::uintptr_t kFnFlowMercSetup = 0x00BF78B0;
 // Inventory (found with Ghidra from uPlayer::PickUpItem, FUN_007E9DF0): the
 // inventory object is uPlayer+0x21A0; __thiscall helpers on it:
@@ -163,6 +167,12 @@ constexpr std::size_t kMercCountdown = 0x4DC;  // float seconds remaining (autho
 constexpr std::size_t kMercState = 0x4D4;      // int32: 0 running, 1 time up / finished
 // Play menu (uIdStartUp01: CONTINUAR ... CONTENIDO EXTRA)
 constexpr std::size_t kMenuState = 0x14;       // uint8 state machine; 2 = waiting for input
+// uIdMerceEd00: set once its option list has run (state 10 the second time); its option
+// handler checks the menu input's cancel bit (8) before the fade gate.
+constexpr std::size_t kResultsOptionsFlag = 0x2BC;
+constexpr std::uint32_t kMenuInputCancelBit = 0x8;
+// uIdMerceEd00 exit path: 0x5A requests the flow change, 0x5B waits, 0x5C closes the screen.
+constexpr std::uint8_t kResultsExitState = 0x5A;
 constexpr std::size_t kMenuCursor = 0x48;      // int32 selected item
 constexpr std::size_t kMenuItemCount = 0x190;  // int32: 7, or 8 with "Contenido extra"
 constexpr std::size_t kMenuEnabledMask = 0x194; // uint32 bit per item; clear bits draw red
@@ -247,6 +257,7 @@ inline constexpr Signature kSignatures[] = {
     // uIdStartUp22: `fld1; mov ecx,[fader]; ...; push 0x20; push ecx; fstp; call [vt+0x30]`.
     {"startup22_fade_out", 0x00A4867D, "D9 E8 8B 0D 04 88 1E 01 8B 11 8B 42 30 6A 20 51 D9 1C 24 FF D0"},
     {"flow_step", addr::kFnFlowStep, "56 8B F1 0F BE 46 25 83 E8 00 74 6A 83 E8 01 74"},
+    {"merce_results_move", addr::kFnMerceResultsMove, "53 56 57 6A FF 6A FF 8B F1 E8 82 2B FC FF 8B 0D"},
     {"flow_step20", addr::kFnFlowStep20, "56 8B F1 0F BE 46 25 83 E8 00 74 57 83 E8 01 74"},
     {"flow_merc_setup", addr::kFnFlowMercSetup, "56 8B F1 0F BE 46 24 83 F8 15 0F 87 AE 01 00 00"},
     {"inventory_add_to_stacks", addr::kFnInventoryAddToStacks, "83 EC 64 53 8B 5C 24 6C 55 56 57 33 FF 33 C0 89"},
