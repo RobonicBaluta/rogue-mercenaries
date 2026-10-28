@@ -308,6 +308,7 @@ private:
                      bool ignore_unlock);
     /// Queues an inventory item (loadouts.json equipment) for the adapter; needs the inventory capability.
     Status GrantItem(std::string_view equipment_id, int count, std::string_view source);
+    Status PlaceWeaponItem(const WeaponInstance& weapon, std::string_view source);
     void GrantWeapon(WeaponInstance weapon, std::string_view source);
 
     int ActiveKills(double now, double window) const;

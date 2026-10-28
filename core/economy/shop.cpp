@@ -1,5 +1,7 @@
 #include "rm/shop.h"
 
+#include <algorithm>
+
 #include "rm/content.h"
 
 namespace rm {
@@ -57,7 +59,12 @@ std::vector<ShopOffer> GenerateShopOffers(Rng& rng, const OfferContext& ctx,
     }
 
     const RarityWeights weights = ShiftRarityWeights(eco.rewards.rarity_weights, ctx.rarity_shift);
-    const std::vector<const WeaponBaseDef*> bases = OfferableWeapons(ctx);
+    // Never sell a gun the player already carries.
+    std::vector<const WeaponBaseDef*> bases = OfferableWeapons(ctx);
+    std::erase_if(bases, [&owned_weapons](const WeaponBaseDef* b) {
+        return std::any_of(owned_weapons.begin(), owned_weapons.end(),
+                           [b](const WeaponInstance& w) { return w.base_id == b->id; });
+    });
     if (!bases.empty()) {
         const Rarity rarity = RollRarity(rng, weights);
         const WeaponBaseDef* base = bases[rng.Index(bases.size())];

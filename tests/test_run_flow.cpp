@@ -262,9 +262,9 @@ TEST_CASE("non-player kills can be configured to count toward the budget", "[run
     k.by_player = false;
     const KillOutcome out = h.rc.OnEnemyKilled(k);
     CHECK(out.counted);
-    CHECK(out.supplies_awarded == 0);  // partner kills never pay out or trigger perks
+    CHECK(out.supplies_awarded > 0);  // a counted kill pays out (solo: the player caused it)
     CHECK(h.rc.RemainingEnemies() == 4);
-    CHECK(h.rc.state().arenas.back().player_kills == 0);
+    CHECK(h.rc.state().arenas.back().player_kills == 0);  // but it is not a player kill (no streaks)
 }
 
 TEST_CASE("route curses are granted when a cursed route is chosen", "[run]") {
@@ -310,7 +310,7 @@ TEST_CASE("snapshot exposes UI state", "[run]") {
     CHECK(s.remaining == 3);
     CHECK(s.supplies == 54);
     CHECK(s.route_name == "R1A");
-    REQUIRE(s.weapons.size() == 2);
+    REQUIRE(s.weapons.size() == 1);
     CHECK(s.weapons[0].name == "Pistol");
     test::KillN(h.rc, 3, 3.0);
     REQUIRE(h.rc.CompleteArena(10.0).ok());

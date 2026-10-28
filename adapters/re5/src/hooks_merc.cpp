@@ -55,6 +55,7 @@ void __fastcall UpdateCountdownDetour(std::uintptr_t self, void*, float dt) {
 void SetMercTimerFloor(float seconds) { g_floor = seconds; }
 
 void RequestMercMatchEnd() { g_endRequested = true; }
+void ClearMercMatchEnd() { g_endRequested = false; }
 
 MercTimerView ReadMercTimer() {
     MercTimerView view;

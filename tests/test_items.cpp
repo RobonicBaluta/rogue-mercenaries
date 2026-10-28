@@ -294,3 +294,42 @@ TEST_CASE("one equipped perk per category drives the start of a run", "[items]")
         CHECK(style->id == alpha->starting_passive);
     }
 }
+
+TEST_CASE("a bought weapon is placed in the inventory or the purchase is refunded", "[items]") {
+    const auto content = test::Load(test::EditFixture([](json&, json& weapons, json&, json&, json& eco) {
+        for (auto& w : weapons["weapons"]) w["game_item"] = 258 + static_cast<int>(w["name"].get<std::string>().size());
+        eco["rewards"]["kind_weights"] = {{"perk", 0}, {"weapon", 1}, {"supplies", 0}, {"item", 0}};
+        eco["shop"]["perk_offers"] = 0;
+    }));
+    test::Harness h(content);
+    FakeInventory inv;
+    h.rc.SetInventory(&inv);
+    ClearFirstArena(h);
+    const auto& offers = h.rc.state().reward_offer;
+    REQUIRE_FALSE(offers.empty());
+    REQUIRE(offers[0].kind == RewardKind::Weapon);
+    // No room: the weapon reward pays its shop value instead.
+    const std::int64_t before = h.rc.state().supplies.balance();
+    const std::size_t held = h.rc.state().weapons.size();
+    REQUIRE(h.rc.ChooseReward(0).ok());
+    CHECK(inv.placed.empty());
+    CHECK(h.rc.state().supplies.balance() > before);
+    CHECK(h.rc.state().weapons.size() == held);  // nothing added
+
+    REQUIRE(h.rc.phase() == Phase::Shop);
+    const auto& shop = h.rc.state().shop_offers;
+    std::size_t w = shop.size();
+    for (std::size_t i = 0; i < shop.size(); ++i) {
+        if (shop[i].kind == ShopOfferKind::Weapon) w = i;
+    }
+    REQUIRE(w < shop.size());
+    const std::int64_t balance = h.rc.state().supplies.balance();
+    CHECK(h.rc.Purchase(w).code == ErrorCode::GrantFailed);
+    CHECK(h.rc.state().supplies.balance() == balance);  // refunded
+    CHECK_FALSE(shop[w].purchased);
+    inv.room = 1;
+    REQUIRE(h.rc.Purchase(w).ok());
+    REQUIRE(inv.placed.size() == 1);
+    CHECK(inv.placed[0].first == content->FindWeapon(shop[w].weapon.base_id)->game_item);
+    CHECK(h.rc.state().weapons.size() >= held);  // added, or replaced an instance of the same base
+}

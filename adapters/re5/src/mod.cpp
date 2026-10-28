@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <map>
+#include <unordered_map>
 #include <array>
 #include <atomic>
 #include <cctype>
@@ -214,7 +215,10 @@ rm::Capabilities VerifiedCapabilities() {
         out.Add(rm::cap::kIncomingDamage);
         out.Add(rm::cap::kHeal);
     }
-    if (caps.inventory) out.Add(rm::cap::kInventory);
+    if (caps.inventory) {
+        out.Add(rm::cap::kInventory);
+        out.Add(rm::cap::kWeaponId);  // hits and kills carry the equipped weapon's base id
+    }
     return out;
 }
 
@@ -260,7 +264,11 @@ void ObserveMatch(double now) {
     if (m.inMatch != wasInMatch) {
         RM_LOGI("match %s (mode=%d stage=%d timer=%.1f local=%s)", m.inMatch ? "detected" : "ended", m.mode,
                 m.stage, m.timer, m.localClass.c_str());
-        if (m.inMatch) ++g->matchGeneration;
+        if (m.inMatch) {
+            ++g->matchGeneration;
+            ClearMercMatchEnd();  // never inherit an end request from a previous match
+            g->arenaEndRequested = false;
+        }
     }
 }
 
@@ -792,6 +800,76 @@ void HandleNativeMenu(double now) {
 // Puts `count` of game item `id` into the local player's inventory through the
 // game's own helpers (verified: AddToStacks tops up a stack, Create makes a
 // new slot the way PickUpItem does). Returns false when nothing could be placed.
+// Base id (weapons.json) of the weapon in the player's hands: the inventory record flagged as
+// equipped, mapped through the weapons' game_item ids. Empty when unknown.
+std::optional<std::string> EquippedWeaponBaseId() {
+    const auto player = engine::LocalPlayer();
+    if (!engine::Caps().inventory || !player) return std::nullopt;
+    const auto inv = player + re5::off::kPlayerInventory;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        if (ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) != 1) continue;
+        const auto id = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
+        if ((id >> 8) != 1) continue;
+        for (const rm::WeaponBaseDef& w : g->content->weapons()) {
+            if (w.game_item == static_cast<std::int64_t>(id)) return w.id;
+        }
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+// Enemies seen alive this arena, for deaths that never pass the damage hook (a plaga burnt by
+// a flash grenade, a fall): health going to zero, or vanishing after being alive a while.
+struct EnemyTrack {
+    int hp = 0;
+    int max = 0;
+    double firstSeen = 0.0;
+    double lastSeen = 0.0;
+};
+std::unordered_map<std::uintptr_t, EnemyTrack> g_enemyTracks;
+
+void ReportEnemyDeath(std::uintptr_t enemy, int maxHp, double now, const char* how) {
+    rm::KillEvent kill;
+    kill.now = now;
+    kill.by_player = false;
+    char id[32];
+    std::snprintf(id, sizeof(id), "em_%08X_%d", static_cast<unsigned>(enemy), maxHp);
+    kill.enemy_id = id;
+    const rm::KillOutcome out = g->run->OnEnemyKilled(kill);
+    if (out.counted) RM_LOGI("enemy %08X died (%s): counted, %d remain", static_cast<unsigned>(enemy), how, out.remaining);
+}
+
+void DetectEnemyDeaths(double now) {
+    if (!g->match.inMatch || g->run->phase() != rm::Phase::ArenaActive) {
+        g_enemyTracks.clear();
+        return;
+    }
+    const auto states = engine::ReadEnemyStates();
+    for (const engine::EnemyState& e : states) {
+        auto it = g_enemyTracks.find(e.object);
+        if (it == g_enemyTracks.end()) {
+            if (e.hp > 0) g_enemyTracks[e.object] = EnemyTrack{e.hp, e.max, now, now};
+            continue;
+        }
+        EnemyTrack& t = it->second;
+        if (t.hp > 0 && e.hp <= 0) ReportEnemyDeath(e.object, t.max, now, "health reached zero");
+        t.hp = e.hp;
+        t.lastSeen = now;
+    }
+    for (auto it = g_enemyTracks.begin(); it != g_enemyTracks.end();) {
+        if (it->second.lastSeen < now) {
+            if (it->second.hp > 0 && now - it->second.firstSeen > 1.0) {
+                ReportEnemyDeath(it->first, it->second.max, now, "removed from the enemy list");
+            }
+            it = g_enemyTracks.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 // Returns the units placed (stacked or in new slots); 0 when nothing fit or no player.
 int GiveItem(const char* source, std::int64_t gameItem, int count) {
     const auto player = engine::LocalPlayer();
@@ -1228,14 +1306,21 @@ void SettleFinishedRun() {
     const rm::Phase phase = run.phase();
     if (phase == rm::Phase::RunComplete || phase == rm::Phase::RunFailed) {
         if (matchui::IsOpen()) return;  // the native RUN COMPLETE screen is still up
-        // The run is over: let the match end (the game's own time-up path, once).
-        if (g->match.inMatch && !g->arenaEndRequested) {
+        // A completed run lets the match end (the game's own time-up path, once); a death is
+        // ended by the game itself.
+        if (phase == rm::Phase::RunComplete && g->match.inMatch && !g->arenaEndRequested) {
             RequestMercMatchEnd();
             g->arenaEndRequested = true;
             RM_LOGI("run over (%s): requested mercenaries time-up to end the match", std::string(rm::PhaseName(phase)).c_str());
         }
         const auto summary = run.EndRun();
         if (summary.ok()) {
+            // Nothing of this run may leak into the next match.
+            g->transition = {};
+            g->matchUiOpenRequested = false;
+            g_enemyTracks.clear();
+            autopilot::Disarm("run over");
+            if (phase == rm::Phase::RunFailed) ClearMercMatchEnd();
             SetStatus("run ended (" + summary->end_reason + "): +" + std::to_string(summary->credits_banked) +
                       " credits banked");
             if (!g->settings.nativeMatchUi) overlay::SetFocused(true);
@@ -1465,6 +1550,66 @@ void PollDevCommand(double now) {
         RM_LOGW("dev scene request %X arg %X -> %s", id, arg, ok ? "written" : "failed");
     } else if (command.rfind("pause ", 0) == 0) {
         matchui::SetWorldPause(command[6] == '1');
+    } else if (command.rfind("buy ", 0) == 0 && run.phase() == rm::Phase::Shop) {
+        // "buy <kind>": purchases the first shop offer of that kind (heal, reroll, upgrade, weapon, item).
+        const std::string kind = command.substr(4);
+        const rm::RunSnapshot s = run.Snapshot(now);
+        bool found = false;
+        for (std::size_t i = 0; i < s.shop_offers.size() && !found; ++i) {
+            if (s.shop_offers[i].kind != kind || s.shop_offers[i].purchased) continue;
+            found = true;
+            const rm::Status st = run.Purchase(i);
+            RM_LOGW("dev buy %s (%s) -> %s", kind.c_str(), s.shop_offers[i].title.c_str(), st.ok() ? "ok" : st.message.c_str());
+        }
+        if (!found) RM_LOGW("dev buy %s: no such offer", kind.c_str());
+    } else if (command == "die" && run.phase() == rm::Phase::ArenaActive) {
+        Report(run.OnPlayerDied(now), "dev die");
+    } else if (command == "itemnames") {
+        // Names of the item records (categories 1..3) from the mes_item message file, to map ids.
+        const auto sMessage = ReadOr<std::uintptr_t>(re5::addr::kSMessageInstance, 0);
+        std::uintptr_t table = 0;
+        int count = 0;
+        for (std::size_t off = 0; sMessage && off < 0x12000 && !table; off += 4) {
+            const auto r = ReadOr<std::uintptr_t>(sMessage + off, 0);
+            if (!r || ReadOr<std::uint32_t>(r + re5::off::kRMessageTypeCrc, 0) != 0x10C460E6u) continue;
+            const std::string path = ReadCString(r + re5::off::kRMessagePath, 64);
+            RM_LOGW("dev itemnames: message slot +%zX = %s", off, path.c_str());
+            if (path.find("mes_item") == std::string::npos) continue;
+            const auto data = ReadOr<std::uintptr_t>(r + re5::off::kRMessageData, 0);
+            table = ReadOr<std::uintptr_t>(r + re5::off::kRMessageTable, 0);
+            count = data ? ReadOr<std::uint16_t>(data + re5::off::kMsg2Count, 0) : 0;
+        }
+        if (!table) {
+            RM_LOGW("dev itemnames: mes_item not loaded");
+        } else {
+            const auto glyph = [](std::uint16_t code) -> char {
+                if (code >= 0x38 && code < 0x38 + 52 && (code % 2 == 0)) return static_cast<char>('A' + (code - 0x38) / 2);
+                if (code >= 0x6C && code < 0x6C + 52 && (code % 2 == 0)) return static_cast<char>('a' + (code - 0x6C) / 2);
+                if (code <= 18 && code % 2 == 0) return static_cast<char>('0' + code / 2);
+                if (code == 0x1C) return ' ';
+                if (code == 0x24) return ',';
+                if (code == 0x26) return '.';
+                if (code == 0x2E) return '-';
+                return '?';
+            };
+            for (int cat = 1; cat <= 3; ++cat) {
+                const auto base = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + cat * 4, 0);
+                for (int idx = 0; base && idx < 0x40; ++idx) {
+                    const int msg = ReadOr<std::int32_t>(base + idx * 0x48 + 0x40, 0);
+                    if (msg <= 0 || msg >= count) continue;
+                    const auto entry = ReadOr<std::uintptr_t>(table + msg * 4, 0);
+                    std::string name;
+                    for (int k = 0; entry && k < 48; ++k) {
+                        const auto code = ReadOr<std::uint16_t>(entry + k * 4, 0);
+                        const auto width = ReadOr<std::uint16_t>(entry + k * 4 + 2, 0);
+                        if (code == 0 && width == 0x0401) break;
+                        if (code == 0 && width == 0x0403) { name += ' '; continue; }
+                        name += glyph(code);
+                    }
+                    RM_LOGW("dev itemnames: %04X msg %d = %s", (cat << 8) | idx, msg, name.c_str());
+                }
+            }
+        }
     } else if (command.rfind("sethp ", 0) == 0) {
         // "sethp <hp>": writes the local player's health (to test heals and the carry-over).
         const auto local = engine::LocalPlayer();
@@ -1640,6 +1785,7 @@ private:
         std::lock_guard lock(g->mutex);
         rm::HitContext ctx;
         ctx.now = Now();
+        ctx.weapon_id = EquippedWeaponBaseId();
         ctx.base_damage = hit.damage;
         ctx.target_hp = hit.targetHp;
         ctx.target_hp_max = hit.targetMaxHp;
@@ -1667,6 +1813,7 @@ private:
         rm::KillEvent kill;
         kill.now = Now();
         kill.by_player = r.attackerIsLocal;
+        if (r.attackerIsLocal) kill.weapon_id = EquippedWeaponBaseId();
         char id[32];
         std::snprintf(id, sizeof(id), "em_%08X_%d", static_cast<unsigned>(r.enemy), r.maxHp);
         kill.enemy_id = id;
@@ -1735,6 +1882,7 @@ private:
             TryBeginArena(now);
         }
         DriveArena(now);
+        DetectEnemyDeaths(now);
         ApplyHeals();
         // Items earned by perks, rewards and the shop wait until the player is in a match.
         if (g->match.inMatch && engine::LocalPlayer() && g->run->phase() != rm::Phase::Idle && ReadMercTimer().recent) {

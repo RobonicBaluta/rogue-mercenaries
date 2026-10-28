@@ -352,7 +352,7 @@
     {
       "id": "sheva_smg",
       "name": "Close Support",
-      "description": "Sheva starts with an MP5.",
+      "description": "Sheva starts with an MP5 and 30 rounds.",
       "category": "supply",
       "rarity": "rare",
       "tags": [
@@ -364,6 +364,11 @@
           "kind": "item_on_start",
           "game_item": 275,
           "amount": 1
+        },
+        {
+          "kind": "item_on_start",
+          "game_item": 514,
+          "amount": 30
         }
       ],
       "characters": [
@@ -374,7 +379,7 @@
     {
       "id": "jill_smg",
       "name": "Rapid Response",
-      "description": "Jill starts with an MP5.",
+      "description": "Jill starts with an MP5 and 30 rounds.",
       "category": "supply",
       "rarity": "rare",
       "tags": [
@@ -386,6 +391,11 @@
           "kind": "item_on_start",
           "game_item": 275,
           "amount": 1
+        },
+        {
+          "kind": "item_on_start",
+          "game_item": 514,
+          "amount": 30
         }
       ],
       "characters": [
@@ -396,7 +406,7 @@
     {
       "id": "wesker_magnum",
       "name": "Hand Cannon",
-      "description": "Wesker starts with an L.Hawk.",
+      "description": "Wesker starts with an L.Hawk and 6 rounds.",
       "category": "supply",
       "rarity": "epic",
       "tags": [
@@ -408,6 +418,11 @@
           "kind": "item_on_start",
           "game_item": 282,
           "amount": 1
+        },
+        {
+          "kind": "item_on_start",
+          "game_item": 521,
+          "amount": 6
         }
       ],
       "characters": [
@@ -499,7 +514,7 @@
     {
       "id": "excella_smg",
       "name": "Private Security",
-      "description": "Excella starts with an MP5.",
+      "description": "Excella starts with an MP5 and 30 rounds.",
       "category": "supply",
       "rarity": "rare",
       "tags": [
@@ -511,6 +526,11 @@
           "kind": "item_on_start",
           "game_item": 275,
           "amount": 1
+        },
+        {
+          "kind": "item_on_start",
+          "game_item": 514,
+          "amount": 30
         }
       ],
       "characters": [

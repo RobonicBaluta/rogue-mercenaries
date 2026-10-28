@@ -90,6 +90,7 @@ struct MercTimerView {
 };
 void SetMercTimerFloor(float seconds);  // <= 0 disables the floor
 void RequestMercMatchEnd();
+void ClearMercMatchEnd();  // drop a pending request (a new match must not inherit it)
 MercTimerView ReadMercTimer();
 bool InstallMercHooks();
 

@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <vector>
 #include <string>
 
 namespace rmre5::engine {
@@ -68,6 +69,13 @@ struct EnemiesSnapshot {
     int alive = 0;
 };
 EnemiesSnapshot ReadEnemies();
+struct EnemyState {
+    std::uintptr_t object = 0;
+    int hp = 0;
+    int max = 0;
+};
+/// Every listed uEnemy with its health (empty without the enemy list).
+std::vector<EnemyState> ReadEnemyStates();
 
 struct GameWork {
     std::uintptr_t object = 0;

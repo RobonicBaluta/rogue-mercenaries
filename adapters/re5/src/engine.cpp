@@ -242,6 +242,23 @@ EnemiesSnapshot ReadEnemies() {
     return snap;
 }
 
+std::vector<EnemyState> ReadEnemyStates() {
+    std::vector<EnemyState> out;
+    if (!g_caps.enemies) return out;
+    const auto se = ReadOr<std::uintptr_t>(re5::addr::kSEnemyInstance, 0);
+    if (!se) return out;
+    const auto count = ReadOr<std::uint32_t>(se + re5::off::kSEnemyCount, 0);
+    const auto array = ReadOr<std::uintptr_t>(se + re5::off::kSEnemyArray, 0);
+    if (!array || count > 512) return out;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        const auto enemy = ReadOr<std::uintptr_t>(array + i * 4, 0);
+        if (!enemy || !IsKindOf(enemy, re5::addr::kDtiUEnemy)) continue;
+        const auto hp = ReadHp(enemy);
+        if (hp) out.push_back(EnemyState{enemy, hp->hp, hp->max});
+    }
+    return out;
+}
+
 std::optional<GameWork> ReadGameWork() {
     if (!g_caps.gameWork) {
         return std::nullopt;

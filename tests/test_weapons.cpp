@@ -68,13 +68,13 @@ TEST_CASE("affix descriptions are human readable", "[weapons]") {
 TEST_CASE("weapon_id mode applies an instance only to matching hits", "[weapons]") {
     test::Harness h;  // all capabilities -> weapon_id mode
     REQUIRE(h.rc.StartRun("alpha", 1).ok());
-    REQUIRE(h.rc.state().weapons.size() == 2);  // both starting weapons
+    REQUIRE(h.rc.state().weapons.size() == 1);  // the rolled weapon only
     REQUIRE(h.rc.BeginArena(0.0).ok());
     WeaponInstance w = MakeStartingWeapon("shotgun", "w_sg");
     w.level = 3;
     w.affixes.push_back(Affix{AffixKind::DamagePct, 10.0, 0, ""});
     REQUIRE(h.rc.DevGrantWeapon(w).ok());
-    CHECK(h.rc.state().weapons.size() == 2);  // replaced the starting shotgun
+    CHECK(h.rc.state().weapons.size() == 2);  // the shotgun joins the pistol
 
     HitContext hit;
     hit.now = 1.0;

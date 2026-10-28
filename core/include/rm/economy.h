@@ -27,7 +27,8 @@ struct EconomyConfig {
         int arena_count = 3;
         std::string starting_route;
         std::int64_t starting_supplies = 0;
-        /// When false (default) only kills attributed to the player reduce the enemy budget.
+        /// When false (default) only kills attributed to the player reduce the enemy budget; when
+        /// true every enemy death counts and pays out (solo play: explosions, hazards).
         bool non_player_kills_count_toward_budget = false;
         int max_reroll_tokens = 2;
     } run;

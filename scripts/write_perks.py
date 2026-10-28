@@ -3,7 +3,7 @@ characters.json, loadouts.json and weapons.json with it. Run from the repository
 import json
 
 HAND, INCENDIARY, FLASH, SPRAY, HANDGUN_AMMO = 0x0106, 0x0107, 0x0108, 0x0304, 0x0201
-M92F, ITHACA, MP5, LHAWK, SHELLS = 0x0102, 0x0104, 0x0113, 0x011A, 0x0203
+M92F, ITHACA, MP5, LHAWK, SHELLS, MG_AMMO, MAGNUM_AMMO = 0x0102, 0x0104, 0x0113, 0x011A, 0x0203, 0x0202, 0x0209
 
 
 def perk(pid, name, desc, category, effects, characters=None, cost=0, rarity='common', tags=None, enabled=True):
@@ -56,13 +56,13 @@ perks += [
     perk('supply_spray', 'Medkit', 'Start every run with a first aid spray.', 'supply', [item_start(SPRAY, 1)], cost=80, tags=['items']),
     perk('supply_ammo', 'Ammo Belt', 'Start every run with 30 extra handgun rounds.', 'supply', [item_start(HANDGUN_AMMO, 30)], cost=40, tags=['items']),
     perk('chris_shotgun', 'Shotgun Licence', 'Chris starts with an Ithaca M37 and 12 shells.', 'supply', [item_start(ITHACA), item_start(SHELLS, 12)], ['chris'], cost=150, rarity='rare', tags=['weapon']),
-    perk('sheva_smg', 'Close Support', 'Sheva starts with an MP5.', 'supply', [item_start(MP5)], ['sheva'], cost=150, rarity='rare', tags=['weapon']),
-    perk('jill_smg', 'Rapid Response', 'Jill starts with an MP5.', 'supply', [item_start(MP5)], ['jill'], cost=150, rarity='rare', tags=['weapon']),
-    perk('wesker_magnum', 'Hand Cannon', 'Wesker starts with an L.Hawk.', 'supply', [item_start(LHAWK)], ['wesker'], cost=200, rarity='epic', tags=['weapon']),
+    perk('sheva_smg', 'Close Support', 'Sheva starts with an MP5 and 30 rounds.', 'supply', [item_start(MP5), item_start(MG_AMMO, 30)], ['sheva'], cost=150, rarity='rare', tags=['weapon']),
+    perk('jill_smg', 'Rapid Response', 'Jill starts with an MP5 and 30 rounds.', 'supply', [item_start(MP5), item_start(MG_AMMO, 30)], ['jill'], cost=150, rarity='rare', tags=['weapon']),
+    perk('wesker_magnum', 'Hand Cannon', 'Wesker starts with an L.Hawk and 6 rounds.', 'supply', [item_start(LHAWK), item_start(MAGNUM_AMMO, 6)], ['wesker'], cost=200, rarity='epic', tags=['weapon']),
     perk('josh_shotgun', 'Breacher', 'Josh starts with an Ithaca M37 and 12 shells.', 'supply', [item_start(ITHACA), item_start(SHELLS, 12)], ['josh'], cost=150, rarity='rare', tags=['weapon']),
     perk('barry_shotgun', 'Old Reliable', 'Barry starts with an Ithaca M37 and 12 shells.', 'supply', [item_start(ITHACA), item_start(SHELLS, 12)], ['barry'], cost=150, rarity='rare', tags=['weapon']),
     perk('rebecca_shotgun', 'Rookie Kit', 'Rebecca starts with an Ithaca M37 and 12 shells.', 'supply', [item_start(ITHACA), item_start(SHELLS, 12)], ['rebecca'], cost=150, rarity='rare', tags=['weapon']),
-    perk('excella_smg', 'Private Security', 'Excella starts with an MP5.', 'supply', [item_start(MP5)], ['excella'], cost=150, rarity='rare', tags=['weapon']),
+    perk('excella_smg', 'Private Security', 'Excella starts with an MP5 and 30 rounds.', 'supply', [item_start(MP5), item_start(MG_AMMO, 30)], ['excella'], cost=150, rarity='rare', tags=['weapon']),
 ]
 # ---- Support: bad situations. ----
 perks += [

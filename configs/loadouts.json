@@ -52,13 +52,64 @@
       "id": "green_herb",
       "name": "Green Herb",
       "cost": 5,
-      "max": 3
+      "max": 3,
+      "game_item": 769,
+      "price": 10,
+      "bundle": 1
     },
     {
       "id": "red_herb",
       "name": "Red Herb",
       "cost": 6,
-      "max": 1
+      "max": 1,
+      "game_item": 770,
+      "price": 14,
+      "bundle": 1
+    },
+    {
+      "id": "handgun_ammo",
+      "name": "Handgun Ammo",
+      "cost": 6,
+      "max": 2,
+      "game_item": 513,
+      "price": 12,
+      "bundle": 30
+    },
+    {
+      "id": "shotgun_shells",
+      "name": "Shotgun Shells",
+      "cost": 8,
+      "max": 2,
+      "game_item": 515,
+      "price": 15,
+      "bundle": 12
+    },
+    {
+      "id": "machine_gun_ammo",
+      "name": "Machine Gun Ammo",
+      "cost": 8,
+      "max": 2,
+      "game_item": 514,
+      "price": 15,
+      "bundle": 40
+    },
+    {
+      "id": "rifle_ammo",
+      "name": "Rifle Ammo",
+      "cost": 8,
+      "max": 2,
+      "game_item": 516,
+      "price": 14,
+      "bundle": 8
+    },
+    {
+      "id": "magnum_ammo",
+      "name": "Magnum Ammo",
+      "cost": 10,
+      "max": 2,
+      "game_item": 521,
+      "price": 20,
+      "bundle": 6
     }
   ],
   "max_items": 2

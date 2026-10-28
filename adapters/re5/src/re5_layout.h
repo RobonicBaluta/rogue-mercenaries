@@ -156,6 +156,7 @@ constexpr std::size_t kSlotItemId = 0x4;   // int32
 constexpr std::size_t kSlotCount = 0x8;    // int32
 constexpr std::size_t kSlotMax = 0xC;      // int32 stack capacity
 constexpr std::size_t kSlotValid = 0x29;   // uint8 == 1 for a used slot
+constexpr std::size_t kSlotEquipped = 0x1C;  // int32 == 1 for the weapon in the player's hands
 // Scene manager ([addr::kSceneManager]): pending scene request and its argument.
 constexpr std::size_t kSceneRequest = 0xF8;
 constexpr std::size_t kSceneRequestArg = 0xFC;

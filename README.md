@@ -56,7 +56,7 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
 5. When the target is reached the world pauses and the mod's own screens appear in the game's menu font (no overlay):
    - **ARENA N CLEARED** shows the rating, time, kills, supplies and credits; **Enter** continues;
    - **CHOOSE A REWARD** lists the offers (items go straight into your inventory; if nothing fits you get the item's value in supplies); a reroll row appears when you hold a token;
-   - **SHOP** lists heal, reroll token, upgrade, a weapon and items with their prices; the last row leaves it (a purchase that does not fit is refunded);
+   - **SHOP** lists heal, reroll token, an upgrade for a weapon you hold, a weapon, and items (grenades, sprays, herbs, ammo) with their prices; bought weapons and items go straight into your inventory and the last row leaves (a purchase that does not fit is refunded);
    - **NEXT ROUTE** lists the routes; the pick ends the match, skips the game's results screen and restarts on another random stage with your inventory and health carried over (set `"stage_per_arena": false` in `adapter.json` to stay on one map).
    Arrow keys move, **Enter** confirms. During a fight a status line at the top shows the arena, the enemies left and your supplies. (`"native_match_ui": false` brings the overlay windows back.)
 6. After arena 3 a **RUN COMPLETE** screen shows the credits you banked; leaving it ends the match through the game's own screens. Character perks (for example Chris's *Pocket Grenades*: a hand grenade every four kills) trigger during the arenas; a grant that does not fit shows "inventory full".

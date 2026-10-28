@@ -5,7 +5,7 @@
     "arena_count": 3,
     "starting_route": "outskirts_patrol",
     "starting_supplies": 20,
-    "non_player_kills_count_toward_budget": false,
+    "non_player_kills_count_toward_budget": true,
     "max_reroll_tokens": 2
   },
   "rewards": {

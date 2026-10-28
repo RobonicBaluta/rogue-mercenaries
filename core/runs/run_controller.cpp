@@ -513,15 +513,10 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
             .Add("tx", "start").Add("reason", "starting_supplies");
         Emit(std::move(c));
     }
-    // The rolled weapon first (the sidearm slot without the weapon_id capability), then the
-    // character's other starting weapons when weapons can be told apart.
+    // Only the rolled weapon (the pistol): every other gun comes from supply perks, rewards or
+    // the shop, so the run's weapon list matches what is really in the player's hands.
     if (!run_.loadout.weapon_id.empty()) {
         GrantWeapon(MakeStartingWeapon(run_.loadout.weapon_id, NextInstanceId()), "starting_weapon");
-    }
-    if (WeaponIdMode()) {
-        for (const std::string& base : run_.character.starting_weapons) {
-            if (base != run_.loadout.weapon_id) GrantWeapon(MakeStartingWeapon(base, NextInstanceId()), "starting_weapon");
-        }
     }
     // The menu's choice, one perk per category (the style slot falls back to the character's
     // own trait); the skin's trait is granted separately below.
@@ -698,7 +693,7 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
                                         run_.kill_records.begin() + static_cast<std::ptrdiff_t>(run_.kill_records.size() - 512));
             }
         }
-        if (kill.by_player && within_budget) {
+        if (within_budget) {  // counted kills pay out (non-player ones only when the economy says so)
             const std::string kill_tx = "kill" + std::to_string(a.budget_kills);
             const std::int64_t base = RoundAmount(static_cast<double>(eco.supplies.per_kill) * reward_mult);
             if (CreditSupplies(ArenaTx(a.arena, kill_tx + ":base"), base, "kill")) out.supplies_awarded += base;
@@ -786,6 +781,24 @@ double RunController::PendingHeal() const {
     double total = 0.0;
     for (const HealRequest& h : run_.heal_requests) total += h.fraction_of_max;
     return std::min(total, 1.0);
+}
+
+// The game item behind a weapon instance, when the adapter can place it: through the port at
+// once (fails when nothing fits), else queued. Weapons without a game id stay run-only.
+Status RunController::PlaceWeaponItem(const WeaponInstance& weapon, std::string_view source) {
+    const WeaponBaseDef* base = content_->FindWeapon(weapon.base_id);
+    if (base == nullptr || base->game_item < 0 || !caps_.Has(cap::kInventory)) return Status::Success();
+    if (inventory_ != nullptr) {
+        if (inventory_->Give(base->game_item, 1, source) <= 0) {
+            return Status::Error(ErrorCode::GrantFailed, "inventory full: " + base->name + " did not fit");
+        }
+    } else {
+        run_.item_grants.push_back(ItemGrant{base->game_item, 1, std::string(source)});
+    }
+    Event e = MakeEvent(EventType::ItemGranted);
+    e.Add("weapon", base->id).Add("game_item", base->game_item).Add("source", source);
+    Emit(std::move(e));
+    return Status::Success();
 }
 
 Status RunController::GrantItem(std::string_view equipment_id, int count, std::string_view source) {
@@ -1028,7 +1041,19 @@ Status RunController::ChooseReward(std::size_t index) {
             if (!s.ok()) return Fail(op, ErrorCode::GrantFailed, s.message);
             break;
         }
-        case RewardKind::Weapon: GrantWeapon(choice.weapon, "reward"); break;
+        case RewardKind::Weapon: {
+            const Status placed = PlaceWeaponItem(choice.weapon, "reward");
+            if (!placed.ok()) {
+                // No room for the gun: its shop value in supplies instead.
+                converted_supplies = content_->economy().shop.weapon_price[RarityIndex(choice.rarity)];
+                if (!CreditSupplies(ArenaTx(run_.arena_index, "reward"), converted_supplies, "reward")) {
+                    return Fail(op, ErrorCode::GrantFailed, placed.message);
+                }
+            } else {
+                GrantWeapon(choice.weapon, "reward");
+            }
+            break;
+        }
         case RewardKind::Supplies:
             if (!CreditSupplies(ArenaTx(run_.arena_index, "reward"), choice.supplies, "reward")) {
                 return Fail(op, ErrorCode::GrantFailed, "supplies reward could not be credited");
@@ -1128,7 +1153,10 @@ Status RunController::Purchase(std::size_t index) {
             }
             break;
         }
-        case ShopOfferKind::Weapon: GrantWeapon(offer.weapon, "shop"); break;
+        case ShopOfferKind::Weapon:
+            grant = PlaceWeaponItem(offer.weapon, "shop");
+            if (grant.ok()) GrantWeapon(offer.weapon, "shop");
+            break;
         case ShopOfferKind::Perk: grant = GrantPerk(offer.perk_id, "shop", CursePolicy::Exclude, false); break;
         case ShopOfferKind::Item: grant = GrantItem(offer.item_id, 1, "shop"); break;
     }
