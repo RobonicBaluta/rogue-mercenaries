@@ -1,6 +1,6 @@
 # Rogue Mercenaries
 
-A single-player roguelite mod for **Resident Evil 5 Gold Edition (Steam, build 11465250, `re5dx9.exe` 1.0.0.129)**. Each run is three arenas played as Mercenaries matches. Between arenas you pick perks and weapons, shop with temporary Supplies and choose a route; a run banks permanent Credits for unlocks.
+A single-player roguelite mod for **Resident Evil 5 Gold Edition (Steam, build 11465250, `re5dx9.exe` 1.0.0.129)**. Each run is three arenas inside one Mercenaries match. Between arenas you take a reward (items, a weapon or supplies), shop with temporary Supplies and choose a route; perks are per-character traits unlocked only in the mod's menu, and a run banks permanent Credits for unlocks.
 
 ## Status (2026-10-27)
 
@@ -50,15 +50,15 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
    - **PERKS**: every perk with its description; locked ones are bought with Credits.
    - **CREDITS**: your balance, lifetime records and weapon unlocks.
    Esc goes back one screen; locked entries are red, like the game's own disabled rows.
-3. Every run rolls a starting loadout from a point budget (`configs/loadouts.json`): one of the skin's weapons, then equipment while points last; unspent points become supplies. The HUD shows the roll. Grenades and sprays are placed in your real inventory when the first arena starts (on top of the character's own loadout, up to each stack's maximum); herbs are tracked by the run only until their item ids are confirmed, and the weapon pick still only sets the damage class.
+3. Every run rolls a starting loadout from a point budget (`configs/loadouts.json`): one of the skin's weapons, then equipment while points last; unspent points become supplies. The HUD shows the roll. Grenades and sprays are placed in your real inventory when the first arena starts (on top of the character's own loadout; the game's grid has nine slots, so the roll adds at most two kinds of item); herbs are tracked by the run only until their item ids are confirmed, and the weapon pick still only sets the damage class.
    *Without the menu row:* go to **The Mercenaries → Solo**, press **F7**, select the same character and press **Enter** (Start run). Set `"direct_start": false` in `adapter.json` to go through the game's own setup screens yourself.
 4. The run starts with the match. The HUD shows *Enemies left*. The Mercenaries countdown is held at 90 s, so the kill target decides the arena.
-5. When the target is reached the match ends. The menu opens on the results screen:
+5. When the target is reached the match keeps running and the run menu opens (the countdown stays held):
    - **Enter** — continue;
-   - **1–3** — take a reward;
-   - digits buy in the shop, **Enter** leaves it;
-   - a digit picks the next route.
-6. Accept the game's results and start the next match (pick a stage and character again) to begin the next arena. After arena 3 the run ends and its Credits are banked.
+   - **1–3** — take a reward (items go straight into your inventory; if nothing fits you get the item's value in supplies);
+   - digits buy in the shop (items, a weapon, an upgrade, a heal), **Enter** leaves it; a purchase that does not fit is refunded;
+   - a digit picks the next route, and the next arena starts at once in the same match.
+6. After arena 3 the run ends, its Credits are banked and the game's own results screen closes the match. Character perks (for example Chris's *Pocket Grenades*: a hand grenade every four kills) trigger during the arenas; a grant that does not fit shows "inventory full".
 
 While the menu is open the game receives no input. The mouse works too, and so do the arrow keys with Space.
 
