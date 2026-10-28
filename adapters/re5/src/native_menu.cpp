@@ -26,6 +26,8 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <set>
+#include <tuple>
 #include <string>
 #include <vector>
 
@@ -415,6 +417,10 @@ bool ModMenuFrame(std::uintptr_t self, bool readInput) {
                     g_origMove(self);
                     return true;
                 case Outcome::Denied: PlaySound(re5::addr::kFnMenuSoundDeny, self); break;
+                case Outcome::Close:
+                    PlaySound(re5::addr::kFnMenuSoundCancel, self);
+                    LeaveModMenu(self, kRogueItem);
+                    return false;
             }
             level = &g_stack.back();
         } else if (cancel && !g_buttonLatch) {
@@ -510,8 +516,20 @@ void __fastcall PlayMenuDrawDetour(std::uintptr_t self, void*) {
     }
 }
 
+std::atomic<bool> g_drawProbe{false};
+
+void ProbeDraw(const char* kind, std::uintptr_t self, int message, int x, int y, float scale) {
+    static std::mutex mutex;
+    static std::set<std::tuple<int, int, int, int>> seen;
+    std::lock_guard lock(mutex);
+    if (seen.size() >= 160 || !seen.insert({message, x, y, static_cast<int>(scale * 100)}).second) return;
+    RM_LOGI("draw probe: %s self=%08X message %d at (%d, %d) scale %.2f", kind, static_cast<unsigned>(self), message, x,
+            y, scale);
+}
+
 void __fastcall DrawLabelDetour(void* ecx, void*, int message, int x, int y, const std::uint32_t* argb,
                                 float scale) {
+    if (g_drawProbe.load() && !t_drawingMenu) ProbeDraw("label", reinterpret_cast<std::uintptr_t>(ecx), message, x, y, scale);
     if (t_drawingMenu) {
         if (g_modMenu.load()) {
             const int row = (y - re5::addr::kPlayMenuFirstRowY) / re5::addr::kPlayMenuRowPitch;
@@ -532,6 +550,7 @@ void __fastcall DrawLabelDetour(void* ecx, void*, int message, int x, int y, con
 }
 
 void __fastcall DrawHelpDetour(std::uintptr_t self, void*, int message, int y) {
+    if (g_drawProbe.load() && self != t_drawingMenu) ProbeDraw("help", self, message, 0, y, 1.0f);
     if (self && self == t_drawingMenu) {
         if (g_modMenu.load()) return;  // replaced after the draw
         if (y == re5::addr::kPlayMenuHelpY) y = kShiftedHelpY;
@@ -553,6 +572,29 @@ bool QueueHook(std::uintptr_t address, void* detour, void** original) {
 }  // namespace
 
 void SetModel(Model* model) { g_model = model; }
+
+void EnableDrawProbe() { g_drawProbe = true; }
+
+std::atomic<bool> g_holdTexts{false};
+bool TextsReady() { return ApplyTexts(); }
+void HoldTexts(bool hold) { g_holdTexts = hold; }
+void SetSlotText(int slot, const std::string& text) {
+    if (slot >= 0 && slot < kSlots) Encode(slot, text);
+}
+void DrawSlot(std::uintptr_t self, int slot, int x, int y, float scale, std::uint32_t argb) {
+    if (slot < 0 || slot >= kSlots || !g_origDrawLabel || !self) return;
+    g_origDrawLabel(reinterpret_cast<void*>(self), kPool[slot], x, y, &argb, scale);
+}
+std::uint32_t InputBits() { return MenuInputBits(); }
+std::uint32_t PadBits(std::size_t offset) { return PadMask(offset); }
+int Navigate(std::uintptr_t self, int cursor, int count) {
+    return reinterpret_cast<NavigateFn>(re5::addr::kFnMenuNavigate)(self, cursor, count);
+}
+void Sound(SoundKind kind, std::uintptr_t self) {
+    PlaySound(kind == SoundKind::Decide ? re5::addr::kFnMenuSoundDecide
+              : kind == SoundKind::Cancel ? re5::addr::kFnMenuSoundCancel : re5::addr::kFnMenuSoundDeny, self);
+}
+std::string WrapText(const std::string& text, std::size_t width) { return Wrap(text, width); }
 
 bool Install() {
     if (!engine::Caps().playMenu) {
@@ -577,7 +619,7 @@ bool Install() {
 
 void OnGameTick() {
     // The menu object stops calling move() when it closes; restore the texts.
-    if (g_applied.load() && GetTickCount() - g_lastMenuFrame.load() > 500) {
+    if (g_applied.load() && !g_holdTexts.load() && GetTickCount() - g_lastMenuFrame.load() > 500) {
         RestoreTexts();
         if (g_modMenu.load()) g_resetRequested = true;
     }

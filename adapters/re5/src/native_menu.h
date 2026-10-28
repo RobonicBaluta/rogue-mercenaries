@@ -9,7 +9,10 @@
 
 namespace rmre5::nativemenu {
 
-enum class ScreenId { Main = 0, Characters, Perks, Credits, Skins, PerkList };
+enum class ScreenId {
+    Main = 0, Characters, Perks, Credits, Skins, PerkList,
+    MatchResults, MatchRewards, MatchShop, MatchRoute, MatchRunOver
+};
 
 struct Item {
     std::string label;  // one row; rendered in capitals by the game font
@@ -30,6 +33,7 @@ enum class Outcome {
     Back,      // close this screen
     StartRun,  // leave the mod menu into the game's Mercenaries flow
     Denied,    // play the game's error sound
+    Close,     // close every screen of this host
 };
 
 struct Decision {
@@ -52,6 +56,26 @@ void OnGameTick();
 // True while the Play menu is on screen and waiting for input (not while it
 // fades out after a choice).
 bool MenuAtInput();
+/// Developer: log every distinct label/help draw call of other screens (message id, position,
+/// scale) to learn a screen's layout before hosting mod screens in it.
+void EnableDrawProbe();
+
+// Shared with the in-match host (match_ui): the borrowed message slots, the game's text
+// draw, menu input and list navigation. Slots 0..7 are rows, 8 the help, 9 the header.
+constexpr int kHelpSlot = 8;
+constexpr int kHeaderSlot = 9;
+bool TextsReady();
+/// While held, the borrowed messages stay applied outside the Play menu (in-match screens).
+void HoldTexts(bool hold);
+void SetSlotText(int slot, const std::string& text);
+/// `self` is the screen object the text is drawn for (the routine reads its layout context).
+void DrawSlot(std::uintptr_t self, int slot, int x, int y, float scale, std::uint32_t argb);
+std::uint32_t InputBits();
+std::uint32_t PadBits(std::size_t offset);
+int Navigate(std::uintptr_t self, int cursor, int count);
+enum class SoundKind { Decide, Cancel, Deny };
+void Sound(SoundKind kind, std::uintptr_t self);
+std::string WrapText(const std::string& text, std::size_t width);
 // True once (then cleared) after the player chose START RUN.
 bool TakeChosen();
 bool Chosen();

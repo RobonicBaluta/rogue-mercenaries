@@ -84,6 +84,14 @@ constexpr std::uintptr_t kFnFlowStep20 = 0x00BF2BD0;
 // the menu input query like the setup screens, so a decide can be fed to it; "Aceptar"
 // sends the game back to its Mercenaries menu scene (0xB), where the setup script runs again.
 constexpr std::uintptr_t kFnMerceResultsMove = 0x00A20890;
+// Pause screen uIdPause00 (vtable 0x00FA821C): move() = slot 6, runs every frame of a match.
+constexpr std::uintptr_t kFnPauseMove = 0x00A308C0;
+// The pause menu pauses the world by setting kAppPauseRequest in the application flags
+// (under the application's critical section when it runs threaded) and clears kAppPaused
+// when it closes. Import thunks of Enter/LeaveCriticalSection as the game calls them.
+constexpr std::uintptr_t kAppForceLock = 0x01249C2E;
+constexpr std::uintptr_t kImportEnterCriticalSection = 0x00F4A0F8;
+constexpr std::uintptr_t kImportLeaveCriticalSection = 0x00F4A164;
 constexpr std::uintptr_t kFnFlowMercSetup = 0x00BF78B0;
 // Inventory (found with Ghidra from uPlayer::PickUpItem, FUN_007E9DF0): the
 // inventory object is uPlayer+0x21A0; __thiscall helpers on it:
@@ -151,6 +159,12 @@ constexpr std::size_t kSlotValid = 0x29;   // uint8 == 1 for a used slot
 // Scene manager ([addr::kSceneManager]): pending scene request and its argument.
 constexpr std::size_t kSceneRequest = 0xF8;
 constexpr std::size_t kSceneRequestArg = 0xFC;
+// Application object ([addr::kGameRoot]): flags and the lock around them.
+constexpr std::size_t kAppLock = 0x4;
+constexpr std::size_t kAppThreadedFlag = 0x1C;
+constexpr std::size_t kAppFlags = 0x10438;
+constexpr std::uint32_t kAppPauseRequest = 0x800;
+constexpr std::uint32_t kAppPaused = 0x1000;
 // uEnemy
 constexpr std::size_t kEnemyLastHitPlayer = 0x136C;  // int32 player number or -1
 // sPlayer
@@ -265,6 +279,7 @@ inline constexpr Signature kSignatures[] = {
     {"startup22_fade_out", 0x00A4867D, "D9 E8 8B 0D 04 88 1E 01 8B 11 8B 42 30 6A 20 51 D9 1C 24 FF D0"},
     {"flow_step", addr::kFnFlowStep, "56 8B F1 0F BE 46 25 83 E8 00 74 6A 83 E8 01 74"},
     {"merce_results_move", addr::kFnMerceResultsMove, "53 56 57 6A FF 6A FF 8B F1 E8 82 2B FC FF 8B 0D"},
+    {"pause_move", addr::kFnPauseMove, "A1 A4 40 23 01 F7 80 34 04 01 00 00 05 00 00 56"},
     {"flow_step20", addr::kFnFlowStep20, "56 8B F1 0F BE 46 25 83 E8 00 74 57 83 E8 01 74"},
     {"flow_merc_setup", addr::kFnFlowMercSetup, "56 8B F1 0F BE 46 24 83 F8 15 0F 87 AE 01 00 00"},
     {"inventory_add_to_stacks", addr::kFnInventoryAddToStacks, "83 EC 64 53 8B 5C 24 6C 55 56 57 33 FF 33 C0 89"},

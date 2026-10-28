@@ -53,12 +53,13 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
 3. Every run starts with the character's pistol only: the game's own Mercenaries loadout is cut down to the pistol, its ammo and the knife when the first arena starts, and your Supply perks then add their items and weapons (a weapon arrives with a full magazine). Everything else comes from rewards and the shop. The game's grid has nine slots. (`configs/loadouts.json` still holds the item catalog and an optional point-budget roll, off by default.)
    *Without the menu row:* go to **The Mercenaries → Solo**, press **F7**, select the same character and press **Enter** (Start run). Set `"direct_start": false` in `adapter.json` to go through the game's own setup screens yourself.
 4. The run starts with the match. The HUD shows *Enemies left*. The Mercenaries countdown is held at 90 s, so the kill target decides the arena.
-5. When the target is reached the match keeps running and the run menu opens (the countdown stays held):
-   - **Enter** — continue;
-   - **1–3** — take a reward (items go straight into your inventory; if nothing fits you get the item's value in supplies);
-   - digits buy in the shop (items, a weapon, an upgrade, a heal), **Enter** leaves it; a purchase that does not fit is refunded;
-   - a digit picks the next route; the mod then ends the match, skips the game's results screen and restarts on another random stage with your inventory and your health carried over (set `"stage_per_arena": false` in `adapter.json` to stay on one map and start the next arena at once).
-6. After arena 3 the run ends, its Credits are banked and the game's own results screen closes the match. Character perks (for example Chris's *Pocket Grenades*: a hand grenade every four kills) trigger during the arenas; a grant that does not fit shows "inventory full".
+5. When the target is reached the world pauses and the mod's own screens appear in the game's menu font (no overlay):
+   - **ARENA N CLEARED** shows the rating, time, kills, supplies and credits; **Enter** continues;
+   - **CHOOSE A REWARD** lists the offers (items go straight into your inventory; if nothing fits you get the item's value in supplies); a reroll row appears when you hold a token;
+   - **SHOP** lists heal, reroll token, upgrade, a weapon and items with their prices; the last row leaves it (a purchase that does not fit is refunded);
+   - **NEXT ROUTE** lists the routes; the pick ends the match, skips the game's results screen and restarts on another random stage with your inventory and health carried over (set `"stage_per_arena": false` in `adapter.json` to stay on one map).
+   Arrow keys move, **Enter** confirms. During a fight a status line at the top shows the arena, the enemies left and your supplies. (`"native_match_ui": false` brings the overlay windows back.)
+6. After arena 3 a **RUN COMPLETE** screen shows the credits you banked; leaving it ends the match through the game's own screens. Character perks (for example Chris's *Pocket Grenades*: a hand grenade every four kills) trigger during the arenas; a grant that does not fit shows "inventory full".
 
 While the menu is open the game receives no input. The mouse works too, and so do the arrow keys with Space.
 

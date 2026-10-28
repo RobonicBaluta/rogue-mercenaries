@@ -30,6 +30,7 @@
 #include "menu_probe.h"
 #include "autopilot.h"
 #include "native_menu.h"
+#include "match_ui.h"
 #include "mod.h"
 #include "overlay.h"
 #include "probe.h"
@@ -147,6 +148,7 @@ struct ModState {
     std::unique_ptr<rm::RunController> run;
     MatchState match;
     bool arenaEndRequested = false;  // timer forced to 0 after a clear
+    bool matchUiOpenRequested = false;  // native results screen to open once the tick's lock is released
     int matchGeneration = 0;         // +1 on every match detected
     int currentStage = -1;           // stage the autopilot armed for the current match
     struct StageTransition {
@@ -263,6 +265,18 @@ void ObserveMatch(double now) {
 }
 
 // --- native mod menu content -------------------------------------------------
+
+std::string Plain(const std::string& s);
+// Help line for a reward or shop offer in the game font (letters, digits, space, comma, period).
+std::string OfferDetail(const rm::OfferView& o) {
+    if (!o.detail.empty()) return Plain(o.detail);
+    if (o.kind == "heal") return "Restores half of your health.";
+    if (o.kind == "upgrade") return "One more damage level for this weapon.";
+    if (o.kind == "weapon") return "A new weapon for the run.";
+    if (o.kind == "supplies") return "Supplies to spend in the shop.";
+    if (o.kind == "reroll") return "Reroll the next reward offer once.";
+    return Plain(o.kind);
+}
 
 std::string CategoryTag(rm::PerkCategory c) {
     switch (c) {
@@ -444,6 +458,79 @@ private:
                 }
                 break;
             }
+            case ScreenId::MatchResults: {
+                const rm::RunSnapshot s = run.Snapshot(Now());
+                screen.header = "ARENA " + std::to_string(s.arena) + " CLEARED";
+                Item item;
+                item.label = "CONTINUE";
+                if (s.last_result) {
+                    const auto& r = *s.last_result;
+                    item.help = "Rating " + std::string(rm::RatingName(r.rating)) + ", " +
+                                std::to_string(static_cast<int>(r.time_seconds)) + " seconds, " + Plural(r.kills, "kill") +
+                                (r.no_damage ? ", no damage taken." : ".") + "\nSupplies " + std::to_string(r.supplies_awarded) +
+                                ", credits " + std::to_string(r.credits_accrued) + ".";
+                } else {
+                    item.help = "Press to see your rewards.";
+                }
+                screen.items.push_back(std::move(item));
+                break;
+            }
+            case ScreenId::MatchRewards: {
+                const rm::RunSnapshot s = run.Snapshot(Now());
+                screen.header = "CHOOSE A REWARD";
+                screen.empty_help = "Nothing to choose. Press to continue.";
+                for (const auto& o : s.reward_offers) {
+                    Item item;
+                    item.label = Upper(Plain(o.title));
+                    item.help = OfferDetail(o);
+                    screen.items.push_back(std::move(item));
+                }
+                if (s.reroll_tokens > 0) {
+                    Item item;
+                    item.label = "REROLL";
+                    item.help = "Draw three other rewards. " + Plural(s.reroll_tokens, "token") + " left.";
+                    screen.items.push_back(std::move(item));
+                }
+                break;
+            }
+            case ScreenId::MatchShop: {
+                const rm::RunSnapshot s = run.Snapshot(Now());
+                screen.header = "SHOP   " + std::to_string(s.supplies) + " SUPPLIES";
+                for (const auto& o : s.shop_offers) {
+                    Item item;
+                    item.label = Upper(Plain(o.title)) + (o.purchased ? "   BOUGHT" : "");
+                    item.help = OfferDetail(o) + "\nPrice " + std::to_string(o.price) + " supplies.";
+                    if (!o.purchased && o.price > s.supplies) item.locked = true;
+                    screen.items.push_back(std::move(item));
+                }
+                Item leave;
+                leave.label = "LEAVE SHOP";
+                leave.help = "On to the next route.";
+                screen.items.push_back(std::move(leave));
+                break;
+            }
+            case ScreenId::MatchRunOver: {
+                const rm::RunSnapshot s = run.Snapshot(Now());
+                screen.header = "RUN COMPLETE";
+                Item item;
+                item.label = "FINISH";
+                item.help = "All " + std::to_string(s.arena_count) + " arenas cleared.\n" +
+                            Plural(s.credits_pending, "credit") + " banked when you leave.";
+                screen.items.push_back(std::move(item));
+                break;
+            }
+            case ScreenId::MatchRoute: {
+                const rm::RunSnapshot s = run.Snapshot(Now());
+                screen.header = "NEXT ROUTE";
+                screen.empty_help = "No route to choose.";
+                for (const auto& o : s.route_offers) {
+                    Item item;
+                    item.label = Upper(Plain(o.title));
+                    item.help = Plain(o.detail);
+                    screen.items.push_back(std::move(item));
+                }
+                break;
+            }
             case ScreenId::Skins: {
                 const auto characters = run.Characters();
                 if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) break;
@@ -573,6 +660,64 @@ private:
                 d.outcome = status.ok() ? Outcome::Refresh : Outcome::Denied;
                 break;
             }
+            case ScreenId::MatchResults: {
+                if (index < 0) break;  // cancel does nothing here
+                const rm::Status s = run.ContinueToRewards();
+                Report(s, "continue");
+                if (!s.ok()) { d.outcome = Outcome::Denied; break; }
+                d.outcome = Outcome::Push;
+                d.next = ScreenId::MatchRewards;
+                break;
+            }
+            case ScreenId::MatchRewards: {
+                if (index < 0) break;
+                const rm::RunSnapshot s = run.Snapshot(Now());
+                const int offers = static_cast<int>(s.reward_offers.size());
+                if (index < offers) {
+                    const rm::Status st = run.ChooseReward(static_cast<std::size_t>(index));
+                    Report(st, "choose reward");
+                    if (!st.ok()) { d.outcome = Outcome::Denied; break; }
+                    d.outcome = Outcome::Push;
+                    d.next = run.phase() == rm::Phase::Shop ? ScreenId::MatchShop : ScreenId::MatchRunOver;
+                } else if (index == offers && s.reroll_tokens > 0) {
+                    const rm::Status st = run.RerollReward();
+                    Report(st, "reroll");
+                    d.outcome = st.ok() ? Outcome::Refresh : Outcome::Denied;
+                } else if (offers == 0) {
+                    d.outcome = Outcome::Close;
+                }
+                break;
+            }
+            case ScreenId::MatchShop: {
+                const rm::RunSnapshot s = run.Snapshot(Now());
+                const int offers = static_cast<int>(s.shop_offers.size());
+                if (index >= 0 && index < offers) {
+                    const rm::Status st = run.Purchase(static_cast<std::size_t>(index));
+                    Report(st, "purchase");
+                    if (!st.ok()) g->toasts.Push(st.message);
+                    d.outcome = st.ok() ? Outcome::Refresh : Outcome::Denied;
+                    break;
+                }
+                // "Leave shop" row or cancel.
+                const rm::Status st = run.LeaveShop();
+                Report(st, "leave shop");
+                if (!st.ok()) { d.outcome = Outcome::Denied; break; }
+                d.outcome = Outcome::Push;
+                d.next = ScreenId::MatchRoute;
+                break;
+            }
+            case ScreenId::MatchRoute: {
+                if (index < 0) break;
+                const rm::Status st = run.ChooseRoute(static_cast<std::size_t>(index));
+                Report(st, "choose route");
+                d.outcome = st.ok() ? Outcome::Close : Outcome::Denied;
+                break;
+            }
+            case ScreenId::MatchRunOver: {
+                if (index < 0) break;
+                d.outcome = Outcome::Close;  // the tick then banks the run and lets the match end
+                break;
+            }
             case ScreenId::Skins: {
                 const auto characters = run.Characters();
                 if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) break;
@@ -609,6 +754,7 @@ MenuModel g_menuModel;
 // player picked in the game's own character select.
 void HandleNativeMenu(double now) {
     nativemenu::SetModel(&g_menuModel);
+    matchui::SetModel(&g_menuModel);
     if (nativemenu::TakeChosen()) {
         g->rogueModePending = true;
         g->toasts.Push("Rogue Mercenaries: choose Solo, a stage and Chris or Sheva");
@@ -1054,10 +1200,34 @@ void ApplyHeals() {
     }
 }
 
+// One line in the game's font during a match; the native screens close when nothing is
+// left to choose (run over, match gone).
+void UpdateMatchStatus() {
+    rm::RunController& run = *g->run;
+    const rm::Phase phase = run.phase();
+    const bool between = phase == rm::Phase::ArenaResults || phase == rm::Phase::RewardSelection ||
+                         phase == rm::Phase::Shop || phase == rm::Phase::RouteSelection ||
+                         phase == rm::Phase::RunComplete;
+    if (matchui::IsOpen() && (!run.HasActiveRun() || !between || !g->match.inMatch)) matchui::Close();
+    std::string line;
+    if (g->settings.nativeMatchUi && run.HasActiveRun() && g->match.inMatch) {
+        const rm::RunSnapshot s = run.Snapshot(Now());
+        if (phase == rm::Phase::ArenaActive) {
+            line = "ARENA " + std::to_string(s.arena) + " OF " + std::to_string(s.arena_count) + "   " +
+                   std::to_string(s.remaining) + (s.remaining == 1 ? " ENEMY LEFT   " : " ENEMIES LEFT   ") +
+                   std::to_string(s.supplies) + " SUPPLIES";
+        } else if (phase == rm::Phase::RouteSelection && run.state().route_chosen) {
+            line = "NEXT STAGE LOADING";
+        }
+    }
+    matchui::SetStatus(line);
+}
+
 void SettleFinishedRun() {
     rm::RunController& run = *g->run;
     const rm::Phase phase = run.phase();
     if (phase == rm::Phase::RunComplete || phase == rm::Phase::RunFailed) {
+        if (matchui::IsOpen()) return;  // the native RUN COMPLETE screen is still up
         // The run is over: let the match end (the game's own time-up path, once).
         if (g->match.inMatch && !g->arenaEndRequested) {
             RequestMercMatchEnd();
@@ -1068,7 +1238,7 @@ void SettleFinishedRun() {
         if (summary.ok()) {
             SetStatus("run ended (" + summary->end_reason + "): +" + std::to_string(summary->credits_banked) +
                       " credits banked");
-            overlay::SetFocused(true);
+            if (!g->settings.nativeMatchUi) overlay::SetFocused(true);
         } else {
             Report(summary.status(), "end run");
         }
@@ -1293,6 +1463,8 @@ void PollDevCommand(double now) {
         const bool ok = scene && SafeStore(scene + re5::off::kSceneRequest, id) &&
                         SafeStore(scene + re5::off::kSceneRequestArg, arg);
         RM_LOGW("dev scene request %X arg %X -> %s", id, arg, ok ? "written" : "failed");
+    } else if (command.rfind("pause ", 0) == 0) {
+        matchui::SetWorldPause(command[6] == '1');
     } else if (command.rfind("sethp ", 0) == 0) {
         // "sethp <hp>": writes the local player's health (to test heals and the carry-over).
         const auto local = engine::LocalPlayer();
@@ -1543,6 +1715,14 @@ private:
     void Tick() {
         probe::OnGameTick();
         if (g->settings.devMenuProbe) menuprobe::OnGameTick();
+        TickLocked();
+        if (g->matchUiOpenRequested) {
+            g->matchUiOpenRequested = false;
+            matchui::Open(nativemenu::ScreenId::MatchResults);  // builds the screen under the mutex itself
+        }
+    }
+
+    void TickLocked() {
         std::lock_guard lock(g->mutex);
         const double now = Now();
         ObserveMatch(now);
@@ -1564,11 +1744,18 @@ private:
         PollDevCommand(now);
         SettleFinishedRun();
         UpdateTimerPolicy();
+        UpdateMatchStatus();
         const rm::Phase phase = g->run->phase();
         if (phase != g->lastPhase) {
             RM_LOGI("phase %s -> %s", std::string(rm::PhaseName(g->lastPhase)).c_str(),
                     std::string(rm::PhaseName(phase)).c_str());
-            if (phase == rm::Phase::ArenaResults) overlay::SetFocused(true);
+            if (phase == rm::Phase::ArenaResults) {
+                if (g->settings.nativeMatchUi && g->match.inMatch && matchui::IsOpen() == false) {
+                    g->matchUiOpenRequested = true;  // opened after the tick releases the mutex
+                } else if (!g->settings.nativeMatchUi) {
+                    overlay::SetFocused(true);
+                }
+            }
             if (phase == rm::Phase::ArenaActive) overlay::SetFocused(false);
             g->lastPhase = phase;
         }
@@ -2000,7 +2187,7 @@ void DrawUnguarded() {
     }
     std::lock_guard lock(g->mutex);
     const rm::RunSnapshot snapshot = g->run->Snapshot(Now());
-    DrawHud(snapshot);
+    if (!(g->settings.nativeMatchUi && g->match.inMatch && g->run->HasActiveRun())) DrawHud(snapshot);
     if (!overlay::IsFocused()) return;
     g_hotkeys = overlay::TakeHotkeys();
 

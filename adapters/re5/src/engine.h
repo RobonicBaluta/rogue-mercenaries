@@ -27,6 +27,7 @@ struct Verified {
     bool flowScript = false;    // title-flow script steps (direct start without screens)
     bool inventory = false;     // uPlayer inventory layout and add helpers
     bool resultsScreen = false; // Mercenaries results screen move (auto-accept between stages)
+    bool pauseScreen = false;   // pause screen move (host of the in-match screens)
 };
 const Verified& Caps();
 

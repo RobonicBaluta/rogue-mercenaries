@@ -113,6 +113,7 @@ bool VerifySignatures(unsigned timeoutMs) {
                         SignatureOk("flow_merc_setup") && SignatureOk("startup21_stage_write") &&
                         SignatureOk("startup22_character_write");
     g_caps.resultsScreen = g_caps.flowScript && SignatureOk("merce_results_move");
+    g_caps.pauseScreen = g_caps.playMenu && SignatureOk("pause_move");
     return all;
 }
 
