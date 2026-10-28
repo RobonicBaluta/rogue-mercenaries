@@ -2,23 +2,101 @@
   "_comment": "Base weapons are the game's own weapons; ids are what the adapter reports as weapon_id. Affix roll ranges are scaled by economy.json weapon_rarity.magnitude_mult. Units: *_pct percent, crit_chance fraction, supplies_on_kill whole supplies.",
   "schema_version": 1,
   "weapons": [
-    {"id": "m92f", "name": "M92F", "category": "handgun", "base_damage_mult": 1.0},
-    {"id": "h_and_k_p8", "name": "H&K P8", "category": "handgun", "base_damage_mult": 1.0},
-    {"id": "sig_p226", "name": "SIG P226", "category": "handgun", "base_damage_mult": 1.0, "unlock_cost_credits": 200},
-    {"id": "ithaca_m37", "name": "Ithaca M37", "category": "shotgun", "base_damage_mult": 1.0},
-    {"id": "m3", "name": "M3", "category": "shotgun", "base_damage_mult": 1.0, "unlock_cost_credits": 300},
-    {"id": "vz61", "name": "VZ61", "category": "smg", "base_damage_mult": 1.0},
-    {"id": "h_and_k_mp5", "name": "H&K MP5", "category": "smg", "base_damage_mult": 1.0},
-    {"id": "sig556", "name": "SIG 556", "category": "machine_gun", "base_damage_mult": 1.0},
-    {"id": "s75", "name": "S75", "category": "rifle", "base_damage_mult": 1.0},
-    {"id": "l_hawk", "name": "Lightning Hawk", "category": "magnum", "base_damage_mult": 1.0, "unlock_cost_credits": 500}
+    {
+      "id": "m92f",
+      "name": "M92F",
+      "category": "handgun",
+      "base_damage_mult": 1.0,
+      "game_item": 258
+    },
+    {
+      "id": "h_and_k_p8",
+      "name": "H&K P8",
+      "category": "handgun",
+      "base_damage_mult": 1.0
+    },
+    {
+      "id": "sig_p226",
+      "name": "SIG P226",
+      "category": "handgun",
+      "base_damage_mult": 1.0,
+      "unlock_cost_credits": 200
+    },
+    {
+      "id": "ithaca_m37",
+      "name": "Ithaca M37",
+      "category": "shotgun",
+      "base_damage_mult": 1.0,
+      "game_item": 260
+    },
+    {
+      "id": "m3",
+      "name": "M3",
+      "category": "shotgun",
+      "base_damage_mult": 1.0,
+      "unlock_cost_credits": 300
+    },
+    {
+      "id": "vz61",
+      "name": "VZ61",
+      "category": "smg",
+      "base_damage_mult": 1.0
+    },
+    {
+      "id": "h_and_k_mp5",
+      "name": "H&K MP5",
+      "category": "smg",
+      "base_damage_mult": 1.0,
+      "game_item": 275
+    },
+    {
+      "id": "sig556",
+      "name": "SIG 556",
+      "category": "machine_gun",
+      "base_damage_mult": 1.0
+    },
+    {
+      "id": "s75",
+      "name": "S75",
+      "category": "rifle",
+      "base_damage_mult": 1.0
+    },
+    {
+      "id": "l_hawk",
+      "name": "Lightning Hawk",
+      "category": "magnum",
+      "base_damage_mult": 1.0,
+      "unlock_cost_credits": 500,
+      "game_item": 282
+    }
   ],
   "affixes": [
-    {"kind": "damage_pct", "min": 5, "max": 12},
-    {"kind": "crit_chance", "min": 0.03, "max": 0.07},
-    {"kind": "crit_mult_pct", "min": 15, "max": 35},
-    {"kind": "low_hp_target_damage_pct", "min": 15, "max": 30, "threshold": 0.3},
-    {"kind": "supplies_on_kill", "min": 1, "max": 2}
+    {
+      "kind": "damage_pct",
+      "min": 5,
+      "max": 12
+    },
+    {
+      "kind": "crit_chance",
+      "min": 0.03,
+      "max": 0.07
+    },
+    {
+      "kind": "crit_mult_pct",
+      "min": 15,
+      "max": 35
+    },
+    {
+      "kind": "low_hp_target_damage_pct",
+      "min": 15,
+      "max": 30,
+      "threshold": 0.3
+    },
+    {
+      "kind": "supplies_on_kill",
+      "min": 1,
+      "max": 2
+    }
   ],
   "unique_affixes": [
     {

@@ -351,6 +351,7 @@ std::vector<ParamRule> EffectRules(EffectKind kind, ConditionKind cond) {
             rules.push_back({"chance", false, 0.0, 1.0, true});
             break;
         case EffectKind::ItemOnArenaClear:
+        case EffectKind::ItemOnRunStart:
             rules.push_back({"game_item", true, 0.0, 65535.0, false});
             rules.push_back({"amount", true, 1.0, 99.0, false});
             break;
@@ -490,7 +491,8 @@ bool ParseEffect(const Diag& d, const json& obj, EffectDef& effect) {
     if (effect.kind == EffectKind::ItemOnKill && std::floor(effect.params.every_kills) != effect.params.every_kills) {
         d.Error("field 'every_kills' must be a whole number");
     }
-    if ((effect.kind == EffectKind::ItemOnKill || effect.kind == EffectKind::ItemOnArenaClear) &&
+    if ((effect.kind == EffectKind::ItemOnKill || effect.kind == EffectKind::ItemOnArenaClear ||
+         effect.kind == EffectKind::ItemOnRunStart) &&
         std::floor(effect.params.game_item) != effect.params.game_item) {
         d.Error("field 'game_item' must be a whole number");
     }
@@ -545,7 +547,7 @@ void ParsePerks(const Diag& file, const json& doc, std::vector<PerkDef>& out) {
         GetString(d, e, "name", p.name, true);
         GetString(d, e, "description", p.description, false);
         ReadEnum(d, e, "category", p.category, ParsePerkCategory,
-                 "offensive, defensive, precision, economy, utility, cooperative, curse");
+                 "style, supply, support, skin, curse");
         ReadEnum(d, e, "rarity", p.rarity, ParseRarity, "common, uncommon, rare, epic, legendary");
         GetStringList(d, e, "tags", p.tags, false);
         GetIntRange(d, e, "max_stacks", p.max_stacks, false, 1, 99);
@@ -574,9 +576,6 @@ void ParsePerks(const Diag& file, const json& doc, std::vector<PerkDef>& out) {
                 MergeCapabilities(p.requires_capabilities, ImpliedCapabilities(effect));
                 p.effects.push_back(std::move(effect));
             }
-        }
-        if (p.category == PerkCategory::Cooperative && p.enabled) {
-            d.Warn("cooperative perks are reserved; consider \"enabled\": false until co-op exists");
         }
         std::sort(p.requires_capabilities.begin(), p.requires_capabilities.end());
         p.requires_capabilities.erase(
@@ -614,7 +613,8 @@ void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>&
             WeaponBaseDef w;
             if (!ReadId(d, e, w.id)) continue;
             d = file.Sub(": weapon " + Q(w.id));
-            CheckKeys(d, e, {"id", "name", "category", "base_damage_mult", "unlock_cost_credits", "enabled"});
+            CheckKeys(d, e, {"id", "name", "category", "base_damage_mult", "unlock_cost_credits", "enabled", "game_item"});
+            if (GetInt(d, e, "game_item", w.game_item, false) && w.game_item < 0) d.Error("field 'game_item' must be >= 0");
             GetString(d, e, "name", w.name, true);
             ReadEnum(d, e, "category", w.category, ParseWeaponCategory,
                      "handgun, shotgun, smg, rifle, machine_gun, magnum");

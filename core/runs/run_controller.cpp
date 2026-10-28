@@ -185,6 +185,16 @@ Status RunController::GrantPerk(std::string_view perk_id, std::string_view sourc
     e.Add("perk", def->id).Add("stacks", stacks).Add("source", source)
         .Add("rarity", RarityName(def->rarity)).Add("category", PerkCategoryName(def->category));
     Emit(std::move(e));
+    // Supply perks: their items go to the adapter's queue (applied at the first arena, or at
+    // once when granted mid-run).
+    if (caps_.Has(cap::kInventory)) {
+        for (const EffectDef& ef : def->effects) {
+            if (ef.kind != EffectKind::ItemOnRunStart) continue;
+            const EffectParams p = ef.AtStacks(stacks);
+            run_.item_grants.push_back(ItemGrant{static_cast<std::int64_t>(std::lround(p.game_item)),
+                                                 std::max(1, static_cast<int>(std::lround(p.amount))), def->id});
+        }
+    }
     return Status::Success();
 }
 
@@ -512,6 +522,14 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         for (const std::string& base : run_.character.starting_weapons) {
             if (base != run_.loadout.weapon_id) GrantWeapon(MakeStartingWeapon(base, NextInstanceId()), "starting_weapon");
         }
+    }
+    // Every perk the menu unlocked for this character is active in the run (style, supply,
+    // support); free perks are the starting traits granted by the character or skin below.
+    for (const PerkDef& perk : content_->perks()) {
+        if (!perk.enabled || perk.category == PerkCategory::Skin || perk.IsCurse()) continue;
+        if (perk.unlock_cost_credits <= 0 || profile_.unlocked_perks.count(perk.id) == 0) continue;
+        if (!CharacterMayUsePerk(perk, run_.character)) continue;
+        (void)GrantPerk(perk.id, "unlocked", CursePolicy::Exclude, false);
     }
     if (!run_.character.starting_passive.empty()) {
         const Status s = GrantPerk(run_.character.starting_passive, "starting_passive", CursePolicy::Exclude, true);

@@ -154,6 +154,7 @@ struct ModState {
         int generation = 0;     // matchGeneration when the match end was requested
         double startedAt = 0.0;
         std::vector<std::pair<std::uint32_t, int>> carry;  // (item id, count) per slot record
+        int hp = -1;            // player health at the transition (-1 = unknown)
     } transition;
     bool autoOpenedForPhase = false;
     rm::Phase lastPhase = rm::Phase::Idle;
@@ -261,6 +262,37 @@ void ObserveMatch(double now) {
 }
 
 // --- native mod menu content -------------------------------------------------
+
+std::string CategoryTag(rm::PerkCategory c) {
+    switch (c) {
+        case rm::PerkCategory::Style: return "STYLE - ";
+        case rm::PerkCategory::Supply: return "SUPPLY - ";
+        case rm::PerkCategory::Support: return "SUPPORT - ";
+        default: return "";
+    }
+}
+
+// Perks the PERKS screen lists: the selected character's own and the generic ones, by
+// category then name; skin traits and curses are never listed.
+std::vector<const rm::PerkDef*> MenuPerks(rm::RunController& run) {
+    std::vector<const rm::PerkDef*> out;
+    const rm::CharacterDef* character = nullptr;
+    const auto characters = run.Characters();
+    if (g->selectedCharacter >= 0 && g->selectedCharacter < static_cast<int>(characters.size())) {
+        character = run.content().FindCharacter(characters[g->selectedCharacter].id);
+    }
+    for (const auto& perk : run.content().perks()) {
+        if (!perk.enabled || !run.capabilities().HasAll(perk.requires_capabilities)) continue;
+        if (perk.category == rm::PerkCategory::Skin || perk.IsCurse()) continue;
+        if (character != nullptr && !rm::CharacterMayUsePerk(perk, *character)) continue;
+        out.push_back(&perk);
+    }
+    std::stable_sort(out.begin(), out.end(), [](const rm::PerkDef* a, const rm::PerkDef* b) {
+        if (a->category != b->category) return static_cast<int>(a->category) < static_cast<int>(b->category);
+        return a->name < b->name;
+    });
+    return out;
+}
 
 std::string Upper(std::string s) {
     for (char& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
@@ -374,10 +406,10 @@ private:
             }
             case ScreenId::Perks: {
                 screen.header = "PERKS   " + Upper(CreditsLine());
-                for (const auto& perk : run.content().perks()) {
-                    if (!perk.enabled || !run.capabilities().HasAll(perk.requires_capabilities)) continue;
+                for (const rm::PerkDef* perkPtr : MenuPerks(run)) {
+                    const auto& perk = *perkPtr;
                     Item item;
-                    item.label = Upper(Plain(perk.name));
+                    item.label = CategoryTag(perk.category) + Upper(Plain(perk.name));
                     const bool locked = perk.unlock_cost_credits > 0 && !profile.unlocked_perks.count(perk.id);
                     item.locked = locked;
                     item.help = Plain(perk.description);
@@ -492,8 +524,8 @@ private:
             }
             case ScreenId::Perks: {
                 int row = 0;
-                for (const auto& perk : run.content().perks()) {
-                    if (!perk.enabled || !run.capabilities().HasAll(perk.requires_capabilities)) continue;
+                for (const rm::PerkDef* perkPtr : MenuPerks(run)) {
+                    const auto& perk = *perkPtr;
                     if (row++ != index) continue;
                     if (perk.unlock_cost_credits > 0 && !run.profile().unlocked_perks.count(perk.id)) {
                         purchase(rm::UnlockKind::Perk, perk.id, perk.unlock_cost_credits);
@@ -595,6 +627,16 @@ int GiveItem(const char* source, std::int64_t gameItem, int count) {
                                                  int a8, int a9, std::uintptr_t player, int position, int zero);
     const auto addToStacks = reinterpret_cast<AddFn>(re5::addr::kFnInventoryAddToStacks);
     const auto create = reinterpret_cast<CreateFn>(re5::addr::kFnInventoryCreate);
+    // Weapons (item kind 3) do not stack: one record, loaded with a full magazine (the
+    // record's count is the ammo in the gun).
+    const auto table = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + ((id >> 8) & 0xFF) * 4, 0);
+    const auto record = table ? table + (id & 0xFF) * 0x48 : 0;
+    if (record && ReadOr<std::int32_t>(record + 0x30, 0) == 3) {
+        const int magazine = std::max(1, ReadOr<std::int32_t>(record + 8, 1));
+        const auto made = create(inventory, id, magazine, -1, -1, -1, 0xD, 0, 0, 0, 0, 0, 0, 0, 0, 0, player, 0, 0);
+        RM_LOGI("%s: weapon %04X created with %d rounds -> %s", source, id, magazine, made ? "ok" : "no slot");
+        return made ? 1 : 0;
+    }
     // Top up existing stacks first; whatever does not fit goes into new slots (one unit each,
     // then topped up to the slot's own maximum), so a full grenade stack or a spray (max 1 per
     // slot) still receives the item while the 24-slot case has room.
@@ -613,12 +655,47 @@ int GiveItem(const char* source, std::int64_t gameItem, int count) {
     return count - left;
 }
 
+// Every run starts with the pistol only: the character's own Mercenaries loadout is cut down
+// to the pistol, its ammo and the knife (records invalidated, which frees their grid slots).
+void StripToPistol() {
+    const auto player = engine::LocalPlayer();
+    if (!engine::Caps().inventory || !player) return;
+    std::int64_t pistol = re5::addr::kItemM92F;
+    if (const rm::WeaponBaseDef* w = g->content->FindWeapon(g->run->state().loadout.weapon_id)) {
+        if (w->game_item >= 0) pistol = w->game_item;
+    }
+    const auto inv = player + re5::off::kPlayerInventory;
+    bool havePistol = false;
+    int removed = 0;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        const auto id = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
+        if (id == static_cast<std::uint32_t>(pistol)) havePistol = true;
+        const bool keep = id == re5::addr::kItemUnarmed || id == re5::addr::kItemKnife ||
+                          id == re5::addr::kItemHandgunAmmo || id == static_cast<std::uint32_t>(pistol);
+        if (keep) continue;
+        SafeStore<std::int32_t>(slot + re5::off::kSlotCount, 0);
+        SafeStore<std::uint8_t>(slot + re5::off::kSlotValid, 0);
+        ++removed;
+    }
+    if (!havePistol) {
+        // Magazine size from the item record (dword 2); 1 if the table cannot be read.
+        const auto table = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + ((pistol >> 8) & 0xFF) * 4, 0);
+        const int magazine = table ? std::max(1, ReadOr<std::int32_t>(table + (pistol & 0xFF) * 0x48 + 8, 1)) : 1;
+        GiveItem("pistol", pistol, magazine);
+    }
+    RM_LOGI("inventory: stripped to the pistol %04X (%d record(s) removed%s)", static_cast<unsigned>(pistol), removed,
+            havePistol ? "" : ", pistol created");
+}
+
 // The rolled loadout's equipment, at the first arena. Items without a game id stay run-only.
 void ApplyLoadoutToInventory() {
     if (!engine::Caps().inventory || !engine::LocalPlayer()) {
         RM_LOGW("loadout: inventory not available; items stay run-only");
         return;
     }
+    StripToPistol();
     for (const rm::LoadoutItem& item : g->run->state().loadout.items) {
         if (item.game_item >= 0) GiveItem(("loadout " + item.id).c_str(), item.game_item, item.count);
     }
@@ -626,6 +703,7 @@ void ApplyLoadoutToInventory() {
 
 // Items perks earned since the last tick.
 constexpr double kStageChangeTimeoutSeconds = 75.0;
+constexpr double kInventorySettleSeconds = 1.5;
 
 std::uintptr_t GameWorkPtr() {
     return ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
@@ -671,6 +749,23 @@ int ShrinkItem(std::uint32_t id, int total) {
     return removed;
 }
 
+// Invalidates every record of `id` (the game's grid slot is freed). Returns the records removed.
+int RemoveItemRecords(std::uint32_t id) {
+    const auto player = engine::LocalPlayer();
+    if (!player) return 0;
+    const auto inv = player + re5::off::kPlayerInventory;
+    int removed = 0;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        if (ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != id) continue;
+        SafeStore<std::int32_t>(slot + re5::off::kSlotCount, 0);
+        SafeStore<std::uint8_t>(slot + re5::off::kSlotValid, 0);
+        ++removed;
+    }
+    return removed;
+}
+
 // Before the match ends for the next stage: remember every item and count.
 void SnapshotInventory() {
     g->transition.carry = ReadInventory();
@@ -697,17 +792,28 @@ void ApplyCarriedInventory() {
         if (total > current) {
             GiveItem("carried", id, total - current);
         } else if (total < current) {
-            ShrinkItem(id, total);
+            if (total <= 0) RemoveItemRecords(id); else ShrinkItem(id, total);
             RM_LOGI("carried: item %04X shrunk %d -> %d", id, current, total);
         }
     }
     for (const auto& [id, current] : have) {
-        if (wanted.count(id) == 0 && current > 0) {
-            ShrinkItem(id, 0);
-            RM_LOGI("carried: item %04X was used up, set to 0", id);
+        if (wanted.count(id) == 0) {
+            RemoveItemRecords(id);
+            RM_LOGI("carried: item %04X was used up, removed", id);
         }
     }
     g->transition.carry.clear();
+}
+
+// Health carries over a stage change (a new match starts at full health).
+void RestoreCarriedHp() {
+    const int wanted = g->transition.hp;
+    g->transition.hp = -1;
+    const auto local = engine::LocalPlayer();
+    const auto hp = local ? engine::ReadHp(local) : std::nullopt;
+    if (wanted <= 0 || !hp || wanted >= hp->hp) return;
+    engine::WriteHp(local, wanted);
+    RM_LOGI("carried: health %d -> %d/%d", hp->hp, wanted, hp->max);
 }
 
 // A different random stage for the next arena (session-locked stages are skipped by Arm()).
@@ -724,6 +830,10 @@ int NextStage() {
 // behind the fader and let the title-flow script restart the match on another stage.
 void StartStageTransition(double now) {
     SnapshotInventory();
+    g->transition.hp = -1;
+    if (const auto local = engine::LocalPlayer()) {
+        if (const auto hp = engine::ReadHp(local)) g->transition.hp = hp->hp;
+    }
     const auto gw = GameWorkPtr();
     const int costume = gw ? std::max(0, ReadOr<std::int32_t>(gw + re5::off::kGameWorkCharacter, 0)) : 0;
     const int stage = NextStage();
@@ -776,7 +886,16 @@ void TryBeginArena(double now) {
     }
     // The inventory is complete only once the match object runs (the game adds the
     // character's own loadout after the player appears), so item writes wait for it.
-    const bool matchRunning = ReadMercTimer().recent;
+    // The game fills the character's own loadout shortly after its match object starts
+    // running, so inventory writes wait a moment longer than the first countdown update.
+    static int runningGeneration = -1;
+    static double runningSince = 0.0;
+    const bool countdownSeen = ReadMercTimer().recent;
+    if (countdownSeen && runningGeneration != g->matchGeneration) {
+        runningGeneration = g->matchGeneration;
+        runningSince = now;
+    }
+    const bool matchRunning = countdownSeen && now - runningSince >= kInventorySettleSeconds;
     if (waitingNext && g->transition.pending) {
         if (now - g->transition.startedAt > kStageChangeTimeoutSeconds && g->matchGeneration == g->transition.generation) {
             RM_LOGW("stage change: no new match after %.0f s; continuing in the current match",
@@ -791,6 +910,7 @@ void TryBeginArena(double now) {
             g->arenaEndRequested = false;
             if (status.ok()) {
                 ApplyCarriedInventory();
+                RestoreCarriedHp();
                 g->transition.pending = false;
                 RM_LOGI("stage change: arena %d started on stage %d", run.state().arena_index, g->currentStage);
             }
@@ -1134,6 +1254,12 @@ void PollDevCommand(double now) {
         const bool ok = scene && SafeStore(scene + re5::off::kSceneRequest, id) &&
                         SafeStore(scene + re5::off::kSceneRequestArg, arg);
         RM_LOGW("dev scene request %X arg %X -> %s", id, arg, ok ? "written" : "failed");
+    } else if (command.rfind("sethp ", 0) == 0) {
+        // "sethp <hp>": writes the local player's health (to test heals and the carry-over).
+        const auto local = engine::LocalPlayer();
+        const int hp = std::atoi(command.c_str() + 6);
+        const bool ok = local && hp > 0 && engine::WriteHp(local, hp);
+        RM_LOGW("dev sethp %d -> %s", hp, ok ? "ok" : "failed");
     } else if (command.rfind("fadein", 0) == 0) {
         // "fadein [frames]": the game's fader back to the scene.
         const int frames = std::max(1, std::atoi(command.c_str() + 6));
@@ -1392,7 +1518,9 @@ private:
         DriveArena(now);
         ApplyHeals();
         // Items earned by perks, rewards and the shop wait until the player is in a match.
-        if (g->match.inMatch && engine::LocalPlayer()) ApplyItemGrants();
+        if (g->match.inMatch && engine::LocalPlayer() && g->run->phase() != rm::Phase::Idle && ReadMercTimer().recent) {
+            ApplyItemGrants();
+        }
         if (g->settings.developerMode) ProbeScene();
         PollDevCommand(now);
         SettleFinishedRun();

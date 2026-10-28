@@ -98,6 +98,13 @@ constexpr std::uintptr_t kFnInventoryAddAmmo = 0x00C4DA90;
 //     passes (-1, -1, -1, 0xD = find a free slot, the world item's 9 attribute
 //     bytes, the player, a default position, 0). Returns the slot or 0.
 constexpr std::uintptr_t kFnInventoryCreate = 0x00C4B480;
+// Item records: [kItemTableRoot + category*4] + index*0x48; dword 2 = magazine (weapons) or
+// pickup amount, dword 8 = stack maximum (-1 for weapons), dword 12 = kind (3 = weapon).
+constexpr std::uintptr_t kItemTableRoot = 0x010EACF0;
+constexpr std::uint32_t kItemUnarmed = 0x0100;
+constexpr std::uint32_t kItemKnife = 0x0101;
+constexpr std::uint32_t kItemM92F = 0x0102;
+constexpr std::uint32_t kItemHandgunAmmo = 0x0201;
 // Scene manager singleton: the title-flow script requests the Mercenaries match with
 // FUN_007F1610(this = [kSceneManager], 0xD, 0), which writes this+0xF8 / this+0xFC.
 constexpr std::uintptr_t kSceneManager = 0x011B1DD8;

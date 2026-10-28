@@ -160,7 +160,7 @@ TEST_CASE("item perks grant inventory items on kills and arena clears", "[charac
             {"id", "pocket_grenades"},
             {"name", "Pocket Grenades"},
             {"description", "Every 2 kills, a grenade; a spray per arena."},
-            {"category", "utility"},
+            {"category", "style"},
             {"rarity", "common"},
             {"max_stacks", 1},
             {"effects", json::array({json{{"kind", "item_on_kill"}, {"game_item", 262}, {"amount", 1}, {"every_kills", 2}},

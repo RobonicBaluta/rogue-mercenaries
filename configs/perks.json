@@ -1,353 +1,38 @@
 {
-  "_comment": "Perk definitions. Damage 'value' is an additive fraction (0.10 = +10%). per_stack adds to a parameter for every stack beyond the first. requires_capabilities is merged with capabilities implied by the effects; a perk is never offered unless the adapter reports all of them.",
+  "_comment": "Perks are per character and come only from the mod menu. category: style = the character's way of playing (no plain stat perks), supply = what you start with (item_on_start puts game_item into the inventory at the first arena; generic ones plus one per character), support = bad situations (low health, lethal hits), skin = the small percentage tweaks a skin grants through its starting_passive (never listed), curse = route modifiers. Not yet possible (engine work pending): grab immunity, move speed, damage by weapon type. Item ids: 0x0106 hand grenade, 0x0107 incendiary, 0x0108 flash, 0x0304 first aid spray, 0x0201 handgun ammo, 0x0102 M92F, 0x0104 Ithaca M37, 0x0113 MP5, 0x011A L.Hawk.",
   "schema_version": 1,
   "perks": [
     {
-      "id": "sharpshooter",
-      "name": "Sharpshooter",
-      "description": "+8% damage per stack.",
-      "category": "precision",
+      "id": "chris_veteran",
+      "name": "B.S.A.A. Veteran",
+      "description": "Chris. Clearing an arena restocks a first aid spray.",
+      "category": "style",
       "rarity": "common",
       "tags": [
-        "damage"
-      ],
-      "max_stacks": 3,
-      "effects": [
-        {
-          "kind": "outgoing_damage_mult",
-          "value": 0.08,
-          "per_stack": {
-            "value": 0.08
-          }
-        }
-      ]
-    },
-    {
-      "id": "kevlar_vest",
-      "name": "Kevlar Vest",
-      "description": "Take 8% less damage (+6% per extra stack).",
-      "category": "defensive",
-      "rarity": "common",
-      "tags": [
-        "mitigation"
-      ],
-      "max_stacks": 3,
-      "effects": [
-        {
-          "kind": "incoming_damage_mult",
-          "value": -0.08,
-          "per_stack": {
-            "value": -0.06
-          }
-        }
-      ]
-    },
-    {
-      "id": "scavenger",
-      "name": "Scavenger",
-      "description": "Kills have a 30% chance (+15% per stack) to drop 2 supplies.",
-      "category": "economy",
-      "rarity": "common",
-      "tags": [
-        "supplies"
-      ],
-      "max_stacks": 3,
-      "effects": [
-        {
-          "kind": "supplies_on_kill",
-          "amount": 2,
-          "chance": 0.3,
-          "per_stack": {
-            "chance": 0.15
-          }
-        }
-      ]
-    },
-    {
-      "id": "finisher",
-      "name": "Finisher",
-      "description": "+35% damage to enemies below 30% health.",
-      "category": "precision",
-      "rarity": "uncommon",
-      "tags": [
-        "damage",
-        "execute"
-      ],
-      "max_stacks": 2,
-      "requires_capabilities": [
-        "enemy_hp"
-      ],
-      "effects": [
-        {
-          "kind": "outgoing_damage_mult",
-          "value": 0.35,
-          "condition": {
-            "type": "target_hp_below",
-            "fraction": 0.3
-          },
-          "per_stack": {
-            "value": 0.15
-          }
-        }
-      ]
-    },
-    {
-      "id": "last_stand",
-      "name": "Last Stand",
-      "description": "+30% damage while below 35% health.",
-      "category": "offensive",
-      "rarity": "uncommon",
-      "tags": [
-        "damage",
-        "low_health"
+        "items"
       ],
       "max_stacks": 1,
       "effects": [
         {
-          "kind": "outgoing_damage_mult",
-          "value": 0.3,
-          "condition": {
-            "type": "player_hp_below",
-            "fraction": 0.35
-          }
+          "kind": "item_on_arena_clear",
+          "game_item": 772,
+          "amount": 1
         }
-      ]
-    },
-    {
-      "id": "keen_eye",
-      "name": "Keen Eye",
-      "description": "8% crit chance (+5% per stack); crits deal x2.0.",
-      "category": "precision",
-      "rarity": "uncommon",
-      "tags": [
-        "crit"
       ],
-      "max_stacks": 3,
-      "effects": [
-        {
-          "kind": "crit",
-          "chance": 0.08,
-          "multiplier": 2.0,
-          "per_stack": {
-            "chance": 0.05
-          }
-        }
-      ]
-    },
-    {
-      "id": "field_medic",
-      "name": "Field Medic",
-      "description": "Each kill heals 3% of max health (+2% per stack).",
-      "category": "utility",
-      "rarity": "uncommon",
-      "tags": [
-        "heal"
-      ],
-      "max_stacks": 2,
-      "unlock_cost_credits": 250,
-      "requires_capabilities": [
-        "heal"
-      ],
-      "effects": [
-        {
-          "kind": "heal_on_kill",
-          "amount_fraction_of_max": 0.03,
-          "per_stack": {
-            "amount_fraction_of_max": 0.02
-          }
-        }
-      ]
-    },
-    {
-      "id": "quartermaster",
-      "name": "Quartermaster",
-      "description": "+15 supplies when an arena is cleared (+10 per stack).",
-      "category": "economy",
-      "rarity": "uncommon",
-      "tags": [
-        "supplies"
-      ],
-      "max_stacks": 3,
-      "effects": [
-        {
-          "kind": "supplies_on_arena_clear",
-          "amount": 15,
-          "require_no_damage": false,
-          "per_stack": {
-            "amount": 10
-          }
-        }
-      ]
-    },
-    {
-      "id": "bloodrush",
-      "name": "Bloodrush",
-      "description": "Each kill grants +5% damage for 6 seconds, stacking up to +30%.",
-      "category": "offensive",
-      "rarity": "rare",
-      "tags": [
-        "damage",
-        "kill_streak"
-      ],
-      "max_stacks": 2,
-      "effects": [
-        {
-          "kind": "outgoing_damage_mult",
-          "condition": {
-            "type": "kill_streak",
-            "window_seconds": 6,
-            "per_kill": 0.05,
-            "max_bonus": 0.3
-          },
-          "per_stack": {
-            "per_kill": 0.02,
-            "max_bonus": 0.1
-          }
-        }
-      ]
-    },
-    {
-      "id": "adrenaline_shield",
-      "name": "Adrenaline Shield",
-      "description": "Take 35% less damage while below 30% health.",
-      "category": "defensive",
-      "rarity": "rare",
-      "tags": [
-        "mitigation",
-        "low_health"
-      ],
-      "max_stacks": 1,
-      "effects": [
-        {
-          "kind": "incoming_damage_mult",
-          "value": -0.35,
-          "condition": {
-            "type": "player_hp_below",
-            "fraction": 0.3
-          }
-        }
-      ]
-    },
-    {
-      "id": "clean_sweep",
-      "name": "Clean Sweep",
-      "description": "+40 supplies for clearing an arena without taking damage.",
-      "category": "economy",
-      "rarity": "rare",
-      "tags": [
-        "supplies",
-        "no_damage"
-      ],
-      "max_stacks": 1,
-      "effects": [
-        {
-          "kind": "supplies_on_arena_clear",
-          "amount": 40,
-          "require_no_damage": true
-        }
-      ]
-    },
-    {
-      "id": "second_wind",
-      "name": "Second Wind",
-      "description": "Once per arena, survive a lethal hit with 25% health.",
-      "category": "defensive",
-      "rarity": "epic",
-      "tags": [
-        "survival"
-      ],
-      "max_stacks": 1,
-      "effects": [
-        {
-          "kind": "cheat_death",
-          "per_arena": 1,
-          "leave_hp_fraction": 0.25
-        }
-      ]
-    },
-    {
-      "id": "bulwark",
-      "name": "Bulwark",
-      "description": "Take 30% less damage but deal 10% less. Cannot be combined with Glass Cannon.",
-      "category": "defensive",
-      "rarity": "epic",
-      "tags": [
-        "mitigation",
-        "tradeoff"
-      ],
-      "max_stacks": 1,
-      "exclusive_with": [
-        "glass_cannon"
-      ],
-      "effects": [
-        {
-          "kind": "incoming_damage_mult",
-          "value": -0.3
-        },
-        {
-          "kind": "outgoing_damage_mult",
-          "value": -0.1
-        }
-      ]
-    },
-    {
-      "id": "glass_cannon",
-      "name": "Glass Cannon",
-      "description": "+60% damage, but take 25% more damage. Cannot be combined with Bulwark.",
-      "category": "offensive",
-      "rarity": "legendary",
-      "tags": [
-        "damage",
-        "tradeoff"
-      ],
-      "max_stacks": 1,
-      "exclusive_with": [
-        "bulwark"
-      ],
-      "effects": [
-        {
-          "kind": "outgoing_damage_mult",
-          "value": 0.6
-        },
-        {
-          "kind": "incoming_damage_mult",
-          "value": 0.25
-        }
-      ]
-    },
-    {
-      "id": "deadeye",
-      "name": "Deadeye",
-      "description": "15% crit chance; crits deal x2.5.",
-      "category": "precision",
-      "rarity": "legendary",
-      "tags": [
-        "crit"
-      ],
-      "max_stacks": 1,
-      "unlock_cost_credits": 600,
-      "effects": [
-        {
-          "kind": "crit",
-          "chance": 0.15,
-          "multiplier": 2.5
-        }
-      ]
-    },
-    {
-      "id": "boulder_puncher",
-      "name": "Pocket Grenades",
-      "description": "Chris only. Every 4 kills put a hand grenade in your pocket.",
-      "category": "utility",
-      "rarity": "rare",
-      "tags": [
-        "items",
-        "character"
-      ],
-      "max_stacks": 1,
       "characters": [
         "chris"
+      ]
+    },
+    {
+      "id": "chris_pocket_grenades",
+      "name": "Pocket Grenades",
+      "description": "Chris. Every 4 kills put a hand grenade in your pocket.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "items"
       ],
+      "max_stacks": 1,
       "effects": [
         {
           "kind": "item_on_kill",
@@ -355,22 +40,42 @@
           "amount": 1,
           "every_kills": 4
         }
+      ],
+      "characters": [
+        "chris"
+      ],
+      "unlock_cost_credits": 120
+    },
+    {
+      "id": "sheva_field_training",
+      "name": "Field Training",
+      "description": "Sheva. Each kill heals 3 percent of max health.",
+      "category": "style",
+      "rarity": "common",
+      "tags": [
+        "heal"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "heal_on_kill",
+          "amount_fraction_of_max": 0.03
+        }
+      ],
+      "characters": [
+        "sheva"
       ]
     },
     {
-      "id": "sheva_marksman",
+      "id": "sheva_flash_tactics",
       "name": "Flash Tactics",
-      "description": "Sheva only. Every 3 kills hand you a flash grenade.",
-      "category": "utility",
+      "description": "Sheva. Every 3 kills hand you a flash grenade.",
+      "category": "style",
       "rarity": "rare",
       "tags": [
-        "items",
-        "character"
+        "items"
       ],
       "max_stacks": 1,
-      "characters": [
-        "sheva"
-      ],
       "effects": [
         {
           "kind": "item_on_kill",
@@ -378,147 +83,43 @@
           "amount": 1,
           "every_kills": 3
         }
-      ]
-    },
-    {
-      "id": "chris_veteran",
-      "name": "B.S.A.A. Veteran",
-      "description": "Chris only. Clearing an arena restocks a first aid spray.",
-      "category": "defensive",
-      "rarity": "common",
-      "tags": [
-        "items",
-        "character"
       ],
-      "max_stacks": 1,
-      "characters": [
-        "chris"
-      ],
-      "effects": [
-        {
-          "kind": "item_on_arena_clear",
-          "game_item": 772,
-          "amount": 1
-        }
-      ]
-    },
-    {
-      "id": "sheva_field_training",
-      "name": "Field Training",
-      "description": "Sheva only. Each kill heals 3% of max health.",
-      "category": "defensive",
-      "rarity": "common",
-      "tags": [
-        "heal",
-        "character"
-      ],
-      "max_stacks": 1,
       "characters": [
         "sheva"
       ],
-      "effects": [
-        {
-          "kind": "heal_on_kill",
-          "amount_fraction_of_max": 0.03
-        }
-      ]
-    },
-    {
-      "id": "curse_frailty",
-      "name": "Curse: Frailty",
-      "description": "Take 25% more damage (+15% per extra stack).",
-      "category": "curse",
-      "rarity": "common",
-      "tags": [
-        "curse"
-      ],
-      "max_stacks": 2,
-      "effects": [
-        {
-          "kind": "incoming_damage_mult",
-          "value": 0.25,
-          "per_stack": {
-            "value": 0.15
-          }
-        }
-      ]
-    },
-    {
-      "id": "curse_dull_blades",
-      "name": "Curse: Dull Rounds",
-      "description": "Deal 15% less damage (-10% per extra stack).",
-      "category": "curse",
-      "rarity": "common",
-      "tags": [
-        "curse"
-      ],
-      "max_stacks": 2,
-      "effects": [
-        {
-          "kind": "outgoing_damage_mult",
-          "value": -0.15,
-          "per_stack": {
-            "value": -0.1
-          }
-        }
-      ]
-    },
-    {
-      "id": "coop_shared_supplies",
-      "name": "Shared Supplies",
-      "description": "Reserved for co-op: partner kills also grant supplies.",
-      "category": "cooperative",
-      "rarity": "rare",
-      "tags": [
-        "coop",
-        "reserved"
-      ],
-      "max_stacks": 1,
-      "enabled": false,
-      "effects": [
-        {
-          "kind": "supplies_on_kill",
-          "amount": 1,
-          "chance": 1.0
-        }
-      ]
+      "unlock_cost_credits": 120
     },
     {
       "id": "jill_battle_instinct",
       "name": "Battle Instinct",
-      "description": "Jill only. 10% crit chance; crits deal x2.",
-      "category": "precision",
-      "rarity": "rare",
+      "description": "Jill. 10 percent of hits are critical and deal double damage.",
+      "category": "style",
+      "rarity": "common",
       "tags": [
-        "crit",
-        "character"
+        "crit"
       ],
       "max_stacks": 1,
-      "characters": [
-        "jill"
-      ],
       "effects": [
         {
           "kind": "crit",
           "chance": 0.1,
           "multiplier": 2.0
         }
+      ],
+      "characters": [
+        "jill"
       ]
     },
     {
-      "id": "wesker_overdrive",
+      "id": "wesker_firestarter",
       "name": "Firestarter",
-      "description": "Wesker only. Every 3 kills hand you an incendiary grenade.",
-      "category": "utility",
-      "rarity": "rare",
+      "description": "Wesker. Every 3 kills hand you an incendiary grenade.",
+      "category": "style",
+      "rarity": "common",
       "tags": [
-        "items",
-        "character"
+        "items"
       ],
       "max_stacks": 1,
-      "characters": [
-        "wesker"
-      ],
       "effects": [
         {
           "kind": "item_on_kill",
@@ -526,44 +127,42 @@
           "amount": 1,
           "every_kills": 3
         }
+      ],
+      "characters": [
+        "wesker"
       ]
     },
     {
       "id": "josh_squad_tactics",
       "name": "Squad Tactics",
-      "description": "Josh only. Every kill gives 2 extra supplies.",
-      "category": "economy",
-      "rarity": "uncommon",
+      "description": "Josh. Every kill gives 2 extra supplies.",
+      "category": "style",
+      "rarity": "common",
       "tags": [
-        "supplies",
-        "character"
+        "supplies"
       ],
       "max_stacks": 1,
-      "characters": [
-        "josh"
-      ],
       "effects": [
         {
           "kind": "supplies_on_kill",
           "amount": 2,
           "chance": 1.0
         }
+      ],
+      "characters": [
+        "josh"
       ]
     },
     {
-      "id": "barry_magnum_discipline",
+      "id": "barry_demolition_man",
       "name": "Demolition Man",
-      "description": "Barry only. Every 5 kills hand you a hand grenade, and clearing an arena two more.",
-      "category": "utility",
-      "rarity": "rare",
+      "description": "Barry. Every 5 kills hand you a grenade, and an arena clear two more.",
+      "category": "style",
+      "rarity": "common",
       "tags": [
-        "items",
-        "character"
+        "items"
       ],
       "max_stacks": 1,
-      "characters": [
-        "barry"
-      ],
       "effects": [
         {
           "kind": "item_on_kill",
@@ -576,23 +175,22 @@
           "game_item": 262,
           "amount": 2
         }
+      ],
+      "characters": [
+        "barry"
       ]
     },
     {
       "id": "rebecca_combat_medic",
       "name": "Combat Medic",
-      "description": "Rebecca only. Each kill heals 4% of max health; clearing an arena restocks a spray.",
-      "category": "defensive",
-      "rarity": "rare",
+      "description": "Rebecca. Each kill heals 4 percent of max health, an arena clear restocks a spray.",
+      "category": "style",
+      "rarity": "common",
       "tags": [
         "heal",
-        "items",
-        "character"
+        "items"
       ],
       "max_stacks": 1,
-      "characters": [
-        "rebecca"
-      ],
       "effects": [
         {
           "kind": "heal_on_kill",
@@ -603,27 +201,574 @@
           "game_item": 772,
           "amount": 1
         }
+      ],
+      "characters": [
+        "rebecca"
       ]
     },
     {
       "id": "excella_executive_bonus",
       "name": "Executive Bonus",
-      "description": "Excella only. 25 extra supplies for every arena cleared.",
-      "category": "economy",
-      "rarity": "uncommon",
+      "description": "Excella. 25 extra supplies for every arena cleared.",
+      "category": "style",
+      "rarity": "common",
       "tags": [
-        "supplies",
-        "character"
+        "supplies"
       ],
       "max_stacks": 1,
-      "characters": [
-        "excella"
-      ],
       "effects": [
         {
           "kind": "supplies_on_arena_clear",
           "amount": 25,
           "require_no_damage": false
+        }
+      ],
+      "characters": [
+        "excella"
+      ]
+    },
+    {
+      "id": "supply_grenades",
+      "name": "Grenade Pouch",
+      "description": "Start every run with 2 hand grenades.",
+      "category": "supply",
+      "rarity": "common",
+      "tags": [
+        "items"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 262,
+          "amount": 2
+        }
+      ],
+      "unlock_cost_credits": 60
+    },
+    {
+      "id": "supply_flash",
+      "name": "Flash Pouch",
+      "description": "Start every run with 2 flash grenades.",
+      "category": "supply",
+      "rarity": "common",
+      "tags": [
+        "items"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 264,
+          "amount": 2
+        }
+      ],
+      "unlock_cost_credits": 50
+    },
+    {
+      "id": "supply_incendiary",
+      "name": "Fire Pouch",
+      "description": "Start every run with 2 incendiary grenades.",
+      "category": "supply",
+      "rarity": "common",
+      "tags": [
+        "items"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 263,
+          "amount": 2
+        }
+      ],
+      "unlock_cost_credits": 70
+    },
+    {
+      "id": "supply_spray",
+      "name": "Medkit",
+      "description": "Start every run with a first aid spray.",
+      "category": "supply",
+      "rarity": "common",
+      "tags": [
+        "items"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 772,
+          "amount": 1
+        }
+      ],
+      "unlock_cost_credits": 80
+    },
+    {
+      "id": "supply_ammo",
+      "name": "Ammo Belt",
+      "description": "Start every run with 30 extra handgun rounds.",
+      "category": "supply",
+      "rarity": "common",
+      "tags": [
+        "items"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 513,
+          "amount": 30
+        }
+      ],
+      "unlock_cost_credits": 40
+    },
+    {
+      "id": "chris_shotgun",
+      "name": "Shotgun Licence",
+      "description": "Chris starts with an Ithaca M37 and 12 shells.",
+      "category": "supply",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 260,
+          "amount": 1
+        },
+        {
+          "kind": "item_on_start",
+          "game_item": 515,
+          "amount": 12
+        }
+      ],
+      "characters": [
+        "chris"
+      ],
+      "unlock_cost_credits": 150
+    },
+    {
+      "id": "sheva_smg",
+      "name": "Close Support",
+      "description": "Sheva starts with an MP5.",
+      "category": "supply",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 275,
+          "amount": 1
+        }
+      ],
+      "characters": [
+        "sheva"
+      ],
+      "unlock_cost_credits": 150
+    },
+    {
+      "id": "jill_smg",
+      "name": "Rapid Response",
+      "description": "Jill starts with an MP5.",
+      "category": "supply",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 275,
+          "amount": 1
+        }
+      ],
+      "characters": [
+        "jill"
+      ],
+      "unlock_cost_credits": 150
+    },
+    {
+      "id": "wesker_magnum",
+      "name": "Hand Cannon",
+      "description": "Wesker starts with an L.Hawk.",
+      "category": "supply",
+      "rarity": "epic",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 282,
+          "amount": 1
+        }
+      ],
+      "characters": [
+        "wesker"
+      ],
+      "unlock_cost_credits": 200
+    },
+    {
+      "id": "josh_shotgun",
+      "name": "Breacher",
+      "description": "Josh starts with an Ithaca M37 and 12 shells.",
+      "category": "supply",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 260,
+          "amount": 1
+        },
+        {
+          "kind": "item_on_start",
+          "game_item": 515,
+          "amount": 12
+        }
+      ],
+      "characters": [
+        "josh"
+      ],
+      "unlock_cost_credits": 150
+    },
+    {
+      "id": "barry_shotgun",
+      "name": "Old Reliable",
+      "description": "Barry starts with an Ithaca M37 and 12 shells.",
+      "category": "supply",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 260,
+          "amount": 1
+        },
+        {
+          "kind": "item_on_start",
+          "game_item": 515,
+          "amount": 12
+        }
+      ],
+      "characters": [
+        "barry"
+      ],
+      "unlock_cost_credits": 150
+    },
+    {
+      "id": "rebecca_shotgun",
+      "name": "Rookie Kit",
+      "description": "Rebecca starts with an Ithaca M37 and 12 shells.",
+      "category": "supply",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 260,
+          "amount": 1
+        },
+        {
+          "kind": "item_on_start",
+          "game_item": 515,
+          "amount": 12
+        }
+      ],
+      "characters": [
+        "rebecca"
+      ],
+      "unlock_cost_credits": 150
+    },
+    {
+      "id": "excella_smg",
+      "name": "Private Security",
+      "description": "Excella starts with an MP5.",
+      "category": "supply",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 275,
+          "amount": 1
+        }
+      ],
+      "characters": [
+        "excella"
+      ],
+      "unlock_cost_credits": 150
+    },
+    {
+      "id": "second_wind",
+      "name": "Second Wind",
+      "description": "Once per arena, survive a lethal hit with 25 percent health.",
+      "category": "support",
+      "rarity": "epic",
+      "tags": [
+        "survival"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "cheat_death",
+          "per_arena": 1,
+          "leave_hp_fraction": 0.25
+        }
+      ],
+      "unlock_cost_credits": 250
+    },
+    {
+      "id": "last_stand",
+      "name": "Last Stand",
+      "description": "Below 30 percent health your shots deal 35 percent more damage.",
+      "category": "support",
+      "rarity": "rare",
+      "tags": [
+        "damage"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.35,
+          "condition": {
+            "type": "player_hp_below",
+            "fraction": 0.3
+          }
+        }
+      ],
+      "unlock_cost_credits": 120
+    },
+    {
+      "id": "adrenaline_shield",
+      "name": "Adrenaline Shield",
+      "description": "Below 35 percent health you take 30 percent less damage.",
+      "category": "support",
+      "rarity": "rare",
+      "tags": [
+        "defense"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "incoming_damage_mult",
+          "value": -0.3,
+          "condition": {
+            "type": "player_hp_below",
+            "fraction": 0.35
+          }
+        }
+      ],
+      "unlock_cost_credits": 120
+    },
+    {
+      "id": "field_medic",
+      "name": "Field Medic",
+      "description": "Each kill heals 2 percent of max health.",
+      "category": "support",
+      "rarity": "uncommon",
+      "tags": [
+        "heal"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "heal_on_kill",
+          "amount_fraction_of_max": 0.02
+        }
+      ],
+      "unlock_cost_credits": 100
+    },
+    {
+      "id": "clean_sweep",
+      "name": "Clean Sweep",
+      "description": "40 extra supplies for clearing an arena without taking damage.",
+      "category": "support",
+      "rarity": "uncommon",
+      "tags": [
+        "supplies"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "supplies_on_arena_clear",
+          "amount": 40,
+          "require_no_damage": true
+        }
+      ],
+      "unlock_cost_credits": 90
+    },
+    {
+      "id": "chris_safari_trait",
+      "name": "Safari Instinct",
+      "description": "Safari Chris deals 8 percent more damage.",
+      "category": "skin",
+      "rarity": "common",
+      "tags": [
+        "skin"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.08
+        }
+      ]
+    },
+    {
+      "id": "chris_stars_trait",
+      "name": "S.T.A.R.S. Training",
+      "description": "S.T.A.R.S. Chris lands 5 percent more criticals.",
+      "category": "skin",
+      "rarity": "common",
+      "tags": [
+        "skin"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "crit",
+          "chance": 0.05
+        }
+      ]
+    },
+    {
+      "id": "sheva_clubbin_trait",
+      "name": "Night Out",
+      "description": "Clubbin Sheva deals 6 percent more damage.",
+      "category": "skin",
+      "rarity": "common",
+      "tags": [
+        "skin"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.06
+        }
+      ]
+    },
+    {
+      "id": "sheva_tribal_trait",
+      "name": "Hunter Eye",
+      "description": "Tribal Sheva lands 5 percent more criticals.",
+      "category": "skin",
+      "rarity": "common",
+      "tags": [
+        "skin"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "crit",
+          "chance": 0.05
+        }
+      ]
+    },
+    {
+      "id": "sheva_business_trait",
+      "name": "Expense Account",
+      "description": "Business Sheva gets 10 extra supplies per arena.",
+      "category": "skin",
+      "rarity": "common",
+      "tags": [
+        "skin"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "supplies_on_arena_clear",
+          "amount": 10,
+          "require_no_damage": false
+        }
+      ]
+    },
+    {
+      "id": "jill_battle_suit_trait",
+      "name": "Battle Suit",
+      "description": "The battle suit absorbs 8 percent of damage.",
+      "category": "skin",
+      "rarity": "common",
+      "tags": [
+        "skin"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "incoming_damage_mult",
+          "value": -0.08
+        }
+      ]
+    },
+    {
+      "id": "wesker_stars_trait",
+      "name": "Old Habits",
+      "description": "S.T.A.R.S. Wesker deals 8 percent more damage.",
+      "category": "skin",
+      "rarity": "common",
+      "tags": [
+        "skin"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.08
+        }
+      ]
+    },
+    {
+      "id": "curse_frailty",
+      "name": "Frailty",
+      "description": "Curse. You take 20 percent more damage.",
+      "category": "curse",
+      "rarity": "common",
+      "tags": [
+        "curse"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "incoming_damage_mult",
+          "value": 0.2
+        }
+      ]
+    },
+    {
+      "id": "curse_dull_blades",
+      "name": "Dull Blades",
+      "description": "Curse. Your shots deal 15 percent less damage.",
+      "category": "curse",
+      "rarity": "common",
+      "tags": [
+        "curse"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "outgoing_damage_mult",
+          "value": -0.15
         }
       ]
     }

@@ -1,7 +1,7 @@
 {
-  "_comment": "Starting loadout roll and the run's item catalog (LoadoutConfig in core/include/rm/content.h). Each run spends budget points: one weapon from the skin or character starting_weapons list (cost by weapon category), then random equipment until the points run out, adding at most max_items distinct entries (the RE5 inventory has nine slots and the character's own weapons, ammo, knife and spray already take most of them); unspent points become starting supplies. game_item is the RE5 inventory id ((category << 8) | index; category 1 = weapons and grenades, 3 = recovery items), written to the game inventory at match start. price (supplies) puts the item in the shop and the arena rewards (bundle = units per reward); items without a game_item stay run-only and are never sold.",
+  "_comment": "Item catalog for the shop and the rewards (price in supplies, bundle = units per reward) and the starting loadout roll. budget is 0: every run starts with the character's pistol only (supply perks add items and weapons through item_on_start); set a budget to roll equipment from this list again (max_items caps distinct entries, the RE5 inventory has nine slots). game_item is the RE5 inventory id ((category << 8) | index).",
   "schema_version": 1,
-  "budget": 100,
+  "budget": 0,
   "default_weapon_cost": 25,
   "weapon_cost": {
     "handgun": 10,

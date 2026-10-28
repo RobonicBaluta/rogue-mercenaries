@@ -96,7 +96,9 @@ TEST_CASE("perk and weapon unlocks gate offers", "[economy]") {
     REQUIRE(h.rc.PurchaseUnlock(UnlockKind::Weapon, "rifle").ok());
     CHECK(h.rc.profile().credits.balance() == 850);
     REQUIRE(h.rc.StartRun("alpha", 1).ok());
-    CHECK(h.rc.DevGrantPerk("jackpot").ok());
+    // Unlocked perks are active from the start; a second grant hits the stack limit.
+    CHECK(h.rc.state().perks.count("jackpot") == 1);
+    CHECK(h.rc.DevGrantPerk("jackpot").code == ErrorCode::NotEligible);
 }
 
 TEST_CASE("unlock is rolled back when the profile cannot be saved", "[economy]") {

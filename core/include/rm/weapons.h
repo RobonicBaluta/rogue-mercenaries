@@ -26,6 +26,8 @@ struct WeaponBaseDef {
     double base_damage_mult = 1.0;
     std::int64_t unlock_cost_credits = 0;
     bool enabled = true;
+    /// RE5 inventory item id of this weapon (-1 = unknown; the adapter then only applies the damage class).
+    std::int64_t game_item = -1;
 };
 
 enum class AffixKind {

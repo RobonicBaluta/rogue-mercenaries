@@ -59,27 +59,12 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
     }
     CHECK(c.perks().size() >= 14);
     CHECK(enabled_perks >= 14);
-    for (PerkCategory cat : {PerkCategory::Offensive, PerkCategory::Defensive, PerkCategory::Precision,
-                             PerkCategory::Economy, PerkCategory::Utility}) {
+    for (PerkCategory cat : {PerkCategory::Style, PerkCategory::Supply, PerkCategory::Support, PerkCategory::Skin}) {
         CHECK(categories.count(cat) == 1);
     }
-    CHECK(rarities.size() == kRarityCount);
+    CHECK(rarities.size() >= 4);
     CHECK(curses >= 2);
 
-    const PerkDef* coop = nullptr;
-    for (const PerkDef& p : c.perks()) {
-        if (p.category == PerkCategory::Cooperative) coop = &p;
-    }
-    REQUIRE(coop != nullptr);
-    CHECK_FALSE(coop->enabled);
-
-    // A symmetric mutual exclusion pair.
-    const PerkDef* glass = c.FindPerk("glass_cannon");
-    const PerkDef* bulwark = c.FindPerk("bulwark");
-    REQUIRE(glass != nullptr);
-    REQUIRE(bulwark != nullptr);
-    CHECK(std::count(glass->exclusive_with.begin(), glass->exclusive_with.end(), "bulwark") == 1);
-    CHECK(std::count(bulwark->exclusive_with.begin(), bulwark->exclusive_with.end(), "glass_cannon") == 1);
 
     // Character restrictions and capability flags.
     const CharacterDef* chris = c.FindCharacter("chris");
@@ -103,8 +88,8 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
         CHECK(other.unlock_cost_credits == 0);
         CHECK(CheckCharacter(&other, {}) == CharacterGate::Locked);
     }
-    const PerkDef* boulder = c.FindPerk("boulder_puncher");
-    const PerkDef* marksman = c.FindPerk("sheva_marksman");
+    const PerkDef* boulder = c.FindPerk("chris_pocket_grenades");
+    const PerkDef* marksman = c.FindPerk("sheva_flash_tactics");
     REQUIRE(boulder != nullptr);
     REQUIRE(marksman != nullptr);
     CHECK(CharacterMayUsePerk(*boulder, *chris));

@@ -14,7 +14,9 @@ namespace rm {
 
 struct CharacterDef;
 
-enum class PerkCategory { Offensive, Defensive, Precision, Economy, Utility, Cooperative, Curse };
+/// style = the character's way of playing, supply = what a run starts with, support = bad
+/// situations, skin = the small tweak a skin grants (never listed), curse = route modifiers.
+enum class PerkCategory { Style, Supply, Support, Skin, Curse };
 std::string_view PerkCategoryName(PerkCategory c);
 std::optional<PerkCategory> ParsePerkCategory(std::string_view name);
 
@@ -29,6 +31,7 @@ enum class EffectKind {
     CheatDeath,
     ItemOnKill,        // puts `amount` of game item `game_item` in the inventory every `every_kills` kills
     ItemOnArenaClear,  // puts `amount` of `game_item` in the inventory when an arena is cleared
+    ItemOnRunStart,    // puts `amount` of `game_item` in the inventory when the perk is granted (supply perks)
 };
 std::string_view EffectKindName(EffectKind k);
 std::optional<EffectKind> ParseEffectKind(std::string_view name);
@@ -89,7 +92,7 @@ struct PerkDef {
     std::string id;
     std::string name;
     std::string description;
-    PerkCategory category = PerkCategory::Offensive;
+    PerkCategory category = PerkCategory::Style;
     Rarity rarity = Rarity::Common;
     std::vector<std::string> tags;
     int max_stacks = 1;

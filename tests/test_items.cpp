@@ -205,3 +205,48 @@ TEST_CASE("the loadout roll respects the distinct-item cap", "[items]") {
         if (!l.items.empty()) CHECK(l.items[0].count == 2);  // tops up the one entry it picked
     }
 }
+
+TEST_CASE("supply perks queue their start items when granted", "[items]") {
+    const auto content = test::Load(test::EditFixture([](json& perks, json&, json& characters, json&, json&) {
+        perks["perks"].push_back(json{{"id", "shotgun_licence"},
+                                      {"name", "Shotgun Licence"},
+                                      {"description", "Start with a shotgun and two grenades."},
+                                      {"category", "supply"},
+                                      {"rarity", "rare"},
+                                      {"max_stacks", 1},
+                                      {"effects", json::array({json{{"kind", "item_on_start"}, {"game_item", 260}, {"amount", 1}},
+                                                               json{{"kind", "item_on_start"}, {"game_item", 262}, {"amount", 2}}})}});
+        characters["characters"][0]["starting_passive"] = "shotgun_licence";
+    }));
+    test::Harness h(content);
+    REQUIRE(h.rc.StartRun("alpha", 5).ok());
+    const auto grants = h.rc.ConsumeItemGrants();
+    REQUIRE(grants.size() == 2);
+    CHECK(grants[0].game_item == 260);
+    CHECK(grants[0].count == 1);
+    CHECK(grants[1].game_item == 262);
+    CHECK(grants[1].count == 2);
+    CHECK(grants[1].source == "shotgun_licence");
+
+    // Granted mid-run (dev / future equip) the items are queued too; without the inventory
+    // capability the perk itself is not eligible.
+    Capabilities caps = Capabilities::All();
+    caps.Remove(cap::kInventory);
+    test::Harness quiet(content, {}, caps);
+    REQUIRE(quiet.rc.StartRun("alpha", 5).ok());
+    CHECK(quiet.rc.ConsumeItemGrants().empty());
+    CHECK(quiet.rc.state().perks.count("shotgun_licence") == 0);
+}
+
+TEST_CASE("perks unlocked in the menu are active from the start of a run", "[items]") {
+    const auto content = test::LoadFixture();
+    Profile profile;
+    profile.unlocked_perks.insert("jackpot");  // costs credits in the fixture, usable by everyone
+    test::Harness h(content, profile);
+    REQUIRE(h.rc.StartRun("alpha", 9).ok());
+    CHECK(h.rc.state().perks.count("jackpot") == 1);
+
+    test::Harness plain(content);
+    REQUIRE(plain.rc.StartRun("alpha", 9).ok());
+    CHECK(plain.rc.state().perks.count("jackpot") == 0);
+}

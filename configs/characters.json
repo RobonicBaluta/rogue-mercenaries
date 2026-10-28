@@ -1,5 +1,5 @@
 {
-  "_comment": "Playable characters. Only Chris and Sheva start unlocked; the others unlock by themed challenges (unlock_kind/unlock_count, see core/include/rm/characters.h). Each character lists its skins: the first is the default; a skin may override starting_weapons (the loadout roll picks one of them) and starting_passive, add skill_pool perks, and may have its own challenge. costume_index is the game character-select slot used by direct start (verified: chris 0, 1 and 2, sheva 3; the others follow the expected Gold Edition order until a direct start confirms them). Text shown by the game font: letters, digits, space, comma and period only.",
+  "_comment": "Playable characters. Only Chris and Sheva start unlocked; the others unlock by themed challenges (unlock_kind/unlock_count, see core/include/rm/characters.h). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin only adds its small trait (a 'skin' perk) and its costume_index (verified: chris 0, 1, 2, sheva 3). Text shown by the game font: letters, digits, space, comma and period only.",
   "schema_version": 1,
   "characters": [
     {
@@ -12,7 +12,8 @@
       ],
       "starting_passive": "chris_veteran",
       "skill_pool": [
-        "boulder_puncher"
+        "chris_pocket_grenades",
+        "chris_shotgun"
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
@@ -27,11 +28,7 @@
           "id": "chris_safari",
           "name": "Safari",
           "costume_index": 1,
-          "starting_weapons": [
-            "ithaca_m37",
-            "m92f"
-          ],
-          "starting_passive": "scavenger",
+          "starting_passive": "chris_safari_trait",
           "unlock_kind": "runs_completed_as",
           "unlock_character": "chris",
           "unlock_count": 1,
@@ -41,14 +38,7 @@
           "id": "chris_stars",
           "name": "STARS",
           "costume_index": 2,
-          "starting_weapons": [
-            "sig_p226",
-            "m92f"
-          ],
-          "starting_passive": "sharpshooter",
-          "skill_pool": [
-            "deadeye"
-          ],
+          "starting_passive": "chris_stars_trait",
           "unlock_kind": "s_rank_arenas",
           "unlock_count": 1,
           "unlock_text": "Earn an S rating in an arena"
@@ -65,7 +55,8 @@
       ],
       "starting_passive": "sheva_field_training",
       "skill_pool": [
-        "sheva_marksman"
+        "sheva_flash_tactics",
+        "sheva_smg"
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
@@ -80,11 +71,7 @@
           "id": "sheva_clubbin",
           "name": "Clubbin",
           "costume_index": 4,
-          "starting_weapons": [
-            "vz61",
-            "h_and_k_p8"
-          ],
-          "starting_passive": "bloodrush",
+          "starting_passive": "sheva_clubbin_trait",
           "unlock_kind": "runs_completed_as",
           "unlock_character": "sheva",
           "unlock_count": 1,
@@ -94,11 +81,7 @@
           "id": "sheva_tribal",
           "name": "Tribal",
           "costume_index": 5,
-          "starting_weapons": [
-            "s75",
-            "h_and_k_p8"
-          ],
-          "starting_passive": "keen_eye",
+          "starting_passive": "sheva_tribal_trait",
           "unlock_kind": "total_kills",
           "unlock_count": 200,
           "unlock_text": "Kill 200 enemies in total"
@@ -107,10 +90,7 @@
           "id": "sheva_business",
           "name": "Business",
           "costume_index": 6,
-          "starting_weapons": [
-            "h_and_k_mp5"
-          ],
-          "starting_passive": "quartermaster",
+          "starting_passive": "sheva_business_trait",
           "unlock_kind": "credits_earned",
           "unlock_count": 500,
           "unlock_text": "Earn 500 credits in total"
@@ -125,9 +105,9 @@
         "m92f",
         "h_and_k_mp5"
       ],
-      "starting_passive": "",
+      "starting_passive": "jill_battle_instinct",
       "skill_pool": [
-        "jill_battle_instinct"
+        "jill_smg"
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
@@ -146,11 +126,7 @@
           "id": "jill_battle_suit",
           "name": "Battle Suit",
           "costume_index": 8,
-          "starting_weapons": [
-            "h_and_k_mp5",
-            "m92f"
-          ],
-          "starting_passive": "kevlar_vest",
+          "starting_passive": "jill_battle_suit_trait",
           "unlock_kind": "runs_completed_as",
           "unlock_character": "jill",
           "unlock_count": 1,
@@ -163,12 +139,13 @@
       "name": "Josh Stone",
       "enabled": true,
       "starting_weapons": [
+        "m92f",
         "vz61",
         "ithaca_m37"
       ],
-      "starting_passive": "",
+      "starting_passive": "josh_squad_tactics",
       "skill_pool": [
-        "josh_squad_tactics"
+        "josh_shotgun"
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
@@ -193,9 +170,9 @@
         "sig_p226",
         "m3"
       ],
-      "starting_passive": "",
+      "starting_passive": "barry_demolition_man",
       "skill_pool": [
-        "barry_magnum_discipline"
+        "barry_shotgun"
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
@@ -219,9 +196,9 @@
         "m92f",
         "s75"
       ],
-      "starting_passive": "",
+      "starting_passive": "rebecca_combat_medic",
       "skill_pool": [
-        "rebecca_combat_medic"
+        "rebecca_shotgun"
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
@@ -245,9 +222,9 @@
         "h_and_k_p8",
         "sig556"
       ],
-      "starting_passive": "",
+      "starting_passive": "excella_executive_bonus",
       "skill_pool": [
-        "excella_executive_bonus"
+        "excella_smg"
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
@@ -271,9 +248,9 @@
         "sig_p226",
         "l_hawk"
       ],
-      "starting_passive": "",
+      "starting_passive": "wesker_firestarter",
       "skill_pool": [
-        "wesker_overdrive"
+        "wesker_magnum"
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
@@ -291,11 +268,7 @@
           "id": "wesker_stars",
           "name": "STARS",
           "costume_index": 10,
-          "starting_weapons": [
-            "l_hawk",
-            "sig_p226"
-          ],
-          "starting_passive": "finisher",
+          "starting_passive": "wesker_stars_trait",
           "unlock_kind": "runs_completed_as",
           "unlock_character": "wesker",
           "unlock_count": 1,

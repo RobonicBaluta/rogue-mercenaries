@@ -37,20 +37,17 @@ bool Contains(const std::vector<std::string>& list, std::string_view item) {
 
 std::string_view PerkCategoryName(PerkCategory c) {
     switch (c) {
-        case PerkCategory::Offensive: return "offensive";
-        case PerkCategory::Defensive: return "defensive";
-        case PerkCategory::Precision: return "precision";
-        case PerkCategory::Economy: return "economy";
-        case PerkCategory::Utility: return "utility";
-        case PerkCategory::Cooperative: return "cooperative";
+        case PerkCategory::Style: return "style";
+        case PerkCategory::Supply: return "supply";
+        case PerkCategory::Support: return "support";
+        case PerkCategory::Skin: return "skin";
         case PerkCategory::Curse: return "curse";
     }
-    return "offensive";
+    return "style";
 }
 
 std::optional<PerkCategory> ParsePerkCategory(std::string_view name) {
-    for (PerkCategory c : {PerkCategory::Offensive, PerkCategory::Defensive, PerkCategory::Precision,
-                           PerkCategory::Economy, PerkCategory::Utility, PerkCategory::Cooperative,
+    for (PerkCategory c : {PerkCategory::Style, PerkCategory::Supply, PerkCategory::Support, PerkCategory::Skin,
                            PerkCategory::Curse}) {
         if (PerkCategoryName(c) == name) return c;
     }
@@ -68,6 +65,7 @@ std::string_view EffectKindName(EffectKind k) {
         case EffectKind::CheatDeath: return "cheat_death";
         case EffectKind::ItemOnKill: return "item_on_kill";
         case EffectKind::ItemOnArenaClear: return "item_on_arena_clear";
+        case EffectKind::ItemOnRunStart: return "item_on_start";
     }
     return "outgoing_damage_mult";
 }
@@ -76,7 +74,7 @@ std::optional<EffectKind> ParseEffectKind(std::string_view name) {
     for (EffectKind k : {EffectKind::OutgoingDamageMult, EffectKind::IncomingDamageMult,
                          EffectKind::Crit, EffectKind::HealOnKill, EffectKind::SuppliesOnKill,
                          EffectKind::SuppliesOnArenaClear, EffectKind::CheatDeath, EffectKind::ItemOnKill,
-                         EffectKind::ItemOnArenaClear}) {
+                         EffectKind::ItemOnArenaClear, EffectKind::ItemOnRunStart}) {
         if (EffectKindName(k) == name) return k;
     }
     return std::nullopt;
@@ -148,6 +146,7 @@ std::vector<std::string> ImpliedCapabilities(const EffectDef& effect) {
             add(cap::kInventory);
             break;
         case EffectKind::ItemOnArenaClear: add(cap::kInventory); break;
+        case EffectKind::ItemOnRunStart: add(cap::kInventory); break;
     }
     return caps;
 }
