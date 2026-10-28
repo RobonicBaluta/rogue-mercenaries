@@ -92,8 +92,9 @@ and `$ctest` to `ctest.exe` in the same folder.
     Safety gate: the script aborts without further input if the game does not enter The Mercenaries (mode 0 -> 2).
   - Developer test aids in `adapter.json` -> `dev`: `invulnerable`, `outgoing_multiplier`, `incoming_multiplier`, `grant_perks`, `probe_hits`, `mute_audio`, `ui_demo`;
     `<data>\dev.command` accepts `force_complete`, `kill <n>` (synthetic player kills), `grant <perk id>` (adds a
-    perk to the active run), `unlock perk|weapon <id>`, `dumpinv`, `give <hex item> <count>` and the memory-probe
-    commands listed in `adapters/re5/src/mod.cpp` (developer mode only, logged).
+    perk to the active run), `unlock perk|weapon <id>`, `dumpinv`, `give <hex item> <count>`, `arm <stage> <costume>`,
+    `gomenu` (the results screen's return to the Mercenaries menu), `fadein [frames]`, `scene <hex id>` and the
+    memory-probe commands listed in `adapters/re5/src/mod.cpp` (developer mode only, logged).
 - Diagnostic export: in game F7 -> Developer -> Export diagnostics writes `%LOCALAPPDATA%\RogueMercenaries\rogue-mercenaries-diagnostics.zip`
   (verified in game 2026-10-27; core API `rm::ExportDiagnostics`).
 - Release package: `scripts\package_release.ps1` → `dist\RogueMercenaries-<version>.zip` (DLL, configs, README, licenses, SHA256SUMS).

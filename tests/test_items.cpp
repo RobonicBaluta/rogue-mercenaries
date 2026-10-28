@@ -129,19 +129,35 @@ TEST_CASE("with an inventory port, items are placed at once and a full inventory
     while (offers[pick].kind != RewardKind::Item) ++pick;
     const std::int64_t game_item = content->loadouts().FindEquipment(offers[pick].item_id)->game_item;
 
-    // Nothing fits: the reward stays open, nothing is queued.
-    const Status refused = h.rc.ChooseReward(pick);
-    CHECK(refused.code == ErrorCode::GrantFailed);
-    CHECK(refused.message.find("inventory full") != std::string::npos);
-    CHECK_FALSE(h.rc.state().reward_chosen);
-    CHECK(h.rc.ConsumeItemGrants().empty());
-
-    inv.room = 10;
+    // Nothing fits: the run must not stall, so the item's value is paid in supplies.
+    const std::int64_t before = h.rc.state().supplies.balance();
+    const std::int64_t value = content->loadouts().FindEquipment(offers[pick].item_id)->price * offers[pick].item_count;
     REQUIRE(h.rc.ChooseReward(pick).ok());
-    REQUIRE(inv.placed.size() == 1);
-    CHECK(inv.placed[0].first == game_item);
-    CHECK(inv.placed[0].second == offers[pick].item_count);
-    CHECK(h.rc.ConsumeItemGrants().empty());  // placed directly, not queued
+    CHECK(h.rc.state().reward_chosen);
+    CHECK(inv.placed.empty());
+    CHECK(h.rc.ConsumeItemGrants().empty());
+    CHECK(h.rc.state().supplies.balance() == before + value);
+    bool converted = false;
+    for (const Event& ev : h.sink.events) {
+        if (ev.type == EventType::RewardSelected && ev.Find("inventory_full_supplies") != nullptr) converted = true;
+    }
+    CHECK(converted);
+
+    // With room, the item is placed at once and nothing is queued.
+    test::Harness roomy(content);
+    FakeInventory spare;
+    spare.room = 10;
+    roomy.rc.SetInventory(&spare);
+    ClearFirstArena(roomy);
+    const auto& again = roomy.rc.state().reward_offer;
+    std::size_t p2 = 0;
+    while (again[p2].kind != RewardKind::Item) ++p2;
+    const int wanted = again[p2].item_count;
+    REQUIRE(roomy.rc.ChooseReward(p2).ok());
+    REQUIRE(spare.placed.size() == 1);
+    CHECK(spare.placed[0].second == wanted);
+    CHECK(roomy.rc.ConsumeItemGrants().empty());
+    (void)game_item;
 
     REQUIRE(h.rc.phase() == Phase::Shop);
     const auto& shop = h.rc.state().shop_offers;
@@ -156,7 +172,7 @@ TEST_CASE("with an inventory port, items are placed at once and a full inventory
     inv.room = 1;
     REQUIRE(h.rc.Purchase(item_index).ok());
     CHECK(h.rc.state().supplies.balance() == balance - shop[item_index].price);
-    CHECK(inv.placed.size() == 2);
+    CHECK(inv.placed.size() == 1);  // only the shop item (the reward was converted)
 }
 
 TEST_CASE("items are never offered without the inventory capability", "[items]") {

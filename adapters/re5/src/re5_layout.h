@@ -97,6 +97,12 @@ constexpr std::uintptr_t kFnInventoryCreate = 0x00C4B480;
 // Scene manager singleton: the title-flow script requests the Mercenaries match with
 // FUN_007F1610(this = [kSceneManager], 0xD, 0), which writes this+0xF8 / this+0xFC.
 constexpr std::uintptr_t kSceneManager = 0x011B1DD8;
+// Game-flow singleton ([kGameFlow]): the Mercenaries results screen leaves the match by
+// calling kFnFlowToMercMenu(this) (Ghidra FUN_00794F30), which sets this+0x1304 = 0xB
+// (scene), this+0x130C = 0 and this+0x131C = 1 (transition pending) when no transition
+// is running (this+0x12E0/0x12E4/0x12F0 == 0) and this+0x38 (current scene) is set.
+constexpr std::uintptr_t kGameFlow = 0x01249C1C;
+constexpr std::uintptr_t kFnFlowToMercMenu = 0x00794F30;
 // void aGame::NotifyItemGet(int item, int count): the game's "item acquired"
 // notice (uIdItemGet00) with the item's own name and icon.
 constexpr std::uintptr_t kFnGameNotifyItem = 0x00719B60;
@@ -162,6 +168,7 @@ constexpr std::size_t kMenuItemCount = 0x190;  // int32: 7, or 8 with "Contenido
 constexpr std::size_t kMenuEnabledMask = 0x194; // uint32 bit per item; clear bits draw red
 constexpr std::size_t kMenuBlink = 0x3D;        // uint8: selected row pulses while set
 constexpr std::size_t kMenuTopMenu = 0x128;     // uIdTopMenu00* (planet and side labels)
+constexpr std::size_t kFadeVtableIn = 0x2C;    // fader vtable slot 11: FadeIn(float alpha, int frames)
 constexpr std::size_t kFadeVtableOut = 0x30;   // fader vtable slot 12: FadeOut(float alpha, int frames)
 constexpr std::size_t kMenuModeCursor = 0x18C;  // uIdStartUp20 Solo/Duo page: int32 cursor
 constexpr std::size_t kMenuCharacterIndex = 0x194;  // uIdStartUp22: int32 selected costume slot

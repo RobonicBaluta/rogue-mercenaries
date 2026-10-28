@@ -707,6 +707,24 @@ void ProbeScene() {
         lastRequest = request;
         lastArg = arg;
     }
+    // Game-flow object: current scene (+0x38), transition target/arg/pending (+0x1304/+0x130C/+0x131C),
+    // result (+0x12B4), busy flags (+0x12E0/+0x12E4/+0x12F0).
+    static std::array<std::uint32_t, 8> lastFlow{};
+    static bool flowSeen = false;
+    const auto flow = ReadOr<std::uintptr_t>(re5::addr::kGameFlow, 0);
+    if (!flow) return;
+    const std::array<std::uint32_t, 8> now = {
+        ReadOr<std::uint32_t>(flow + 0x38, 0),   ReadOr<std::uint32_t>(flow + 0x1304, 0),
+        ReadOr<std::uint32_t>(flow + 0x130C, 0), ReadOr<std::uint32_t>(flow + 0x131C, 0) & 0xFF,
+        ReadOr<std::uint32_t>(flow + 0x12B4, 0), ReadOr<std::uint32_t>(flow + 0x12E0, 0),
+        ReadOr<std::uint32_t>(flow + 0x12E4, 0), ReadOr<std::uint32_t>(flow + 0x12F0, 0),
+    };
+    if (!flowSeen || now != lastFlow) {
+        RM_LOGI("game flow: scene %08X target %X arg %X pending %X result %08X busy %X/%X/%X", now[0], now[1], now[2],
+                now[3], now[4], now[5], now[6], now[7]);
+        lastFlow = now;
+        flowSeen = true;
+    }
 }
 
 void ApplyHeals() {
@@ -966,6 +984,30 @@ void PollDevCommand(double now) {
         const bool ok = scene && SafeStore(scene + re5::off::kSceneRequest, id) &&
                         SafeStore(scene + re5::off::kSceneRequestArg, arg);
         RM_LOGW("dev scene request %X arg %X -> %s", id, arg, ok ? "written" : "failed");
+    } else if (command.rfind("fadein", 0) == 0) {
+        // "fadein [frames]": the game's fader back to the scene.
+        const int frames = std::max(1, std::atoi(command.c_str() + 6));
+        const auto fader = ReadOr<std::uintptr_t>(re5::addr::kFadeInstance, 0);
+        const auto vtable = fader ? ReadOr<std::uintptr_t>(fader, 0) : 0;
+        const auto fn = vtable ? ReadOr<std::uintptr_t>(vtable + re5::off::kFadeVtableIn, 0) : 0;
+        if (fn >= re5::kImageBase) {
+            using FadeFn = void(__thiscall*)(std::uintptr_t self, float alpha, int frames);
+            reinterpret_cast<FadeFn>(fn)(fader, 1.0f, frames);
+        }
+        RM_LOGW("dev fadein %d frames -> %s", frames, fn >= re5::kImageBase ? "called" : "no fader");
+    } else if (command == "gomenu") {
+        // "gomenu": leave the match for the Mercenaries menu scene the way the results
+        // screen does (FUN_00794F30 on the game-flow object); the title-flow script then
+        // runs again, and an armed autopilot answers it with the next stage.
+        const auto flow = ReadOr<std::uintptr_t>(re5::addr::kGameFlow, 0);
+        if (flow) {
+            using ToMenuFn = void(__fastcall*)(std::uintptr_t self, void*);
+            reinterpret_cast<ToMenuFn>(re5::addr::kFnFlowToMercMenu)(flow, nullptr);
+            RM_LOGW("dev gomenu: flow %08X +1304 %08X +131C %02X", static_cast<unsigned>(flow),
+                    ReadOr<std::uint32_t>(flow + 0x1304, 0), ReadOr<std::uint8_t>(flow + 0x131C, 0));
+        } else {
+            RM_LOGW("dev gomenu: no game-flow object");
+        }
     } else if (command.rfind("arm ", 0) == 0) {
         // "arm <stage> <costume slot>": the next START RUN uses this plan.
         std::istringstream words(command.substr(4));

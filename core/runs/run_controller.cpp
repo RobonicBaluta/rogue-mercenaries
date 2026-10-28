@@ -931,6 +931,7 @@ Status RunController::ChooseReward(std::size_t index) {
     }
     if (index >= run_.reward_offer.size()) return Fail(op, ErrorCode::InvalidIndex, "no reward at index " + std::to_string(index));
     const RewardChoice choice = run_.reward_offer[index];
+    std::int64_t converted_supplies = 0;
     switch (choice.kind) {
         case RewardKind::Perk: {
             const Status s = GrantPerk(choice.perk_id, "reward", CursePolicy::Exclude, false);
@@ -945,7 +946,16 @@ Status RunController::ChooseReward(std::size_t index) {
             break;
         case RewardKind::Item: {
             const Status s = GrantItem(choice.item_id, choice.item_count, "reward");
-            if (!s.ok()) return Fail(op, ErrorCode::GrantFailed, s.message);
+            if (!s.ok()) {
+                // A full inventory must never block the run: the item's shop value is paid in
+                // supplies instead (the adapter shows why).
+                const EquipmentDef* def = content_->loadouts().FindEquipment(choice.item_id);
+                if (s.code != ErrorCode::GrantFailed || def == nullptr) return Fail(op, ErrorCode::GrantFailed, s.message);
+                converted_supplies = def->price * std::max(1, choice.item_count);
+                if (!CreditSupplies(ArenaTx(run_.arena_index, "reward"), converted_supplies, "reward")) {
+                    return Fail(op, ErrorCode::GrantFailed, s.message);
+                }
+            }
             break;
         }
     }
@@ -954,6 +964,7 @@ Status RunController::ChooseReward(std::size_t index) {
     e.Add("index", index).Add("kind", RewardKindName(choice.kind)).Add("rarity", RarityName(choice.rarity));
     if (choice.kind == RewardKind::Perk) e.Add("perk", choice.perk_id);
     if (choice.kind == RewardKind::Item) e.Add("item", choice.item_id).Add("count", choice.item_count);
+    if (converted_supplies > 0) e.Add("inventory_full_supplies", converted_supplies);
     if (choice.kind == RewardKind::Weapon) e.Add("weapon", choice.weapon.base_id).Add("weapon_instance", choice.weapon.instance_id);
     if (choice.kind == RewardKind::Supplies) e.Add("supplies", choice.supplies);
     Emit(std::move(e));
