@@ -1,5 +1,5 @@
 {
-  "_comment": "Starting loadout roll (LoadoutConfig in core/include/rm/content.h). Each run starts with budget points: one weapon from the skin or character starting_weapons list (cost by weapon category), then random equipment until the points run out; unspent points become starting supplies. The RE5 adapter applies only the weapon (as the sidearm damage class); equipment is tracked by the run until an inventory write is verified.",
+  "_comment": "Starting loadout roll (LoadoutConfig in core/include/rm/content.h). Each run starts with budget points: one weapon from the skin or character starting_weapons list (cost by weapon category), then random equipment until the points run out; unspent points become starting supplies. The RE5 adapter applies only the weapon (as the sidearm damage class); equipment is tracked by the run until an inventory write is verified. game_item is the RE5 inventory id ((category << 8) | index; category 1 = weapons and grenades, 3 = recovery items), applied at match start when known.",
   "schema_version": 1,
   "budget": 100,
   "default_weapon_cost": 25,
@@ -16,25 +16,29 @@
       "id": "hand_grenade",
       "name": "Hand Grenade",
       "cost": 8,
-      "max": 3
+      "max": 3,
+      "game_item": 262
     },
     {
       "id": "flash_grenade",
       "name": "Flash Grenade",
       "cost": 5,
-      "max": 3
+      "max": 3,
+      "game_item": 264
     },
     {
       "id": "incendiary_grenade",
       "name": "Incendiary Grenade",
       "cost": 9,
-      "max": 2
+      "max": 2,
+      "game_item": 263
     },
     {
       "id": "first_aid_spray",
       "name": "First Aid Spray",
       "cost": 15,
-      "max": 2
+      "max": 2,
+      "game_item": 772
     },
     {
       "id": "green_herb",

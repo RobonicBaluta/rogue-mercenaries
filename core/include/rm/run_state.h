@@ -50,6 +50,7 @@ struct LoadoutItem {
     std::string id;
     std::string name;
     int count = 1;
+    std::int64_t game_item = -1;  // the adapter's inventory item id, -1 if none
 };
 struct Loadout {
     std::string weapon_id;

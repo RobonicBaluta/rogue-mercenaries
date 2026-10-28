@@ -50,7 +50,7 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
    - **PERKS**: every perk with its description; locked ones are bought with Credits.
    - **CREDITS**: your balance, lifetime records and weapon unlocks.
    Esc goes back one screen; locked entries are red, like the game's own disabled rows.
-3. Every run rolls a starting loadout from a point budget (`configs/loadouts.json`): one of the skin's weapons, then equipment while points last; unspent points become supplies. The HUD shows the roll. The game itself only gets the weapon (as the sidearm damage class); the equipment is tracked by the run until an inventory write is verified in the engine.
+3. Every run rolls a starting loadout from a point budget (`configs/loadouts.json`): one of the skin's weapons, then equipment while points last; unspent points become supplies. The HUD shows the roll. Grenades and sprays are placed in your real inventory when the first arena starts (on top of the character's own loadout, up to each stack's maximum); herbs are tracked by the run only until their item ids are confirmed, and the weapon pick still only sets the damage class.
    *Without the menu row:* go to **The Mercenaries → Solo**, press **F7**, select the same character and press **Enter** (Start run). Set `"direct_start": false` in `adapter.json` to go through the game's own setup screens yourself.
 4. The run starts with the match. The HUD shows *Enemies left*. The Mercenaries countdown is held at 90 s, so the kill target decides the arena.
 5. When the target is reached the match ends. The menu opens on the results screen:

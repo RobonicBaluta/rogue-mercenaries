@@ -36,6 +36,8 @@ struct EquipmentDef {
     std::string name;
     std::int64_t cost = 0;
     int max_count = 1;
+    /// Adapter item id to put into the game's inventory (-1 = tracked by the run only).
+    std::int64_t game_item = -1;
 };
 struct LoadoutConfig {
     std::int64_t budget = 0;

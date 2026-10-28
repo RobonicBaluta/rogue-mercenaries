@@ -561,6 +561,47 @@ void HandleNativeMenu(double now) {
     (void)now;
 }
 
+// Puts the rolled loadout's equipment into the game's inventory through the
+// game's own helpers (verified: AddToStacks tops up a stack, Create makes a
+// new slot the way PickUpItem does). Items without a game id stay run-only.
+void ApplyLoadoutToInventory() {
+    const auto player = engine::LocalPlayer();
+    if (!engine::Caps().inventory || !player) {
+        RM_LOGW("loadout: inventory not available; items stay run-only");
+        return;
+    }
+    const auto inventory = player + re5::off::kPlayerInventory;
+    auto stackOf = [&](std::int64_t item) -> std::uintptr_t {
+        for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+            const auto slot = inventory + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+            if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) == 1 &&
+                ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) == static_cast<std::uint32_t>(item)) {
+                return slot;
+            }
+        }
+        return 0;
+    };
+    using AddFn = int(__thiscall*)(std::uintptr_t inventory, int item, int count);
+    using CreateFn = std::uintptr_t(__thiscall*)(std::uintptr_t inventory, int item, int count, int a, int b, int c,
+                                                 int flags, int a1, int a2, int a3, int a4, int a5, int a6, int a7,
+                                                 int a8, int a9, std::uintptr_t player, int position, int zero);
+    const auto add = reinterpret_cast<AddFn>(re5::addr::kFnInventoryAddToStacks);
+    const auto create = reinterpret_cast<CreateFn>(re5::addr::kFnInventoryCreate);
+    for (const rm::LoadoutItem& item : g->run->state().loadout.items) {
+        if (item.game_item < 0) continue;
+        const int id = static_cast<int>(item.game_item);
+        if (const auto slot = stackOf(id)) {
+            // The game's own stack: add on top of what the character starts with.
+            const int left = add(inventory, id, item.count);
+            RM_LOGI("loadout: %s x%d added to stack %04X (count now %d, %d did not fit)", item.id.c_str(), item.count, id,
+                    ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0), left);
+        } else {
+            const auto made = create(inventory, id, item.count, -1, -1, -1, 0xD, 0, 0, 0, 0, 0, 0, 0, 0, 0, player, 0, 0);
+            RM_LOGI("loadout: %s x%d created as %04X -> %s", item.id.c_str(), item.count, id, made ? "ok" : "no slot");
+        }
+    }
+}
+
 void TryBeginArena(double now) {
     rm::RunController& run = *g->run;
     if (!run.HasActiveRun() || !g->match.inMatch) return;
@@ -580,6 +621,7 @@ void TryBeginArena(double now) {
     const rm::Status status = run.BeginArena(now);
     Report(status, "begin arena");
     g->arenaEndRequested = false;
+    if (status.ok() && waitingFirst) ApplyLoadoutToInventory();
 }
 
 void DriveArena(double now) {

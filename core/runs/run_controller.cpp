@@ -402,7 +402,9 @@ Loadout RollLoadout(const CharacterDef& ch, const Content& content, Rng& rng) {
         out.spent += cfg.equipment[i].cost;
     }
     for (std::size_t i = 0; i < cfg.equipment.size(); ++i) {
-        if (counts[i] > 0) out.items.push_back({cfg.equipment[i].id, cfg.equipment[i].name, counts[i]});
+        if (counts[i] > 0) {
+            out.items.push_back({cfg.equipment[i].id, cfg.equipment[i].name, counts[i], cfg.equipment[i].game_item});
+        }
     }
     return out;
 }

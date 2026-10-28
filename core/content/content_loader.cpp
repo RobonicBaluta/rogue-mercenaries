@@ -862,9 +862,12 @@ void ParseLoadouts(const Diag& file, const json& doc, LoadoutConfig& out) {
         EquipmentDef item;
         if (!ReadId(d, e, item.id)) continue;
         d = file.Sub(": equipment " + Q(item.id));
-        CheckKeys(d, e, {"id", "name", "cost", "max"});
+        CheckKeys(d, e, {"id", "name", "cost", "max", "game_item"});
         GetString(d, e, "name", item.name, true);
         if (GetInt(d, e, "cost", item.cost, true) && item.cost < 0) d.Error("field 'cost' must be >= 0");
+        if (GetInt(d, e, "game_item", item.game_item, false) && item.game_item < 0) {
+            d.Error("field 'game_item' must be >= 0");
+        }
         std::int64_t max = 1;
         if (GetInt(d, e, "max", max, false) && (max < 1 || max > 99)) d.Error("field 'max' must be 1..99");
         item.max_count = static_cast<int>(max);
