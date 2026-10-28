@@ -523,13 +523,11 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
             if (base != run_.loadout.weapon_id) GrantWeapon(MakeStartingWeapon(base, NextInstanceId()), "starting_weapon");
         }
     }
-    // Every perk the menu unlocked for this character is active in the run (style, supply,
-    // support); free perks are the starting traits granted by the character or skin below.
-    for (const PerkDef& perk : content_->perks()) {
-        if (!perk.enabled || perk.category == PerkCategory::Skin || perk.IsCurse()) continue;
-        if (perk.unlock_cost_credits <= 0 || profile_.unlocked_perks.count(perk.id) == 0) continue;
-        if (!CharacterMayUsePerk(perk, run_.character)) continue;
-        (void)GrantPerk(perk.id, "unlocked", CursePolicy::Exclude, false);
+    // The menu's choice, one perk per category (the style slot falls back to the character's
+    // own trait); the skin's trait is granted separately below.
+    for (const std::string& id : EquippedPerks(ch->id)) {
+        if (id == run_.character.starting_passive) continue;  // granted as the starting passive below
+        (void)GrantPerk(id, "equipped", CursePolicy::Exclude, true);
     }
     if (!run_.character.starting_passive.empty()) {
         const Status s = GrantPerk(run_.character.starting_passive, "starting_passive", CursePolicy::Exclude, true);
@@ -806,6 +804,80 @@ Status RunController::GrantItem(std::string_view equipment_id, int count, std::s
     e.Add("item", def->id).Add("count", placed).Add("source", source);
     Emit(std::move(e));
     return Status::Success();
+}
+
+namespace {
+bool SelectableCategory(PerkCategory c) {
+    return c == PerkCategory::Style || c == PerkCategory::Supply || c == PerkCategory::Support;
+}
+}  // namespace
+
+Status RunController::EquipPerk(std::string_view character_id, std::string_view perk_id) {
+    const CharacterDef* ch = content_->FindCharacter(character_id);
+    if (ch == nullptr) return Status::Error(ErrorCode::UnknownId, "unknown character '" + std::string(character_id) + "'");
+    const PerkDef* def = content_->FindPerk(perk_id);
+    if (def == nullptr) return Status::Error(ErrorCode::UnknownId, "unknown perk '" + std::string(perk_id) + "'");
+    if (!def->enabled || !SelectableCategory(def->category)) {
+        return Status::Error(ErrorCode::NotEligible, "perk '" + def->id + "' cannot be equipped");
+    }
+    if (!CharacterMayUsePerk(*def, *ch)) {
+        return Status::Error(ErrorCode::NotEligible, "perk '" + def->id + "' is for another character");
+    }
+    if (def->unlock_cost_credits > 0 && profile_.unlocked_perks.count(def->id) == 0) {
+        return Status::Error(ErrorCode::NotEligible, "perk '" + def->id + "' is locked");
+    }
+    std::vector<std::string>& slots = profile_.equipped_perks[ch->id];
+    std::erase_if(slots, [&](const std::string& id) {
+        const PerkDef* other = content_->FindPerk(id);
+        return other == nullptr || other->category == def->category;
+    });
+    slots.push_back(def->id);
+    Event e = MakeEvent(EventType::PerkEquipped);
+    e.Add("character", ch->id).Add("perk", def->id).Add("category", PerkCategoryName(def->category));
+    Emit(std::move(e));
+    return SaveProfile("equip");
+}
+
+Status RunController::UnequipPerk(std::string_view character_id, PerkCategory category) {
+    const CharacterDef* ch = content_->FindCharacter(character_id);
+    if (ch == nullptr) return Status::Error(ErrorCode::UnknownId, "unknown character '" + std::string(character_id) + "'");
+    const auto it = profile_.equipped_perks.find(ch->id);
+    if (it == profile_.equipped_perks.end()) return Status::Success();
+    const auto before = it->second.size();
+    std::erase_if(it->second, [&](const std::string& id) {
+        const PerkDef* other = content_->FindPerk(id);
+        return other == nullptr || other->category == category;
+    });
+    if (it->second.size() == before) return Status::Success();
+    if (it->second.empty()) profile_.equipped_perks.erase(it);
+    Event e = MakeEvent(EventType::PerkEquipped);
+    e.Add("character", ch->id).Add("category", PerkCategoryName(category)).Add("cleared", true);
+    Emit(std::move(e));
+    return SaveProfile("equip");
+}
+
+const PerkDef* RunController::EquippedPerk(std::string_view character_id, PerkCategory category) const {
+    const auto it = profile_.equipped_perks.find(std::string(character_id));
+    if (it != profile_.equipped_perks.end()) {
+        for (const std::string& id : it->second) {
+            const PerkDef* def = content_->FindPerk(id);
+            if (def != nullptr && def->category == category) return def;
+        }
+    }
+    if (category == PerkCategory::Style) {
+        if (const CharacterDef* ch = content_->FindCharacter(character_id)) {
+            if (!ch->starting_passive.empty()) return content_->FindPerk(ch->starting_passive);
+        }
+    }
+    return nullptr;
+}
+
+std::vector<std::string> RunController::EquippedPerks(std::string_view character_id) const {
+    std::vector<std::string> out;
+    for (PerkCategory c : {PerkCategory::Style, PerkCategory::Supply, PerkCategory::Support}) {
+        if (const PerkDef* def = EquippedPerk(character_id, c)) out.push_back(def->id);
+    }
+    return out;
 }
 
 std::vector<ItemGrant> RunController::ConsumeItemGrants() {

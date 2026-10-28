@@ -50,6 +50,13 @@ json Body(const Profile& p) {
     j["unlocked_characters"] = SetToJson(p.unlocked_characters);
     j["unlocked_perks"] = SetToJson(p.unlocked_perks);
     j["unlocked_weapons"] = SetToJson(p.unlocked_weapons);
+    {
+        json equipped = json::object();
+        for (const auto& [character, perks] : p.equipped_perks) {
+            if (!perks.empty()) equipped[character] = perks;
+        }
+        j["equipped_perks"] = std::move(equipped);
+    }
     j["cosmetics"] = SetToJson(p.cosmetics);
     j["emotes"] = SetToJson(p.emotes);
     j["stats"] = {
@@ -162,6 +169,27 @@ Result<ParsedProfile> ParseV1(const json& doc) {
         !StringSetField(doc, "cosmetics", p.cosmetics, err, false) ||
         !StringSetField(doc, "emotes", p.emotes, err, false)) {
         return fail();
+    }
+    if (const auto eq = doc.find("equipped_perks"); eq != doc.end()) {
+        if (!eq->is_object()) {
+            err = "field 'equipped_perks' must be an object";
+            return fail();
+        }
+        for (const auto& [character, list] : eq->items()) {
+            if (!list.is_array()) {
+                err = "field 'equipped_perks." + character + "' must be an array";
+                return fail();
+            }
+            std::vector<std::string> perks;
+            for (const json& v : list) {
+                if (!v.is_string()) {
+                    err = "field 'equipped_perks." + character + "' must contain only strings";
+                    return fail();
+                }
+                perks.push_back(v.get<std::string>());
+            }
+            if (!perks.empty()) p.equipped_perks[character] = std::move(perks);
+        }
     }
     const auto stats = doc.find("stats");
     if (stats == doc.end() || !stats->is_object()) {

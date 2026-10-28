@@ -191,6 +191,15 @@ public:
     // --- meta progression --------------------------------------------------------------
     [[nodiscard]] const Profile& profile() const { return profile_; }
     [[nodiscard]] std::vector<CharacterAvailability> Characters() const;
+    /// Menu selection, one perk per category (style, supply, support) per character. The perk
+    /// must be enabled, unlocked (or free), usable by the character and not a skin trait or
+    /// curse; it replaces the perk held in its category. Saved to the profile.
+    Status EquipPerk(std::string_view character_id, std::string_view perk_id);
+    Status UnequipPerk(std::string_view character_id, PerkCategory category);
+    /// The perks a run of this character starts with: the equipped ones, with the character's
+    /// own starting trait standing in for an empty style slot.
+    [[nodiscard]] std::vector<std::string> EquippedPerks(std::string_view character_id) const;
+    [[nodiscard]] const PerkDef* EquippedPerk(std::string_view character_id, PerkCategory category) const;
     /// Unlocks every character whose challenge the profile stats now meet (character_unlocked
     /// events) and returns their ids. Runs at construction and after each run ends.
     std::vector<std::string> EvaluateCharacterUnlocks();

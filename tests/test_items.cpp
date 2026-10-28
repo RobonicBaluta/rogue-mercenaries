@@ -238,15 +238,59 @@ TEST_CASE("supply perks queue their start items when granted", "[items]") {
     CHECK(quiet.rc.state().perks.count("shotgun_licence") == 0);
 }
 
-TEST_CASE("perks unlocked in the menu are active from the start of a run", "[items]") {
-    const auto content = test::LoadFixture();
+TEST_CASE("one equipped perk per category drives the start of a run", "[items]") {
+    const auto content = test::Load(test::EditFixture([](json& perks, json&, json&, json&, json&) {
+        perks["perks"].push_back(json{{"id", "pouch"}, {"name", "Pouch"}, {"description", "Two grenades."}, {"category", "supply"},
+                                      {"rarity", "common"}, {"max_stacks", 1},
+                                      {"effects", json::array({json{{"kind", "item_on_start"}, {"game_item", 262}, {"amount", 2}}})}});
+        perks["perks"].push_back(json{{"id", "medkit"}, {"name", "Medkit"}, {"description", "A spray."}, {"category", "supply"},
+                                      {"rarity", "common"}, {"max_stacks", 1}, {"unlock_cost_credits", 50},
+                                      {"effects", json::array({json{{"kind", "item_on_start"}, {"game_item", 772}, {"amount", 1}}})}});
+    }));
     Profile profile;
-    profile.unlocked_perks.insert("jackpot");  // costs credits in the fixture, usable by everyone
+    profile.unlocked_perks.insert("jackpot");
     test::Harness h(content, profile);
-    REQUIRE(h.rc.StartRun("alpha", 9).ok());
-    CHECK(h.rc.state().perks.count("jackpot") == 1);
 
-    test::Harness plain(content);
-    REQUIRE(plain.rc.StartRun("alpha", 9).ok());
-    CHECK(plain.rc.state().perks.count("jackpot") == 0);
+    // Locked, wrong category and foreign perks are refused.
+    CHECK(h.rc.EquipPerk("alpha", "medkit").code == ErrorCode::NotEligible);
+    CHECK(h.rc.EquipPerk("alpha", "curse_weak").code == ErrorCode::NotEligible);
+    CHECK(h.rc.EquipPerk("alpha", "beta_passive").code == ErrorCode::NotEligible);
+    CHECK(h.rc.EquipPerk("alpha", "nobody").code == ErrorCode::UnknownId);
+
+    REQUIRE(h.rc.EquipPerk("alpha", "pouch").ok());
+    REQUIRE(h.rc.EquipPerk("alpha", "jackpot").ok());  // style slot (fixture category)
+    REQUIRE(h.rc.EquippedPerk("alpha", PerkCategory::Supply) != nullptr);
+    CHECK(h.rc.EquippedPerk("alpha", PerkCategory::Supply)->id == "pouch");
+    CHECK(h.rc.EquippedPerk("alpha", PerkCategory::Support) == nullptr);
+    // A second style perk replaces the first within its category.
+    REQUIRE(h.rc.EquipPerk("alpha", "dmg_up").ok());
+    CHECK(h.rc.EquippedPerk("alpha", PerkCategory::Style)->id == "dmg_up");
+    CHECK(h.rc.profile().equipped_perks.at("alpha").size() == 2);
+
+    // The selection survives a profile round trip.
+    const auto parsed = ParseProfile(SerializeProfile(h.rc.profile()));
+    REQUIRE(parsed.ok());
+    CHECK(parsed->profile.equipped_perks.at("alpha") == h.rc.profile().equipped_perks.at("alpha"));
+
+    REQUIRE(h.rc.StartRun("alpha", 9).ok());
+    CHECK(h.rc.state().perks.count("dmg_up") == 1);
+    CHECK(h.rc.state().perks.count("pouch") == 1);
+    CHECK(h.rc.state().perks.count("jackpot") == 0);
+    const auto grants = h.rc.ConsumeItemGrants();
+    REQUIRE(grants.size() == 1);
+    CHECK(grants[0].game_item == 262);
+
+    // Clearing a slot: the style slot falls back to the character's own trait.
+    test::Harness fresh(content, profile);
+    REQUIRE(fresh.rc.EquipPerk("alpha", "jackpot").ok());
+    REQUIRE(fresh.rc.UnequipPerk("alpha", PerkCategory::Style).ok());
+    const PerkDef* style = fresh.rc.EquippedPerk("alpha", PerkCategory::Style);
+    const CharacterDef* alpha = content->FindCharacter("alpha");
+    REQUIRE(alpha != nullptr);
+    if (alpha->starting_passive.empty()) {
+        CHECK(style == nullptr);
+    } else {
+        REQUIRE(style != nullptr);
+        CHECK(style->id == alpha->starting_passive);
+    }
 }

@@ -50,6 +50,9 @@ struct Profile {
     StringSet unlocked_characters;
     StringSet unlocked_perks;
     StringSet unlocked_weapons;
+    /// Perks chosen in the menu, per character id: at most one per category (style, supply,
+    /// support); a missing style slot means the character's own starting trait.
+    StringMap<std::vector<std::string>> equipped_perks;
     StringSet cosmetics;  // reserved
     StringSet emotes;     // reserved
     ProfileStats stats;

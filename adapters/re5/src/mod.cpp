@@ -162,6 +162,7 @@ struct ModState {
     std::uint64_t seedInput = 0;
     int selectedCharacter = 0;
     std::string selectedSkin;  // skin id for the selected character (empty = default)
+    rm::PerkCategory perkCategory = rm::PerkCategory::Style;  // slot opened from the PERKS screen
     std::string diagnosticsResult;
     // Set when any mod code threw; the game keeps running with vanilla rules.
     std::atomic<bool> disabled{false};
@@ -272,23 +273,28 @@ std::string CategoryTag(rm::PerkCategory c) {
     }
 }
 
-// Perks the PERKS screen lists: the selected character's own and the generic ones, by
-// category then name; skin traits and curses are never listed.
-std::vector<const rm::PerkDef*> MenuPerks(rm::RunController& run) {
-    std::vector<const rm::PerkDef*> out;
-    const rm::CharacterDef* character = nullptr;
+constexpr std::array<rm::PerkCategory, 3> kSlotCategories = {rm::PerkCategory::Style, rm::PerkCategory::Supply,
+                                                             rm::PerkCategory::Support};
+
+std::string SelectedCharacterId(rm::RunController& run) {
     const auto characters = run.Characters();
-    if (g->selectedCharacter >= 0 && g->selectedCharacter < static_cast<int>(characters.size())) {
-        character = run.content().FindCharacter(characters[g->selectedCharacter].id);
-    }
+    if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) return {};
+    return characters[static_cast<std::size_t>(g->selectedCharacter)].id;
+}
+
+// Perks of one category the selected character may use (its own and the generic ones), the
+// character's own ones first, then by name.
+std::vector<const rm::PerkDef*> MenuPerks(rm::RunController& run, rm::PerkCategory category) {
+    std::vector<const rm::PerkDef*> out;
+    const rm::CharacterDef* character = run.content().FindCharacter(SelectedCharacterId(run));
     for (const auto& perk : run.content().perks()) {
         if (!perk.enabled || !run.capabilities().HasAll(perk.requires_capabilities)) continue;
-        if (perk.category == rm::PerkCategory::Skin || perk.IsCurse()) continue;
+        if (perk.category != category) continue;
         if (character != nullptr && !rm::CharacterMayUsePerk(perk, *character)) continue;
         out.push_back(&perk);
     }
     std::stable_sort(out.begin(), out.end(), [](const rm::PerkDef* a, const rm::PerkDef* b) {
-        if (a->category != b->category) return static_cast<int>(a->category) < static_cast<int>(b->category);
+        if (a->characters.empty() != b->characters.empty()) return !a->characters.empty();
         return a->name < b->name;
     });
     return out;
@@ -405,15 +411,35 @@ private:
                 break;
             }
             case ScreenId::Perks: {
+                // One slot per category; each row opens that category's list.
                 screen.header = "PERKS   " + Upper(CreditsLine());
-                for (const rm::PerkDef* perkPtr : MenuPerks(run)) {
-                    const auto& perk = *perkPtr;
+                const std::string character = SelectedCharacterId(run);
+                for (rm::PerkCategory c : kSlotCategories) {
                     Item item;
-                    item.label = CategoryTag(perk.category) + Upper(Plain(perk.name));
-                    const bool locked = perk.unlock_cost_credits > 0 && !profile.unlocked_perks.count(perk.id);
+                    const rm::PerkDef* equipped = character.empty() ? nullptr : run.EquippedPerk(character, c);
+                    item.label = CategoryTag(c) + (equipped ? Upper(Plain(equipped->name)) : std::string("NONE"));
+                    item.help = equipped ? Plain(equipped->description) + "\nPress to change it."
+                                         : "Nothing chosen for this slot.\nPress to choose.";
+                    screen.items.push_back(std::move(item));
+                }
+                break;
+            }
+            case ScreenId::PerkList: {
+                const std::string character = SelectedCharacterId(run);
+                screen.header = Upper(std::string(rm::PerkCategoryName(g->perkCategory))) + "   " + Upper(CreditsLine());
+                screen.empty_help = "No perk of this kind for this character yet.";
+                const rm::PerkDef* equipped = character.empty() ? nullptr : run.EquippedPerk(character, g->perkCategory);
+                for (const rm::PerkDef* perk : MenuPerks(run, g->perkCategory)) {
+                    Item item;
+                    item.label = Upper(Plain(perk->name));
+                    const bool locked = perk->unlock_cost_credits > 0 && !profile.unlocked_perks.count(perk->id);
+                    const bool selected = equipped != nullptr && equipped->id == perk->id;
+                    if (selected) item.label += "   SELECTED";
                     item.locked = locked;
-                    item.help = Plain(perk.description);
-                    if (locked) item.help += "\nUnlock for " + Plural(perk.unlock_cost_credits, "credit") + ".";
+                    item.help = Plain(perk->description);
+                    if (locked) item.help += "\nUnlock for " + Plural(perk->unlock_cost_credits, "credit") + ".";
+                    else if (selected) item.help += "\nYour pick for this slot. Press to remove it.";
+                    else item.help += "\nPress to pick it for this slot.";
                     screen.items.push_back(std::move(item));
                 }
                 break;
@@ -523,15 +549,28 @@ private:
                 break;
             }
             case ScreenId::Perks: {
-                int row = 0;
-                for (const rm::PerkDef* perkPtr : MenuPerks(run)) {
-                    const auto& perk = *perkPtr;
-                    if (row++ != index) continue;
-                    if (perk.unlock_cost_credits > 0 && !run.profile().unlocked_perks.count(perk.id)) {
-                        purchase(rm::UnlockKind::Perk, perk.id, perk.unlock_cost_credits);
-                    }
+                if (index < 0 || index >= static_cast<int>(kSlotCategories.size())) break;
+                g->perkCategory = kSlotCategories[static_cast<std::size_t>(index)];
+                d.outcome = Outcome::Push;
+                d.next = ScreenId::PerkList;
+                break;
+            }
+            case ScreenId::PerkList: {
+                const std::string character = SelectedCharacterId(run);
+                const auto perks = MenuPerks(run, g->perkCategory);
+                if (character.empty() || index < 0 || index >= static_cast<int>(perks.size())) break;
+                const rm::PerkDef& perk = *perks[static_cast<std::size_t>(index)];
+                if (perk.unlock_cost_credits > 0 && !run.profile().unlocked_perks.count(perk.id)) {
+                    purchase(rm::UnlockKind::Perk, perk.id, perk.unlock_cost_credits);
                     break;
                 }
+                const rm::PerkDef* equipped = run.EquippedPerk(character, g->perkCategory);
+                const rm::Status status = equipped != nullptr && equipped->id == perk.id
+                                              ? run.UnequipPerk(character, g->perkCategory)
+                                              : run.EquipPerk(character, perk.id);
+                RM_LOGI("menu %s %s for %s -> %s", equipped != nullptr && equipped->id == perk.id ? "unequip" : "equip",
+                        perk.id.c_str(), character.c_str(), status.ok() ? "ok" : status.message.c_str());
+                d.outcome = status.ok() ? Outcome::Refresh : Outcome::Denied;
                 break;
             }
             case ScreenId::Skins: {
