@@ -97,12 +97,17 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
 
 ### M1 — The director (enemies under our control)
 1. ~~E1 spike: spawn one uEm10 with a descriptor next to the player (dev command `spawn`).~~ Done 2026-11-01. The Mercenaries spawner calls the same path from `0x007AF6E0` (callers `0x00C2A880`, `0x00C2AA80`, `0x00C2E070`): the gate for E2.
-2. Spawn table: enemy type → DTI, default descriptor fields, which stages load it.
-3. ~~E2: switch off the Mercenaries spawner in runs.~~ Gate done 2026-11-01 (`director.cpp`, dev `nativespawns off`); switched on automatically once the director runs waves.
-4. Core: `arenas.json` with spawn points and waves (type, count, weapon, timing, max alive);
-   core tests for wave pacing and kill accounting.
-5. Adapter director: runs the waves, tracks its units, reports kills (E5).
-6. Arena end by the director (last wave dead), not by the time-up.
+2. ~~Spawn table~~ First version done 2026-11-01 from the survey (`scripts/survey_spawns.sh`,
+   `research/spawn_survey.json`): the classes and weapon ids each stage spawns itself, and
+   the descriptor class for each (own `cSetInfoEm..`, or `cSetInfoEm10` for Majini variants).
+3. ~~E2: switch off the Mercenaries spawner in runs.~~ Gate done 2026-11-01 (`director.cpp`, dev `nativespawns off`); on automatically for a run's whole match on a stage listed in `maps.json`.
+4. ~~Core: `maps.json` and `rm::Director`~~ Done 2026-11-01: spawn points, roster with
+   weights, weapon ids and minimum tier, max alive; keeps up to max alive, refills until the
+   route's enemy budget is dead, prefers points away from the player, backs off from points
+   that fail. Explicit scripted waves (counts and timing per wave) come with M6 for boss arenas.
+5. ~~Adapter director~~ Done 2026-11-01: spawns what the core asks, gives each unit its own
+   id, reports kills from both kill paths (E5).
+6. ~~Arena end by the director~~ Done 2026-11-01: the arena clears when exactly its budget has died.
 
 ### M2 — No timer, no score
 1. E4: remove the countdown and score from the screen and every path that ends the match.

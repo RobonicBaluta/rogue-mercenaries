@@ -289,6 +289,17 @@ public:
     /// active; rolls from the "loot" stream.
     Result<ChestReward> OpenChest(double now);
 
+    // ---- Director (ROADMAP M1): the adapter tells the map, the core decides the spawns.
+    /// The map (engine stage) the next and current arenas are played on.
+    void SetMapStage(int stage) { map_stage_ = stage; }
+    /// True while the current arena is run by the director (map known, capability present).
+    [[nodiscard]] bool DirectorActive() const { return director_.has_value(); }
+    /// Spawns the adapter should perform now.
+    std::vector<SpawnRequest> DirectorTick(double now, const std::optional<std::array<double, 3>>& player);
+    void DirectorSpawned(std::uint64_t ticket, const std::string& unit_id);
+    void DirectorSpawnFailed(std::uint64_t ticket);
+    [[nodiscard]] const Director* director() const { return director_ ? &*director_ : nullptr; }
+
     [[nodiscard]] RunSnapshot Snapshot(double now) const;
     [[nodiscard]] Phase phase() const { return run_.phase; }
     [[nodiscard]] bool HasActiveRun() const { return run_.active; }
@@ -303,6 +314,7 @@ private:
         Rng shop;
         Rng combat;
         Rng loadout;
+        Rng director;
     };
 
     Event MakeEvent(EventType type, EventLevel level = EventLevel::Info) const;
@@ -345,6 +357,8 @@ private:
     Profile profile_;
     Capabilities caps_;
     InventoryPort* inventory_ = nullptr;
+    int map_stage_ = -1;
+    std::optional<Director> director_;
     std::optional<StringSet> placeable_weapons_;
     IEventSink* sink_ = nullptr;
     ProfileStore* store_ = nullptr;

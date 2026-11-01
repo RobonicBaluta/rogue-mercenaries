@@ -52,6 +52,21 @@ Singleton instance pointers sit immediately before each class's DTI (verified-st
 
 Hook design: `OnHit` records HP before/after and the attacker in a thread-local scope; the base `uCharacter::SubHp` hook scales the amount only when called inside that scope for the same enemy (the synchronous `OnHit → ApplyDamage → SubHp` chain). Kills = HP crossing from >0 to ≤0 inside `OnHit`.
 
+### Native spawns (survey 2026-11-01, `scripts/survey_spawns.sh`, data in `research/spawn_survey.json`)
+
+| Fact | Value | Status |
+|---|---|---|
+| Set spawn result | `0x007AF5F0` returns the created unit (0 when refused, already alive or no record) | verified-static and runtime |
+| Opening wave | Mercenaries places set 0 (ids 0..11 on Public Assembly: 12 units) when the match starts; refills come from other sets (1, 3, ..) as units die | verified-runtime |
+| Classes per stage | 0 Public Assembly uEm10/uEm11 (+uEm20, uEm21 rare); 1 The Mines uEm10 (+uEm13, uEm34); 2 Village uEm12 (+uEm24, uEm0b); 3 Ancient Ruins uEm12 (+uEm24); 4 Experimental Facility uEm14 (+uEm32); 5 Missile Area uEm10 (+uEm23); 6 Ship Deck uEm10 (+uEm22); 7 Prison uEm10 (+uEm13, uEm20, uEm26). uEm62 appears once on every stage: spawning it next to the player showed a chicken (2026-11-01). Stage names follow the menu order; 2 and 6 recognised in play | verified-runtime |
+| Weapon ids | unit `+0x1BE4` after spawning: `0x70100` (default) and `0x7014F..0x70175`, a different set per stage | verified-runtime |
+| Descriptor classes | Own `cSetInfoEm..` exists for 0b, 0c, 10, 22, 27, 30..32, 34, 3401, 40, 44, 45, 52, 61..63, 65, 6c, 6d, 6f, 70, 71, 80..84. The Majini variants without one (uEm11, uEm12, uEm24 checked; uEm13, uEm14, uEm2x by the same rule) derive from uEm10 and are placed with `cSetInfoEm10` (`director::Spawn` walks the DTI parents) | verified-runtime (uEm11, uEm12, uEm24) |
+| Unloaded enemy model | Spawning uEm11 (a Public Assembly class) in the Village hung the game, as creating an unloaded weapon does; uEm0b, uEm24 and uEm62 (all Village classes) spawned fine in the same state. The director only uses classes the stage spawns itself until M3 | verified-runtime |
+| Kill helper | `uCharacter::SubHp(hp)` (`0x0084F7C0`) from the game thread kills a live enemy; the game then refills as after a real kill (dev `killall`) | verified-runtime |
+| Stage names | stage index = Mercenaries stage select order: 0 Public Assembly, 1 The Mines, 2 Village, 3 Ancient Ruins, 4 Experimental Facility, 5 Missile Area, 6 Ship Deck, 7 Prison | 2 and 6 verified-runtime, rest inferred |
+
+On The Mines the player was caught by a large insect's grab twice; with dev invulnerability the grab never resolved and the match stayed in a state where the countdown hook (state 0 only) could not end it. Without invulnerability the same stage stopped refilling after the opening wave and showed no results screen within 45 s (cause not seen). Surveys therefore run one game launch per stage.
+
 ## Game state / Mercenaries
 
 | Fact | Value | Status |

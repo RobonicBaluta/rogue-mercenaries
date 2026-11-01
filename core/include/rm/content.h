@@ -9,6 +9,7 @@
 
 #include "rm/characters.h"
 #include "rm/common.h"
+#include "rm/director.h"
 #include "rm/economy.h"
 #include "rm/perks.h"
 #include "rm/routes.h"
@@ -26,6 +27,7 @@ struct ContentSources {
     std::string routes;      // routes.json
     std::string economy;     // economy.json
     std::string loadouts;    // loadouts.json (optional; defaults apply when empty)
+    std::string maps;        // maps.json (optional; the director only runs on listed maps)
 };
 
 /// Starting loadout roll (configs/loadouts.json). A run spends `budget` points: the weapon
@@ -88,6 +90,13 @@ public:
     [[nodiscard]] const std::vector<RouteDef>& routes() const { return routes_; }
     [[nodiscard]] const EconomyConfig& economy() const { return economy_; }
     [[nodiscard]] const LoadoutConfig& loadouts() const { return loadouts_; }
+    [[nodiscard]] const std::vector<MapDef>& maps() const { return maps_; }
+    [[nodiscard]] const MapDef* FindMapByStage(int stage) const {
+        for (const MapDef& m : maps_) {
+            if (m.stage == stage) return &m;
+        }
+        return nullptr;
+    }
 
     [[nodiscard]] const PerkDef* FindPerk(std::string_view id) const;
     [[nodiscard]] const WeaponBaseDef* FindWeapon(std::string_view id) const;
@@ -109,6 +118,7 @@ private:
     std::vector<RouteDef> routes_;
     EconomyConfig economy_;
     LoadoutConfig loadouts_;
+    std::vector<MapDef> maps_;
 
     StringMap<std::size_t> perk_index_;
     StringMap<std::size_t> weapon_index_;

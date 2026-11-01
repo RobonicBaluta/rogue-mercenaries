@@ -93,7 +93,7 @@ and `$ctest` to `ctest.exe` in the same folder.
   - Developer test aids in `adapter.json` -> `dev`: `invulnerable`, `outgoing_multiplier`, `incoming_multiplier`, `grant_perks`, `probe_hits`, `mute_audio`, `ui_demo`;
     `<data>\dev.command` accepts `force_complete`, `kill <n>` (synthetic player kills), `grant <perk id>` (adds a
     perk to the active run), `unlock perk|weapon <id>`, `dumpinv`, `give <hex item> <count>`, `arm <stage> <costume>`,
-    `spawn <class> [weapon hex] [count] [distance]` (an enemy next to the player), `nativespawns off|on`, `enemies` (live enemy list), `chest` (one chest, as a pickup would), `die`, `timeup`, `buy <kind>`, `itemnames`, `sethp <hp>`, `pause 1|0` (the world-pause request bit), `gomenu` (research: the results screen's return-to-menu call, no effect mid-match), `fadein [frames]`, `scene <hex id>` and the
+    `spawn <class> [weapon hex] [count] [distance]` (an enemy next to the player), `nativespawns off|on`, `enemies` (live enemy list), `killall` (every live enemy dies through the game's own damage call), `abandon` (ends the run; the match goes on as plain Mercenaries), `survey on|off` (logs every native spawn for `scripts/survey_spawns.py`), `chest` (one chest, as a pickup would), `die`, `timeup`, `buy <kind>`, `itemnames`, `sethp <hp>`, `pause 1|0` (the world-pause request bit), `gomenu` (research: the results screen's return-to-menu call, no effect mid-match), `fadein [frames]`, `scene <hex id>` and the
     memory-probe commands listed in `adapters/re5/src/mod.cpp` (developer mode only, logged).
 - Diagnostic export: in game F7 -> Developer -> Export diagnostics writes `%LOCALAPPDATA%\RogueMercenaries\rogue-mercenaries-diagnostics.zip`
   (verified in game 2026-10-27; core API `rm::ExportDiagnostics`).

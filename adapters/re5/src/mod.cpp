@@ -160,6 +160,9 @@ struct ModState {
     std::set<std::uint32_t> loadedWeaponItems;
     int matchGeneration = 0;         // +1 on every match detected
     int currentStage = -1;           // stage the autopilot armed for the current match
+    // Units the director spawned this match -> their run id ("dir_<ticket>"). A kill report
+    // takes the id out, so a later unit in the same memory is not mistaken for it.
+    std::unordered_map<std::uintptr_t, std::string> directorUnits;
     struct StageTransition {
         bool pending = false;
         int generation = 0;     // matchGeneration when the match end was requested
@@ -227,6 +230,11 @@ rm::Capabilities VerifiedCapabilities() {
     if (caps.inventory) {
         out.Add(rm::cap::kInventory);
         out.Add(rm::cap::kWeaponId);  // hits and kills carry the equipped weapon's base id
+    }
+    // Spawning and the native-spawn gate (E1/E2); deaths are seen by the damage hook and
+    // by the death detector, so every director unit's death is reported.
+    if (g->settings.director && caps.enemySpawn && director::Available() && status.combat) {
+        out.Add(rm::cap::kDirector);
     }
     return out;
 }
@@ -979,13 +987,24 @@ struct EnemyTrack {
 };
 std::unordered_map<std::uintptr_t, EnemyTrack> g_enemyTracks;
 
+// The run's id of a dying enemy: the director's own id for its units (reported once), the
+// unit address and max health for anything else.
+std::string EnemyKillId(std::uintptr_t enemy, int maxHp) {
+    if (const auto it = g->directorUnits.find(enemy); it != g->directorUnits.end()) {
+        std::string id = std::move(it->second);
+        g->directorUnits.erase(it);
+        return id;
+    }
+    char id[32];
+    std::snprintf(id, sizeof(id), "em_%08X_%d", static_cast<unsigned>(enemy), maxHp);
+    return id;
+}
+
 void ReportEnemyDeath(std::uintptr_t enemy, int maxHp, double now, const char* how) {
     rm::KillEvent kill;
     kill.now = now;
     kill.by_player = false;
-    char id[32];
-    std::snprintf(id, sizeof(id), "em_%08X_%d", static_cast<unsigned>(enemy), maxHp);
-    kill.enemy_id = id;
+    kill.enemy_id = EnemyKillId(enemy, maxHp);
     const rm::KillOutcome out = g->run->OnEnemyKilled(kill);
     if (out.counted) RM_LOGI("enemy %08X died (%s): counted, %d remain", static_cast<unsigned>(enemy), how, out.remaining);
 }
@@ -1430,6 +1449,41 @@ void TryBeginArena(double now) {
     if (status.ok() && waitingFirst) ApplyLoadoutToInventory();
 }
 
+// ROADMAP M1: on a stage listed in maps.json the run owns the arena. The game's own spawns
+// stay off for the whole match (also between arenas), and the core's director decides what
+// to spawn where; the adapter spawns it and reports which unit became which ticket.
+void DriveDirector(double now) {
+    rm::RunController& run = *g->run;
+    const bool directorStage = g->match.inMatch && run.HasActiveRun() && run.capabilities().Has(rm::cap::kDirector) &&
+                               g->content->FindMapByStage(g->currentStage) != nullptr;
+    director::BlockNativeSpawns(directorStage);
+    run.SetMapStage(g->match.inMatch ? g->currentStage : -1);
+    if (!g->match.inMatch) g->directorUnits.clear();
+    if (!run.DirectorActive() || run.phase() != rm::Phase::ArenaActive) return;
+    std::optional<std::array<double, 3>> player;
+    if (const auto local = engine::LocalPlayer()) {
+        player = std::array<double, 3>{ReadOr<float>(local + re5::off::kUnitPosition, 0.0f),
+                                       ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f),
+                                       ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f)};
+    }
+    for (const rm::SpawnRequest& r : run.DirectorTick(now, player)) {
+        const float pos[3] = {static_cast<float>(r.pos[0]), static_cast<float>(r.pos[1]), static_cast<float>(r.pos[2])};
+        const std::uintptr_t unit = director::Spawn(r.unit_class.c_str(), pos, static_cast<int>(r.arm));
+        if (!unit) {
+            RM_LOGW("director: %s at %.0f %.0f %.0f failed", r.unit_class.c_str(), pos[0], pos[1], pos[2]);
+            run.DirectorSpawnFailed(r.ticket);
+            continue;
+        }
+        std::string id = "dir_" + std::to_string(r.ticket);
+        g->directorUnits[unit] = id;
+        run.DirectorSpawned(r.ticket, id);
+        const rm::Director* d = run.director();
+        RM_LOGI("director: %s (arm %llX) at %.0f %.0f %.0f -> %08X; %d alive, %d dead of %d", r.unit_class.c_str(),
+                static_cast<unsigned long long>(r.arm), pos[0], pos[1], pos[2], static_cast<unsigned>(unit), d ? d->alive() : 0,
+                d ? d->dead() : 0, d ? d->budget() : 0);
+    }
+}
+
 void DriveArena(double now) {
     rm::RunController& run = *g->run;
     if (run.phase() != rm::Phase::ArenaActive) return;
@@ -1859,6 +1913,18 @@ void PollDevCommand(double now) {
                     ReadOr<float>(e.object + re5::off::kUnitPosition, 0.0f), ReadOr<float>(e.object + re5::off::kUnitPosition + 4, 0.0f),
                     ReadOr<float>(e.object + re5::off::kUnitPosition + 8, 0.0f));
         }
+    } else if (command == "abandon" && run.HasActiveRun()) {
+        // Ends the run as the overlay's "Abandon run" does; the match goes on as plain Mercenaries.
+        Report(run.AbandonRun(now), "dev abandon run");
+    } else if (command == "killall") {
+        // Real deaths (not the run's synthetic "kill <n>"): forces the game to refill its waves.
+        int killed = 0;
+        for (const auto& e : engine::ReadEnemyStates()) killed += e.hp > 0 && director::Kill(e.object) ? 1 : 0;
+        RM_LOGW("dev killall: %d enemies killed", killed);
+    } else if (command.rfind("survey ", 0) == 0) {
+        director::SetSurvey(command.substr(7) == "on");
+        const auto work = engine::ReadGameWork();
+        RM_LOGW("dev survey %s (stage %d)", command.substr(7).c_str(), work ? work->stage : -1);
     } else if (command.rfind("nativespawns ", 0) == 0) {
         // "nativespawns off|on": the game's own set spawns (Mercenaries waves, scripts).
         director::BlockNativeSpawns(command.substr(13) == "off");
@@ -1950,6 +2016,7 @@ void PollDevCommand(double now) {
         autopilot::Plan plan;
         words >> plan.stage >> plan.costume;
         autopilot::Arm(plan);
+        g->currentStage = plan.stage;  // the director's map follows the armed stage
     } else if (command == "dumpinv") {
         // The local player's inventory slots (item id, count, max).
         const auto player = engine::LocalPlayer();
@@ -2118,9 +2185,7 @@ private:
         kill.now = Now();
         kill.by_player = r.attackerIsLocal;
         if (r.attackerIsLocal) kill.weapon_id = EquippedWeaponBaseId();
-        char id[32];
-        std::snprintf(id, sizeof(id), "em_%08X_%d", static_cast<unsigned>(r.enemy), r.maxHp);
-        kill.enemy_id = id;
+        kill.enemy_id = EnemyKillId(r.enemy, r.maxHp);
         const auto outcome = g->run->OnEnemyKilled(kill);
         if (outcome.counted) {
             RM_LOGI("kill counted: +%lld supplies, %d remaining", static_cast<long long>(outcome.supplies_awarded),
@@ -2185,6 +2250,7 @@ private:
             HandleNativeMenu(now);
             TryBeginArena(now);
         }
+        DriveDirector(now);
         DriveArena(now);
         DetectEnemyDeaths(now);
         OpenChests(now);

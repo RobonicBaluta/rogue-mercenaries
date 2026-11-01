@@ -61,6 +61,9 @@ struct Settings {
     // Results, rewards, shop and route as native in-match screens (world paused); false keeps
     // the overlay windows for them.
     bool nativeMatchUi = true;
+    // Arenas on stages listed in maps.json are run by the mod's director: the game's own
+    // spawns stay off for the whole match and the run spawns exactly the enemies it counts.
+    bool director = true;
 };
 
 Paths ResolvePaths(void* module);

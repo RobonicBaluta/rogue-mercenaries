@@ -22,8 +22,15 @@ bool NativeSpawnsBlocked();
 /// Native spawn attempts refused since the last call.
 int TakeBlockedAttempts();
 
+/// Developer survey: log every native spawn (class, weapon id, set record, position).
+void SetSurvey(bool on);
+
 /// E1: an enemy of `unitClass` ("uEm10") at `pos` (x, y, z) with descriptor weapon id
 /// `weapon` (-1 = the descriptor's default). Returns the unit or 0.
 std::uintptr_t Spawn(const char* unitClass, const float pos[3], int weapon);
+
+/// Kills a live enemy through the game's own damage call (its HP in one hit), so the
+/// death runs as in play. False when the unit is not a live character.
+bool Kill(std::uintptr_t unit);
 
 }  // namespace rmre5::director

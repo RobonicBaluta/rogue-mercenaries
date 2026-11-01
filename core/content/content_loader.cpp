@@ -850,6 +850,77 @@ void ParseRoutes(const Diag& file, const json& doc, std::vector<RouteDef>& out) 
 
 // ---- economy -------------------------------------------------------------------------------
 
+void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
+    CheckKeys(file, doc, {"schema_version", "_comment", "maps"});
+    const json* list = ListField(file, doc, "maps");
+    if (list == nullptr) return;
+    for (std::size_t i = 0; i < list->size(); ++i) {
+        const json& e = (*list)[i];
+        Diag d = file.Sub(": maps[" + std::to_string(i) + "]");
+        if (!e.is_object()) {
+            d.Error("entry must be an object");
+            continue;
+        }
+        MapDef map;
+        if (!ReadId(d, e, map.id)) continue;
+        d = file.Sub(": map " + Q(map.id));
+        CheckKeys(d, e, {"id", "name", "stage", "points", "roster", "max_alive", "min_player_distance"});
+        GetString(d, e, "name", map.name, true);
+        std::int64_t stage = -1;
+        if (GetInt(d, e, "stage", stage, true) && stage < 0) d.Error("field 'stage' must be >= 0");
+        map.stage = static_cast<int>(stage);
+        std::int64_t maxAlive = 8;
+        if (GetInt(d, e, "max_alive", maxAlive, false) && (maxAlive < 1 || maxAlive > 40)) d.Error("field 'max_alive' must be 1..40");
+        map.max_alive = static_cast<int>(maxAlive);
+        if (GetNumber(d, e, "min_player_distance", map.min_player_distance, false) && map.min_player_distance < 0) {
+            d.Error("field 'min_player_distance' must be >= 0");
+        }
+        if (const json* pts = ListField(d, e, "points")) {
+            for (const json& p : *pts) {
+                if (!p.is_array() || p.size() != 3 || !p[0].is_number() || !p[1].is_number() || !p[2].is_number()) {
+                    d.Error("every point must be [x, y, z]");
+                    continue;
+                }
+                map.points.push_back({p[0].get<double>(), p[1].get<double>(), p[2].get<double>()});
+            }
+            if (map.points.empty()) d.Error("needs at least one spawn point");
+        }
+        if (const json* roster = ListField(d, e, "roster")) {
+            for (const json& r : *roster) {
+                const Diag rd = d.Sub(" roster entry");
+                if (!r.is_object()) {
+                    rd.Error("must be an object");
+                    continue;
+                }
+                CheckKeys(rd, r, {"class", "arms", "min_tier", "weight"});
+                MapEnemy enemy;
+                GetString(rd, r, "class", enemy.unit_class, true);
+                if (enemy.unit_class.rfind("uEm", 0) != 0) rd.Error("class must be an enemy class (uEm..)");
+                if (const auto arms = r.find("arms"); arms != r.end()) {
+                    if (!arms->is_array()) {
+                        rd.Error("arms must be an array of weapon ids");
+                    } else {
+                        for (const json& a : *arms) {
+                            if (a.is_number_integer()) enemy.arms.push_back(a.get<std::int64_t>());
+                            else rd.Error("arms must contain integers");
+                        }
+                    }
+                }
+                std::int64_t tier = 1;
+                if (GetInt(rd, r, "min_tier", tier, false) && tier < 1) rd.Error("min_tier must be >= 1");
+                enemy.min_tier = static_cast<int>(tier);
+                if (GetNumber(rd, r, "weight", enemy.weight, false) && enemy.weight < 0) rd.Error("weight must be >= 0");
+                map.roster.push_back(std::move(enemy));
+            }
+            if (map.roster.empty()) d.Error("needs at least one roster entry");
+        }
+        if (std::any_of(out.begin(), out.end(), [&](const MapDef& o) { return o.id == map.id || o.stage == map.stage; })) {
+            d.Error("duplicate map id or stage");
+        }
+        out.push_back(std::move(map));
+    }
+}
+
 void ParseLoadouts(const Diag& file, const json& doc, LoadoutConfig& out) {
     CheckKeys(file, doc, {"schema_version", "budget", "default_weapon_cost", "max_items", "weapon_cost", "equipment"});
     if (GetInt(file, doc, "budget", out.budget, false) && out.budget < 0) file.Error("field 'budget' must be >= 0");
@@ -1124,6 +1195,9 @@ public:
         if (!src.loadouts.empty()) {
             if (auto doc = ParseDocument(file("loadouts.json"), src.loadouts)) ParseLoadouts(file("loadouts.json"), *doc, content->loadouts_);
         }
+        if (!src.maps.empty()) {
+            if (auto doc = ParseDocument(file("maps.json"), src.maps)) ParseMaps(file("maps.json"), *doc, content->maps_);
+        }
 
         IndexById(file("perks.json"), content->perks_, content->perk_index_, "perk");
         IndexById(file("weapons.json"), content->weapons_, content->weapon_index_, "weapon");
@@ -1288,6 +1362,7 @@ ContentLoadResult Content::LoadFromDirectory(const std::filesystem::path& direct
     };
     // Optional: defaults apply when the file is absent.
     if (std::filesystem::exists(directory / "loadouts.json")) (void)ReadFile(directory / "loadouts.json", src.loadouts);
+    if (std::filesystem::exists(directory / "maps.json")) (void)ReadFile(directory / "maps.json", src.maps);
     for (const auto& [name, target] : files) {
         const std::filesystem::path p = directory / name;
         if (!ReadFile(p, *target)) io_errors.push_back(std::string(name) + ": cannot read " + p.string());

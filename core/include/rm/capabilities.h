@@ -20,9 +20,10 @@ inline constexpr std::string_view kMeleeDetect = "melee_detect";        // hits/
 inline constexpr std::string_view kWeaponId = "weapon_id";              // hits/kills report weapon base id
 inline constexpr std::string_view kEnemyHp = "enemy_hp";                // hits report target hp / max hp
 inline constexpr std::string_view kInventory = "inventory";             // adapter can put items in the inventory
+inline constexpr std::string_view kDirector = "director";               // adapter spawns the arena's enemies itself
 
-inline constexpr std::array<std::string_view, 8> kAll = {
-    kOutgoingDamage, kIncomingDamage, kKillEvents, kHeal, kMeleeDetect, kWeaponId, kEnemyHp, kInventory,
+inline constexpr std::array<std::string_view, 9> kAll = {
+    kOutgoingDamage, kIncomingDamage, kKillEvents, kHeal, kMeleeDetect, kWeaponId, kEnemyHp, kInventory, kDirector,
 };
 }  // namespace cap
 

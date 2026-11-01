@@ -199,6 +199,7 @@ constexpr std::size_t kEnemySetGroup = 0xD50;
 constexpr std::size_t kEnemySetId = 0xD54;
 constexpr std::size_t kLinkUnitManager = 0x3830;
 constexpr std::size_t kUnitPosition = 0x30;       // float x, y, z of any uCoord unit
+constexpr std::size_t kEnemyArmId = 0x1BE4;       // uEm10 weapon id copied from the descriptor (+4: count)
 // Application object ([addr::kGameRoot]): flags and the lock around them.
 constexpr std::size_t kAppLock = 0x4;
 constexpr std::size_t kAppThreadedFlag = 0x1C;

@@ -492,6 +492,7 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         Rng::Derive(seed, streams::kShop),
         Rng::Derive(seed, streams::kCombat),
         Rng::Derive(seed, streams::kLoadout),
+        Rng::Derive(seed, streams::kDirector),
     });
     run_.loadout = RollLoadout(run_.character, *content_, streams_->loadout);
     last_summary_.reset();
@@ -614,6 +615,14 @@ Status RunController::BeginArena(double now) {
     run_.route_chosen = false;
     run_.phase = Phase::ArenaActive;
 
+    // The director runs the arena when the adapter can spawn and the map is known.
+    director_.reset();
+    if (caps_.Has(cap::kDirector)) {
+        if (const MapDef* map = content_->FindMapByStage(map_stage_)) {
+            director_.emplace(*map, route->enemy_budget, route->difficulty_tier, streams_->director.Next());
+        }
+    }
+
     Event e = MakeEvent(EventType::ArenaStarted);
     e.Add("route", route->id).Add("tier", route->difficulty_tier).Add("budget", route->enemy_budget)
         .Add("par_time_seconds", route->modifiers.par_time_seconds)
@@ -637,7 +646,20 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
     const RouteDef* route = Route();
     const double reward_mult = route != nullptr ? route->reward_mult : 1.0;
 
-    if (kill.enemy_id && !run_.seen_enemy_ids.insert(*kill.enemy_id).second) {
+    // With the director, only its own units exist and count; anything else is ignored.
+    // Director ids are unique per spawn and counted once by the director itself, so they skip
+    // the seen-id check (the engine reuses unit memory, and the adapter's ids name it).
+    const bool directorUnit = director_ && kill.enemy_id && director_->Died(*kill.enemy_id);
+    if (director_ && !directorUnit) {
+        out.ignored = true;
+        out.remaining = RemainingEnemies();
+        Event e = MakeEvent(EventType::EnemyKilled, EventLevel::Debug);
+        e.Add("ignored", true).Add("reason", "not a director unit");
+        if (kill.enemy_id) e.Add("enemy_id", *kill.enemy_id);
+        Emit(std::move(e));
+        return out;
+    }
+    if (!directorUnit && kill.enemy_id && !run_.seen_enemy_ids.insert(*kill.enemy_id).second) {
         ++a.duplicate_kills;
         out.duplicate = true;
         out.remaining = RemainingEnemies();
@@ -647,7 +669,7 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
         return out;
     }
     if (!kill.by_player) ++a.non_player_kills;
-    const bool counts = kill.by_player || eco.run.non_player_kills_count_toward_budget;
+    const bool counts = kill.by_player || eco.run.non_player_kills_count_toward_budget || director_.has_value();
     if (counts) {
         const bool within_budget = a.budget_kills < a.budget;
         ++a.budget_kills;
@@ -1236,6 +1258,19 @@ Status RunController::DevGrantPerk(std::string_view perk_id) {
     const Status s = GrantPerk(perk_id, "dev", CursePolicy::Any, false);
     if (!s.ok()) EmitError("dev_grant_perk", s);
     return s;
+}
+
+std::vector<SpawnRequest> RunController::DirectorTick(double now, const std::optional<std::array<double, 3>>& player) {
+    if (!director_ || !run_.active || run_.phase != Phase::ArenaActive) return {};
+    return director_->Tick(now, player);
+}
+
+void RunController::DirectorSpawned(std::uint64_t ticket, const std::string& unit_id) {
+    if (director_) director_->Spawned(ticket, unit_id);
+}
+
+void RunController::DirectorSpawnFailed(std::uint64_t ticket) {
+    if (director_) director_->SpawnFailed(ticket);
 }
 
 Result<ChestReward> RunController::OpenChest(double now) {

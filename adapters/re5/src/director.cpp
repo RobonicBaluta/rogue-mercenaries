@@ -8,6 +8,7 @@
 #include <MinHook.h>
 
 #include <atomic>
+#include <map>
 #include <string>
 
 #include "engine.h"
@@ -31,6 +32,7 @@ std::atomic<bool> g_installed{false};
 std::atomic<bool> g_blocked{false};
 std::atomic<int> g_blockedAttempts{0};
 std::atomic<int> g_createLogged{0};
+std::atomic<bool> g_survey{false};
 
 // The game's set spawn: refused while the mod owns the arena.
 std::uintptr_t __fastcall SetSpawnDetour(std::uintptr_t self, void*, int group, int id, int flag) {
@@ -38,7 +40,15 @@ std::uintptr_t __fastcall SetSpawnDetour(std::uintptr_t self, void*, int group, 
         if (g_blockedAttempts.fetch_add(1) < 3) RM_LOGI("director: native spawn refused (set %d, id %d)", group, id);
         return 0;
     }
-    return g_origSetSpawn(self, group, id, flag);
+    const std::uintptr_t unit = g_origSetSpawn(self, group, id, flag);
+    if (unit && g_survey.load()) {
+        // Survey line (scripts/survey_spawns.py): class, weapon id, set record, position.
+        RM_LOGI("director survey: %s arm %X num %d set %d id %d at %.1f %.1f %.1f", engine::ClassName(unit).c_str(),
+                ReadOr<std::uint32_t>(unit + re5::off::kEnemyArmId, 0), ReadOr<std::int32_t>(unit + re5::off::kEnemyArmId + 4, 0), group,
+                id, ReadOr<float>(unit + re5::off::kUnitPosition, 0.0f), ReadOr<float>(unit + re5::off::kUnitPosition + 4, 0.0f),
+                ReadOr<float>(unit + re5::off::kUnitPosition + 8, 0.0f));
+    }
+    return unit;
 }
 
 // Debug probe: class, arguments and caller of every enemy creation.
@@ -119,9 +129,50 @@ bool NativeSpawnsBlocked() { return g_blocked.load(); }
 
 int TakeBlockedAttempts() { return g_blockedAttempts.exchange(0); }
 
+void SetSurvey(bool on) { g_survey = on; }
+
+bool Kill(std::uintptr_t unit) {
+    const auto hp = engine::ReadHp(unit);
+    if (!hp || hp->hp <= 0) return false;
+    using SubHpFn = void(__thiscall*)(std::uintptr_t self, std::int16_t amount);
+    __try {
+        reinterpret_cast<SubHpFn>(re5::addr::kFnCharacterSubHp)(unit, static_cast<std::int16_t>(hp->hp));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
+// The descriptor class that places `unitClass`: its own (uEm22 -> cSetInfoEm22), or for the
+// Majini variants that have none (uEm11..uEm14, uEm20.., all derived from uEm10) the uEm10
+// one. Empty when there is neither. Looked up once per class (game thread only).
+static std::string InfoClassFor(const char* unitClass) {
+    static std::map<std::string, std::string> cache;
+    if (const auto it = cache.find(unitClass); it != cache.end()) return it->second;
+    const auto lookup = reinterpret_cast<LookupFn>(re5::addr::kFnClassLookup);
+    std::string info = std::string("cSetInfo") + (unitClass + 1);  // uEm10 -> cSetInfoEm10
+    std::string chosen;
+    if (lookup(info.c_str(), re5::addr::kDtiSetInfoPawn)) {
+        chosen = info;
+    } else {
+        std::uintptr_t dti = lookup(unitClass, re5::addr::kDtiLookupUnitBase);
+        for (int depth = 0; dti && depth < 24 && chosen.empty(); ++depth) {
+            if (engine::DtiName(dti) == "uEm10") chosen = "cSetInfoEm10";
+            dti = ReadOr<std::uintptr_t>(dti + re5::off::kDtiParent, 0);
+        }
+    }
+    RM_LOGI("director: %s is placed with %s", unitClass, chosen.empty() ? "no descriptor (cannot spawn)" : chosen.c_str());
+    cache.emplace(unitClass, chosen);
+    return chosen;
+}
+
 std::uintptr_t Spawn(const char* unitClass, const float pos[3], int weapon) {
     if (!engine::Caps().enemySpawn || !unitClass || unitClass[0] != 'u') return 0;
-    const std::string info = std::string("cSetInfo") + (unitClass + 1);  // uEm10 -> cSetInfoEm10
+    const std::string info = InfoClassFor(unitClass);
+    if (info.empty()) return 0;
+    // The weapon field (+0xF0 mArmId) is verified for cSetInfoEm10 only; other descriptors
+    // keep their default arms.
+    if (info != "cSetInfoEm10") weapon = -1;
     return SpawnNative(unitClass, info.c_str(), pos, weapon);
 }
 
