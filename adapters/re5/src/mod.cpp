@@ -152,6 +152,7 @@ struct ModState {
     bool arenaEndRequested = false;  // timer forced to 0 after a clear
     bool matchUiOpenRequested = false;  // native results screen to open once the tick's lock is released
     std::string notice;       // short line shown instead of the status (chest contents)
+    int organizePick = -1;    // ORGANIZE: grid cell picked up (-1 = none)
     double noticeUntil = 0.0;
     // Weapon item ids whose models this match loaded (the character's own loadout): the only
     // weapons that can be created mid-match without hanging the game.
@@ -163,6 +164,7 @@ struct ModState {
         int generation = 0;     // matchGeneration when the match end was requested
         double startedAt = 0.0;
         std::vector<std::pair<std::uint32_t, int>> carry;  // (item id, count) per slot record
+        std::array<std::uint32_t, 9> cells{};             // item id per grid cell (ORGANIZE layout)
         int hp = -1;            // player health at the transition (-1 = unknown)
     } transition;
     bool autoOpenedForPhase = false;
@@ -281,6 +283,80 @@ void ObserveMatch(double now) {
 // --- native mod menu content -------------------------------------------------
 
 std::string Plain(const std::string& s);
+// ---- ORGANIZE: the inventory grid ------------------------------------------------------
+// The game's item grid has nine cells (record +0x18 = 0..8); the in-match inventory and the
+// d-pad shortcuts read the cell, so swapping the cells of two records rearranges the grid.
+constexpr int kGridCells = 9;
+constexpr std::size_t kSlotCell = 0x18;
+
+struct GridCell {
+    std::uintptr_t record = 0;
+    std::uint32_t id = 0;
+    int count = 0;
+};
+
+std::array<GridCell, kGridCells> ReadGrid() {
+    std::array<GridCell, kGridCells> grid{};
+    const auto player = engine::LocalPlayer();
+    if (!engine::Caps().inventory || !player) return grid;
+    const auto inv = player + re5::off::kPlayerInventory;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        const int cell = ReadOr<std::int32_t>(slot + kSlotCell, -1);
+        if (cell < 0 || cell >= kGridCells) continue;
+        grid[static_cast<std::size_t>(cell)] = GridCell{slot, ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0),
+                                                        ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0)};
+    }
+    return grid;
+}
+
+// Name of an inventory item for the game font: the run's weapons and catalog first.
+std::string GridItemName(std::uint32_t id) {
+    for (const rm::WeaponBaseDef& w : g->content->weapons()) {
+        if (w.game_item == static_cast<std::int64_t>(id)) return w.name;
+    }
+    for (const rm::EquipmentDef& e : g->content->loadouts().equipment) {
+        if (e.game_item == static_cast<std::int64_t>(id)) return e.name;
+    }
+    switch (id) {
+        case 0x0101: case 0x010E: case 0x0123: case 0x0124: return "Knife";
+        case 0x010A: return "Proximity Bomb";
+        case 0x010C: return "Grenade Launcher";
+        case 0x010D: return "Rocket Launcher";
+        case 0x010F: return "Bow";
+        case 0x0202: return "Machine Gun Ammo";
+        case 0x0204: return "Rifle Ammo";
+        case 0x0209: return "Magnum Ammo";
+        default: break;
+    }
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "Item %04X", id);
+    return buf;
+}
+
+// Moves the item in cell `from` to cell `to`, swapping with whatever is there.
+bool SwapGridCells(int from, int to) {
+    if (from < 0 || from >= kGridCells || to < 0 || to >= kGridCells || from == to) return false;
+    const auto grid = ReadGrid();
+    const GridCell& a = grid[static_cast<std::size_t>(from)];
+    const GridCell& b = grid[static_cast<std::size_t>(to)];
+    if (!a.record) return false;
+    SafeStore<std::int32_t>(a.record + kSlotCell, to);
+    if (b.record) SafeStore<std::int32_t>(b.record + kSlotCell, from);
+    RM_LOGI("organize: %04X cell %d -> %d%s", a.id, from + 1, to + 1, b.record ? " (swapped)" : "");
+    return true;
+}
+
+// Rarity colours (0 = common: the game's own colour).
+std::uint32_t RarityColour(std::string_view rarity) {
+    if (rarity == "uncommon") return 0xFF7CDC7Cu;
+    if (rarity == "rare") return 0xFF5CA8FFu;
+    if (rarity == "epic") return 0xFFC884FFu;
+    if (rarity == "legendary") return 0xFFFFB040u;
+    return 0;
+}
+
 // Help line for a reward or shop offer in the game font (letters, digits, space, comma, period).
 std::string OfferDetail(const rm::OfferView& o) {
     if (!o.detail.empty()) return Plain(o.detail);
@@ -464,6 +540,7 @@ private:
                     const bool selected = equipped != nullptr && equipped->id == perk->id;
                     if (selected) item.label += "   SELECTED";
                     item.locked = locked;
+                    item.color = RarityColour(rm::RarityName(perk->rarity));
                     item.help = Plain(perk->description);
                     if (locked) item.help += "\nUnlock for " + Plural(perk->unlock_cost_credits, "credit") + ".";
                     else if (selected) item.help += "\nYour pick for this slot. Press to remove it.";
@@ -497,6 +574,7 @@ private:
                     Item item;
                     item.label = Upper(Plain(o.title));
                     item.help = OfferDetail(o);
+                    item.color = RarityColour(o.rarity);
                     screen.items.push_back(std::move(item));
                 }
                 if (s.reroll_tokens > 0) {
@@ -514,13 +592,43 @@ private:
                     Item item;
                     item.label = Upper(Plain(o.title)) + (o.purchased ? "   BOUGHT" : "");
                     item.help = OfferDetail(o) + "\nPrice " + std::to_string(o.price) + " supplies.";
+                    item.color = RarityColour(o.rarity);
                     if (!o.purchased && o.price > s.supplies) item.locked = true;
                     screen.items.push_back(std::move(item));
                 }
+                Item organize;
+                organize.label = "ORGANIZE INVENTORY";
+                organize.help = "Rearrange the nine cells of your item grid.";
+                screen.items.push_back(std::move(organize));
                 Item leave;
                 leave.label = "LEAVE SHOP";
                 leave.help = "On to the next route.";
                 screen.items.push_back(std::move(leave));
+                break;
+            }
+            case ScreenId::MatchOrganize: {
+                const auto grid = ReadGrid();
+                const int pick = g->organizePick;
+                const bool picked = pick >= 0 && pick < kGridCells && grid[static_cast<std::size_t>(pick)].record;
+                screen.header = picked ? "MOVE " + Upper(Plain(GridItemName(grid[static_cast<std::size_t>(pick)].id))) + " TO"
+                                       : "ORGANIZE   PICK AN ITEM";
+                for (int cell = 0; cell < kGridCells; ++cell) {
+                    const GridCell& c = grid[static_cast<std::size_t>(cell)];
+                    Item item;
+                    item.label = std::to_string(cell + 1) + "   " +
+                                 (c.record ? Upper(Plain(GridItemName(c.id))) + (c.count > 1 ? "  " + std::to_string(c.count) : "")
+                                           : std::string("EMPTY"));
+                    if (picked && cell == pick) {
+                        item.label += "   PICKED";
+                        item.color = 0xFFFFD27Fu;
+                        item.help = "Press again to put it back.";
+                    } else if (picked) {
+                        item.help = c.record ? "Press to swap the two items." : "Press to move it here.";
+                    } else {
+                        item.help = c.record ? "Press to pick it up." : "An empty cell.";
+                    }
+                    screen.items.push_back(std::move(item));
+                }
                 break;
             }
             case ScreenId::MatchRunOver: {
@@ -712,12 +820,46 @@ private:
                     d.outcome = st.ok() ? Outcome::Refresh : Outcome::Denied;
                     break;
                 }
+                if (index == offers) {  // ORGANIZE INVENTORY
+                    g->organizePick = -1;
+                    d.outcome = Outcome::Push;
+                    d.next = ScreenId::MatchOrganize;
+                    break;
+                }
                 // "Leave shop" row or cancel.
                 const rm::Status st = run.LeaveShop();
                 Report(st, "leave shop");
                 if (!st.ok()) { d.outcome = Outcome::Denied; break; }
                 d.outcome = Outcome::Push;
                 d.next = ScreenId::MatchRoute;
+                break;
+            }
+            case ScreenId::MatchOrganize: {
+                const auto grid = ReadGrid();
+                int& pick = g->organizePick;
+                if (index < 0) {  // cancel: drop the picked item, or back to the shop
+                    if (pick >= 0) {
+                        pick = -1;
+                        d.outcome = Outcome::Refresh;
+                    } else {
+                        d.outcome = Outcome::Back;
+                    }
+                    break;
+                }
+                if (index >= kGridCells) break;
+                if (pick < 0) {
+                    if (!grid[static_cast<std::size_t>(index)].record) {
+                        d.outcome = Outcome::Denied;
+                        break;
+                    }
+                    pick = index;
+                } else if (pick == index) {
+                    pick = -1;
+                } else {
+                    SwapGridCells(pick, index);
+                    pick = -1;
+                }
+                d.outcome = Outcome::Refresh;
                 break;
             }
             case ScreenId::MatchRoute: {
@@ -942,6 +1084,24 @@ std::uint32_t AmmoItemFor(rm::WeaponCategory category) {
     }
 }
 
+// Clears an inventory record the way the game discards an item: the record's weapon object
+// (the holstered model) is deleted too. Falls back to wiping the record without the routine.
+bool ClearSlotNative(std::uintptr_t slot) {
+    using ClearFn = void(__thiscall*)(std::uintptr_t record, int deleteObject);
+    __try {
+        reinterpret_cast<ClearFn>(re5::addr::kFnInventorySlotClear)(slot, 1);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+void ClearSlot(std::uintptr_t slot) {
+    if (engine::Caps().slotClear && ClearSlotNative(slot)) return;
+    SafeStore<std::int32_t>(slot + re5::off::kSlotCount, 0);
+    SafeStore<std::uint8_t>(slot + re5::off::kSlotValid, 0);
+}
+
 // Every run starts with the pistol only: the character's own Mercenaries loadout is cut down
 // to the pistol, its ammo and the knife (records invalidated, which frees their grid slots).
 void StripToPistol() {
@@ -1000,8 +1160,7 @@ void StripToPistol() {
         const bool keep = isEquipped || id == re5::addr::kItemUnarmed || knife || id == ammo ||
                           id == static_cast<std::uint32_t>(pistol);
         if (keep) continue;
-        SafeStore<std::int32_t>(slot + re5::off::kSlotCount, 0);
-        SafeStore<std::uint8_t>(slot + re5::off::kSlotValid, 0);
+        ClearSlot(slot);
         ++removed;
     }
     if (!havePistol && equipped == 0) {
@@ -1084,8 +1243,8 @@ int RemoveItemRecords(std::uint32_t id) {
         const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
         if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
         if (ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != id) continue;
-        SafeStore<std::int32_t>(slot + re5::off::kSlotCount, 0);
-        SafeStore<std::uint8_t>(slot + re5::off::kSlotValid, 0);
+        if (ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1) continue;  // never the gun in hand
+        ClearSlot(slot);
         ++removed;
     }
     return removed;
@@ -1094,6 +1253,8 @@ int RemoveItemRecords(std::uint32_t id) {
 // Before the match ends for the next stage: remember every item and count.
 void SnapshotInventory() {
     g->transition.carry = ReadInventory();
+    const auto grid = ReadGrid();
+    for (std::size_t c = 0; c < grid.size(); ++c) g->transition.cells[c] = grid[c].record ? grid[c].id : 0;
     std::string text;
     for (const auto& [id, count] : g->transition.carry) {
         char buf[24];
@@ -1128,6 +1289,21 @@ void ApplyCarriedInventory() {
         }
     }
     g->transition.carry.clear();
+    // Put every item back into the cell it had (the player's ORGANIZE layout).
+    for (int target = 0; target < kGridCells; ++target) {
+        const std::uint32_t id = g->transition.cells[static_cast<std::size_t>(target)];
+        if (id == 0) continue;
+        const auto grid = ReadGrid();
+        if (grid[static_cast<std::size_t>(target)].record && grid[static_cast<std::size_t>(target)].id == id) continue;
+        for (int from = 0; from < kGridCells; ++from) {
+            if (from == target || !grid[static_cast<std::size_t>(from)].record || grid[static_cast<std::size_t>(from)].id != id) continue;
+            // Cells before `target` that already hold their own item stay put.
+            if (from < target && g->transition.cells[static_cast<std::size_t>(from)] == id) continue;
+            SwapGridCells(from, target);
+            break;
+        }
+    }
+    g->transition.cells = {};
 }
 
 // Health carries over a stage change (a new match starts at full health).

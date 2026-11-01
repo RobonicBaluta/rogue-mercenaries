@@ -155,8 +155,11 @@ RunSnapshot RunController::Snapshot(double now) const {
                 break;
             case ShopOfferKind::Item:
                 v.id = o.item_id;
-                if (const EquipmentDef* e = c.loadouts().FindEquipment(o.item_id)) v.title = e->name;
-                else v.title = o.item_id;
+                if (const EquipmentDef* e = c.loadouts().FindEquipment(o.item_id)) {
+                    v.title = e->name + (e->bundle > 1 ? " x" + std::to_string(e->bundle) : std::string());
+                } else {
+                    v.title = o.item_id;
+                }
                 v.detail = "Goes straight into your inventory";
                 break;
         }

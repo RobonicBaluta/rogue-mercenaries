@@ -4,6 +4,7 @@
 // native_menu.cpp. The screens' content comes from a Model that mod.cpp
 // implements on top of the run controller.
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -11,13 +12,14 @@ namespace rmre5::nativemenu {
 
 enum class ScreenId {
     Main = 0, Characters, Perks, Credits, Skins, PerkList,
-    MatchResults, MatchRewards, MatchShop, MatchRoute, MatchRunOver
+    MatchResults, MatchRewards, MatchShop, MatchRoute, MatchRunOver, MatchOrganize
 };
 
 struct Item {
     std::string label;  // one row; rendered in capitals by the game font
     std::string help;   // up to two lines under the list
     bool locked = false;  // drawn in the game's "disabled" red
+    std::uint32_t color = 0;  // 0xAARRGGBB rarity colour (0 = the game's own)
 };
 
 struct Screen {

@@ -52,6 +52,10 @@ std::vector<const WeaponBaseDef*> OfferableWeapons(const OfferContext& ctx) {
     for (const WeaponBaseDef& w : ctx.content->weapons()) {
         if (!w.enabled) continue;
         if (ctx.placeable_weapons != nullptr && ctx.placeable_weapons->find(w.id) == ctx.placeable_weapons->end()) continue;
+        if (ctx.owned_weapons != nullptr &&
+            std::any_of(ctx.owned_weapons->begin(), ctx.owned_weapons->end(), [&w](const WeaponInstance& o) { return o.base_id == w.id; })) {
+            continue;
+        }
         if (w.unlock_cost_credits > 0 &&
             (ctx.unlocked_weapons == nullptr ||
              ctx.unlocked_weapons->find(w.id) == ctx.unlocked_weapons->end())) {

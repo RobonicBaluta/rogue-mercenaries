@@ -113,6 +113,18 @@ constexpr std::uintptr_t kFnInventoryAddAmmo = 0x00C4DA90;
 //     passes (-1, -1, -1, 0xD = find a free slot, the world item's 9 attribute
 //     bytes, the player, a default position, 0). Returns the slot or 0.
 constexpr std::uintptr_t kFnInventoryCreate = 0x00C4B480;
+// Inventory record clear (FUN_00C4C4E0, this = record, flag 1 = also delete the record's
+// weapon object +0x2C through the unit manager): the game's own discard; wiping the record
+// by hand leaves the weapon model holstered on the character.
+constexpr std::uintptr_t kFnInventorySlotClear = 0x00C4C4E0;
+// Campaign shop screen uIdShop00 (vtable 0x00FA8878): the title-flow step FUN_00BF24D0 creates
+// it with kFnShopCreate (ECX = kShopCreateThis), sets obj+4 |= 0x2000, registers it with
+// kFnUnitRegister(this = [kUnitManager], group 0x1A, obj), waits for obj+0x3C (closed) and
+// deletes it with obj->vtable[0x30] after clearing 0x2000.
+constexpr std::uintptr_t kFnShopCreate = 0x00A35C10;
+constexpr std::uintptr_t kShopCreateThis = 0x011F5608;
+constexpr std::uintptr_t kFnUnitRegister = 0x00428B80;
+constexpr std::uintptr_t kUnitManager = 0x012340B0;
 // Item records: [kItemTableRoot + category*4] + index*0x48; dword 2 = magazine (weapons) or
 // pickup amount, dword 8 = stack maximum (-1 for weapons), dword 12 = kind (3 = weapon).
 constexpr std::uintptr_t kItemTableRoot = 0x010EACF0;
@@ -288,6 +300,9 @@ inline constexpr Signature kSignatures[] = {
     {"flow_step", addr::kFnFlowStep, "56 8B F1 0F BE 46 25 83 E8 00 74 6A 83 E8 01 74"},
     {"merce_results_move", addr::kFnMerceResultsMove, "53 56 57 6A FF 6A FF 8B F1 E8 82 2B FC FF 8B 0D"},
     {"pause_move", addr::kFnPauseMove, "A1 A4 40 23 01 F7 80 34 04 01 00 00 05 00 00 56"},
+    {"inventory_slot_clear", addr::kFnInventorySlotClear, "8B 44 24 04 53 56 57 50 8B F1 E8 B1 EE FF FF 6A 2C 33 DB 8D"},
+    {"shop_create", addr::kFnShopCreate, "8B 0D 94 F2 1A 01 8B 01 8B 50 14 56 6A 10 68 C4 1D 00 00 FF"},
+    {"unit_register", addr::kFnUnitRegister, "56 8B 74 24 0C 85 F6 57 8B F9 75 07 5F 32 C0 5E C2 08 00 80"},
     {"merc_add_countdown", addr::kFnMercAddCountdown, "A1 A4 40 23 01 56 8B F1 8B 88 2C 04 01 00 8B 41 58 85 C0 0F"},
     {"time_bonus_action", addr::kFnTimeBonusAction, "55 8B EC 83 E4 F0 83 EC 24 53 56 57 8B F1 E8 6D FC FF FF 83"},
     {"flow_step20", addr::kFnFlowStep20, "56 8B F1 0F BE 46 25 83 E8 00 74 57 83 E8 01 74"},

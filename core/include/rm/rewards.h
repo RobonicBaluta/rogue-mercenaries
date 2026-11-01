@@ -45,6 +45,8 @@ struct OfferContext {
     double reward_mult = 1.0;   // route reward_mult (scales supplies bundles)
     /// Weapon base ids the adapter can put in the game right now (null = no restriction).
     const StringSet* placeable_weapons = nullptr;
+    /// Weapons the run already holds: never offered again (rewards, shop, chests).
+    const std::vector<WeaponInstance>* owned_weapons = nullptr;
 };
 
 using InstanceIdSource = std::function<std::string()>;

@@ -114,6 +114,8 @@ bool VerifySignatures(unsigned timeoutMs) {
                         SignatureOk("startup22_character_write");
     g_caps.resultsScreen = g_caps.flowScript && SignatureOk("merce_results_move");
     g_caps.pauseScreen = g_caps.playMenu && SignatureOk("pause_move");
+    g_caps.slotClear = g_caps.inventory && SignatureOk("inventory_slot_clear");
+    g_caps.gameShop = SignatureOk("shop_create") && SignatureOk("unit_register");
     g_caps.timeBonus = g_caps.mercCountdown && SignatureOk("merc_add_countdown") && SignatureOk("time_bonus_action");
     return all;
 }

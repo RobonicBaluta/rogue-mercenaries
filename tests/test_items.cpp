@@ -98,7 +98,7 @@ TEST_CASE("rewards and the shop hand out inventory items instead of perks", "[it
     CHECK(h.rc.state().supplies.balance() == balance - price);
     grants = h.rc.ConsumeItemGrants();
     REQUIRE(grants.size() == 1);
-    CHECK(grants[0].count == 1);
+    CHECK(grants[0].count == content->loadouts().FindEquipment(shop[item_index].item_id)->bundle);
     CHECK(grants[0].source == "shop");
     CHECK(h.rc.Purchase(item_index).code == ErrorCode::AlreadyBought);
 }
@@ -169,7 +169,7 @@ TEST_CASE("with an inventory port, items are placed at once and a full inventory
     CHECK(full.code == ErrorCode::GrantFailed);
     CHECK(h.rc.state().supplies.balance() == balance);  // refunded
     CHECK_FALSE(shop[item_index].purchased);
-    inv.room = 1;
+    inv.room = 10;
     REQUIRE(h.rc.Purchase(item_index).ok());
     CHECK(h.rc.state().supplies.balance() == balance - shop[item_index].price);
     CHECK(inv.placed.size() == 1);  // only the shop item (the reward was converted)
@@ -377,4 +377,22 @@ TEST_CASE("chests pay supplies scaled by arena and place items", "[items]") {
     CHECK(full->item_id.empty());
     CHECK(full->supplies > 10);
     CHECK(full->number == 2);
+}
+
+TEST_CASE("rewards never offer a gun the run already holds", "[items]") {
+    const auto content = test::Load(test::EditFixture([](json&, json&, json&, json&, json& eco) {
+        eco["rewards"]["kind_weights"] = {{"perk", 0}, {"weapon", 1}, {"supplies", 0}, {"item", 0}};
+    }));
+    for (std::uint64_t seed = 1; seed <= 8; ++seed) {
+        test::Harness h(content);
+        REQUIRE(h.rc.StartRun("alpha", seed).ok());
+        REQUIRE(h.rc.BeginArena(0.0).ok());
+        test::KillN(h.rc, h.rc.RemainingEnemies(), 1.0);
+        REQUIRE(h.rc.CompleteArena(20.0).ok());
+        REQUIRE(h.rc.ContinueToRewards().ok());
+        for (const RewardChoice& c : h.rc.state().reward_offer) {
+            if (c.kind != RewardKind::Weapon) continue;
+            for (const WeaponInstance& w : h.rc.state().weapons) CHECK(c.weapon.base_id != w.base_id);
+        }
+    }
 }

@@ -181,8 +181,11 @@ void Frame(std::uintptr_t self) {
     for (int r = 0; r < visible; ++r) {
         const int index = level->offset + r;
         const Item& item = g_screen.items[static_cast<std::size_t>(index)];
-        const std::uint32_t colour = index == level->cursor ? kSelected : (item.locked ? kLocked : kDim);
-        Draw(self, r, 640, kFirstRowY + r * kRowPitch, kRowScale, colour);
+        const bool selected = index == level->cursor;
+        std::uint32_t colour = item.locked ? kLocked : (item.color != 0 ? item.color : (selected ? kSelected : kWhite));
+        // The cursor row is full strength and a little larger; the others are dimmed.
+        colour = (colour & 0x00FFFFFFu) | (selected ? 0xFF000000u : 0x98000000u);
+        Draw(self, r, 640, kFirstRowY + r * kRowPitch, selected ? kRowScale * 1.12f : kRowScale, colour);
     }
     Draw(self, nativemenu::kHelpSlot, 640, kHelpY, kHelpScale, kWhite);
 }

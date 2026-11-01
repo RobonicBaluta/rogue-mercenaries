@@ -122,6 +122,7 @@ OfferContext RunController::MakeOfferContext(double rarity_shift) const {
     ctx.unlocked_perks = &profile_.unlocked_perks;
     ctx.unlocked_weapons = &profile_.unlocked_weapons;
     ctx.placeable_weapons = placeable_weapons_ ? &*placeable_weapons_ : nullptr;
+    ctx.owned_weapons = &run_.weapons;
     ctx.owned_perks = &run_.perks;
     ctx.rarity_shift = rarity_shift;
     const RouteDef* route = Route();
@@ -1159,7 +1160,11 @@ Status RunController::Purchase(std::size_t index) {
             if (grant.ok()) GrantWeapon(offer.weapon, "shop");
             break;
         case ShopOfferKind::Perk: grant = GrantPerk(offer.perk_id, "shop", CursePolicy::Exclude, false); break;
-        case ShopOfferKind::Item: grant = GrantItem(offer.item_id, 1, "shop"); break;
+        case ShopOfferKind::Item: {
+            const EquipmentDef* def = content_->loadouts().FindEquipment(offer.item_id);
+            grant = GrantItem(offer.item_id, def != nullptr ? def->bundle : 1, "shop");  // the same bundle a reward gives
+            break;
+        }
     }
     if (!grant.ok()) {
         // All-or-nothing: undo the debit so a failed grant never costs supplies.

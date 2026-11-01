@@ -87,6 +87,7 @@ std::atomic<bool> g_resetRequested{false};
 // job threads, and the label/help helpers are shared by every menu.
 thread_local std::uintptr_t t_drawingMenu = 0;
 thread_local std::uint32_t t_lockedRows = 0;  // bit per visible row drawn red
+thread_local std::uint32_t t_rowColors[8] = {};  // rarity colour per visible row (0 = default)
 
 // ---- borrowed messages -------------------------------------------------------
 
@@ -345,8 +346,11 @@ void SyncRows(std::uintptr_t self) {
     SafeStore<std::uint32_t>(self + re5::off::kMenuEnabledMask, 0xFFFF);
     SafeStore<std::uint8_t>(self + re5::off::kMenuBlink, 0);
     t_lockedRows = 0;
+    for (int r = 0; r < kMaxRows; ++r) t_rowColors[r] = 0;
     for (int r = 0; r < visible; ++r) {
-        if (g_screen.items[static_cast<std::size_t>(level.offset + r)].locked) t_lockedRows |= 1u << r;
+        const Item& item = g_screen.items[static_cast<std::size_t>(level.offset + r)];
+        if (item.locked) t_lockedRows |= 1u << r;
+        t_rowColors[r] = item.color;
     }
     if (!g_dirty) return;
     g_dirty = false;
@@ -540,6 +544,11 @@ void __fastcall DrawLabelDetour(void* ecx, void*, int message, int x, int y, con
                     thread_local std::uint32_t red = 0;
                     red = (argb ? *argb : 0xFFFFFFFFu) & 0xFFFF0000u;
                     argb = &red;
+                } else if (t_rowColors[row] != 0) {
+                    // Rarity colour, with the game's alpha (its highlight fades the others).
+                    thread_local std::uint32_t tint = 0;
+                    tint = ((argb ? *argb : 0xFFFFFFFFu) & 0xFF000000u) | (t_rowColors[row] & 0x00FFFFFFu);
+                    argb = &tint;
                 }
             }
         } else if (message == re5::addr::kMessageItem8Label && y == kRogueRowY) {
