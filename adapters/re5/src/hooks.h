@@ -91,6 +91,9 @@ struct MercTimerView {
 void SetMercTimerFloor(float seconds);  // <= 0 disables the floor
 void RequestMercMatchEnd();
 void ClearMercMatchEnd();  // drop a pending request (a new match must not inherit it)
+void SuppressMercAddTime(bool suppress);  // countdown bonuses ignored (a run holds the countdown)
+int TakeTimeBonusPickups();               // time-bonus pickups collected since the last call
+void SimulateTimeBonusPickup();           // developer: count one pickup
 MercTimerView ReadMercTimer();
 bool InstallMercHooks();
 

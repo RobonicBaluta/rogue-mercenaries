@@ -102,6 +102,15 @@ struct EconomyConfig {
     struct Routes {
         double third_choice_chance = 0.5;
     } routes;
+
+    /// Chests (the adapter opens one for each time-bonus pickup during an arena): supplies
+    /// always, plus a catalog item (item_chance) or a weapon the match can place (weapon_chance).
+    struct Chests {
+        std::int64_t supplies_base = 10;
+        std::int64_t supplies_per_arena = 5;
+        double item_chance = 0.6;
+        double weapon_chance = 0.1;
+    } chests;
 };
 
 /// Grades an arena: time points (2/1/0 vs par) + damage points (2 no damage, 1 low, 0).

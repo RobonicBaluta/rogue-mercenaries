@@ -37,6 +37,7 @@ std::string_view EventTypeName(EventType type) {
         case EventType::CharacterUnlocked: return "character_unlocked";
         case EventType::ItemGranted: return "item_granted";
         case EventType::PerkEquipped: return "perk_equipped";
+        case EventType::ChestOpened: return "chest_opened";
     }
     return "unknown";
 }

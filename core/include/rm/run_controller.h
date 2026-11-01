@@ -176,6 +176,17 @@ struct InventoryPort {
     virtual int Give(std::int64_t game_item, int count, std::string_view source) = 0;
 };
 
+/// What a chest held (all already applied: supplies credited, items in the inventory).
+struct ChestReward {
+    std::int64_t supplies = 0;
+    std::string item_id;       // catalog item placed, if any
+    std::string item_name;
+    int item_count = 0;
+    std::string weapon_id;     // weapon placed, if any
+    std::string weapon_name;
+    int number = 0;            // chests opened this run, this one included
+};
+
 class RunController {
 public:
     RunController(std::shared_ptr<const Content> content, Profile profile,
@@ -274,6 +285,9 @@ public:
     /// The adapter found another gun in the player's hands at match start: it becomes the
     /// run's starting weapon (replacing the rolled one), so upgrades and the shop follow it.
     Status SwapStartingWeapon(std::string_view base_id);
+    /// A chest was opened in the arena (adapter: a time-bonus pickup). Only while an arena is
+    /// active; rolls from the "loot" stream.
+    Result<ChestReward> OpenChest(double now);
 
     [[nodiscard]] RunSnapshot Snapshot(double now) const;
     [[nodiscard]] Phase phase() const { return run_.phase; }

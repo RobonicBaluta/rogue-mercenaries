@@ -29,6 +29,7 @@ struct Verified {
     bool inventory = false;     // uPlayer inventory layout and add helpers
     bool resultsScreen = false; // Mercenaries results screen move (auto-accept between stages)
     bool pauseScreen = false;   // pause screen move (host of the in-match screens)
+    bool timeBonus = false;     // time-bonus pickups and the countdown add (chests)
 };
 const Verified& Caps();
 

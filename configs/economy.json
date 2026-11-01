@@ -120,5 +120,11 @@
   },
   "routes": {
     "third_choice_chance": 0.5
+  },
+  "chests": {
+    "supplies_base": 10,
+    "supplies_per_arena": 5,
+    "item_chance": 0.6,
+    "weapon_chance": 0.12
   }
 }

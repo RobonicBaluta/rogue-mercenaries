@@ -151,6 +151,8 @@ struct ModState {
     MatchState match;
     bool arenaEndRequested = false;  // timer forced to 0 after a clear
     bool matchUiOpenRequested = false;  // native results screen to open once the tick's lock is released
+    std::string notice;       // short line shown instead of the status (chest contents)
+    double noticeUntil = 0.0;
     // Weapon item ids whose models this match loaded (the character's own loadout): the only
     // weapons that can be created mid-match without hanging the game.
     std::set<std::uint32_t> loadedWeaponItems;
@@ -1338,6 +1340,31 @@ void ApplyHeals() {
     }
 }
 
+// Time-bonus pickups during a run's arena are chests; the countdown add is suppressed for
+// as long as a run is alive (the countdown is held anyway).
+void OpenChests(double now) {
+    rm::RunController& run = *g->run;
+    SuppressMercAddTime(run.HasActiveRun() && g->match.inMatch);
+    const int pickups = TakeTimeBonusPickups();
+    for (int i = 0; i < pickups; ++i) {
+        if (run.phase() != rm::Phase::ArenaActive) break;
+        const auto chest = run.OpenChest(now);
+        if (!chest.ok()) {
+            Report(chest.status(), "open chest");
+            continue;
+        }
+        std::string line = "CHEST";
+        if (!chest->weapon_name.empty()) line += "   " + Upper(Plain(chest->weapon_name));
+        if (!chest->item_name.empty()) {
+            line += "   " + Upper(Plain(chest->item_name)) + (chest->item_count > 1 ? " X" + std::to_string(chest->item_count) : "");
+        }
+        if (chest->supplies > 0) line += "   " + std::to_string(chest->supplies) + " SUPPLIES";
+        g->notice = line;
+        g->noticeUntil = now + 4.0;
+        RM_LOGI("chest %d: %s", chest->number, line.c_str());
+    }
+}
+
 // One line in the game's font during a match; the native screens close when nothing is
 // left to choose (run over, match gone).
 void UpdateMatchStatus() {
@@ -1350,7 +1377,9 @@ void UpdateMatchStatus() {
     std::string line;
     if (g->settings.nativeMatchUi && run.HasActiveRun() && g->match.inMatch) {
         const rm::RunSnapshot s = run.Snapshot(Now());
-        if (phase == rm::Phase::ArenaActive) {
+        if (phase == rm::Phase::ArenaActive && Now() < g->noticeUntil) {
+            line = g->notice;
+        } else if (phase == rm::Phase::ArenaActive) {
             line = "ARENA " + std::to_string(s.arena) + " OF " + std::to_string(s.arena_count) + "   " +
                    std::to_string(s.remaining) + (s.remaining == 1 ? " ENEMY LEFT   " : " ENEMIES LEFT   ") +
                    std::to_string(s.supplies) + " SUPPLIES";
@@ -1622,6 +1651,9 @@ void PollDevCommand(double now) {
             RM_LOGW("dev buy %s (%s) -> %s", kind.c_str(), s.shop_offers[i].title.c_str(), st.ok() ? "ok" : st.message.c_str());
         }
         if (!found) RM_LOGW("dev buy %s: no such offer", kind.c_str());
+    } else if (command == "chest" && run.phase() == rm::Phase::ArenaActive) {
+        SimulateTimeBonusPickup();  // goes through the same path as a real pickup
+        RM_LOGW("dev chest: pickup simulated");
     } else if (command == "timeup") {
         RequestMercMatchEnd();
         RM_LOGW("dev timeup requested");
@@ -1946,6 +1978,7 @@ private:
         }
         DriveArena(now);
         DetectEnemyDeaths(now);
+        OpenChests(now);
         ApplyHeals();
         // Items earned by perks, rewards and the shop wait until the player is in a match.
         if (g->match.inMatch && engine::LocalPlayer() && g->run->phase() != rm::Phase::Idle && ReadMercTimer().recent) {

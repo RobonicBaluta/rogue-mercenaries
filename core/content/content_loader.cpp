@@ -911,7 +911,7 @@ void ParseLoadouts(const Diag& file, const json& doc, LoadoutConfig& out) {
 void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     const Diag d = file.Sub("");
     CheckKeys(d, doc, {"schema_version", "run", "rewards", "weapon_rarity", "upgrades", "supplies",
-                       "credits", "rating", "damage", "shop", "routes"});
+                       "credits", "rating", "damage", "shop", "routes", "chests"});
     if (const json* s = Section(d, doc, "run")) {
         const Diag sd = d.Sub(": run");
         CheckKeys(sd, *s, {"arena_count", "starting_route", "starting_supplies",
@@ -1058,6 +1058,21 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
         ReadRarityPrices(sd, *s, "perk_price", eco.shop.perk_price);
         ReadRarityPrices(sd, *s, "weapon_price", eco.shop.weapon_price);
         GetIntRange(sd, *s, "perk_offers", eco.shop.perk_offers, true, 0, 6);
+    }
+    if (Get(doc, "chests") != nullptr) {
+        if (const json* s = Section(d, doc, "chests")) {
+            const Diag sd = d.Sub(": chests");
+            CheckKeys(sd, *s, {"supplies_base", "supplies_per_arena", "item_chance", "weapon_chance"});
+            if (GetInt(sd, *s, "supplies_base", eco.chests.supplies_base, false) && eco.chests.supplies_base < 0) {
+                sd.Error("supplies_base must be >= 0");
+            }
+            if (GetInt(sd, *s, "supplies_per_arena", eco.chests.supplies_per_arena, false) && eco.chests.supplies_per_arena < 0) {
+                sd.Error("supplies_per_arena must be >= 0");
+            }
+            if (GetNumber(sd, *s, "item_chance", eco.chests.item_chance, false)) CheckRange(sd, "item_chance", eco.chests.item_chance, 0.0, 1.0);
+            if (GetNumber(sd, *s, "weapon_chance", eco.chests.weapon_chance, false)) CheckRange(sd, "weapon_chance", eco.chests.weapon_chance, 0.0, 1.0);
+            if (eco.chests.item_chance + eco.chests.weapon_chance > 1.0) sd.Error("item_chance + weapon_chance must be <= 1");
+        }
     }
     if (const json* s = Section(d, doc, "routes")) {
         const Diag sd = d.Sub(": routes");

@@ -128,6 +128,7 @@ struct RunState {
     Loadout loadout;
     std::vector<ItemGrant> item_grants;  // earned, not yet handed to the adapter
     StringMap<int> perk_kill_counts;     // counted kills per perk, for every_kills
+    int chests_opened = 0;
     Phase phase = Phase::Idle;
     int arena_index = 0;  // arenas begun so far; the current arena number while active
     int arena_count = 3;

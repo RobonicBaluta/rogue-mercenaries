@@ -38,6 +38,7 @@ enum class EventType {
     CharacterUnlocked,  // a character challenge was met
     ItemGranted,        // an inventory item was queued for the adapter (reward, shop)
     PerkEquipped,       // the menu changed a character's equipped perk
+    ChestOpened,        // a chest (time-bonus pickup) paid out
 };
 std::string_view EventTypeName(EventType type);
 

@@ -38,6 +38,13 @@ constexpr std::uintptr_t kFnMercAddTime = 0x00718050;     // void ?::MercAddTime
 // time-up state [this+0x4D4] = 1 at zero (or at the 150/400 kill cap) and
 // mirrors the value into game work +0x680. Called once per frame in a match.
 constexpr std::uintptr_t kFnMercUpdateCountdown = 0x00717850;
+// cMercs::AddTime(this, int seconds) (Ghidra FUN_0071CBF0): every countdown bonus (combo
+// +5 s, time-bonus pickups) goes through it.
+constexpr std::uintptr_t kFnMercAddCountdown = 0x0071CBF0;
+// The time-bonus pickup's action update (FUN_00AD9130, vtable slot of the action object at
+// 0x00FEFF7C): state byte +0x14 (0 delay, 1 grant, 2 fade out), +0x18 the map object
+// (seconds as int16 at +0x1364).
+constexpr std::uintptr_t kFnTimeBonusAction = 0x00AD9130;
 // Play menu screen (uIdStartUp01) per-frame move, and the menu input query
 // (__stdcall int(int pad, int mode)) it calls first.
 constexpr std::uintptr_t kFnPlayMenuMove = 0x00A396C0;
@@ -281,6 +288,8 @@ inline constexpr Signature kSignatures[] = {
     {"flow_step", addr::kFnFlowStep, "56 8B F1 0F BE 46 25 83 E8 00 74 6A 83 E8 01 74"},
     {"merce_results_move", addr::kFnMerceResultsMove, "53 56 57 6A FF 6A FF 8B F1 E8 82 2B FC FF 8B 0D"},
     {"pause_move", addr::kFnPauseMove, "A1 A4 40 23 01 F7 80 34 04 01 00 00 05 00 00 56"},
+    {"merc_add_countdown", addr::kFnMercAddCountdown, "A1 A4 40 23 01 56 8B F1 8B 88 2C 04 01 00 8B 41 58 85 C0 0F"},
+    {"time_bonus_action", addr::kFnTimeBonusAction, "55 8B EC 83 E4 F0 83 EC 24 53 56 57 8B F1 E8 6D FC FF FF 83"},
     {"flow_step20", addr::kFnFlowStep20, "56 8B F1 0F BE 46 25 83 E8 00 74 57 83 E8 01 74"},
     {"flow_merc_setup", addr::kFnFlowMercSetup, "56 8B F1 0F BE 46 24 83 F8 15 0F 87 AE 01 00 00"},
     {"inventory_add_to_stacks", addr::kFnInventoryAddToStacks, "83 EC 64 53 8B 5C 24 6C 55 56 57 33 FF 33 C0 89"},

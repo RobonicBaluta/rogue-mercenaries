@@ -346,3 +346,35 @@ TEST_CASE("the gun in hand at match start replaces the rolled starting weapon", 
     CHECK(h.rc.SwapStartingWeapon("shotgun").ok());  // same gun: no change
     CHECK(h.rc.SwapStartingWeapon("laser").code == ErrorCode::UnknownId);
 }
+
+TEST_CASE("chests pay supplies scaled by arena and place items", "[items]") {
+    const auto content = test::Load(test::EditFixture([](json&, json&, json&, json&, json& eco) {
+        eco["chests"] = {{"supplies_base", 10}, {"supplies_per_arena", 5}, {"item_chance", 1.0}, {"weapon_chance", 0.0}};
+    }));
+    test::Harness h(content);
+    FakeInventory inv;
+    inv.room = 100;
+    h.rc.SetInventory(&inv);
+    CHECK(h.rc.OpenChest(0.0).status().code == ErrorCode::NoActiveRun);
+    REQUIRE(h.rc.StartRun("alpha", 4).ok());
+    CHECK(h.rc.OpenChest(0.0).status().code == ErrorCode::WrongPhase);
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    const std::int64_t before = h.rc.state().supplies.balance();
+    const auto chest = h.rc.OpenChest(1.0);
+    REQUIRE(chest.ok());
+    CHECK(chest->number == 1);
+    CHECK(chest->supplies == 10);  // arena 1
+    CHECK_FALSE(chest->item_id.empty());
+    CHECK(chest->item_count >= 1);
+    REQUIRE(inv.placed.size() == 1);
+    CHECK(h.rc.state().supplies.balance() == before + 10);
+    CHECK(h.sink.Count(EventType::ChestOpened) == 1);
+
+    // Full inventory: the item's value is added to the supplies instead.
+    inv.room = 0;
+    const auto full = h.rc.OpenChest(2.0);
+    REQUIRE(full.ok());
+    CHECK(full->item_id.empty());
+    CHECK(full->supplies > 10);
+    CHECK(full->number == 2);
+}

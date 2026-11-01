@@ -1233,6 +1233,62 @@ Status RunController::DevGrantPerk(std::string_view perk_id) {
     return s;
 }
 
+Result<ChestReward> RunController::OpenChest(double now) {
+    constexpr std::string_view op = "open_chest";
+    if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    if (run_.phase != Phase::ArenaActive) return Fail(op, ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
+    const EconomyConfig& eco = content_->economy();
+    Rng& rng = streams_->loot;
+    ChestReward out;
+    out.number = ++run_.chests_opened;
+    const int arena = std::max(1, run_.arena_index);
+    std::int64_t supplies = eco.chests.supplies_base + eco.chests.supplies_per_arena * (arena - 1);
+
+    const OfferContext ctx = MakeOfferContext(0.0);
+    const double roll = rng.NextDouble();
+    bool placed = false;
+    if (roll < eco.chests.weapon_chance) {
+        std::vector<const WeaponBaseDef*> bases = OfferableWeapons(ctx);
+        std::erase_if(bases, [this](const WeaponBaseDef* b) {
+            return std::any_of(run_.weapons.begin(), run_.weapons.end(), [b](const WeaponInstance& w) { return w.base_id == b->id; });
+        });
+        if (!bases.empty()) {
+            const WeaponBaseDef* base = bases[rng.Index(bases.size())];
+            WeaponInstance w = GenerateWeapon(rng, *content_, caps_, base->id, RollRarity(rng, eco.rewards.rarity_weights),
+                                              NextInstanceId());
+            if (PlaceWeaponItem(w, "chest").ok()) {
+                GrantWeapon(w, "chest");
+                out.weapon_id = base->id;
+                out.weapon_name = base->name;
+                placed = true;
+            }
+        }
+    }
+    if (!placed && roll < eco.chests.weapon_chance + eco.chests.item_chance) {
+        const std::vector<const EquipmentDef*> items = OfferableItems(ctx);
+        if (!items.empty()) {
+            const EquipmentDef* e = items[rng.Index(items.size())];
+            if (GrantItem(e->id, e->bundle, "chest").ok()) {
+                out.item_id = e->id;
+                out.item_name = e->name;
+                out.item_count = e->bundle;
+                placed = true;
+            } else {
+                supplies += e->price * e->bundle;  // inventory full: its value instead
+            }
+        }
+    }
+    if (supplies > 0 && CreditSupplies(ArenaTx(run_.arena_index, "chest" + std::to_string(out.number)), supplies, "chest")) {
+        out.supplies = supplies;
+    }
+    Event e = MakeEvent(EventType::ChestOpened);
+    e.Add("number", out.number).Add("supplies", out.supplies).Add("now", now);
+    if (!out.item_id.empty()) e.Add("item", out.item_id).Add("count", out.item_count);
+    if (!out.weapon_id.empty()) e.Add("weapon", out.weapon_id);
+    Emit(std::move(e));
+    return out;
+}
+
 Status RunController::SwapStartingWeapon(std::string_view base_id) {
     if (!run_.active) return Status::Error(ErrorCode::NoActiveRun, "no active run");
     const WeaponBaseDef* base = content_->FindWeapon(base_id);
