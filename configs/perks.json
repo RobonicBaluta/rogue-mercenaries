@@ -352,7 +352,7 @@
     {
       "id": "sheva_smg",
       "name": "Close Support",
-      "description": "Sheva starts with an MP5 and 30 rounds.",
+      "description": "Sheva starts with a VZ61 and 60 rounds.",
       "category": "supply",
       "rarity": "rare",
       "tags": [
@@ -362,13 +362,13 @@
       "effects": [
         {
           "kind": "item_on_start",
-          "game_item": 275,
+          "game_item": 259,
           "amount": 1
         },
         {
           "kind": "item_on_start",
           "game_item": 514,
-          "amount": 30
+          "amount": 60
         }
       ],
       "characters": [
@@ -379,7 +379,7 @@
     {
       "id": "jill_smg",
       "name": "Rapid Response",
-      "description": "Jill starts with an MP5 and 30 rounds.",
+      "description": "Jill starts with an MP5 and 60 rounds.",
       "category": "supply",
       "rarity": "rare",
       "tags": [
@@ -395,7 +395,7 @@
         {
           "kind": "item_on_start",
           "game_item": 514,
-          "amount": 30
+          "amount": 60
         }
       ],
       "characters": [
@@ -406,7 +406,7 @@
     {
       "id": "wesker_magnum",
       "name": "Hand Cannon",
-      "description": "Wesker starts with an L.Hawk and 6 rounds.",
+      "description": "Wesker starts with an M500 and 6 rounds.",
       "category": "supply",
       "rarity": "epic",
       "tags": [
@@ -416,7 +416,7 @@
       "effects": [
         {
           "kind": "item_on_start",
-          "game_item": 282,
+          "game_item": 283,
           "amount": 1
         },
         {
@@ -431,9 +431,9 @@
       "unlock_cost_credits": 200
     },
     {
-      "id": "josh_shotgun",
-      "name": "Breacher",
-      "description": "Josh starts with an Ithaca M37 and 12 shells.",
+      "id": "josh_magnum",
+      "name": "Big Iron",
+      "description": "Josh starts with an M29 and 6 rounds.",
       "category": "supply",
       "rarity": "rare",
       "tags": [
@@ -443,13 +443,13 @@
       "effects": [
         {
           "kind": "item_on_start",
-          "game_item": 260,
+          "game_item": 267,
           "amount": 1
         },
         {
           "kind": "item_on_start",
-          "game_item": 515,
-          "amount": 12
+          "game_item": 521,
+          "amount": 6
         }
       ],
       "characters": [
@@ -458,63 +458,9 @@
       "unlock_cost_credits": 150
     },
     {
-      "id": "barry_shotgun",
+      "id": "barry_smg",
       "name": "Old Reliable",
-      "description": "Barry starts with an Ithaca M37 and 12 shells.",
-      "category": "supply",
-      "rarity": "rare",
-      "tags": [
-        "weapon"
-      ],
-      "max_stacks": 1,
-      "effects": [
-        {
-          "kind": "item_on_start",
-          "game_item": 260,
-          "amount": 1
-        },
-        {
-          "kind": "item_on_start",
-          "game_item": 515,
-          "amount": 12
-        }
-      ],
-      "characters": [
-        "barry"
-      ],
-      "unlock_cost_credits": 150
-    },
-    {
-      "id": "rebecca_shotgun",
-      "name": "Rookie Kit",
-      "description": "Rebecca starts with an Ithaca M37 and 12 shells.",
-      "category": "supply",
-      "rarity": "rare",
-      "tags": [
-        "weapon"
-      ],
-      "max_stacks": 1,
-      "effects": [
-        {
-          "kind": "item_on_start",
-          "game_item": 260,
-          "amount": 1
-        },
-        {
-          "kind": "item_on_start",
-          "game_item": 515,
-          "amount": 12
-        }
-      ],
-      "characters": [
-        "rebecca"
-      ],
-      "unlock_cost_credits": 150
-    },
-    {
-      "id": "excella_smg",
-      "name": "Private Security",
-      "description": "Excella starts with an MP5 and 30 rounds.",
+      "description": "Barry starts with an MP5 and 60 rounds.",
       "category": "supply",
       "rarity": "rare",
       "tags": [
@@ -530,7 +476,61 @@
         {
           "kind": "item_on_start",
           "game_item": 514,
-          "amount": 30
+          "amount": 60
+        }
+      ],
+      "characters": [
+        "barry"
+      ],
+      "unlock_cost_credits": 150
+    },
+    {
+      "id": "rebecca_rifle",
+      "name": "Rookie Marksman",
+      "description": "Rebecca starts with a PSG-1 and 10 rounds.",
+      "category": "supply",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 284,
+          "amount": 1
+        },
+        {
+          "kind": "item_on_start",
+          "game_item": 516,
+          "amount": 10
+        }
+      ],
+      "characters": [
+        "rebecca"
+      ],
+      "unlock_cost_credits": 150
+    },
+    {
+      "id": "excella_rifle",
+      "name": "Private Security",
+      "description": "Excella starts with a Dragunov and 10 rounds.",
+      "category": "supply",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 288,
+          "amount": 1
+        },
+        {
+          "kind": "item_on_start",
+          "game_item": 516,
+          "amount": 10
         }
       ],
       "characters": [

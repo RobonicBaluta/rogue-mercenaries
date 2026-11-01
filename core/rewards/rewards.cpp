@@ -51,6 +51,7 @@ std::vector<const WeaponBaseDef*> OfferableWeapons(const OfferContext& ctx) {
     if (ctx.capabilities != nullptr && !ctx.capabilities->Has(cap::kOutgoingDamage)) return out;
     for (const WeaponBaseDef& w : ctx.content->weapons()) {
         if (!w.enabled) continue;
+        if (ctx.placeable_weapons != nullptr && ctx.placeable_weapons->find(w.id) == ctx.placeable_weapons->end()) continue;
         if (w.unlock_cost_credits > 0 &&
             (ctx.unlocked_weapons == nullptr ||
              ctx.unlocked_weapons->find(w.id) == ctx.unlocked_weapons->end())) {

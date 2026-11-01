@@ -333,3 +333,16 @@ TEST_CASE("a bought weapon is placed in the inventory or the purchase is refunde
     CHECK(inv.placed[0].first == content->FindWeapon(shop[w].weapon.base_id)->game_item);
     CHECK(h.rc.state().weapons.size() >= held);  // added, or replaced an instance of the same base
 }
+
+TEST_CASE("the gun in hand at match start replaces the rolled starting weapon", "[items]") {
+    test::Harness h;
+    REQUIRE(h.rc.StartRun("alpha", 2).ok());
+    REQUIRE(h.rc.state().weapons.size() == 1);
+    CHECK(h.rc.state().weapons[0].base_id == "pistol");
+    REQUIRE(h.rc.SwapStartingWeapon("shotgun").ok());
+    REQUIRE(h.rc.state().weapons.size() == 1);
+    CHECK(h.rc.state().weapons[0].base_id == "shotgun");
+    CHECK(h.rc.state().loadout.weapon_id == "shotgun");
+    CHECK(h.rc.SwapStartingWeapon("shotgun").ok());  // same gun: no change
+    CHECK(h.rc.SwapStartingWeapon("laser").code == ErrorCode::UnknownId);
+}

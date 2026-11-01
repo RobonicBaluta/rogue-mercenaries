@@ -4,6 +4,7 @@ import json
 
 HAND, INCENDIARY, FLASH, SPRAY, HANDGUN_AMMO = 0x0106, 0x0107, 0x0108, 0x0304, 0x0201
 M92F, ITHACA, MP5, LHAWK, SHELLS, MG_AMMO, MAGNUM_AMMO = 0x0102, 0x0104, 0x0113, 0x011A, 0x0203, 0x0202, 0x0209
+VZ61, M500, M29, PSG1, DRAGUNOV, RIFLE_AMMO = 0x0103, 0x011B, 0x010B, 0x011C, 0x0120, 0x0204
 
 
 def perk(pid, name, desc, category, effects, characters=None, cost=0, rarity='common', tags=None, enabled=True):
@@ -56,13 +57,13 @@ perks += [
     perk('supply_spray', 'Medkit', 'Start every run with a first aid spray.', 'supply', [item_start(SPRAY, 1)], cost=80, tags=['items']),
     perk('supply_ammo', 'Ammo Belt', 'Start every run with 30 extra handgun rounds.', 'supply', [item_start(HANDGUN_AMMO, 30)], cost=40, tags=['items']),
     perk('chris_shotgun', 'Shotgun Licence', 'Chris starts with an Ithaca M37 and 12 shells.', 'supply', [item_start(ITHACA), item_start(SHELLS, 12)], ['chris'], cost=150, rarity='rare', tags=['weapon']),
-    perk('sheva_smg', 'Close Support', 'Sheva starts with an MP5 and 30 rounds.', 'supply', [item_start(MP5), item_start(MG_AMMO, 30)], ['sheva'], cost=150, rarity='rare', tags=['weapon']),
-    perk('jill_smg', 'Rapid Response', 'Jill starts with an MP5 and 30 rounds.', 'supply', [item_start(MP5), item_start(MG_AMMO, 30)], ['jill'], cost=150, rarity='rare', tags=['weapon']),
-    perk('wesker_magnum', 'Hand Cannon', 'Wesker starts with an L.Hawk and 6 rounds.', 'supply', [item_start(LHAWK), item_start(MAGNUM_AMMO, 6)], ['wesker'], cost=200, rarity='epic', tags=['weapon']),
-    perk('josh_shotgun', 'Breacher', 'Josh starts with an Ithaca M37 and 12 shells.', 'supply', [item_start(ITHACA), item_start(SHELLS, 12)], ['josh'], cost=150, rarity='rare', tags=['weapon']),
-    perk('barry_shotgun', 'Old Reliable', 'Barry starts with an Ithaca M37 and 12 shells.', 'supply', [item_start(ITHACA), item_start(SHELLS, 12)], ['barry'], cost=150, rarity='rare', tags=['weapon']),
-    perk('rebecca_shotgun', 'Rookie Kit', 'Rebecca starts with an Ithaca M37 and 12 shells.', 'supply', [item_start(ITHACA), item_start(SHELLS, 12)], ['rebecca'], cost=150, rarity='rare', tags=['weapon']),
-    perk('excella_smg', 'Private Security', 'Excella starts with an MP5 and 30 rounds.', 'supply', [item_start(MP5), item_start(MG_AMMO, 30)], ['excella'], cost=150, rarity='rare', tags=['weapon']),
+    perk('sheva_smg', 'Close Support', 'Sheva starts with a VZ61 and 60 rounds.', 'supply', [item_start(VZ61), item_start(MG_AMMO, 60)], ['sheva'], cost=150, rarity='rare', tags=['weapon']),
+    perk('jill_smg', 'Rapid Response', 'Jill starts with an MP5 and 60 rounds.', 'supply', [item_start(MP5), item_start(MG_AMMO, 60)], ['jill'], cost=150, rarity='rare', tags=['weapon']),
+    perk('wesker_magnum', 'Hand Cannon', 'Wesker starts with an M500 and 6 rounds.', 'supply', [item_start(M500), item_start(MAGNUM_AMMO, 6)], ['wesker'], cost=200, rarity='epic', tags=['weapon']),
+    perk('josh_magnum', 'Big Iron', 'Josh starts with an M29 and 6 rounds.', 'supply', [item_start(M29), item_start(MAGNUM_AMMO, 6)], ['josh'], cost=150, rarity='rare', tags=['weapon']),
+    perk('barry_smg', 'Old Reliable', 'Barry starts with an MP5 and 60 rounds.', 'supply', [item_start(MP5), item_start(MG_AMMO, 60)], ['barry'], cost=150, rarity='rare', tags=['weapon']),
+    perk('rebecca_rifle', 'Rookie Marksman', 'Rebecca starts with a PSG-1 and 10 rounds.', 'supply', [item_start(PSG1), item_start(RIFLE_AMMO, 10)], ['rebecca'], cost=150, rarity='rare', tags=['weapon']),
+    perk('excella_rifle', 'Private Security', 'Excella starts with a Dragunov and 10 rounds.', 'supply', [item_start(DRAGUNOV), item_start(RIFLE_AMMO, 10)], ['excella'], cost=150, rarity='rare', tags=['weapon']),
 ]
 # ---- Support: bad situations. ----
 perks += [
@@ -113,24 +114,18 @@ open('configs/perks.json', 'a').write('\n')
 c = json.load(open('configs/characters.json'))
 pools = {
     'chris': ['chris_pocket_grenades', 'chris_shotgun'], 'sheva': ['sheva_flash_tactics', 'sheva_smg'],
-    'jill': ['jill_smg'], 'wesker': ['wesker_magnum'], 'josh': ['josh_shotgun'], 'barry': ['barry_shotgun'],
-    'rebecca': ['rebecca_shotgun'], 'excella': ['excella_smg'],
+    'jill': ['jill_smg'], 'wesker': ['wesker_magnum'], 'josh': ['josh_magnum'], 'barry': ['barry_smg'],
+    'rebecca': ['rebecca_rifle'], 'excella': ['excella_rifle'],
 }
 passives = {'chris': 'chris_veteran', 'sheva': 'sheva_field_training', 'jill': 'jill_battle_instinct', 'wesker': 'wesker_firestarter',
             'josh': 'josh_squad_tactics', 'barry': 'barry_demolition_man', 'rebecca': 'rebecca_combat_medic', 'excella': 'excella_executive_bonus'}
 for ch in c['characters']:
-    if ch['id'] == 'josh':
-        ch['starting_weapons'] = ['m92f', 'vz61', 'ithaca_m37']
     ch['starting_passive'] = passives[ch['id']]
     ch['skill_pool'] = pools[ch['id']]
     for s in ch.get('skins', []):
-        s.pop('starting_weapons', None)
-        s.pop('skill_pool', None)
         trait = s['id'] + '_trait'
         if trait in skin_traits:
             s['starting_passive'] = trait
-        else:
-            s.pop('starting_passive', None)
 c['_comment'] = ("Playable characters. Only Chris and Sheva start unlocked; the others unlock by themed challenges (unlock_kind/unlock_count, "
                  "see core/include/rm/characters.h). starting_weapons: the first entry is the pistol every run starts with (the adapter "
                  "strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. "
@@ -152,12 +147,13 @@ open('configs/loadouts.json', 'a').write('\n')
 
 # weapons.json: the game item id where known (the adapter creates/keeps the weapon in the inventory).
 w = json.load(open('configs/weapons.json'))
-ids = {'m92f': M92F, 'ithaca_m37': ITHACA, 'h_and_k_mp5': MP5, 'l_hawk': LHAWK}
+ids = {'m92f': 0x0102, 'vz61': 0x0103, 'ithaca_m37': 0x0104, 's75': 0x0105, 'sig556': 0x0109, 'm29': 0x010B,
+       'h_and_k_p8': 0x0110, 'sig_p226': 0x0111, 'h_and_k_mp5': 0x0113, 'm3': 0x0116, 'jail_breaker': 0x0117,
+       'hydra': 0x0119, 'l_hawk': 0x011A, 'm500': 0x011B, 'psg1': 0x011C, 'ak74': 0x011D, 'px4': 0x011F,
+       'dragunov': 0x0120, 'samurai_edge': 0x0129}
 for wd in w['weapons']:
     if wd['id'] in ids:
         wd['game_item'] = ids[wd['id']]
-    else:
-        wd.pop('game_item', None)
 json.dump(w, open('configs/weapons.json', 'w'), indent=2)
 open('configs/weapons.json', 'a').write('\n')
 print('perks', len(perks), 'written; characters, loadouts, weapons aligned')

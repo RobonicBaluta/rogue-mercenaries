@@ -30,9 +30,9 @@
           "costume_index": 1,
           "starting_passive": "chris_safari_trait",
           "unlock_kind": "runs_completed_as",
-          "unlock_character": "chris",
           "unlock_count": 1,
-          "unlock_text": "Complete a run as Chris"
+          "unlock_text": "Complete a run as Chris",
+          "unlock_character": "chris"
         },
         {
           "id": "chris_stars",
@@ -42,6 +42,23 @@
           "unlock_kind": "s_rank_arenas",
           "unlock_count": 1,
           "unlock_text": "Earn an S rating in an arena"
+        },
+        {
+          "id": "chris_warrior",
+          "name": "Warrior",
+          "costume_index": 14,
+          "unlock_kind": "runs_completed_as",
+          "unlock_count": 3,
+          "unlock_text": "Complete 3 runs as Chris",
+          "unlock_character": "chris"
+        },
+        {
+          "id": "chris_heavy_metal",
+          "name": "Heavy Metal",
+          "costume_index": 10,
+          "unlock_kind": "total_kills",
+          "unlock_count": 500,
+          "unlock_text": "Reach 500 kills"
         }
       ]
     },
@@ -50,7 +67,7 @@
       "name": "Sheva Alomar",
       "enabled": true,
       "starting_weapons": [
-        "h_and_k_p8",
+        "m92f",
         "vz61"
       ],
       "starting_passive": "sheva_field_training",
@@ -73,9 +90,9 @@
           "costume_index": 4,
           "starting_passive": "sheva_clubbin_trait",
           "unlock_kind": "runs_completed_as",
-          "unlock_character": "sheva",
           "unlock_count": 1,
-          "unlock_text": "Complete a run as Sheva"
+          "unlock_text": "Complete a run as Sheva",
+          "unlock_character": "sheva"
         },
         {
           "id": "sheva_tribal",
@@ -89,11 +106,20 @@
         {
           "id": "sheva_business",
           "name": "Business",
-          "costume_index": 6,
+          "costume_index": 11,
           "starting_passive": "sheva_business_trait",
           "unlock_kind": "credits_earned",
           "unlock_count": 500,
           "unlock_text": "Earn 500 credits in total"
+        },
+        {
+          "id": "sheva_fairy_tale",
+          "name": "Fairy Tale",
+          "costume_index": 15,
+          "unlock_kind": "runs_completed_as",
+          "unlock_count": 3,
+          "unlock_text": "Complete 3 runs as Sheva",
+          "unlock_character": "sheva"
         }
       ]
     },
@@ -102,7 +128,7 @@
       "name": "Jill Valentine",
       "enabled": true,
       "starting_weapons": [
-        "m92f",
+        "px4",
         "h_and_k_mp5"
       ],
       "starting_passive": "jill_battle_instinct",
@@ -120,17 +146,17 @@
         {
           "id": "jill_bsaa",
           "name": "BSAA",
-          "costume_index": 7
+          "costume_index": 6
         },
         {
           "id": "jill_battle_suit",
           "name": "Battle Suit",
-          "costume_index": 8,
+          "costume_index": 7,
           "starting_passive": "jill_battle_suit_trait",
           "unlock_kind": "runs_completed_as",
-          "unlock_character": "jill",
           "unlock_count": 1,
-          "unlock_text": "Complete a run as Jill"
+          "unlock_text": "Complete a run as Jill",
+          "unlock_character": "jill"
         }
       ]
     },
@@ -139,13 +165,12 @@
       "name": "Josh Stone",
       "enabled": true,
       "starting_weapons": [
-        "m92f",
-        "vz61",
-        "ithaca_m37"
+        "sig556",
+        "m29"
       ],
       "starting_passive": "josh_squad_tactics",
       "skill_pool": [
-        "josh_shotgun"
+        "josh_magnum"
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
@@ -158,7 +183,7 @@
         {
           "id": "josh_bsaa",
           "name": "BSAA",
-          "costume_index": 11
+          "costume_index": 12
         }
       ]
     },
@@ -167,12 +192,12 @@
       "name": "Barry Burton",
       "enabled": true,
       "starting_weapons": [
-        "sig_p226",
-        "m3"
+        "px4",
+        "h_and_k_mp5"
       ],
       "starting_passive": "barry_demolition_man",
       "skill_pool": [
-        "barry_shotgun"
+        "barry_smg"
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
@@ -184,7 +209,7 @@
         {
           "id": "barry_stars",
           "name": "STARS",
-          "costume_index": 12
+          "costume_index": 16
         }
       ]
     },
@@ -193,12 +218,12 @@
       "name": "Rebecca Chambers",
       "enabled": true,
       "starting_weapons": [
-        "m92f",
-        "s75"
+        "vz61",
+        "psg1"
       ],
       "starting_passive": "rebecca_combat_medic",
       "skill_pool": [
-        "rebecca_shotgun"
+        "rebecca_rifle"
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
@@ -210,7 +235,7 @@
         {
           "id": "rebecca_stars",
           "name": "STARS",
-          "costume_index": 13
+          "costume_index": 17
         }
       ]
     },
@@ -219,12 +244,12 @@
       "name": "Excella Gionne",
       "enabled": true,
       "starting_weapons": [
-        "h_and_k_p8",
-        "sig556"
+        "m92f",
+        "dragunov"
       ],
       "starting_passive": "excella_executive_bonus",
       "skill_pool": [
-        "excella_smg"
+        "excella_rifle"
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
@@ -236,7 +261,7 @@
         {
           "id": "excella_dress",
           "name": "Dress",
-          "costume_index": 14
+          "costume_index": 13
         }
       ]
     },
@@ -245,8 +270,8 @@
       "name": "Albert Wesker",
       "enabled": true,
       "starting_weapons": [
-        "sig_p226",
-        "l_hawk"
+        "h_and_k_p8",
+        "m500"
       ],
       "starting_passive": "wesker_firestarter",
       "skill_pool": [
@@ -262,17 +287,17 @@
         {
           "id": "wesker_midnight",
           "name": "Midnight",
-          "costume_index": 9
+          "costume_index": 8
         },
         {
           "id": "wesker_stars",
           "name": "STARS",
-          "costume_index": 10,
+          "costume_index": 9,
           "starting_passive": "wesker_stars_trait",
           "unlock_kind": "runs_completed_as",
-          "unlock_character": "wesker",
           "unlock_count": 1,
-          "unlock_text": "Complete a run as Wesker"
+          "unlock_text": "Complete a run as Wesker",
+          "unlock_character": "wesker"
         }
       ]
     }

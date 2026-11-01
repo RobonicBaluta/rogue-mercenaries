@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <unordered_map>
 #include <array>
 #include <atomic>
@@ -150,6 +151,9 @@ struct ModState {
     MatchState match;
     bool arenaEndRequested = false;  // timer forced to 0 after a clear
     bool matchUiOpenRequested = false;  // native results screen to open once the tick's lock is released
+    // Weapon item ids whose models this match loaded (the character's own loadout): the only
+    // weapons that can be created mid-match without hanging the game.
+    std::set<std::uint32_t> loadedWeaponItems;
     int matchGeneration = 0;         // +1 on every match detected
     int currentStage = -1;           // stage the autopilot armed for the current match
     struct StageTransition {
@@ -895,6 +899,11 @@ int GiveItem(const char* source, std::int64_t gameItem, int count) {
     const auto table = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + ((id >> 8) & 0xFF) * 4, 0);
     const auto record = table ? table + (id & 0xFF) * 0x48 : 0;
     if (record && ReadOr<std::int32_t>(record + 0x30, 0) == 3) {
+        if (!g->loadedWeaponItems.count(static_cast<std::uint32_t>(id))) {
+            // Its model is not loaded for this character; creating it hangs the game.
+            RM_LOGW("%s: weapon %04X is not loaded for this character, not created", source, id);
+            return 0;
+        }
         const int magazine = std::max(1, ReadOr<std::int32_t>(record + 8, 1));
         const auto made = create(inventory, id, magazine, -1, -1, -1, 0xD, 0, 0, 0, 0, 0, 0, 0, 0, 0, player, 0, 0);
         RM_LOGI("%s: weapon %04X created with %d rounds -> %s", source, id, magazine, made ? "ok" : "no slot");
@@ -918,38 +927,89 @@ int GiveItem(const char* source, std::int64_t gameItem, int count) {
     return count - left;
 }
 
+// Ammo item for a weapon category (dev itemnames: 0x0201 handgun, 0x0202 machine gun and SMG,
+// 0x0203 shells, 0x0204 rifle, 0x0209 magnum).
+std::uint32_t AmmoItemFor(rm::WeaponCategory category) {
+    switch (category) {
+        case rm::WeaponCategory::Shotgun: return 0x0203;
+        case rm::WeaponCategory::Smg:
+        case rm::WeaponCategory::MachineGun: return 0x0202;
+        case rm::WeaponCategory::Rifle: return 0x0204;
+        case rm::WeaponCategory::Magnum: return 0x0209;
+        default: return re5::addr::kItemHandgunAmmo;
+    }
+}
+
 // Every run starts with the pistol only: the character's own Mercenaries loadout is cut down
 // to the pistol, its ammo and the knife (records invalidated, which frees their grid slots).
 void StripToPistol() {
     const auto player = engine::LocalPlayer();
     if (!engine::Caps().inventory || !player) return;
-    std::int64_t pistol = re5::addr::kItemM92F;
-    if (const rm::WeaponBaseDef* w = g->content->FindWeapon(g->run->state().loadout.weapon_id)) {
-        if (w->game_item >= 0) pistol = w->game_item;
-    }
     const auto inv = player + re5::off::kPlayerInventory;
-    bool havePistol = false;
-    int removed = 0;
+    // The gun in the player's hands stays whatever it is (removing the equipped weapon's
+    // record hangs the game: S.T.A.R.S. Chris and his Samurai Edge); every other weapon,
+    // ammo (except handgun rounds), grenade and spray goes.
+    std::uint32_t equipped = 0;
+    std::string loaded;
     for (int i = 0; i < re5::off::kInventorySlots; ++i) {
         const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
         if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
         const auto id = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
+        if (ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1) equipped = id;
+        // Every weapon the game put here has its model loaded for this stage.
+        if ((id >> 8) == 1 && id != re5::addr::kItemUnarmed && id != re5::addr::kItemKnife &&
+            ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0) > 0 && (id < 0x0106 || id > 0x0108)) {
+            g->loadedWeaponItems.insert(id);
+            char buf[8];
+            std::snprintf(buf, sizeof(buf), " %04X", id);
+            loaded += buf;
+        }
+    }
+    rm::StringSet placeable;
+    for (const rm::WeaponBaseDef& w : g->content->weapons()) {
+        if (w.game_item >= 0 && g->loadedWeaponItems.count(static_cast<std::uint32_t>(w.game_item))) placeable.insert(w.id);
+    }
+    g->run->SetPlaceableWeapons(placeable);
+    RM_LOGI("inventory: weapons loaded for this character:%s (%zu placeable in the run)", loaded.c_str(), placeable.size());
+    std::int64_t pistol = re5::addr::kItemM92F;
+    if (const rm::WeaponBaseDef* w = g->content->FindWeapon(g->run->state().loadout.weapon_id)) {
+        if (w->game_item >= 0) pistol = w->game_item;
+    }
+    std::uint32_t ammo = re5::addr::kItemHandgunAmmo;
+    if (equipped != 0 && (equipped >> 8) == 1) {
+        pistol = equipped;  // the hands win over the roll
+        for (const rm::WeaponBaseDef& w : g->content->weapons()) {
+            if (w.game_item != static_cast<std::int64_t>(equipped)) continue;
+            ammo = AmmoItemFor(w.category);
+            const rm::Status swapped = g->run->SwapStartingWeapon(w.id);
+            if (!swapped.ok()) RM_LOGW("inventory: starting weapon swap to %s failed: %s", w.id.c_str(), swapped.message.c_str());
+            break;
+        }
+    }
+    int removed = 0;
+    bool havePistol = false;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        const auto id = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
+        const bool isEquipped = ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1;
         if (id == static_cast<std::uint32_t>(pistol)) havePistol = true;
-        const bool keep = id == re5::addr::kItemUnarmed || id == re5::addr::kItemKnife ||
-                          id == re5::addr::kItemHandgunAmmo || id == static_cast<std::uint32_t>(pistol);
+        const bool knife = id == re5::addr::kItemKnife || id == 0x010E || id == 0x0123 || id == 0x0124;  // every character's knife
+        const bool keep = isEquipped || id == re5::addr::kItemUnarmed || knife || id == ammo ||
+                          id == static_cast<std::uint32_t>(pistol);
         if (keep) continue;
         SafeStore<std::int32_t>(slot + re5::off::kSlotCount, 0);
         SafeStore<std::uint8_t>(slot + re5::off::kSlotValid, 0);
         ++removed;
     }
-    if (!havePistol) {
-        // Magazine size from the item record (dword 2); 1 if the table cannot be read.
+    if (!havePistol && equipped == 0) {
+        // Nothing in hand and no pistol: give the rolled one (magazine from the item record).
         const auto table = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + ((pistol >> 8) & 0xFF) * 4, 0);
         const int magazine = table ? std::max(1, ReadOr<std::int32_t>(table + (pistol & 0xFF) * 0x48 + 8, 1)) : 1;
         GiveItem("pistol", pistol, magazine);
     }
-    RM_LOGI("inventory: stripped to the pistol %04X (%d record(s) removed%s)", static_cast<unsigned>(pistol), removed,
-            havePistol ? "" : ", pistol created");
+    RM_LOGI("inventory: stripped to the pistol %04X (equipped %04X, %d record(s) removed%s)", static_cast<unsigned>(pistol),
+            equipped, removed, havePistol || equipped ? "" : ", pistol created");
 }
 
 // The rolled loadout's equipment, at the first arena. Items without a game id stay run-only.
@@ -1562,6 +1622,9 @@ void PollDevCommand(double now) {
             RM_LOGW("dev buy %s (%s) -> %s", kind.c_str(), s.shop_offers[i].title.c_str(), st.ok() ? "ok" : st.message.c_str());
         }
         if (!found) RM_LOGW("dev buy %s: no such offer", kind.c_str());
+    } else if (command == "timeup") {
+        RequestMercMatchEnd();
+        RM_LOGW("dev timeup requested");
     } else if (command == "die" && run.phase() == rm::Phase::ArenaActive) {
         Report(run.OnPlayerDied(now), "dev die");
     } else if (command == "itemnames") {

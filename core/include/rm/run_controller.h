@@ -184,6 +184,9 @@ public:
     // --- configuration ---------------------------------------------------------------
     void SetCapabilities(Capabilities caps);
     void SetInventory(InventoryPort* port) { inventory_ = port; }
+    /// Weapons the adapter can place in the current match (base ids); rewards and the shop
+    /// offer only those. Clear with std::nullopt.
+    void SetPlaceableWeapons(std::optional<StringSet> bases) { placeable_weapons_ = std::move(bases); }
     [[nodiscard]] const Capabilities& capabilities() const { return caps_; }
     void SetEventSink(IEventSink* sink) { sink_ = sink; }
     [[nodiscard]] const Content& content() const { return *content_; }
@@ -268,6 +271,9 @@ public:
     Status DevGrantPerk(std::string_view perk_id);
     /// Adds a weapon instance under the normal slot rules (see weapons.h).
     Status DevGrantWeapon(WeaponInstance weapon);
+    /// The adapter found another gun in the player's hands at match start: it becomes the
+    /// run's starting weapon (replacing the rolled one), so upgrades and the shop follow it.
+    Status SwapStartingWeapon(std::string_view base_id);
 
     [[nodiscard]] RunSnapshot Snapshot(double now) const;
     [[nodiscard]] Phase phase() const { return run_.phase; }
@@ -325,6 +331,7 @@ private:
     Profile profile_;
     Capabilities caps_;
     InventoryPort* inventory_ = nullptr;
+    std::optional<StringSet> placeable_weapons_;
     IEventSink* sink_ = nullptr;
     ProfileStore* store_ = nullptr;
     int damage_sample_every_ = 50;

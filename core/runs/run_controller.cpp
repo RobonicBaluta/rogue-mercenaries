@@ -121,6 +121,7 @@ OfferContext RunController::MakeOfferContext(double rarity_shift) const {
     ctx.capabilities = &caps_;
     ctx.unlocked_perks = &profile_.unlocked_perks;
     ctx.unlocked_weapons = &profile_.unlocked_weapons;
+    ctx.placeable_weapons = placeable_weapons_ ? &*placeable_weapons_ : nullptr;
     ctx.owned_perks = &run_.perks;
     ctx.rarity_shift = rarity_shift;
     const RouteDef* route = Route();
@@ -1230,6 +1231,21 @@ Status RunController::DevGrantPerk(std::string_view perk_id) {
     const Status s = GrantPerk(perk_id, "dev", CursePolicy::Any, false);
     if (!s.ok()) EmitError("dev_grant_perk", s);
     return s;
+}
+
+Status RunController::SwapStartingWeapon(std::string_view base_id) {
+    if (!run_.active) return Status::Error(ErrorCode::NoActiveRun, "no active run");
+    const WeaponBaseDef* base = content_->FindWeapon(base_id);
+    if (base == nullptr) return Status::Error(ErrorCode::UnknownId, "unknown weapon '" + std::string(base_id) + "'");
+    if (run_.loadout.weapon_id == base->id) return Status::Success();
+    const std::string previous = run_.loadout.weapon_id;
+    std::erase_if(run_.weapons, [&previous](const WeaponInstance& w) { return w.base_id == previous; });
+    run_.loadout.weapon_id = base->id;
+    GrantWeapon(MakeStartingWeapon(base->id, NextInstanceId()), "starting_weapon");
+    Event e = MakeEvent(EventType::PerkAcquired, EventLevel::Debug);
+    e.Add("starting_weapon", base->id).Add("replaced", previous);
+    Emit(std::move(e));
+    return Status::Success();
 }
 
 Status RunController::DevGrantWeapon(WeaponInstance weapon) {

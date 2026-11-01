@@ -13,14 +13,16 @@
       "id": "h_and_k_p8",
       "name": "H&K P8",
       "category": "handgun",
-      "base_damage_mult": 1.0
+      "base_damage_mult": 1.0,
+      "game_item": 272
     },
     {
       "id": "sig_p226",
       "name": "SIG P226",
       "category": "handgun",
       "base_damage_mult": 1.0,
-      "unlock_cost_credits": 200
+      "unlock_cost_credits": 200,
+      "game_item": 273
     },
     {
       "id": "ithaca_m37",
@@ -34,13 +36,15 @@
       "name": "M3",
       "category": "shotgun",
       "base_damage_mult": 1.0,
-      "unlock_cost_credits": 300
+      "unlock_cost_credits": 300,
+      "game_item": 278
     },
     {
       "id": "vz61",
       "name": "VZ61",
       "category": "smg",
-      "base_damage_mult": 1.0
+      "base_damage_mult": 1.0,
+      "game_item": 259
     },
     {
       "id": "h_and_k_mp5",
@@ -53,13 +57,15 @@
       "id": "sig556",
       "name": "SIG 556",
       "category": "machine_gun",
-      "base_damage_mult": 1.0
+      "base_damage_mult": 1.0,
+      "game_item": 265
     },
     {
       "id": "s75",
       "name": "S75",
       "category": "rifle",
-      "base_damage_mult": 1.0
+      "base_damage_mult": 1.0,
+      "game_item": 261
     },
     {
       "id": "l_hawk",
@@ -68,6 +74,69 @@
       "base_damage_mult": 1.0,
       "unlock_cost_credits": 500,
       "game_item": 282
+    },
+    {
+      "id": "px4",
+      "name": "Px4",
+      "category": "handgun",
+      "base_damage_mult": 1.0,
+      "game_item": 287
+    },
+    {
+      "id": "samurai_edge",
+      "name": "Samurai Edge",
+      "category": "handgun",
+      "base_damage_mult": 1.05,
+      "game_item": 297
+    },
+    {
+      "id": "m29",
+      "name": "S and W M29",
+      "category": "magnum",
+      "base_damage_mult": 1.0,
+      "game_item": 267
+    },
+    {
+      "id": "m500",
+      "name": "S and W M500",
+      "category": "magnum",
+      "base_damage_mult": 1.1,
+      "game_item": 283
+    },
+    {
+      "id": "hydra",
+      "name": "Hydra",
+      "category": "shotgun",
+      "base_damage_mult": 1.05,
+      "game_item": 281
+    },
+    {
+      "id": "jail_breaker",
+      "name": "Jail Breaker",
+      "category": "shotgun",
+      "base_damage_mult": 1.0,
+      "game_item": 279
+    },
+    {
+      "id": "ak74",
+      "name": "AK-74",
+      "category": "machine_gun",
+      "base_damage_mult": 1.0,
+      "game_item": 285
+    },
+    {
+      "id": "psg1",
+      "name": "H and K PSG-1",
+      "category": "rifle",
+      "base_damage_mult": 1.1,
+      "game_item": 284
+    },
+    {
+      "id": "dragunov",
+      "name": "Dragunov SVD",
+      "category": "rifle",
+      "base_damage_mult": 1.0,
+      "game_item": 288
     }
   ],
   "affixes": [
