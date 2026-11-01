@@ -1,0 +1,162 @@
+# ROGUE MERCENARIES: road to a shippable game mode
+
+This is the plan from the current prototype (a run layered on top of The Mercenaries) to a
+real game mode that the mod owns end to end. It is the to-do list for every following
+session: work top to bottom, one item at a time, each closed only by its "done when" test in
+game. `TASKS.md` keeps the evidence; `research/re5-engine-map.md` keeps the addresses.
+
+Written 2026-11-01 from the user's direction: *no extra time in the map, no time running
+down, spawn exactly the enemies we want regardless of the arena, new arenas, bosses, custom
+menus with icons, character and skin previews, a custom organize/buy screen, chests, a
+smooth flow, gameplay-changing perks, skins with bonuses and builds. Mercenaries is only a
+means; a fully homemade mode is fine. This has to ship.*
+
+## 1. The product that ships
+
+- **Title**: a ROGUE MERCENARIES entry in the Play menu opening the mod's own menus:
+  characters and skins with a preview (model or portrait), perks with icons in three slots
+  (style, supply, support), meta currency, unlocks, records.
+- **A run**: a sequence of arenas (Mercenaries maps and campaign areas), chosen in the world,
+  ending in a boss. No countdown, no score, no Mercenaries results.
+- **An arena**: the mod's director spawns exactly the enemies the arena defines (types,
+  counts, waves, positions), counts every death (any cause), places chests, then opens the
+  exits. Health, inventory and layout carry over.
+- **Between arenas**: the game's own Organize/Buy screen (or one indistinguishable from it):
+  buy, sell, upgrade, rearrange; rewards in chests and in that screen.
+- **Character identity**: perks change how a character plays (grab immunity with a cost,
+  items from kills, low-health behaviour); skins carry small percentage bonuses and enable
+  builds; supply perks set the starting kit.
+- **Shipping**: one zip, install/uninstall that restores the game exactly, settings,
+  a crash report, a tested build list.
+
+## 2. Where the prototype stands
+
+Works and verified in game (keep): native Play-menu entry and mod menus; direct start into a
+match with any stage and costume; one run per match with the countdown held; stage change
+between arenas without the results screen; inventory control (strip to one gun, create items
+and loaded models only, discard with the model, carry-over with layout); native in-match
+screens in the game's font (results, rewards, shop with rarity colours, organize, route, run
+complete); chests from time-bonus pickups; perks in three slots per character; all
+characters and skins.
+
+Hacked (replace): the Mercenaries timer is held, not removed, and its digits still draw; the
+Mercenaries spawner decides what spawns; kills are counted from hooks and a death detector;
+weapons/enemies are limited to what the stage loaded; the arena ends through the game's
+time-up; the shop and route are list screens; chests depend on the map's time bonuses.
+
+Missing: spawn control, resource preloading, campaign areas, bosses, custom icons and
+previews, the native organize/buy screen, in-world route choice.
+
+## 3. Architecture: the Rogue mode layer
+
+The mod becomes a mode that only borrows the engine's scene, player and rendering. Its
+parts, each a module in `adapters/re5` driven by data in `configs/`:
+
+| Part | Owns | Engine pieces it drives |
+|---|---|---|
+| **Flow** | title → run → arena → between → arena … → boss → end | title-flow hooks (done), scene requests, fader |
+| **Host** | loading an arena's map and placing the player | Mercenaries setup script (done); campaign area jump (to research) |
+| **Director** | which enemies exist, where, when; the kill count | `sEnemy::Create` + `cSetInfoEmXX` (found), death events |
+| **Resources** | models and textures an arena, a weapon or a boss needs | `sResource` / `rArchive` / `sLoadMan`, path formats (found) |
+| **Inventory** | kit, items, weapons, layout, carry-over | done (record API, create, clear) |
+| **UI** | menus, HUD, between-arena screens, icons, previews | game text routine (done), game sprites/layouts (to research) |
+| **Content** | arenas, waves, bosses, perks, skins, loot | JSON in `configs/`, validated by the core |
+
+The portable core (`core/`) keeps the rules (run state, perks, economy, loot, arena and
+wave definitions) and stays unit-tested; the adapter only translates them into engine calls.
+
+**Host strategy.** Start every new system on the Mercenaries host (it already loads, starts
+and changes stages reliably), then add campaign areas as a second host once area loading is
+proven. A Mercenaries arena with the spawner disabled, the HUD replaced and the director in
+charge *is* the homemade mode; the campaign host adds maps and bosses. If a host fights us
+(scripts, HUD), the fix is to suppress that piece, not to give up the host.
+
+## 4. Engine capabilities: what we know and how to get the rest
+
+Each line is a research spike with a concrete starting point and a test that closes it.
+
+| # | Capability | Known today | Approach | Done when |
+|---|---|---|---|---|
+| E1 ✔ | Spawn any enemy at a point (proven 2026-11-01: dev `spawn uEm10 70100 2 0` created two Majini at the player, who attacked at once; the game scored and counted them like its own) | `sEnemy::Create(dti, group, mode, flag)` `0x007AF550` → `0x007F4BA0` (DTI `newInstance`, unit group registration); descriptors `cSetInfoEmXX` (e.g. `cSetInfoEm10` vtable `0x01049C94`) are reflected objects (`0x00422C00` registers `mbArmed`, `mArmId` …) applied to a unit by vtable slot 10 (`0x00CC70E0` → base `0x00CCDD20`: position, rotation, weapon, AI flags) | dev command: create a uEm10 next to the player with a filled descriptor; then a list of types | a Majini of a chosen weapon type appears at a chosen point and fights normally; its death is reported |
+| E2 | Turn off the native spawner | Mercenaries spawns from its stage set data | find the Mercenaries generator (callers of `sEnemy::Create`'s vtable slot, set-file processing, `cActEvEmSet` for campaign) and gate it | a Mercenaries map stays empty until the director spawns |
+| E3 | Load models on demand | formats `%s\em\em%02x\em%02x%02x`, `%s\wp\wp%02x\wp%02x%02x`, `%s\stage\s%03d\s%3d%02x`; classes `sResource`, `rArchive`, `rArchivePack`, `sLoadMan`; creating an unloaded weapon or screen freezes the game | find the function that formats the em/wp paths and the request it makes; call it for extra types during the arena's loading screen; wait for completion | the shop sells a gun outside the costume's loadout and it can be fired; an enemy type foreign to the map spawns |
+| E4 | No timer, no score | the countdown is held (`0x00717850`), bonuses suppressed (`0x0071CBF0`), digits not found in `uIdMerce00` | with E2 done, stop the HUD instead: kill `uIdMerce00` or keep it from being created; or use the campaign host (no countdown) | no clock or score on screen in a run; nothing ends the match except the mod |
+| E5 | Count kills exactly | hooks + death detector + "all deaths count" | the director tracks its own units: a death = its unit dead or removed | counter equals spawned-and-dead across explosions, fire, falls, flash on plagas |
+| E6 | Campaign areas as arenas | `cScenarioArg_AreaJump` (vtable `0x010497E4`), `cStageInfo`, `sBioArea`; stage numbers s1xx–s6xx | trace the campaign's area jump and chapter start; load one area directly from the menu, skip scripts and cutscenes, place the player | a run's arena takes place in a campaign area with director spawns and no story script |
+| E7 | The game's Organize/Buy screen | `uIdItemBox00` (vtable `0x00FA60A8`, `0x00A07980`) opens only in the chapter flow (`0x00BF22A0`); creating screens outside their context freezes | open it in its own context: between arenas as a chapter-style transition (campaign host) or by reproducing what the chapter flow loads first (its layout/texture set) before creating it; map supplies to the screen's gold | buy, sell, upgrade and rearrange in the game's own screen between two arenas |
+| E8 | Custom icons and sprites | menus draw the game's text; `sLayoutSpr`, `rLayout`, `rLayoutSpr`, `cSprite` children in screens | load our own textures (an `.arc` in `nativePC` loaded through `sResource`) and draw them with the game's sprite routine; fallback: draw textured quads in the D3D9 present hook, styled like the game | perk icons visible next to the perk rows in the PERKS screen |
+| E9 | Character/skin preview | the game's character select (`uIdStartUp22`) shows the model for a costume slot | host the preview in that screen with our selection driving it; fallback: portraits as E8 textures | choosing a skin shows its model or portrait |
+| E10 | World objects: chests and exits | pickups are `uOm08xx` (descriptors at `0x00EF0CA0`…), time-bonus action `0x00AD9130` | same path as E1 for objects (find the om manager's create and `cSetInfoOm…` descriptors, `cSetInfoOmArea`) | the director places a chest and an exit object where the arena says |
+| E11 | Bosses | boss classes and their setup descriptors exist (`cSetInfoEm4x/6x/8x…`) | per boss: spawn through E1 with E3 resources in a fitting arena; script dependencies listed per boss | one boss fight as the last arena of a run |
+| E12 | Perk mechanics | kills, damage, heal, items done; missing grab, move speed, weapon category damage | grab: the `cEm…PlEvent_Catch`/`_PL` actions (refuse or shorten a grab); move speed: player motion rate field; weapon category: equipped record id → category (done) | each mechanic used by a perk works in game |
+
+## 5. The to-do list
+
+Milestones in order. Inside a milestone, items go top to bottom. Each item ends with a
+"done when" check in game and an entry in `TASKS.md`.
+
+### M1 — The director (enemies under our control)
+1. ~~E1 spike: spawn one uEm10 with a descriptor next to the player (dev command `spawn`).~~ Done 2026-11-01. The Mercenaries spawner calls the same path from `0x007AF6E0` (callers `0x00C2A880`, `0x00C2AA80`, `0x00C2E070`): the gate for E2.
+2. Spawn table: enemy type → DTI, default descriptor fields, which stages load it.
+3. E2: switch off the Mercenaries spawner in runs.
+4. Core: `arenas.json` with spawn points and waves (type, count, weapon, timing, max alive);
+   core tests for wave pacing and kill accounting.
+5. Adapter director: runs the waves, tracks its units, reports kills (E5).
+6. Arena end by the director (last wave dead), not by the time-up.
+
+### M2 — No timer, no score
+1. E4: remove the countdown and score from the screen and every path that ends the match.
+2. Replace the status line with a small HUD in the game's style (arena, wave, kills left).
+
+### M3 — Resources
+1. E3 spike: preload one enemy type and one weapon during an arena's loading.
+2. Preload list per arena (enemies of its waves, the run's weapons); the shop and chests may
+   then offer any gun.
+
+### M4 — World objects
+1. E10: chests placed by the arena data (no more reliance on time bonuses).
+2. Exits as objects: walking into one picks the next arena (in-world route choice).
+
+### M5 — Arenas beyond Mercenaries
+1. E6 spike: load one campaign area directly with the player placed and scripts off.
+2. Arena catalogue: Mercenaries maps + selected campaign areas with spawn points and exits.
+3. Run map: branching arenas with difficulty tiers.
+
+### M6 — Bosses
+1. E11 spike on one boss; boss arena as the last step of a run.
+2. More bosses as content allows.
+
+### M7 — Between arenas and menus that look native
+1. E7: the game's Organize/Buy screen between arenas (fallback: our screens with E8 sprites).
+2. E8: perk icons in the PERKS screen; E9: character and skin previews.
+3. Title menus with icons and previews; results of a run.
+
+### M8 — Builds
+1. E12 mechanics: grab immunity with a cost, move speed, weapon-category damage.
+2. Rewrite style perks to use them; skin bonuses that enable builds; balance pass with the
+   simulator (`rm_sim`).
+
+### M9 — Ship
+1. Install/uninstall and settings checked on a clean copy; crash report export.
+2. Test matrix: every character × host type × a full run, soak runs, save corruption.
+3. Release notes, version, zip.
+
+## 6. Risks and how they are handled
+
+- **Context-bound engine objects** (screens and models created outside their context
+  freeze the game). Rule: never create an engine object without first reproducing what its
+  owner loads; spikes start in a dev command and a disposable test run.
+- **Scripts in campaign areas.** Suppress per area (event list, triggers); start with areas
+  that are open combat spaces.
+- **Co-op and network code paths.** Solo only; flows that wait on partner sync are entered
+  past the sync or not at all.
+- **Game updates.** Every address is checked by signature at start; a mismatch disables the
+  feature and says so.
+
+## 7. Working rules
+
+- Verify in game before marking anything done; screenshots and log lines go to `TASKS.md`.
+- No overwritten game files: everything lives in the deployed DLL and `RogueMercenaries\`;
+  uninstall restores the folder and the executable hash is checked.
+- No pirated or leaked material; only the user's own copy, Ghidra on it, and our code.
+- Dangerous experiments (object creation, scene changes) only in dev commands, logged.

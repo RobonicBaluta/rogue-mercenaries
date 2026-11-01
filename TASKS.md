@@ -103,6 +103,11 @@ See `research/capabilities.md` (per-capability evidence) and `research/re5-engin
 - [x] Inventory capacity (2026-10-28): the record at `+0x18` of each slot is the grid position; the game's item grid has nine positions (0..8; 9 = knife, 0xA = reserved, 0xB = unarmed), Chris BSAA's own loadout takes six, so three entries fit. `Create` returns 0 when its position search (`0x00C4D590`) finds no free grid position (`research/re5-engine-map.md`). The mod tops up stacks first, opens new slots one unit at a time, caps the loadout roll at `max_items` distinct entries (2), and rewards/shop items are placed synchronously through `rm::InventoryPort`: nothing fits → the reward stays open / the purchase is refunded (`tests/test_items.cpp`).
 - [ ] Add additional arenas only after repeatability and softlock checks. All Mercenaries stages should work (the arena is tied to the match, not the map), but only Public Assembly has been played.
 
+## Phase 7 — The real game mode (see ROADMAP.md)
+
+- [x] Roadmap written (2026-11-01): target product, architecture (flow, host, director, resources, inventory, UI, content), engine spikes E1–E12 with "done when" tests, milestones M1–M9.
+- [x] E1 enemy spawn (2026-11-01). A logging hook on `sEnemy::Create` (`0x007AF550`, vtable slot 11) showed every Mercenaries enemy created by `0x007AF5F0` with group 9, mode 1, flag 1. Its recipe was reproduced without set data: class lookup `0x006D05F0(name, 0x011AF714)`, a fresh `cSetInfoEmXX` from its DTI (lookup base `0x0120BEA0`, `newInstance` vtable `+4`), position at descriptor `+0x20`, weapon at `+0xF0`, `Create(dti, 9, 1, 1)`, set ids `unit+0xD50/0xD54`, apply (descriptor vtable `+0x18`), link pass `0x0072CD00` on `[[0x01234578]+0x3830]`. Dev `spawn uEm10 70100 3`: three `uEm10` units, which fell off the walkway 2.5 m away and were scored and counted by the game (`build/shots/cap-20261101-190730.png`); `spawn uEm10 70100 2 0`: two at the player's spot, who attacked at once (`cap-20261101-190943.png`). Next: E2 (the spawner gate), then the director.
+
 ## Phase 5 — Stabilization/release
 
 - [x] Repeat three-round run and inspect crash logs. Evidence:
