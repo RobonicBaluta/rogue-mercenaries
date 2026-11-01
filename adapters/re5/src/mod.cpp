@@ -1449,6 +1449,38 @@ void TryBeginArena(double now) {
     if (status.ok() && waitingFirst) ApplyLoadoutToInventory();
 }
 
+// Every 2 s of a director arena: live enemies the director did not spawn are logged once each
+// (a stage's own special enemies may come by another path than the blocked set spawn), and
+// in developer mode the director units' mean distance to the player (do they come?).
+void TraceDirectorArena(double now, const std::optional<std::array<double, 3>>& player) {
+    static double next = 0.0;
+    static std::set<std::uintptr_t> reported;
+    if (now < next) return;
+    next = now + 2.0;
+    double distance = 0.0;
+    int counted = 0;
+    for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
+        if (e.hp <= 0) continue;
+        const float x = ReadOr<float>(e.object + re5::off::kUnitPosition, 0.0f);
+        const float y = ReadOr<float>(e.object + re5::off::kUnitPosition + 4, 0.0f);
+        const float z = ReadOr<float>(e.object + re5::off::kUnitPosition + 8, 0.0f);
+        if (g->directorUnits.count(e.object) == 0) {
+            if (reported.insert(e.object).second) {
+                RM_LOGW("director: untracked enemy %08X %s hp %d/%d at %.0f %.0f %.0f (not spawned by the director)",
+                        static_cast<unsigned>(e.object), engine::ClassName(e.object).c_str(), e.hp, e.max, x, y, z);
+            }
+            continue;
+        }
+        if (player) {
+            distance += std::sqrt(std::pow(x - (*player)[0], 2) + std::pow(z - (*player)[2], 2));
+            ++counted;
+        }
+    }
+    if (g->settings.developerMode && counted > 0) {
+        RM_LOGI("director: %d units, mean distance to the player %.0f", counted, distance / counted);
+    }
+}
+
 // ROADMAP M1: on a stage listed in maps.json the run owns the arena. The game's own spawns
 // stay off for the whole match (also between arenas), and the core's director decides what
 // to spawn where; the adapter spawns it and reports which unit became which ticket.
@@ -1467,8 +1499,14 @@ void DriveDirector(double now) {
                                        ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f)};
     }
     for (const rm::SpawnRequest& r : run.DirectorTick(now, player)) {
-        const float pos[3] = {static_cast<float>(r.pos[0]), static_cast<float>(r.pos[1]), static_cast<float>(r.pos[2])};
-        const std::uintptr_t unit = director::Spawn(r.unit_class.c_str(), pos, static_cast<int>(r.arm));
+        director::SpawnSpec spec;
+        spec.unitClass = r.unit_class;
+        for (int i = 0; i < 3; ++i) spec.pos[i] = static_cast<float>(r.pos[i]);
+        if (player) spec.facing = static_cast<float>(std::atan2((*player)[0] - r.pos[0], (*player)[2] - r.pos[2]));
+        spec.weapon = static_cast<int>(r.arm);
+        spec.fields = r.fields;
+        const float* pos = spec.pos;
+        const std::uintptr_t unit = director::Spawn(spec);
         if (!unit) {
             RM_LOGW("director: %s at %.0f %.0f %.0f failed", r.unit_class.c_str(), pos[0], pos[1], pos[2]);
             run.DirectorSpawnFailed(r.ticket);
@@ -1478,10 +1516,11 @@ void DriveDirector(double now) {
         g->directorUnits[unit] = id;
         run.DirectorSpawned(r.ticket, id);
         const rm::Director* d = run.director();
-        RM_LOGI("director: %s (arm %llX) at %.0f %.0f %.0f -> %08X; %d alive, %d dead of %d", r.unit_class.c_str(),
-                static_cast<unsigned long long>(r.arm), pos[0], pos[1], pos[2], static_cast<unsigned>(unit), d ? d->alive() : 0,
-                d ? d->dead() : 0, d ? d->budget() : 0);
+        RM_LOGI("director: %s (arm %llX, %zu fields) at %.0f %.0f %.0f -> %08X; %d alive, %d dead of %d", r.unit_class.c_str(),
+                static_cast<unsigned long long>(r.arm), r.fields.size(), pos[0], pos[1], pos[2], static_cast<unsigned>(unit),
+                d ? d->alive() : 0, d ? d->dead() : 0, d ? d->budget() : 0);
     }
+    TraceDirectorArena(now, player);
 }
 
 void DriveArena(double now) {
@@ -1896,9 +1935,30 @@ void PollDevCommand(double now) {
         const auto player = engine::LocalPlayer();
         const float pos[3] = {ReadOr<float>(player + re5::off::kUnitPosition, 0.0f), ReadOr<float>(player + re5::off::kUnitPosition + 4, 0.0f),
                               ReadOr<float>(player + re5::off::kUnitPosition + 8, 0.0f)};
+        // In front of the player (uCoord quaternion, +Z forward); along +X when the rotation is unreadable.
+        const float qx = ReadOr<float>(player + re5::off::kUnitRotation, 0.0f), qy = ReadOr<float>(player + re5::off::kUnitRotation + 4, 0.0f);
+        const float qz = ReadOr<float>(player + re5::off::kUnitRotation + 8, 0.0f), qw = ReadOr<float>(player + re5::off::kUnitRotation + 12, 0.0f);
+        const float norm = qx * qx + qy * qy + qz * qz + qw * qw;
+        float fx = 1.0f, fz = 0.0f;
+        if (norm > 0.9f && norm < 1.1f) {
+            fx = 2.0f * (qx * qz + qw * qy);
+            fz = 1.0f - 2.0f * (qx * qx + qy * qy);
+            const float len = std::sqrt(fx * fx + fz * fz);
+            if (len > 0.01f) {
+                fx /= len;
+                fz /= len;
+            }
+        }
+        RM_LOGW("dev spawn: player rotation %.3f %.3f %.3f %.3f (norm %.3f) -> forward %.2f %.2f", qx, qy, qz, qw, norm, fx, fz);
         for (int i = 0; i < std::clamp(count, 1, 20); ++i) {
-            const float spawnAt[3] = {pos[0] + distance + 60.0f * static_cast<float>(i), pos[1], pos[2]};
-            const std::uintptr_t unit = player ? director::Spawn(cls.c_str(), spawnAt, weapon) : 0;
+            const float side = 80.0f * static_cast<float>(i);  // further units step sideways
+            const float spawnAt[3] = {pos[0] + fx * distance - fz * side, pos[1], pos[2] + fz * distance + fx * side};
+            director::SpawnSpec spec;
+            spec.unitClass = cls;
+            std::memcpy(spec.pos, spawnAt, sizeof(spec.pos));
+            spec.facing = std::atan2(-fx, -fz);  // facing the player
+            spec.weapon = weapon;
+            const std::uintptr_t unit = player ? director::Spawn(spec) : 0;
             RM_LOGW("dev spawn %s (weapon %X) at %.0f %.0f %.0f -> %08X %s", cls.c_str(), weapon, spawnAt[0], spawnAt[1], spawnAt[2],
                     static_cast<unsigned>(unit), unit ? engine::ClassName(unit).c_str() : "failed");
         }

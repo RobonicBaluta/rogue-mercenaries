@@ -1,5 +1,5 @@
 {
- "_comment": "Native spawns observed per Mercenaries stage (scripts/survey_spawns.sh). pos = where the unit stood right after spawning; arm = descriptor weapon id; set/id = the stage set record.",
+ "_comment": "Native spawns observed per Mercenaries stage (scripts/survey_spawns.sh). pos = where the unit stood right after spawning; arm = descriptor weapon id; set/id = the stage set record; profiles = the game's own descriptor fields for Majini-family spawns, with counts.",
  "stages": {
   "0": {
    "points": [
@@ -470,6 +470,17 @@
      "id": 0,
      "class": "uEm10",
      "arm": 459097,
+     "pos": [
+      2291.9,
+      50.0,
+      -1160.8
+     ]
+    },
+    {
+     "set": 2,
+     "id": 1,
+     "class": "uEm10",
+     "arm": 459116,
      "pos": [
       2291.9,
       50.0,
@@ -1194,33 +1205,661 @@
    ],
    "classes": {
     "uEm10": {
-     "count": 97,
+     "count": 125,
      "arms": [
-      459093,
-      459089,
-      459098,
       459122,
+      459089,
+      459093,
       459097,
+      459098,
+      459123,
       459088,
-      459008,
       459116,
-      459123
+      459008
+     ],
+     "profiles": [
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459122,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 500.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459089,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 500.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32896,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 500.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459097,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459097,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459089,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459098,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459123,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32896,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459088,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459116,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32896,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459116,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459123,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459097,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459122,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459089,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459097,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459097,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459122,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
      ]
     },
     "uEm11": {
-     "count": 24,
+     "count": 32,
      "arms": [
-      459089,
       459093,
+      459098,
       459097,
-      459008,
-      459088,
       459122,
-      459098
+      459089,
+      459008,
+      459088
+     ],
+     "profiles": [
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459122,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459098,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459097,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459098,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
      ]
     },
     "uEm20": {
-     "count": 3,
+     "count": 4,
      "arms": [
       459008
      ]
@@ -1715,6 +2354,336 @@
      ]
     },
     {
+     "set": 4,
+     "id": 0,
+     "class": "uEm13",
+     "arm": 459008,
+     "pos": [
+      1501.2,
+      0.0,
+      -11257.2
+     ]
+    },
+    {
+     "set": 4,
+     "id": 1,
+     "class": "uEm10",
+     "arm": 459090,
+     "pos": [
+      2986.7,
+      314.4,
+      -17460.3
+     ]
+    },
+    {
+     "set": 4,
+     "id": 2,
+     "class": "uEm10",
+     "arm": 459123,
+     "pos": [
+      2986.7,
+      314.4,
+      -17460.3
+     ]
+    },
+    {
+     "set": 4,
+     "id": 3,
+     "class": "uEm10",
+     "arm": 459098,
+     "pos": [
+      2986.7,
+      314.4,
+      -17460.3
+     ]
+    },
+    {
+     "set": 4,
+     "id": 4,
+     "class": "uEm10",
+     "arm": 459098,
+     "pos": [
+      2986.7,
+      314.4,
+      -17460.3
+     ]
+    },
+    {
+     "set": 4,
+     "id": 5,
+     "class": "uEm10",
+     "arm": 459091,
+     "pos": [
+      1017.9,
+      300.0,
+      -15628.1
+     ]
+    },
+    {
+     "set": 4,
+     "id": 6,
+     "class": "uEm10",
+     "arm": 459122,
+     "pos": [
+      1017.9,
+      300.0,
+      -15628.1
+     ]
+    },
+    {
+     "set": 4,
+     "id": 7,
+     "class": "uEm10",
+     "arm": 459091,
+     "pos": [
+      1017.9,
+      300.0,
+      -15628.1
+     ]
+    },
+    {
+     "set": 4,
+     "id": 8,
+     "class": "uEm10",
+     "arm": 459098,
+     "pos": [
+      1017.9,
+      300.0,
+      -15628.1
+     ]
+    },
+    {
+     "set": 4,
+     "id": 9,
+     "class": "uEm10",
+     "arm": 459098,
+     "pos": [
+      1017.9,
+      300.0,
+      -15628.1
+     ]
+    },
+    {
+     "set": 4,
+     "id": 10,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      3577.3,
+      358.9,
+      -14278.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 11,
+     "class": "uEm10",
+     "arm": 459090,
+     "pos": [
+      3577.3,
+      358.9,
+      -14278.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 12,
+     "class": "uEm10",
+     "arm": 459088,
+     "pos": [
+      3577.3,
+      358.9,
+      -14278.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 13,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      3577.3,
+      358.9,
+      -14278.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 14,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      544.8,
+      400.0,
+      -13153.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 15,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      544.8,
+      400.0,
+      -13153.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 16,
+     "class": "uEm10",
+     "arm": 459088,
+     "pos": [
+      544.8,
+      400.0,
+      -13153.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 17,
+     "class": "uEm10",
+     "arm": 459088,
+     "pos": [
+      544.8,
+      400.0,
+      -13153.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 18,
+     "class": "uEm10",
+     "arm": 459091,
+     "pos": [
+      1381.8,
+      0.0,
+      -11197.6
+     ]
+    },
+    {
+     "set": 4,
+     "id": 19,
+     "class": "uEm10",
+     "arm": 459097,
+     "pos": [
+      1381.8,
+      0.0,
+      -11197.6
+     ]
+    },
+    {
+     "set": 4,
+     "id": 20,
+     "class": "uEm10",
+     "arm": 459121,
+     "pos": [
+      1381.8,
+      0.0,
+      -11197.6
+     ]
+    },
+    {
+     "set": 4,
+     "id": 21,
+     "class": "uEm10",
+     "arm": 459121,
+     "pos": [
+      1381.8,
+      0.0,
+      -11197.6
+     ]
+    },
+    {
+     "set": 4,
+     "id": 22,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      1381.8,
+      0.0,
+      -11197.6
+     ]
+    },
+    {
+     "set": 4,
+     "id": 23,
+     "class": "uEm10",
+     "arm": 459090,
+     "pos": [
+      2986.7,
+      314.4,
+      -17460.3
+     ]
+    },
+    {
+     "set": 4,
+     "id": 24,
+     "class": "uEm10",
+     "arm": 459091,
+     "pos": [
+      1017.9,
+      300.0,
+      -15628.1
+     ]
+    },
+    {
+     "set": 4,
+     "id": 25,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      3577.3,
+      358.9,
+      -14278.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 26,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      544.8,
+      400.0,
+      -13153.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 27,
+     "class": "uEm10",
+     "arm": 459097,
+     "pos": [
+      1381.8,
+      0.0,
+      -11197.6
+     ]
+    },
+    {
+     "set": 4,
+     "id": 28,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      1381.8,
+      0.0,
+      -11197.6
+     ]
+    },
+    {
+     "set": 4,
+     "id": 29,
+     "class": "uEm13",
+     "arm": 459008,
+     "pos": [
+      1501.2,
+      0.0,
+      -11257.2
+     ]
+    },
+    {
      "set": 9,
      "id": 0,
      "class": "uEm34",
@@ -1728,36 +2697,544 @@
    ],
    "classes": {
     "uEm10": {
-     "count": 84,
+     "count": 118,
      "arms": [
-      459121,
-      459091,
-      459097,
-      459123,
       459093,
-      459116,
-      459092,
-      459122,
-      459090,
       459088,
+      459121,
+      459090,
       459098,
+      459122,
+      459091,
+      459092,
+      459123,
+      459097,
+      459116,
       459089
+     ],
+     "profiles": [
+      {
+       "count": 4,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459092,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 3,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459090,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459098,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459088,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459091,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459098,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459091,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459092,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459097,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459088,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459121,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459122,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459121,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459123,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459121,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459090,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459098,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459088,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
      ]
     },
     "uEm13": {
-     "count": 5,
+     "count": 7,
+     "arms": [
+      459008
+     ],
+     "profiles": [
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 2000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
+     ]
+    },
+    "uEm34": {
+     "count": 3,
      "arms": [
       459008
      ]
     },
     "uEm62": {
      "count": 6,
-     "arms": [
-      459008
-     ]
-    },
-    "uEm34": {
-     "count": 2,
      "arms": [
       459008
      ]
@@ -2263,6 +3740,28 @@
     },
     {
      "set": 2,
+     "id": 3,
+     "class": "uEm12",
+     "arm": 459103,
+     "pos": [
+      -7372.9,
+      79.8,
+      8927.9
+     ]
+    },
+    {
+     "set": 2,
+     "id": 4,
+     "class": "uEm12",
+     "arm": 459103,
+     "pos": [
+      -10366.2,
+      1158.6,
+      3661.7
+     ]
+    },
+    {
+     "set": 2,
      "id": 5,
      "class": "uEm12",
      "arm": 459103,
@@ -2281,6 +3780,28 @@
       -8278.4,
       80.0,
       7565.0
+     ]
+    },
+    {
+     "set": 2,
+     "id": 7,
+     "class": "uEm12",
+     "arm": 459103,
+     "pos": [
+      -9480.5,
+      320.0,
+      5596.7
+     ]
+    },
+    {
+     "set": 2,
+     "id": 8,
+     "class": "uEm12",
+     "arm": 459103,
+     "pos": [
+      -6977.2,
+      900.0,
+      1923.5
      ]
     },
     {
@@ -2307,6 +3828,61 @@
     },
     {
      "set": 2,
+     "id": 11,
+     "class": "uEm12",
+     "arm": 459103,
+     "pos": [
+      -3556.7,
+      299.2,
+      7746.8
+     ]
+    },
+    {
+     "set": 2,
+     "id": 12,
+     "class": "uEm12",
+     "arm": 459103,
+     "pos": [
+      -7989.3,
+      317.7,
+      1281.5
+     ]
+    },
+    {
+     "set": 2,
+     "id": 13,
+     "class": "uEm12",
+     "arm": 459103,
+     "pos": [
+      -9480.5,
+      320.0,
+      5596.7
+     ]
+    },
+    {
+     "set": 2,
+     "id": 15,
+     "class": "uEm12",
+     "arm": 459104,
+     "pos": [
+      -10366.2,
+      1158.6,
+      3661.7
+     ]
+    },
+    {
+     "set": 2,
+     "id": 17,
+     "class": "uEm12",
+     "arm": 459103,
+     "pos": [
+      -8278.4,
+      80.0,
+      7565.0
+     ]
+    },
+    {
+     "set": 2,
      "id": 18,
      "class": "uEm12",
      "arm": 459103,
@@ -2314,6 +3890,17 @@
       -9480.5,
       320.0,
       5596.7
+     ]
+    },
+    {
+     "set": 2,
+     "id": 19,
+     "class": "uEm12",
+     "arm": 459103,
+     "pos": [
+      -4659.0,
+      16.3,
+      4748.8
      ]
     },
     {
@@ -2329,6 +3916,50 @@
     },
     {
      "set": 2,
+     "id": 22,
+     "class": "uEm0b",
+     "arm": 459008,
+     "pos": [
+      -6161.5,
+      4.5,
+      7694.0
+     ]
+    },
+    {
+     "set": 2,
+     "id": 23,
+     "class": "uEm0b",
+     "arm": 459008,
+     "pos": [
+      -6584.0,
+      0.0,
+      6475.9
+     ]
+    },
+    {
+     "set": 2,
+     "id": 24,
+     "class": "uEm0b",
+     "arm": 459008,
+     "pos": [
+      -7653.6,
+      80.0,
+      4579.2
+     ]
+    },
+    {
+     "set": 2,
+     "id": 25,
+     "class": "uEm0b",
+     "arm": 459008,
+     "pos": [
+      -6856.9,
+      0.0,
+      5356.2
+     ]
+    },
+    {
+     "set": 2,
      "id": 26,
      "class": "uEm0b",
      "arm": 459008,
@@ -2336,6 +3967,28 @@
       -5215.5,
       0.1,
       5915.0
+     ]
+    },
+    {
+     "set": 2,
+     "id": 27,
+     "class": "uEm0b",
+     "arm": 459008,
+     "pos": [
+      -5604.6,
+      420.0,
+      3032.9
+     ]
+    },
+    {
+     "set": 2,
+     "id": 28,
+     "class": "uEm12",
+     "arm": 459103,
+     "pos": [
+      -7989.3,
+      317.7,
+      1281.5
      ]
     },
     {
@@ -2374,27 +4027,319 @@
    ],
    "classes": {
     "uEm12": {
-     "count": 50,
+     "count": 75,
      "arms": [
       459103,
-      459104,
-      459106
+      459106,
+      459104
+     ],
+     "profiles": [
+      {
+       "count": 5,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 4,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33280,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 4,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33792,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 4,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 1,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33280,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459106,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459104,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
      ]
     },
-    "uEm62": {
-     "count": 1,
+    "uEm0b": {
+     "count": 9,
      "arms": [
       459008
      ]
     },
     "uEm24": {
-     "count": 2,
+     "count": 3,
      "arms": [
       459108
+     ],
+     "profiles": [
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459108,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
      ]
     },
-    "uEm0b": {
-     "count": 2,
+    "uEm62": {
+     "count": 1,
      "arms": [
       459008
      ]
@@ -2780,23 +4725,555 @@
    ],
    "classes": {
     "uEm12": {
-     "count": 31,
+     "count": 62,
      "arms": [
       459106,
       459102,
       459103,
       459104,
       459008
+     ],
+     "profiles": [
+      {
+       "count": 4,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 4,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1500.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32896,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 33792,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459106,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1048576,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459106,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459106,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1500.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459102,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 500.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459106,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 2,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459104,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1500.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1500.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459102,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33920,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 33024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 33792,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 32896,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459104,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459103,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
      ]
     },
     "uEm24": {
-     "count": 2,
+     "count": 4,
      "arms": [
       459108
+     ],
+     "profiles": [
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459108,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 256,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
      ]
     },
     "uEm62": {
-     "count": 1,
+     "count": 2,
      "arms": [
       459008
      ]
@@ -2902,6 +5379,336 @@
       935.1,
       -474.9,
       633.0
+     ]
+    },
+    {
+     "set": 1,
+     "id": 0,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      633.6,
+      335.7,
+      1219.6
+     ]
+    },
+    {
+     "set": 1,
+     "id": 1,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      633.6,
+      335.7,
+      1219.6
+     ]
+    },
+    {
+     "set": 1,
+     "id": 2,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      633.6,
+      335.7,
+      1219.6
+     ]
+    },
+    {
+     "set": 1,
+     "id": 3,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      633.6,
+      335.7,
+      1219.6
+     ]
+    },
+    {
+     "set": 1,
+     "id": 4,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      2590.9,
+      -164.3,
+      -487.4
+     ]
+    },
+    {
+     "set": 1,
+     "id": 5,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      2590.9,
+      -164.3,
+      -487.4
+     ]
+    },
+    {
+     "set": 1,
+     "id": 6,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      2590.9,
+      -164.3,
+      -487.4
+     ]
+    },
+    {
+     "set": 1,
+     "id": 7,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      2590.9,
+      -164.3,
+      -487.4
+     ]
+    },
+    {
+     "set": 1,
+     "id": 8,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      689.5,
+      -664.3,
+      1037.1
+     ]
+    },
+    {
+     "set": 1,
+     "id": 9,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      689.5,
+      -664.3,
+      1037.1
+     ]
+    },
+    {
+     "set": 1,
+     "id": 10,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      689.5,
+      -664.3,
+      1037.1
+     ]
+    },
+    {
+     "set": 1,
+     "id": 11,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      689.5,
+      -664.3,
+      1037.1
+     ]
+    },
+    {
+     "set": 1,
+     "id": 12,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -2084.4,
+      -1267.2,
+      -647.5
+     ]
+    },
+    {
+     "set": 1,
+     "id": 13,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -2084.4,
+      -1267.2,
+      -647.5
+     ]
+    },
+    {
+     "set": 1,
+     "id": 14,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -2084.4,
+      -1267.2,
+      -647.5
+     ]
+    },
+    {
+     "set": 1,
+     "id": 15,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -2084.4,
+      -1267.2,
+      -647.5
+     ]
+    },
+    {
+     "set": 1,
+     "id": 16,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -2084.4,
+      -1267.2,
+      -647.5
+     ]
+    },
+    {
+     "set": 1,
+     "id": 17,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -503.3,
+      -1079.6,
+      2201.2
+     ]
+    },
+    {
+     "set": 1,
+     "id": 18,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -503.3,
+      -1079.6,
+      2201.2
+     ]
+    },
+    {
+     "set": 1,
+     "id": 19,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -503.3,
+      -1079.6,
+      2201.2
+     ]
+    },
+    {
+     "set": 1,
+     "id": 20,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -503.3,
+      -1079.6,
+      2201.2
+     ]
+    },
+    {
+     "set": 1,
+     "id": 21,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -503.3,
+      -1079.6,
+      2201.2
+     ]
+    },
+    {
+     "set": 1,
+     "id": 22,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -503.3,
+      -1079.6,
+      2201.2
+     ]
+    },
+    {
+     "set": 1,
+     "id": 23,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      633.6,
+      335.7,
+      1219.6
+     ]
+    },
+    {
+     "set": 1,
+     "id": 24,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      633.6,
+      335.7,
+      1219.6
+     ]
+    },
+    {
+     "set": 1,
+     "id": 25,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      2590.9,
+      -164.3,
+      -487.4
+     ]
+    },
+    {
+     "set": 1,
+     "id": 26,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      689.5,
+      -664.3,
+      1037.1
+     ]
+    },
+    {
+     "set": 1,
+     "id": 27,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -2084.4,
+      -1267.2,
+      -647.5
+     ]
+    },
+    {
+     "set": 1,
+     "id": 28,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      -503.3,
+      -1079.6,
+      2201.2
+     ]
+    },
+    {
+     "set": 1,
+     "id": 29,
+     "class": "uEm14",
+     "arm": 459109,
+     "pos": [
+      633.6,
+      335.7,
+      1219.6
      ]
     },
     {
@@ -3236,6 +6043,17 @@
     },
     {
      "set": 4,
+     "id": 0,
+     "class": "uEm32",
+     "arm": 459008,
+     "pos": [
+      48.0,
+      -2243.0,
+      1300.0
+     ]
+    },
+    {
+     "set": 4,
      "id": 2,
      "class": "uEm32",
      "arm": 459008,
@@ -3243,6 +6061,39 @@
       48.0,
       -2243.0,
       1300.0
+     ]
+    },
+    {
+     "set": 4,
+     "id": 3,
+     "class": "uEm32",
+     "arm": 459008,
+     "pos": [
+      48.0,
+      -2243.0,
+      1300.0
+     ]
+    },
+    {
+     "set": 4,
+     "id": 6,
+     "class": "uEm32",
+     "arm": 459008,
+     "pos": [
+      48.0,
+      -2243.0,
+      1300.0
+     ]
+    },
+    {
+     "set": 4,
+     "id": 8,
+     "class": "uEm32",
+     "arm": 459008,
+     "pos": [
+      1413.5,
+      -2661.0,
+      250.0
      ]
     },
     {
@@ -3258,7 +6109,40 @@
     },
     {
      "set": 4,
+     "id": 11,
+     "class": "uEm32",
+     "arm": 459008,
+     "pos": [
+      361.9,
+      -2758.8,
+      -1400.0
+     ]
+    },
+    {
+     "set": 4,
+     "id": 12,
+     "class": "uEm32",
+     "arm": 459008,
+     "pos": [
+      361.9,
+      -2758.8,
+      -1400.0
+     ]
+    },
+    {
+     "set": 4,
      "id": 13,
+     "class": "uEm32",
+     "arm": 459008,
+     "pos": [
+      361.9,
+      -2758.8,
+      -1400.0
+     ]
+    },
+    {
+     "set": 4,
+     "id": 15,
      "class": "uEm32",
      "arm": 459008,
      "pos": [
@@ -3276,6 +6160,50 @@
       -600.0,
       -2756.4,
       -1813.2
+     ]
+    },
+    {
+     "set": 4,
+     "id": 19,
+     "class": "uEm32",
+     "arm": 459008,
+     "pos": [
+      -600.0,
+      -2756.4,
+      -1813.2
+     ]
+    },
+    {
+     "set": 4,
+     "id": 20,
+     "class": "uEm32",
+     "arm": 459008,
+     "pos": [
+      -600.0,
+      -2756.4,
+      -1813.2
+     ]
+    },
+    {
+     "set": 4,
+     "id": 22,
+     "class": "uEm32",
+     "arm": 459008,
+     "pos": [
+      -1300.0,
+      -3264.1,
+      -198.1
+     ]
+    },
+    {
+     "set": 4,
+     "id": 24,
+     "class": "uEm32",
+     "arm": 459008,
+     "pos": [
+      -1300.0,
+      -3264.1,
+      -198.1
      ]
     },
     {
@@ -3314,20 +6242,670 @@
    ],
    "classes": {
     "uEm14": {
-     "count": 41,
+     "count": 87,
      "arms": [
       459109,
       459112
+     ],
+     "profiles": [
+      {
+       "count": 6,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 4,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 2
+       }
+      },
+      {
+       "count": 3,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 2
+       }
+      },
+      {
+       "count": 3,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 1,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 3,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 192,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32896,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459112,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32896,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 576,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 512,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1048576,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 2
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 500.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 2
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1049600,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 2,
+        "search_circle": 500.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1048576,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 100.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 2
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 800.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 2
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 1,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 64,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 500.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 2
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 2,
+        "search_circle": 800.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 2
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 1,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 2
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 192,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 3,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 2
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 2
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 192,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 2
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1152,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 2,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459109,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 1,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 1
+       }
+      }
      ]
     },
     "uEm62": {
-     "count": 1,
+     "count": 2,
      "arms": [
       459008
      ]
     },
     "uEm32": {
-     "count": 4,
+     "count": 16,
      "arms": [
       459008
      ]
@@ -3466,6 +7044,226 @@
       -2417.6,
       0.0,
       -13853.7
+     ]
+    },
+    {
+     "set": 1,
+     "id": 0,
+     "class": "uEm10",
+     "arm": 459123,
+     "pos": [
+      -4351.6,
+      900.0,
+      -22923.1
+     ]
+    },
+    {
+     "set": 1,
+     "id": 1,
+     "class": "uEm10",
+     "arm": 459088,
+     "pos": [
+      -4351.6,
+      900.0,
+      -22923.1
+     ]
+    },
+    {
+     "set": 1,
+     "id": 2,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      -5346.4,
+      900.0,
+      -22964.4
+     ]
+    },
+    {
+     "set": 1,
+     "id": 3,
+     "class": "uEm10",
+     "arm": 459097,
+     "pos": [
+      -5346.4,
+      900.0,
+      -22964.4
+     ]
+    },
+    {
+     "set": 1,
+     "id": 4,
+     "class": "uEm10",
+     "arm": 459125,
+     "pos": [
+      -3846.4,
+      400.4,
+      -23354.7
+     ]
+    },
+    {
+     "set": 1,
+     "id": 5,
+     "class": "uEm10",
+     "arm": 459098,
+     "pos": [
+      -3846.4,
+      400.4,
+      -23354.7
+     ]
+    },
+    {
+     "set": 1,
+     "id": 6,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      -1842.3,
+      1251.8,
+      -21020.9
+     ]
+    },
+    {
+     "set": 1,
+     "id": 7,
+     "class": "uEm10",
+     "arm": 459008,
+     "pos": [
+      -1842.3,
+      1251.8,
+      -21020.9
+     ]
+    },
+    {
+     "set": 1,
+     "id": 8,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      -1857.3,
+      1250.7,
+      -20651.0
+     ]
+    },
+    {
+     "set": 1,
+     "id": 9,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      -1857.3,
+      1250.7,
+      -20651.0
+     ]
+    },
+    {
+     "set": 1,
+     "id": 10,
+     "class": "uEm10",
+     "arm": 459008,
+     "pos": [
+      -4715.8,
+      400.4,
+      -23337.7
+     ]
+    },
+    {
+     "set": 1,
+     "id": 11,
+     "class": "uEm10",
+     "arm": 459088,
+     "pos": [
+      -4715.8,
+      400.4,
+      -23337.7
+     ]
+    },
+    {
+     "set": 1,
+     "id": 12,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      -1530.1,
+      1247.4,
+      -19487.6
+     ]
+    },
+    {
+     "set": 1,
+     "id": 13,
+     "class": "uEm10",
+     "arm": 459125,
+     "pos": [
+      -1530.1,
+      1247.4,
+      -19487.6
+     ]
+    },
+    {
+     "set": 1,
+     "id": 14,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      -1510.7,
+      1247.4,
+      -19039.8
+     ]
+    },
+    {
+     "set": 1,
+     "id": 15,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      -1510.7,
+      1247.4,
+      -19039.8
+     ]
+    },
+    {
+     "set": 1,
+     "id": 16,
+     "class": "uEm10",
+     "arm": 459116,
+     "pos": [
+      -4843.2,
+      1258.2,
+      -20557.5
+     ]
+    },
+    {
+     "set": 1,
+     "id": 17,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      -4843.2,
+      1258.2,
+      -20557.5
+     ]
+    },
+    {
+     "set": 1,
+     "id": 18,
+     "class": "uEm10",
+     "arm": 459123,
+     "pos": [
+      -4905.9,
+      1258.2,
+      -20711.7
+     ]
+    },
+    {
+     "set": 1,
+     "id": 19,
+     "class": "uEm10",
+     "arm": 459116,
+     "pos": [
+      -4905.9,
+      1258.2,
+      -20711.7
      ]
     },
     {
@@ -3702,7 +7500,7 @@
    ],
    "classes": {
     "uEm10": {
-     "count": 31,
+     "count": 70,
      "arms": [
       459123,
       459125,
@@ -3711,20 +7509,793 @@
       459098,
       459097,
       459093,
+      459088,
       459116,
       459122
+     ],
+     "profiles": [
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459125,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459097,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 1,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459088,
+        "arm_num": 1,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33792,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459123,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459123,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459125,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 34048,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459123,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 640,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459125,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 256,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1049216,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459092,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1049088,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 700.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459098,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 700.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459123,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 900.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459123,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1049216,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459097,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 500.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459125,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 700.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 700.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 33280,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459092,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33280,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459092,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33280,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 2,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459088,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 33280,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459098,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33280,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459116,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459116,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33280,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459092,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 33024,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459092,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 32768,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
      ]
     },
     "uEm62": {
-     "count": 1,
+     "count": 2,
      "arms": [
       459008
      ]
     },
     "uEm23": {
-     "count": 1,
+     "count": 2,
      "arms": [
       459101
+     ],
+     "profiles": [
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459101,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 0,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 8000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
      ]
     }
    }
@@ -4227,6 +8798,314 @@
      ]
     },
     {
+     "set": 3,
+     "id": 2,
+     "class": "uEm10",
+     "arm": 459098,
+     "pos": [
+      2275.9,
+      215.0,
+      1966.8
+     ]
+    },
+    {
+     "set": 3,
+     "id": 3,
+     "class": "uEm10",
+     "arm": 459088,
+     "pos": [
+      2272.7,
+      215.0,
+      2061.8
+     ]
+    },
+    {
+     "set": 3,
+     "id": 4,
+     "class": "uEm10",
+     "arm": 459122,
+     "pos": [
+      3035.2,
+      469.7,
+      3768.7
+     ]
+    },
+    {
+     "set": 3,
+     "id": 6,
+     "class": "uEm10",
+     "arm": 459008,
+     "pos": [
+      3043.3,
+      469.7,
+      3787.7
+     ]
+    },
+    {
+     "set": 3,
+     "id": 7,
+     "class": "uEm10",
+     "arm": 459008,
+     "pos": [
+      3033.3,
+      469.7,
+      3825.7
+     ]
+    },
+    {
+     "set": 3,
+     "id": 12,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      2770.5,
+      221.5,
+      1778.8
+     ]
+    },
+    {
+     "set": 3,
+     "id": 13,
+     "class": "uEm10",
+     "arm": 459116,
+     "pos": [
+      2770.5,
+      221.5,
+      1867.8
+     ]
+    },
+    {
+     "set": 3,
+     "id": 16,
+     "class": "uEm10",
+     "arm": 459123,
+     "pos": [
+      1347.2,
+      2252.4,
+      4309.1
+     ]
+    },
+    {
+     "set": 4,
+     "id": 0,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      2259.4,
+      215.0,
+      2025.2
+     ]
+    },
+    {
+     "set": 4,
+     "id": 1,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      2312.4,
+      215.0,
+      1942.2
+     ]
+    },
+    {
+     "set": 4,
+     "id": 2,
+     "class": "uEm10",
+     "arm": 459098,
+     "pos": [
+      2313.4,
+      215.0,
+      2017.2
+     ]
+    },
+    {
+     "set": 4,
+     "id": 3,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      2269.4,
+      215.0,
+      1915.2
+     ]
+    },
+    {
+     "set": 4,
+     "id": 4,
+     "class": "uEm10",
+     "arm": 459122,
+     "pos": [
+      3007.3,
+      469.7,
+      3852.7
+     ]
+    },
+    {
+     "set": 4,
+     "id": 5,
+     "class": "uEm10",
+     "arm": 459008,
+     "pos": [
+      3015.3,
+      469.7,
+      3762.7
+     ]
+    },
+    {
+     "set": 4,
+     "id": 6,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      3062.3,
+      469.7,
+      3802.7
+     ]
+    },
+    {
+     "set": 4,
+     "id": 7,
+     "class": "uEm10",
+     "arm": 459008,
+     "pos": [
+      3062.3,
+      469.7,
+      3840.7
+     ]
+    },
+    {
+     "set": 4,
+     "id": 8,
+     "class": "uEm10",
+     "arm": 459097,
+     "pos": [
+      2495.9,
+      219.0,
+      4882.7
+     ]
+    },
+    {
+     "set": 4,
+     "id": 9,
+     "class": "uEm10",
+     "arm": 459116,
+     "pos": [
+      2545.9,
+      219.0,
+      4872.7
+     ]
+    },
+    {
+     "set": 4,
+     "id": 10,
+     "class": "uEm10",
+     "arm": 459089,
+     "pos": [
+      2491.9,
+      219.0,
+      4807.7
+     ]
+    },
+    {
+     "set": 4,
+     "id": 11,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      2558.9,
+      219.0,
+      4807.7
+     ]
+    },
+    {
+     "set": 4,
+     "id": 12,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      2789.5,
+      221.5,
+      1783.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 13,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      2755.5,
+      221.5,
+      1868.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 14,
+     "class": "uEm10",
+     "arm": 459008,
+     "pos": [
+      2764.5,
+      221.5,
+      1832.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 15,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      2786.5,
+      221.5,
+      1896.8
+     ]
+    },
+    {
+     "set": 4,
+     "id": 16,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      1347.2,
+      2252.4,
+      4309.1
+     ]
+    },
+    {
+     "set": 4,
+     "id": 17,
+     "class": "uEm10",
+     "arm": 459097,
+     "pos": [
+      1347.2,
+      2252.4,
+      4309.1
+     ]
+    },
+    {
+     "set": 4,
+     "id": 18,
+     "class": "uEm10",
+     "arm": 459092,
+     "pos": [
+      1347.2,
+      2252.4,
+      4309.1
+     ]
+    },
+    {
+     "set": 4,
+     "id": 19,
+     "class": "uEm10",
+     "arm": 459123,
+     "pos": [
+      1347.2,
+      2252.4,
+      4309.1
+     ]
+    },
+    {
      "set": 9,
      "id": 0,
      "class": "uEm22",
@@ -4273,18 +9152,477 @@
    ],
    "classes": {
     "uEm10": {
-     "count": 43,
+     "count": 71,
      "arms": [
-      459088,
-      459090,
-      459116,
-      459097,
-      459098,
-      459008,
       459093,
+      459116,
+      459098,
+      459122,
+      459008,
       459123,
+      459088,
+      459092,
+      459097,
       459089,
-      459092
+      459090
+     ],
+     "profiles": [
+      {
+       "count": 4,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 3,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459122,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459092,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33920,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459092,
+        "arm_num": 3,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459092,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459092,
+        "arm_num": 2,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459116,
+        "arm_num": 3,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459098,
+        "arm_num": 2,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459123,
+        "arm_num": 1,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459088,
+        "arm_num": 2,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459097,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459116,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459097,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459092,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459089,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 33408,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459098,
+        "arm_num": 2,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 34432,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459123,
+        "arm_num": 0,
+        "arm_set_joint": 1,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 34432,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 1,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
      ]
     },
     "uEm22": {
@@ -4745,6 +10083,50 @@
     },
     {
      "set": 2,
+     "id": 0,
+     "class": "uEm13",
+     "arm": 459008,
+     "pos": [
+      570.2,
+      724.7,
+      1687.1
+     ]
+    },
+    {
+     "set": 2,
+     "id": 1,
+     "class": "uEm13",
+     "arm": 459008,
+     "pos": [
+      2022.2,
+      970.0,
+      -732.8
+     ]
+    },
+    {
+     "set": 2,
+     "id": 2,
+     "class": "uEm13",
+     "arm": 459008,
+     "pos": [
+      -1131.5,
+      1296.5,
+      -613.4
+     ]
+    },
+    {
+     "set": 2,
+     "id": 3,
+     "class": "uEm10",
+     "arm": 459089,
+     "pos": [
+      1943.0,
+      970.0,
+      -783.6
+     ]
+    },
+    {
+     "set": 2,
      "id": 4,
      "class": "uEm10",
      "arm": 459093,
@@ -4767,6 +10149,72 @@
     },
     {
      "set": 2,
+     "id": 6,
+     "class": "uEm10",
+     "arm": 459098,
+     "pos": [
+      527.2,
+      724.4,
+      1620.7
+     ]
+    },
+    {
+     "set": 2,
+     "id": 7,
+     "class": "uEm10",
+     "arm": 459122,
+     "pos": [
+      529.6,
+      725.0,
+      1738.4
+     ]
+    },
+    {
+     "set": 2,
+     "id": 8,
+     "class": "uEm10",
+     "arm": 459123,
+     "pos": [
+      -490.4,
+      647.4,
+      1070.1
+     ]
+    },
+    {
+     "set": 2,
+     "id": 9,
+     "class": "uEm10",
+     "arm": 459116,
+     "pos": [
+      -1191.3,
+      1296.5,
+      -597.2
+     ]
+    },
+    {
+     "set": 2,
+     "id": 10,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      -1055.4,
+      1296.5,
+      -566.3
+     ]
+    },
+    {
+     "set": 2,
+     "id": 11,
+     "class": "uEm10",
+     "arm": 459088,
+     "pos": [
+      -1017.5,
+      1296.5,
+      -694.9
+     ]
+    },
+    {
+     "set": 2,
      "id": 12,
      "class": "uEm10",
      "arm": 459098,
@@ -4774,6 +10222,17 @@
       -1178.5,
       1296.5,
       -719.7
+     ]
+    },
+    {
+     "set": 2,
+     "id": 13,
+     "class": "uEm10",
+     "arm": 459116,
+     "pos": [
+      -1137.2,
+      630.9,
+      -1553.5
      ]
     },
     {
@@ -4789,6 +10248,17 @@
     },
     {
      "set": 2,
+     "id": 15,
+     "class": "uEm10",
+     "arm": 459088,
+     "pos": [
+      -998.9,
+      993.8,
+      -1282.7
+     ]
+    },
+    {
+     "set": 2,
      "id": 16,
      "class": "uEm10",
      "arm": 459089,
@@ -4796,6 +10266,94 @@
       1943.0,
       970.0,
       -783.6
+     ]
+    },
+    {
+     "set": 2,
+     "id": 17,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      2041.8,
+      970.0,
+      -730.9
+     ]
+    },
+    {
+     "set": 2,
+     "id": 18,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      658.6,
+      724.8,
+      1760.8
+     ]
+    },
+    {
+     "set": 2,
+     "id": 19,
+     "class": "uEm10",
+     "arm": 459098,
+     "pos": [
+      527.2,
+      724.4,
+      1620.7
+     ]
+    },
+    {
+     "set": 2,
+     "id": 20,
+     "class": "uEm10",
+     "arm": 459122,
+     "pos": [
+      529.6,
+      725.0,
+      1738.4
+     ]
+    },
+    {
+     "set": 2,
+     "id": 21,
+     "class": "uEm10",
+     "arm": 459123,
+     "pos": [
+      -490.4,
+      647.4,
+      1070.1
+     ]
+    },
+    {
+     "set": 2,
+     "id": 22,
+     "class": "uEm10",
+     "arm": 459116,
+     "pos": [
+      -1191.3,
+      1296.5,
+      -597.2
+     ]
+    },
+    {
+     "set": 2,
+     "id": 23,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      -1055.4,
+      1296.5,
+      -566.3
+     ]
+    },
+    {
+     "set": 2,
+     "id": 24,
+     "class": "uEm10",
+     "arm": 459088,
+     "pos": [
+      -1017.5,
+      1296.5,
+      -694.9
      ]
     },
     {
@@ -4811,6 +10369,17 @@
     },
     {
      "set": 2,
+     "id": 26,
+     "class": "uEm10",
+     "arm": 459116,
+     "pos": [
+      -1137.2,
+      630.9,
+      -1553.5
+     ]
+    },
+    {
+     "set": 2,
      "id": 27,
      "class": "uEm10",
      "arm": 459089,
@@ -4818,6 +10387,138 @@
       -733.0,
       641.9,
       1191.6
+     ]
+    },
+    {
+     "set": 2,
+     "id": 28,
+     "class": "uEm10",
+     "arm": 459088,
+     "pos": [
+      -998.9,
+      993.8,
+      -1282.7
+     ]
+    },
+    {
+     "set": 2,
+     "id": 29,
+     "class": "uEm10",
+     "arm": 459091,
+     "pos": [
+      529.6,
+      725.0,
+      1738.4
+     ]
+    },
+    {
+     "set": 3,
+     "id": 1,
+     "class": "uEm13",
+     "arm": 459008,
+     "pos": [
+      2022.2,
+      970.0,
+      -732.8
+     ]
+    },
+    {
+     "set": 3,
+     "id": 5,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      658.6,
+      724.8,
+      1760.8
+     ]
+    },
+    {
+     "set": 3,
+     "id": 6,
+     "class": "uEm10",
+     "arm": 459098,
+     "pos": [
+      527.2,
+      724.4,
+      1620.7
+     ]
+    },
+    {
+     "set": 3,
+     "id": 8,
+     "class": "uEm10",
+     "arm": 459123,
+     "pos": [
+      -490.4,
+      647.4,
+      1070.1
+     ]
+    },
+    {
+     "set": 3,
+     "id": 9,
+     "class": "uEm10",
+     "arm": 459116,
+     "pos": [
+      -1191.3,
+      1296.5,
+      -597.2
+     ]
+    },
+    {
+     "set": 3,
+     "id": 10,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      -1055.4,
+      1296.5,
+      -566.3
+     ]
+    },
+    {
+     "set": 3,
+     "id": 14,
+     "class": "uEm10",
+     "arm": 459089,
+     "pos": [
+      -733.0,
+      641.9,
+      1191.6
+     ]
+    },
+    {
+     "set": 3,
+     "id": 16,
+     "class": "uEm10",
+     "arm": 459089,
+     "pos": [
+      1943.0,
+      970.0,
+      -783.6
+     ]
+    },
+    {
+     "set": 3,
+     "id": 23,
+     "class": "uEm10",
+     "arm": 459093,
+     "pos": [
+      -1055.4,
+      1296.5,
+      -566.3
+     ]
+    },
+    {
+     "set": 3,
+     "id": 25,
+     "class": "uEm10",
+     "arm": 459098,
+     "pos": [
+      -1178.5,
+      1296.5,
+      -719.7
      ]
     },
     {
@@ -4833,33 +10534,445 @@
     }
    ],
    "classes": {
+    "uEm10": {
+     "count": 85,
+     "arms": [
+      459089,
+      459093,
+      459122,
+      459091,
+      459098,
+      459123,
+      459088,
+      459116
+     ],
+     "profiles": [
+      {
+       "count": 6,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459089,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 4,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459098,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 4,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459088,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 4,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 3,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1152,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 3,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459098,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 3,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459116,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459122,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459091,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459123,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459116,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459089,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 2,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459123,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459122,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      },
+      {
+       "count": 1,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459093,
+        "arm_num": 1,
+        "arm_set_joint": 0,
+        "armed": 1,
+        "attack": 0,
+        "attribute": 1152,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 1,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
+     ]
+    },
+    "uEm13": {
+     "count": 7,
+     "arms": [
+      459008
+     ],
+     "profiles": [
+      {
+       "count": 4,
+       "fields": {
+        "area_keep_dist": 0.0,
+        "area_keep_type": 0,
+        "arm": 459008,
+        "arm_num": 0,
+        "arm_set_joint": 0,
+        "armed": 0,
+        "attack": 0,
+        "attribute": 128,
+        "extra_no": 0,
+        "is_acting": 0,
+        "is_extra": 0,
+        "lefty": 0,
+        "mask": 4294967295,
+        "neck_event": 0,
+        "plaga": 0,
+        "search_circle": 1000.0,
+        "search_forward": 0.0,
+        "search_type": 1,
+        "sub_bomb": 0
+       }
+      }
+     ]
+    },
     "uEm26": {
      "count": 1,
      "arms": [
       459008
      ]
     },
-    "uEm10": {
-     "count": 42,
-     "arms": [
-      459088,
-      459122,
-      459116,
-      459089,
-      459098,
-      459093,
-      459091,
-      459123
-     ]
-    },
     "uEm62": {
      "count": 1,
-     "arms": [
-      459008
-     ]
-    },
-    "uEm13": {
-     "count": 3,
      "arms": [
       459008
      ]

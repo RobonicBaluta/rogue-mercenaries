@@ -19,7 +19,7 @@ MapDef TestMap(int max_alive = 3) {
     map.max_alive = max_alive;
     map.min_player_distance = 500.0;
     map.points = {{0, 0, 0}, {1000, 0, 0}, {0, 0, 1000}, {2000, 0, 2000}};
-    map.roster = {MapEnemy{"uEm10", {0x70100, 0x70101}, 1, 3.0}, MapEnemy{"uEm22", {}, 3, 1.0}};
+    map.roster = {MapEnemy{"uEm10", {0x70100, 0x70101}, {}, 1, 3.0}, MapEnemy{"uEm22", {}, {}, 3, 1.0}};
     return map;
 }
 
@@ -83,7 +83,7 @@ TEST_CASE("failed spawns go back to the budget and bad points are avoided", "[di
 
 TEST_CASE("a roster with nothing at the run's tier still fills the arena", "[director]") {
     MapDef map = TestMap(2);
-    map.roster = {MapEnemy{"uEm22", {}, 3, 1.0}};
+    map.roster = {MapEnemy{"uEm22", {}, {}, 3, 1.0}};
     Director d(map, 4, 1, 3);
     const auto r = d.Tick(0.0, std::nullopt);
     REQUIRE(r.size() == 2);
@@ -99,6 +99,91 @@ TEST_CASE("shipped maps load and every map can spawn at tier 1", "[director]") {
         CHECK(m.points.size() >= 4);
         CHECK(std::any_of(m.roster.begin(), m.roster.end(), [](const MapEnemy& e) { return e.min_tier <= 1 && e.weight > 0; }));
     }
+}
+
+TEST_CASE("profiles are picked by weight and carry their fields and weapon", "[director]") {
+    MapDef map = TestMap(20);
+    map.roster = {MapEnemy{"uEm10", {0x70100}, {EnemyProfile{3.0, {{"arm", 0x70150}, {"plaga", 1}}}, EnemyProfile{1.0, {{"arm", 0x70172}}}}, 1, 1.0}};
+    Director d(map, 200, 1, 11);
+    int first = 0;
+    int second = 0;
+    for (int i = 0; i < 10; ++i) {
+        for (const auto& r : d.Tick(static_cast<double>(i), std::nullopt)) {
+            if (r.arm == 0x70150) {
+                ++first;
+                REQUIRE(r.fields.size() == 2);
+                CHECK(r.fields[1].first == "plaga");
+            } else {
+                CHECK(r.arm == 0x70172);
+                ++second;
+            }
+            d.Spawned(r.ticket, "u" + std::to_string(r.ticket));
+            d.Died("u" + std::to_string(r.ticket));
+        }
+    }
+    CHECK(first > second);  // 3:1
+    CHECK(second > 0);
+}
+
+TEST_CASE("the stage's special enemy joins after a share of the budget, one at a time", "[director]") {
+    MapDef map = TestMap(4);
+    map.special_after = 0.25;
+    MapEnemy special{"uEm0b", {}, {}, 1, 1.0};
+    special.special = true;
+    map.roster = {MapEnemy{"uEm12", {}, {}, 1, 50.0}, special};
+    Director d(map, 20, 1, 5);
+    int specials = 0;
+    int maxSpecialsAlive = 0;
+    int deadBeforeFirstSpecial = -1;
+    std::vector<std::string> alive;
+    std::vector<std::string> aliveSpecials;
+    double now = 0.0;
+    while (!d.complete() && now < 400.0) {
+        for (const auto& r : d.Tick(now, std::nullopt)) {
+            const std::string id = "u" + std::to_string(r.ticket);
+            d.Spawned(r.ticket, id);
+            if (r.unit_class == "uEm0b") {
+                ++specials;
+                if (deadBeforeFirstSpecial < 0) deadBeforeFirstSpecial = d.dead();
+                aliveSpecials.push_back(id);
+            } else {
+                alive.push_back(id);
+            }
+        }
+        maxSpecialsAlive = std::max(maxSpecialsAlive, static_cast<int>(aliveSpecials.size()));
+        // Normal enemies die first; a special dies every few seconds.
+        if (!alive.empty()) {
+            d.Died(alive.back());
+            alive.pop_back();
+        } else if (!aliveSpecials.empty() && static_cast<int>(now) % 3 == 0) {
+            d.Died(aliveSpecials.back());
+            aliveSpecials.pop_back();
+        }
+        now += 1.0;
+    }
+    CHECK(d.complete());
+    CHECK(deadBeforeFirstSpecial >= 5);  // 25% of 20
+    CHECK(specials >= 1);
+    CHECK(maxSpecialsAlive == 1);
+}
+
+TEST_CASE("several special types share the map's special limit, which grows with the tier", "[director]") {
+    MapDef map = TestMap(12);
+    map.special_after = 0.0;
+    MapEnemy a{"uEm20", {}, {}, 1, 1.0};
+    a.special = true;
+    MapEnemy b{"uEm21", {}, {}, 1, 1.0};
+    b.special = true;
+    map.roster = {MapEnemy{"uEm10", {}, {}, 1, 10.0}, a, b};
+    auto specialsAtStart = [&](int tier) {
+        Director d(map, 40, tier, 3);
+        int n = 0;
+        for (const auto& r : d.Tick(0.0, std::nullopt)) n += r.unit_class != "uEm10" ? 1 : 0;
+        return n;
+    };
+    CHECK(specialsAtStart(1) == 1);
+    CHECK(specialsAtStart(2) == 2);
+    CHECK(specialsAtStart(3) == 2);  // each type is still one at a time
 }
 
 TEST_CASE("spawn points away from the player are preferred", "[director]") {
@@ -180,4 +265,8 @@ TEST_CASE("maps.json is validated", "[director]") {
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "roster": [{"class": "uPl00"}]}]})").empty());
     CHECK(errors(kMapsJson).empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "special_after": 2, "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
+    CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "special_after": 0.5, "points": [[0,0,0]], "roster": [{"class": "uEm10"}, {"class": "uEm0b", "special": true, "max_alive": 1}]}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "roster": [{"class": "uEm10", "profiles": [{"fields": {"Arm": 1}}]}]}]})").empty());
+    CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "roster": [{"class": "uEm10", "profiles": [{"weight": 2, "fields": {"arm": 459088, "plaga": 1}}]}]}]})").empty());
 }

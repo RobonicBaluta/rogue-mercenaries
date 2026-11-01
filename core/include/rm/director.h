@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "rm/common.h"
@@ -11,13 +12,29 @@
 
 namespace rm {
 
-/// One enemy type a map can host (its model is loaded there). `arms` are the descriptor
-/// weapon ids seen on that map (empty = the descriptor default).
+/// Named spawn settings the adapter writes into the enemy's descriptor (weapon, plaga type,
+/// mask, ...). Names and meaning belong to the adapter; the core only picks one.
+using SpawnFields = std::vector<std::pair<std::string, double>>;
+
+/// One way the game itself spawned this enemy type (surveyed), picked by weight.
+struct EnemyProfile {
+    double weight = 1.0;
+    SpawnFields fields;
+};
+
+/// One enemy type a map can host (its model is loaded there). `profiles` are the variants
+/// the game used there; without them, `arms` are the weapon ids seen (empty = the default).
 struct MapEnemy {
     std::string unit_class;          // engine class, e.g. "uEm10"
     std::vector<std::int64_t> arms;  // descriptor weapon ids
+    std::vector<EnemyProfile> profiles;
     int min_tier = 1;                // first route tier that may use it
     double weight = 1.0;
+    /// The stage's special enemy (the big ones the game itself spawns one at a time): never a
+    /// normal pick; once `MapDef::special_after` of the budget is dead, kept at `max_alive`
+    /// (default 1) until the budget runs out. Its kills count like any other.
+    bool special = false;
+    int max_alive = 0;
 };
 
 /// A map the director can run an arena on (configs/maps.json).
@@ -29,6 +46,8 @@ struct MapDef {
     std::vector<MapEnemy> roster;
     int max_alive = 8;
     double min_player_distance = 800.0;  // engine units; points closer than this are avoided
+    double special_after = 0.25;         // share of the budget dead before specials join
+    int max_specials = 1;                // specials alive at once on tier 1 (+1 per tier above)
 };
 
 /// What the adapter must create now. `ticket` identifies the request until it is answered.
@@ -37,6 +56,7 @@ struct SpawnRequest {
     std::string unit_class;
     std::int64_t arm = -1;
     std::array<double, 3> pos{};
+    SpawnFields fields;  // from the picked profile (empty = adapter defaults)
 };
 
 /// Runs one arena: `budget` enemies in total, at most `max_alive` at once, refilled as they
@@ -65,6 +85,8 @@ public:
 
 private:
     const MapEnemy* PickEnemy();
+    const MapEnemy* PickSpecial();
+    [[nodiscard]] int Active(const MapEnemy* enemy) const;  // alive + pending of that roster entry
     int PickPoint(const std::optional<std::array<double, 3>>& player);
 
     MapDef map_;
@@ -80,6 +102,7 @@ private:
     StringMap<std::uint64_t> alive_;                 // unit id -> ticket
     std::vector<std::pair<std::uint64_t, int>> pending_;  // ticket -> point index
     std::vector<int> point_failures_;
+    std::unordered_map<std::uint64_t, const MapEnemy*> ticket_enemy_;  // pending and alive tickets
 };
 
 }  // namespace rm

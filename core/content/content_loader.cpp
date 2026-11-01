@@ -864,7 +864,7 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
         MapDef map;
         if (!ReadId(d, e, map.id)) continue;
         d = file.Sub(": map " + Q(map.id));
-        CheckKeys(d, e, {"id", "name", "stage", "points", "roster", "max_alive", "min_player_distance"});
+        CheckKeys(d, e, {"id", "name", "stage", "points", "roster", "max_alive", "min_player_distance", "special_after", "max_specials"});
         GetString(d, e, "name", map.name, true);
         std::int64_t stage = -1;
         if (GetInt(d, e, "stage", stage, true) && stage < 0) d.Error("field 'stage' must be >= 0");
@@ -875,6 +875,12 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
         if (GetNumber(d, e, "min_player_distance", map.min_player_distance, false) && map.min_player_distance < 0) {
             d.Error("field 'min_player_distance' must be >= 0");
         }
+        if (GetNumber(d, e, "special_after", map.special_after, false) && (map.special_after < 0 || map.special_after > 1)) {
+            d.Error("field 'special_after' must be 0..1");
+        }
+        std::int64_t maxSpecials = 1;
+        if (GetInt(d, e, "max_specials", maxSpecials, false) && (maxSpecials < 0 || maxSpecials > 10)) d.Error("field 'max_specials' must be 0..10");
+        map.max_specials = static_cast<int>(maxSpecials);
         if (const json* pts = ListField(d, e, "points")) {
             for (const json& p : *pts) {
                 if (!p.is_array() || p.size() != 3 || !p[0].is_number() || !p[1].is_number() || !p[2].is_number()) {
@@ -892,7 +898,7 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
                     rd.Error("must be an object");
                     continue;
                 }
-                CheckKeys(rd, r, {"class", "arms", "min_tier", "weight"});
+                CheckKeys(rd, r, {"class", "arms", "profiles", "min_tier", "weight", "special", "max_alive"});
                 MapEnemy enemy;
                 GetString(rd, r, "class", enemy.unit_class, true);
                 if (enemy.unit_class.rfind("uEm", 0) != 0) rd.Error("class must be an enemy class (uEm..)");
@@ -906,10 +912,44 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
                         }
                     }
                 }
+                if (const auto profiles = r.find("profiles"); profiles != r.end()) {
+                    if (!profiles->is_array()) {
+                        rd.Error("profiles must be an array");
+                    } else {
+                        for (const json& p : *profiles) {
+                            const Diag pd = rd.Sub(" profile");
+                            if (!p.is_object()) {
+                                pd.Error("must be an object");
+                                continue;
+                            }
+                            CheckKeys(pd, p, {"weight", "fields"});
+                            EnemyProfile profile;
+                            if (GetNumber(pd, p, "weight", profile.weight, false) && profile.weight < 0) pd.Error("weight must be >= 0");
+                            const auto fields = p.find("fields");
+                            if (fields == p.end() || !fields->is_object()) {
+                                pd.Error("needs a 'fields' object");
+                                continue;
+                            }
+                            for (const auto& [name, value] : fields->items()) {
+                                const bool identifier = !name.empty() && std::all_of(name.begin(), name.end(), [](char c) {
+                                    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+                                });
+                                if (!identifier) pd.Error("field name '" + name + "' must be lower_case");
+                                else if (!value.is_number()) pd.Error("field '" + name + "' must be a number");
+                                else profile.fields.emplace_back(name, value.get<double>());
+                            }
+                            enemy.profiles.push_back(std::move(profile));
+                        }
+                    }
+                }
                 std::int64_t tier = 1;
                 if (GetInt(rd, r, "min_tier", tier, false) && tier < 1) rd.Error("min_tier must be >= 1");
                 enemy.min_tier = static_cast<int>(tier);
                 if (GetNumber(rd, r, "weight", enemy.weight, false) && enemy.weight < 0) rd.Error("weight must be >= 0");
+                GetBool(rd, r, "special", enemy.special, false);
+                std::int64_t enemyMax = 0;
+                if (GetInt(rd, r, "max_alive", enemyMax, false) && (enemyMax < 0 || enemyMax > 40)) rd.Error("max_alive must be 0..40");
+                enemy.max_alive = static_cast<int>(enemyMax);
                 map.roster.push_back(std::move(enemy));
             }
             if (map.roster.empty()) d.Error("needs at least one roster entry");

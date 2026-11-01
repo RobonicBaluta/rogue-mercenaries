@@ -8,7 +8,10 @@
 #include <MinHook.h>
 
 #include <atomic>
+#include <cstdio>
 #include <map>
+#include <set>
+#include <cstring>
 #include <string>
 
 #include "engine.h"
@@ -33,6 +36,8 @@ std::atomic<bool> g_blocked{false};
 std::atomic<int> g_blockedAttempts{0};
 std::atomic<int> g_createLogged{0};
 std::atomic<bool> g_survey{false};
+ApplyFn g_origApplyEm10 = nullptr;
+thread_local bool t_ownSpawn = false;
 
 // The game's set spawn: refused while the mod owns the arena.
 std::uintptr_t __fastcall SetSpawnDetour(std::uintptr_t self, void*, int group, int id, int flag) {
@@ -63,6 +68,21 @@ std::uintptr_t __fastcall CreateDetour(std::uintptr_t self, void*, std::uintptr_
     return unit;
 }
 
+// Survey probe: the whole descriptor (+0x00..+0x11F: placement, cSetInfoEnemy behaviour fields,
+// cSetInfoEm10 look and weapon) of every uEm10-family placement, the game's own and the mod's.
+// scripts/survey_spawns.py turns the native ones into the roster's profiles.
+int __fastcall ApplyEm10Detour(std::uintptr_t info, void*, std::uintptr_t unit) {
+    if (g_survey.load()) {
+        char text[900];
+        int n = 0;
+        for (std::size_t off = 0; off < 0x120 && n >= 0 && n < static_cast<int>(sizeof(text)) - 12; off += 4) {
+            n += std::snprintf(text + n, sizeof(text) - n, "%s%08X", off % 0x40 == 0 ? " |" : " ", ReadOr<std::uint32_t>(info + off, 0));
+        }
+        RM_LOGI("director descriptor %s %s:%s", t_ownSpawn ? "mod" : "native", engine::ClassName(unit).c_str(), text);
+    }
+    return g_origApplyEm10(info, unit);
+}
+
 bool Queue(std::uintptr_t address, void* detour, void** original, const char* what) {
     auto* target = reinterpret_cast<void*>(address);
     MH_STATUS status = MH_CreateHook(target, detour, original);
@@ -74,19 +94,70 @@ bool Queue(std::uintptr_t address, void* detour, void** original, const char* wh
     return true;
 }
 
-std::uintptr_t SpawnNative(const char* unitClass, const char* infoClass, const float* pos, int weapon) {
+// Descriptor writes prepared before SpawnNative (no C++ unwinding inside its __try).
+struct DescriptorWrite {
+    std::uint16_t offset = 0;
+    char type = 'i';  // 'b' u8, 'i' u32, 'f' float
+    std::uint32_t bits = 0;
+};
+struct SpawnPlan {
+    const char* unitClass = nullptr;
+    const char* infoClass = nullptr;
+    float pos[3]{};
+    bool hasFacing = false;
+    float facing = 0.0f;
+    bool enemyLayout = false;  // descriptor derives from cSetInfoEnemy
+    bool em10Layout = false;   // descriptor derives from cSetInfoEm10
+    int count = 0;
+    DescriptorWrite writes[40];
+};
+
+// A new descriptor only has what its constructor sets; the rest is leftover heap memory
+// (seen: mIsScrHitOff = 3, pointers in the placement fields). These ranges are zero in every
+// descriptor the game itself loads for Mercenaries (survey 2026-11-01), so they are cleared.
+struct ZeroRange {
+    std::size_t first;
+    std::size_t second;
+};
+constexpr ZeroRange kEnemyZero[] = {
+    {0x0C, 0x20}, {0x2C, 0x40}, {0x4C, 0x50}, {0x54, 0x64}, {0x68, 0x7C}, {0x80, 0xB0}, {0xBC, 0xE0},
+};
+constexpr ZeroRange kEm10Zero[] = {{0xE0, 0x110}};
+
+std::uintptr_t SpawnNative(const SpawnPlan& plan) {
     __try {
         const auto lookup = reinterpret_cast<LookupFn>(re5::addr::kFnClassLookup);
-        const std::uintptr_t unitDti = lookup(unitClass, re5::addr::kDtiLookupUnitBase);
-        const std::uintptr_t infoDti = lookup(infoClass, re5::addr::kDtiSetInfoPawn);
+        const std::uintptr_t unitDti = lookup(plan.unitClass, re5::addr::kDtiLookupUnitBase);
+        const std::uintptr_t infoDti = lookup(plan.infoClass, re5::addr::kDtiSetInfoPawn);
         if (!unitDti || !infoDti) return 0;
         const auto newInstance = *reinterpret_cast<std::uintptr_t*>(*reinterpret_cast<std::uintptr_t*>(infoDti) + 4);
         const std::uintptr_t info = reinterpret_cast<NewFn>(newInstance)(infoDti);
         if (!info) return 0;
-        *reinterpret_cast<float*>(info + re5::off::kSetInfoPosition) = pos[0];
-        *reinterpret_cast<float*>(info + re5::off::kSetInfoPosition + 4) = pos[1];
-        *reinterpret_cast<float*>(info + re5::off::kSetInfoPosition + 8) = pos[2];
-        if (weapon >= 0) *reinterpret_cast<std::int32_t*>(info + re5::off::kSetInfoEm10Weapon) = weapon;
+        if (plan.enemyLayout) {
+            for (const auto& range : kEnemyZero) std::memset(reinterpret_cast<void*>(info + range.first), 0, range.second - range.first);
+            // As in the game's Mercenaries descriptors: mIsForNet and mIsFindPL set, so the
+            // enemy starts out knowing where the player is and comes for them.
+            *reinterpret_cast<std::uint8_t*>(info + re5::off::kSetInfoIsForNet) = 1;
+            *reinterpret_cast<std::uint8_t*>(info + re5::off::kSetInfoIsFindPl) = 1;
+        }
+        if (plan.em10Layout) {
+            for (const auto& range : kEm10Zero) std::memset(reinterpret_cast<void*>(info + range.first), 0, range.second - range.first);
+            // As in the game's own Majini descriptors: armed (179 of 187 surveyed), mask -1 (all 187).
+            *reinterpret_cast<std::uint8_t*>(info + re5::off::kSetInfoEm10Armed) = 1;
+            *reinterpret_cast<std::uint32_t*>(info + re5::off::kSetInfoEm10Mask) = 0xFFFFFFFFu;
+        }
+        *reinterpret_cast<float*>(info + re5::off::kSetInfoPosition) = plan.pos[0];
+        *reinterpret_cast<float*>(info + re5::off::kSetInfoPosition + 4) = plan.pos[1];
+        *reinterpret_cast<float*>(info + re5::off::kSetInfoPosition + 8) = plan.pos[2];
+        if (plan.hasFacing) *reinterpret_cast<float*>(info + re5::off::kSetInfoAngleY) = plan.facing;
+        for (int i = 0; i < plan.count; ++i) {
+            const DescriptorWrite& w = plan.writes[i];
+            if (w.type == 'b') {
+                *reinterpret_cast<std::uint8_t*>(info + w.offset) = static_cast<std::uint8_t>(w.bits);
+            } else {
+                *reinterpret_cast<std::uint32_t*>(info + w.offset) = w.bits;
+            }
+        }
         const auto sEnemy = *reinterpret_cast<std::uintptr_t*>(re5::addr::kSEnemyInstance);
         const auto create = *reinterpret_cast<std::uintptr_t*>(*reinterpret_cast<std::uintptr_t*>(sEnemy) + re5::off::kSEnemyVtableCreate);
         const std::uintptr_t unit = reinterpret_cast<CreateFn>(create)(sEnemy, unitDti, re5::addr::kEnemyUnitGroup, 1, 1);
@@ -94,13 +165,79 @@ std::uintptr_t SpawnNative(const char* unitClass, const char* infoClass, const f
         *reinterpret_cast<std::int32_t*>(unit + re5::off::kEnemySetGroup) = 0;
         *reinterpret_cast<std::int32_t*>(unit + re5::off::kEnemySetId) = -1;
         const auto apply = *reinterpret_cast<std::uintptr_t*>(*reinterpret_cast<std::uintptr_t*>(info) + re5::off::kSetInfoVtableApply);
+        t_ownSpawn = true;
         reinterpret_cast<ApplyFn>(apply)(info, unit);
+        t_ownSpawn = false;
         const auto linker = *reinterpret_cast<std::uintptr_t*>(*reinterpret_cast<std::uintptr_t*>(re5::addr::kLinkUnitRoot) + re5::off::kLinkUnitManager);
         if (linker) reinterpret_cast<LinkFn>(re5::addr::kFnLinkUnits)(linker, unit);
         return unit;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
+        t_ownSpawn = false;
         return 0;
     }
+}
+
+// Profile fields (maps.json "profiles", from the survey) -> descriptor offsets. The cSetInfoEm10
+// ones (FUN_00CC6C20) only apply to descriptors derived from it; the cSetInfoEnemy ones
+// (FUN_00CCE070) to every enemy descriptor.
+struct SpawnFieldDef {
+    const char* name;
+    std::uint16_t offset;
+    char type;
+    bool em10;
+};
+constexpr SpawnFieldDef kSpawnFields[] = {
+    {"search_type", 0xB0, 'i', false}, {"search_forward", 0xB4, 'f', false}, {"search_circle", 0xB8, 'f', false},
+    {"area_keep_type", 0xC0, 'i', false}, {"area_keep_dist", 0xC4, 'f', false},
+    {"is_extra", 0xE0, 'b', true},       {"extra_no", 0xE4, 'i', true},       {"is_acting", 0xE8, 'b', true},
+    {"armed", 0xE9, 'b', true},          {"arm_num", 0xEC, 'i', true},        {"arm", 0xF0, 'i', true},
+    {"arm_set_joint", 0xF4, 'i', true},  {"attribute", 0xF8, 'i', true},      {"plaga", 0xFC, 'i', true},
+    {"sub_bomb", 0x100, 'i', true},      {"attack", 0x104, 'i', true},        {"mask", 0x108, 'i', true},
+    {"lefty", 0x10C, 'b', true},         {"neck_event", 0x10D, 'b', true},
+};
+constexpr std::size_t kArmField = 10;  // "arm"
+
+struct ResolvedInfo {
+    std::string infoClass;  // empty: cannot spawn
+    bool enemyLayout = false;
+    bool em10Layout = false;
+};
+
+bool DtiDerivesFrom(std::uintptr_t dti, const char* base) {
+    for (int depth = 0; dti && depth < 24; ++depth) {
+        if (engine::DtiName(dti) == base) return true;
+        dti = ReadOr<std::uintptr_t>(dti + re5::off::kDtiParent, 0);
+    }
+    return false;
+}
+
+// The descriptor class that places `unitClass`: its own (uEm22 -> cSetInfoEm22); for the
+// Majini variants that have none (uEm11..uEm14, uEm21.., derived from uEm10) the uEm10 one;
+// otherwise the generic cSetInfoEnemy. Looked up once per class (game thread only).
+const ResolvedInfo& ResolveInfo(const std::string& unitClass) {
+    static std::map<std::string, ResolvedInfo> cache;
+    if (const auto it = cache.find(unitClass); it != cache.end()) return it->second;
+    const auto lookup = reinterpret_cast<LookupFn>(re5::addr::kFnClassLookup);
+    ResolvedInfo r;
+    const std::string own = "cSetInfo" + unitClass.substr(1);  // uEm10 -> cSetInfoEm10
+    std::uintptr_t infoDti = lookup(own.c_str(), re5::addr::kDtiSetInfoPawn);
+    if (infoDti) {
+        r.infoClass = own;
+    } else if (DtiDerivesFrom(lookup(unitClass.c_str(), re5::addr::kDtiLookupUnitBase), "uEm10")) {
+        r.infoClass = "cSetInfoEm10";
+        infoDti = lookup("cSetInfoEm10", re5::addr::kDtiSetInfoPawn);
+    } else if ((infoDti = lookup("cSetInfoEnemy", re5::addr::kDtiSetInfoPawn)) != 0) {
+        // Enemies with neither (uEm20, and uEm26 derived from it): the generic enemy descriptor.
+        r.infoClass = "cSetInfoEnemy";
+    }
+    if (infoDti) {
+        r.enemyLayout = DtiDerivesFrom(infoDti, "cSetInfoEnemy");
+        r.em10Layout = DtiDerivesFrom(infoDti, "cSetInfoEm10");
+    }
+    RM_LOGI("director: %s is placed with %s (enemy fields %s, Majini fields %s)", unitClass.c_str(),
+            r.infoClass.empty() ? "no descriptor, cannot spawn" : r.infoClass.c_str(), r.enemyLayout ? "yes" : "no",
+            r.em10Layout ? "yes" : "no");
+    return cache.emplace(unitClass, r).first->second;
 }
 
 }  // namespace
@@ -114,6 +251,11 @@ bool Install() {
                             reinterpret_cast<void**>(&g_origSetSpawn), "set spawn");
     Queue(re5::addr::kFnEnemyCreate, reinterpret_cast<void*>(&CreateDetour), reinterpret_cast<void**>(&g_origCreate),
           "sEnemy::Create");
+    // The descriptor probe only where the vtable holds the expected function (no signature).
+    if (ReadOr<std::uintptr_t>(re5::addr::kSetInfoEm10Vtable + re5::off::kSetInfoVtableApply, 0) == re5::addr::kFnSetInfoEm10Apply) {
+        Queue(re5::addr::kFnSetInfoEm10Apply, reinterpret_cast<void*>(&ApplyEm10Detour), reinterpret_cast<void**>(&g_origApplyEm10),
+              "cSetInfoEm10 apply");
+    }
     g_installed = gate;
     if (gate) RM_LOGI("director: hooks on the set spawn and sEnemy::Create queued");
     return gate;
@@ -143,37 +285,54 @@ bool Kill(std::uintptr_t unit) {
     return true;
 }
 
-// The descriptor class that places `unitClass`: its own (uEm22 -> cSetInfoEm22), or for the
-// Majini variants that have none (uEm11..uEm14, uEm20.., all derived from uEm10) the uEm10
-// one. Empty when there is neither. Looked up once per class (game thread only).
-static std::string InfoClassFor(const char* unitClass) {
-    static std::map<std::string, std::string> cache;
-    if (const auto it = cache.find(unitClass); it != cache.end()) return it->second;
-    const auto lookup = reinterpret_cast<LookupFn>(re5::addr::kFnClassLookup);
-    std::string info = std::string("cSetInfo") + (unitClass + 1);  // uEm10 -> cSetInfoEm10
-    std::string chosen;
-    if (lookup(info.c_str(), re5::addr::kDtiSetInfoPawn)) {
-        chosen = info;
-    } else {
-        std::uintptr_t dti = lookup(unitClass, re5::addr::kDtiLookupUnitBase);
-        for (int depth = 0; dti && depth < 24 && chosen.empty(); ++depth) {
-            if (engine::DtiName(dti) == "uEm10") chosen = "cSetInfoEm10";
-            dti = ReadOr<std::uintptr_t>(dti + re5::off::kDtiParent, 0);
+std::uintptr_t Spawn(const SpawnSpec& spec) {
+    if (!engine::Caps().enemySpawn || spec.unitClass.size() < 2 || spec.unitClass[0] != 'u') return 0;
+    const ResolvedInfo& info = ResolveInfo(spec.unitClass);
+    if (info.infoClass.empty()) return 0;
+    SpawnPlan plan;
+    plan.unitClass = spec.unitClass.c_str();
+    plan.infoClass = info.infoClass.c_str();
+    std::memcpy(plan.pos, spec.pos, sizeof(plan.pos));
+    plan.hasFacing = spec.facing.has_value();
+    plan.facing = spec.facing.value_or(0.0f);
+    plan.enemyLayout = info.enemyLayout;
+    plan.em10Layout = info.em10Layout;
+    auto add = [&](const SpawnFieldDef& def, double value) {
+        if (plan.count >= static_cast<int>(std::size(plan.writes))) return;
+        DescriptorWrite& w = plan.writes[plan.count++];
+        w.offset = def.offset;
+        w.type = def.type;
+        if (def.type == 'f') {
+            const float f = static_cast<float>(value);
+            std::memcpy(&w.bits, &f, sizeof(f));
+        } else {
+            w.bits = static_cast<std::uint32_t>(static_cast<std::int64_t>(value));
         }
+    };
+    for (const auto& [name, value] : spec.fields) {
+        const SpawnFieldDef* def = nullptr;
+        for (const SpawnFieldDef& d : kSpawnFields) {
+            if (name == d.name) def = &d;
+        }
+        if (!def) {
+            static std::set<std::string> warned;
+            if (warned.insert(name).second) RM_LOGW("director: unknown spawn field '%s' ignored", name.c_str());
+            continue;
+        }
+        if ((def->em10 && !info.em10Layout) || (!def->em10 && !info.enemyLayout)) continue;
+        add(*def, value);
     }
-    RM_LOGI("director: %s is placed with %s", unitClass, chosen.empty() ? "no descriptor (cannot spawn)" : chosen.c_str());
-    cache.emplace(unitClass, chosen);
-    return chosen;
+    // The weapon field (+0xF0 mArmId) is verified for cSetInfoEm10 (and what derives from it).
+    if (spec.weapon >= 0 && info.em10Layout) add(kSpawnFields[kArmField], spec.weapon);
+    return SpawnNative(plan);
 }
 
 std::uintptr_t Spawn(const char* unitClass, const float pos[3], int weapon) {
-    if (!engine::Caps().enemySpawn || !unitClass || unitClass[0] != 'u') return 0;
-    const std::string info = InfoClassFor(unitClass);
-    if (info.empty()) return 0;
-    // The weapon field (+0xF0 mArmId) is verified for cSetInfoEm10 only; other descriptors
-    // keep their default arms.
-    if (info != "cSetInfoEm10") weapon = -1;
-    return SpawnNative(unitClass, info.c_str(), pos, weapon);
+    SpawnSpec spec;
+    spec.unitClass = unitClass ? unitClass : "";
+    std::memcpy(spec.pos, pos, sizeof(spec.pos));
+    spec.weapon = weapon;
+    return Spawn(spec);
 }
 
 }  // namespace rmre5::director

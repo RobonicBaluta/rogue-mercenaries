@@ -36,23 +36,51 @@
       "roster": [
         {
           "class": "uEm10",
-          "weight": 97,
-          "arms": [459008, 459088, 459089, 459093, 459097, 459098, 459116, 459122, 459123]
+          "weight": 125,
+          "profiles": [
+            {"weight": 2, "fields": {"arm": 459122, "search_circle": 500.0}},
+            {"weight": 2, "fields": {"arm": 459089, "attribute": 128, "search_circle": 500.0}},
+            {"weight": 2, "fields": {"arm": 459093, "attribute": 32896, "search_circle": 500.0}},
+            {"weight": 2, "fields": {"arm": 459097, "attribute": 32768, "plaga": 1}},
+            {"weight": 2, "fields": {"arm": 459097}},
+            {"weight": 2, "fields": {"arm": 459093, "attribute": 128}},
+            {"weight": 2, "fields": {"arm": 459089, "attribute": 128}},
+            {"weight": 2, "fields": {"arm": 459008, "armed": 0, "attribute": 128}},
+            {"weight": 1, "fields": {"arm": 459098, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459123, "attribute": 32896, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459088, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459116, "attribute": 32896, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459116, "attribute": 128}},
+            {"weight": 1, "fields": {"arm": 459123}},
+            {"weight": 1, "fields": {"arm": 459097, "arm_set_joint": 1, "attribute": 32768, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459122, "attribute": 128}},
+            {"weight": 1, "fields": {"arm": 459089, "attribute": 128, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459097, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459097, "attribute": 128}},
+            {"weight": 1, "fields": {"arm": 459122}}
+          ]
         },
         {
           "class": "uEm11",
-          "weight": 24,
-          "arms": [459008, 459088, 459089, 459093, 459097, 459098, 459122]
+          "weight": 32,
+          "profiles": [
+            {"weight": 2, "fields": {"arm": 459093, "attribute": 128}},
+            {"weight": 2, "fields": {"arm": 459122, "arm_set_joint": 1, "lefty": 1, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459098, "attribute": 128, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459093, "attribute": 128, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459097, "arm_set_joint": 1, "attribute": 128, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459098, "arm_set_joint": 1, "attribute": 128, "lefty": 1, "plaga": 1}}
+          ]
         },
         {
           "class": "uEm20",
-          "weight": 3,
-          "min_tier": 2
+          "weight": 4,
+          "special": true
         },
         {
           "class": "uEm21",
           "weight": 1,
-          "min_tier": 2,
+          "special": true,
           "arms": [459125]
         }
       ]
@@ -84,18 +112,42 @@
       "roster": [
         {
           "class": "uEm10",
-          "weight": 84,
-          "arms": [459088, 459089, 459090, 459091, 459092, 459093, 459097, 459098, 459116, 459121, 459122, 459123]
+          "weight": 118,
+          "profiles": [
+            {"weight": 4, "fields": {"arm": 459092, "search_circle": 2000.0}},
+            {"weight": 3, "fields": {"arm": 459090}},
+            {"weight": 2, "fields": {"arm": 459093, "arm_set_joint": 1, "lefty": 1}},
+            {"weight": 2, "fields": {"arm": 459098, "attribute": 1024, "plaga": 1}},
+            {"weight": 2, "fields": {"arm": 459088, "arm_set_joint": 1, "lefty": 1, "search_circle": 2000.0}},
+            {"weight": 2, "fields": {"arm": 459091, "search_circle": 2000.0}},
+            {"weight": 2, "fields": {"arm": 459098, "arm_set_joint": 1, "lefty": 1, "search_circle": 2000.0}},
+            {"weight": 2, "fields": {"arm": 459091, "attribute": 1024, "plaga": 1, "search_circle": 2000.0}},
+            {"weight": 2, "fields": {"arm": 459093, "arm_set_joint": 1, "lefty": 1, "search_circle": 2000.0}},
+            {"weight": 2, "fields": {"arm": 459092, "arm_num": 2, "search_circle": 2000.0}},
+            {"weight": 2, "fields": {"arm": 459097, "arm_set_joint": 1, "lefty": 1, "search_circle": 2000.0}},
+            {"weight": 1, "fields": {"arm": 459088, "arm_set_joint": 1, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459121}},
+            {"weight": 1, "fields": {"arm": 459122, "search_circle": 2000.0}},
+            {"weight": 1, "fields": {"arm": 459121, "search_circle": 2000.0}},
+            {"weight": 1, "fields": {"arm": 459123, "arm_set_joint": 1, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459121, "arm_set_joint": 1, "lefty": 1, "search_circle": 2000.0}},
+            {"weight": 1, "fields": {"arm": 459090, "search_circle": 2000.0}},
+            {"weight": 1, "fields": {"arm": 459098}},
+            {"weight": 1, "fields": {"arm": 459088, "search_circle": 2000.0}}
+          ]
         },
         {
           "class": "uEm13",
-          "weight": 5,
-          "min_tier": 2
+          "weight": 7,
+          "special": true,
+          "profiles": [
+            {"weight": 2, "fields": {"arm": 459008, "armed": 0, "search_circle": 2000.0}}
+          ]
         },
         {
           "class": "uEm34",
-          "weight": 2,
-          "min_tier": 2
+          "weight": 3,
+          "special": true
         }
       ]
     },
@@ -125,19 +177,44 @@
         [-4684.2, 482.5, 3140.1],
         [-8278.4, 80.0, 7565.0],
         [-6977.2, 900.0, 1923.5],
-        [-4659.0, 16.3, 4748.8]
+        [-4659.0, 16.3, 4748.8],
+        [-5541.2, 0.0, 5492.7],
+        [-6161.5, 4.5, 7694.0],
+        [-6584.0, 0.0, 6475.9],
+        [-7653.6, 80.0, 4579.2],
+        [-6856.9, 0.0, 5356.2],
+        [-5215.5, 0.1, 5915.0]
       ],
       "roster": [
         {
           "class": "uEm12",
-          "weight": 50,
-          "arms": [459103, 459104, 459106]
+          "weight": 75,
+          "profiles": [
+            {"weight": 5, "fields": {"arm": 459103}},
+            {"weight": 4, "fields": {"arm": 459103, "arm_set_joint": 1, "attribute": 33280, "lefty": 1}},
+            {"weight": 4, "fields": {"arm": 459103, "attribute": 32768}},
+            {"weight": 2, "fields": {"arm": 459103, "arm_set_joint": 1, "lefty": 1, "plaga": 1}},
+            {"weight": 2, "fields": {"arm": 459103, "arm_set_joint": 1, "attribute": 33792, "lefty": 1, "plaga": 1}},
+            {"weight": 2, "fields": {"arm": 459103, "arm_set_joint": 1, "attribute": 1024, "lefty": 1, "plaga": 1}},
+            {"weight": 2, "fields": {"arm": 459103, "attribute": 1024, "plaga": 4}},
+            {"weight": 1, "fields": {"arm": 459103, "arm_num": 1, "arm_set_joint": 1, "attribute": 33280, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459106, "attribute": 32768}},
+            {"weight": 1, "fields": {"arm": 459103, "attribute": 1024, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459104}}
+          ]
+        },
+        {
+          "class": "uEm0b",
+          "weight": 9,
+          "special": true
         },
         {
           "class": "uEm24",
-          "weight": 2,
-          "min_tier": 2,
-          "arms": [459108]
+          "weight": 3,
+          "special": true,
+          "profiles": [
+            {"weight": 1, "fields": {"arm": 459108, "arm_num": 1, "attribute": 32768}}
+          ]
         }
       ]
     },
@@ -171,14 +248,38 @@
       "roster": [
         {
           "class": "uEm12",
-          "weight": 31,
-          "arms": [459008, 459102, 459103, 459104, 459106]
+          "weight": 62,
+          "profiles": [
+            {"weight": 4, "fields": {"arm": 459103, "attribute": 32768}},
+            {"weight": 4, "fields": {"arm": 459103, "arm_set_joint": 1, "attribute": 33024, "lefty": 1}},
+            {"weight": 2, "fields": {"arm": 459103, "search_circle": 1500.0}},
+            {"weight": 2, "fields": {"arm": 459103, "attribute": 32896}},
+            {"weight": 2, "fields": {"arm": 459008, "armed": 0, "attribute": 33792, "plaga": 1}},
+            {"weight": 2, "fields": {"arm": 459008, "arm_set_joint": 1, "armed": 0, "attribute": 32768, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459106, "attribute": 1048576}},
+            {"weight": 1, "fields": {"arm": 459106}},
+            {"weight": 1, "fields": {"arm": 459106, "search_circle": 1500.0}},
+            {"weight": 1, "fields": {"arm": 459102, "attribute": 1024, "plaga": 1, "search_circle": 500.0}},
+            {"weight": 1, "fields": {"arm": 459106, "attribute": 1024, "plaga": 2}},
+            {"weight": 1, "fields": {"arm": 459103}},
+            {"weight": 1, "fields": {"arm": 459104, "search_circle": 1500.0}},
+            {"weight": 1, "fields": {"arm": 459103, "attribute": 128, "search_circle": 1500.0}},
+            {"weight": 1, "fields": {"arm": 459102, "attribute": 33920, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459008, "arm_set_joint": 1, "armed": 0, "attribute": 32768, "lefty": 1, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459008, "arm_set_joint": 1, "armed": 0, "attribute": 33024, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459008, "arm_set_joint": 1, "armed": 0, "attribute": 33792, "lefty": 1, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459008, "arm_set_joint": 1, "armed": 0, "attribute": 32896, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459104, "attribute": 33024}},
+            {"weight": 1, "fields": {"arm": 459103, "arm_set_joint": 1, "attribute": 32768, "lefty": 1}}
+          ]
         },
         {
           "class": "uEm24",
-          "weight": 2,
-          "min_tier": 2,
-          "arms": [459108]
+          "weight": 4,
+          "special": true,
+          "profiles": [
+            {"weight": 2, "fields": {"arm": 459108, "attribute": 256}}
+          ]
         }
       ]
     },
@@ -197,9 +298,13 @@
         [-1541.6, -2993.1, 293.0],
         [-802.2, -1323.8, 902.2],
         [-294.8, -2332.3, -238.3],
+        [633.6, 335.7, 1219.6],
+        [2590.9, -164.3, -487.4],
+        [689.5, -664.3, 1037.1],
+        [-2084.4, -1267.2, -647.5],
+        [-503.3, -1079.6, 2201.2],
         [1025.5, -1767.2, 2833.0],
         [2494.3, -1953.4, 1010.2],
-        [2604.4, -2182.5, -520.3],
         [-662.4, -2182.5, -3041.4],
         [-2887.2, -2682.5, 471.3],
         [985.3, -2950.5, 1209.9],
@@ -207,20 +312,48 @@
         [1413.5, -2661.0, 250.0],
         [361.9, -2758.8, -1400.0],
         [-600.0, -2756.4, -1813.2],
+        [-1300.0, -3264.1, -198.1],
         [365.6, 335.7, 1205.0],
-        [-503.3, -1079.6, 2201.2],
         [-1829.5, -1267.2, -616.5]
       ],
       "roster": [
         {
           "class": "uEm14",
-          "weight": 41,
-          "arms": [459109, 459112]
+          "weight": 87,
+          "profiles": [
+            {"weight": 6, "fields": {"arm": 459109, "arm_num": 2, "attribute": 128, "sub_bomb": 1}},
+            {"weight": 4, "fields": {"arm": 459109, "arm_num": 2, "arm_set_joint": 1, "attribute": 128, "lefty": 1, "sub_bomb": 2}},
+            {"weight": 3, "fields": {"arm": 459109, "arm_num": 1, "attribute": 128, "sub_bomb": 2}},
+            {"weight": 3, "fields": {"arm": 459109, "arm_num": 1, "arm_set_joint": 1, "attribute": 128, "lefty": 1, "sub_bomb": 1}},
+            {"weight": 3, "fields": {"arm": 459109, "arm_num": 2, "attribute": 192, "sub_bomb": 1}},
+            {"weight": 2, "fields": {"arm": 459109, "arm_num": 2, "attribute": 32896, "sub_bomb": 1}},
+            {"weight": 2, "fields": {"arm": 459109, "arm_num": 1, "attribute": 128, "sub_bomb": 1}},
+            {"weight": 2, "fields": {"arm": 459112, "attribute": 32896, "sub_bomb": 1}},
+            {"weight": 2, "fields": {"arm": 459109, "arm_num": 2, "attribute": 576, "sub_bomb": 1}},
+            {"weight": 2, "fields": {"arm": 459109, "arm_num": 2, "attribute": 512, "sub_bomb": 1}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 2, "attribute": 1048576, "sub_bomb": 2}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 2, "arm_set_joint": 1, "lefty": 1, "search_circle": 500.0, "sub_bomb": 2}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 2, "arm_set_joint": 1, "attribute": 1049600, "lefty": 1, "plaga": 2, "search_circle": 500.0, "sub_bomb": 1}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_set_joint": 1, "lefty": 1, "sub_bomb": 1}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 1, "attribute": 1048576, "search_circle": 100.0, "sub_bomb": 2}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 2, "search_circle": 800.0, "sub_bomb": 2}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 1, "arm_set_joint": 1, "attribute": 64, "lefty": 1, "search_circle": 500.0, "sub_bomb": 2}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_set_joint": 1, "lefty": 1, "plaga": 2, "search_circle": 800.0, "sub_bomb": 2}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 1, "arm_set_joint": 1, "attribute": 128, "lefty": 1, "sub_bomb": 2}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 2, "arm_set_joint": 1, "attribute": 128, "lefty": 1, "sub_bomb": 1}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 1, "attribute": 192, "sub_bomb": 1}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 3, "attribute": 128, "sub_bomb": 2}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 2, "attribute": 128, "sub_bomb": 2}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 2, "arm_set_joint": 1, "attribute": 192, "lefty": 1, "sub_bomb": 2}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 2, "arm_set_joint": 1, "attribute": 1152, "lefty": 1, "plaga": 2, "sub_bomb": 1}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 2, "sub_bomb": 1}},
+            {"weight": 1, "fields": {"arm": 459109, "arm_num": 2, "attack": 1, "sub_bomb": 1}}
+          ]
         },
         {
           "class": "uEm32",
-          "weight": 4,
-          "min_tier": 2
+          "weight": 16,
+          "special": true
         }
       ]
     },
@@ -242,28 +375,69 @@
         [-1794.1, 573.0, -21904.4],
         [-2255.1, 150.2, -16850.8],
         [-4157.3, 400.2, -15366.1],
+        [-4351.6, 900.0, -22923.1],
+        [-5346.4, 900.0, -22964.4],
+        [-3846.4, 400.4, -23354.7],
+        [-1842.3, 1251.8, -21020.9],
+        [-1857.3, 1250.7, -20651.0],
+        [-4715.8, 400.4, -23337.7],
+        [-1530.1, 1247.4, -19487.6],
+        [-1510.7, 1247.4, -19039.8],
+        [-4843.2, 1258.2, -20557.5],
+        [-4905.9, 1258.2, -20711.7],
         [-5036.9, 1243.2, -17733.9],
         [-4569.9, 1258.4, -15004.2],
         [-1705.7, 1633.4, -15300.2],
         [-1788.9, 1633.4, -15954.2],
         [-3967.8, 1452.4, -13076.0],
-        [-1530.1, 1247.4, -19487.6],
-        [-1510.7, 1247.4, -19039.8],
         [-3701.0, 1617.3, -15037.2],
-        [-3617.9, 1452.4, -12850.7],
-        [-4905.9, 1258.2, -20711.7]
+        [-3617.9, 1452.4, -12850.7]
       ],
       "roster": [
         {
           "class": "uEm10",
-          "weight": 31,
-          "arms": [459008, 459092, 459093, 459097, 459098, 459116, 459122, 459123, 459125]
+          "weight": 70,
+          "profiles": [
+            {"weight": 2, "fields": {"arm": 459125, "attribute": 32768}},
+            {"weight": 2, "fields": {"arm": 459097, "attribute": 32768}},
+            {"weight": 2, "fields": {"arm": 459093, "arm_num": 1, "arm_set_joint": 1, "attribute": 32768, "lefty": 1, "plaga": 1}},
+            {"weight": 2, "fields": {"arm": 459088, "arm_num": 1, "arm_set_joint": 1, "attribute": 33792, "lefty": 1}},
+            {"weight": 2, "fields": {"arm": 459123, "arm_set_joint": 1, "attribute": 33024, "lefty": 1}},
+            {"weight": 2, "fields": {"arm": 459093, "attribute": 32768, "plaga": 1}},
+            {"weight": 2, "fields": {"arm": 459123, "attribute": 32768}},
+            {"weight": 2, "fields": {"arm": 459125, "attribute": 34048, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459123, "arm_set_joint": 1, "attribute": 640, "lefty": 1, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459125, "attribute": 256}},
+            {"weight": 1, "fields": {"arm": 459008, "attribute": 1049216, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459092, "arm_num": 2, "attribute": 1049088, "search_circle": 700.0}},
+            {"weight": 1, "fields": {"arm": 459098, "search_circle": 700.0}},
+            {"weight": 1, "fields": {"arm": 459123, "search_circle": 900.0}},
+            {"weight": 1, "fields": {"arm": 459008, "armed": 0}},
+            {"weight": 1, "fields": {"arm": 459123, "arm_set_joint": 1, "attribute": 1049216, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459097, "search_circle": 500.0}},
+            {"weight": 1, "fields": {"arm": 459125, "plaga": 1, "search_circle": 700.0}},
+            {"weight": 1, "fields": {"arm": 459093, "search_circle": 700.0}},
+            {"weight": 1, "fields": {"arm": 459008, "armed": 0, "attribute": 33280, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459092, "arm_num": 2, "attribute": 33280}},
+            {"weight": 1, "fields": {"arm": 459092, "arm_num": 1, "attribute": 33280}},
+            {"weight": 1, "fields": {"arm": 459093, "arm_num": 2, "arm_set_joint": 1, "attribute": 32768, "lefty": 1, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459088, "arm_num": 1, "armed": 0, "attribute": 33280, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459098, "arm_num": 1, "attribute": 33280}},
+            {"weight": 1, "fields": {"arm": 459116, "arm_num": 2, "attribute": 33024}},
+            {"weight": 1, "fields": {"arm": 459093, "arm_set_joint": 1, "attribute": 33024, "lefty": 1, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459116, "arm_num": 1, "attribute": 33280}},
+            {"weight": 1, "fields": {"arm": 459008, "arm_set_joint": 1, "armed": 0, "attribute": 32768, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459092, "arm_num": 1, "armed": 0, "attribute": 33024}},
+            {"weight": 1, "fields": {"arm": 459092, "arm_num": 1, "attribute": 32768, "plaga": 1}}
+          ]
         },
         {
           "class": "uEm23",
-          "weight": 1,
-          "min_tier": 2,
-          "arms": [459101]
+          "weight": 2,
+          "special": true,
+          "profiles": [
+            {"weight": 1, "fields": {"arm": 459101, "search_circle": 8000.0}}
+          ]
         }
       ]
     },
@@ -289,17 +463,41 @@
         [831.9, 142.3, -3958.6],
         [2280.1, 215.0, 1923.9],
         [2281.4, 215.0, 2078.8],
-        [207.8, -28.0, 1873.3]
+        [207.8, -28.0, 1873.3],
+        [3035.2, 469.7, 3768.7],
+        [2770.5, 221.5, 1778.8],
+        [2495.9, 219.0, 4882.7]
       ],
       "roster": [
         {
           "class": "uEm10",
-          "weight": 43,
-          "arms": [459008, 459088, 459089, 459090, 459092, 459093, 459097, 459098, 459116, 459123]
+          "weight": 71,
+          "profiles": [
+            {"weight": 4, "fields": {"arm": 459008, "attribute": 33408}},
+            {"weight": 2, "fields": {"arm": 459093, "arm_num": 3, "arm_set_joint": 1, "attribute": 33408, "lefty": 1}},
+            {"weight": 2, "fields": {"arm": 459122, "attribute": 33408}},
+            {"weight": 2, "fields": {"arm": 459092, "arm_num": 2, "attribute": 33920, "plaga": 1}},
+            {"weight": 2, "fields": {"arm": 459092, "arm_num": 3, "attribute": 33408}},
+            {"weight": 2, "fields": {"arm": 459092, "arm_num": 2, "attribute": 33408, "plaga": 1}},
+            {"weight": 2, "fields": {"arm": 459092, "arm_num": 2, "attribute": 33408}},
+            {"weight": 1, "fields": {"arm": 459116, "arm_num": 3, "attribute": 33408}},
+            {"weight": 1, "fields": {"arm": 459098, "arm_num": 2, "arm_set_joint": 1, "attribute": 33408, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459123, "arm_num": 1, "arm_set_joint": 1, "attribute": 33408, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459088, "arm_num": 2, "arm_set_joint": 1, "attribute": 33408, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459097, "arm_set_joint": 1, "attribute": 33408, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459116, "attribute": 33408}},
+            {"weight": 1, "fields": {"arm": 459097, "attribute": 33408}},
+            {"weight": 1, "fields": {"arm": 459092, "arm_num": 1, "attribute": 33408}},
+            {"weight": 1, "fields": {"arm": 459089, "attribute": 33408}},
+            {"weight": 1, "fields": {"arm": 459008, "arm_set_joint": 1, "attribute": 33408, "lefty": 1}},
+            {"weight": 1, "fields": {"arm": 459098, "arm_num": 2, "arm_set_joint": 1, "attribute": 34432, "lefty": 1, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459123, "arm_set_joint": 1, "attribute": 34432, "lefty": 1, "plaga": 1}}
+          ]
         },
         {
           "class": "uEm22",
-          "weight": 5
+          "weight": 5,
+          "special": true
         }
       ]
     },
@@ -330,23 +528,43 @@
       "roster": [
         {
           "class": "uEm10",
-          "weight": 42,
-          "arms": [459088, 459089, 459091, 459093, 459098, 459116, 459122, 459123]
+          "weight": 85,
+          "profiles": [
+            {"weight": 6, "fields": {"arm": 459089, "arm_num": 1, "attribute": 128}},
+            {"weight": 4, "fields": {"arm": 459098, "arm_num": 1, "attribute": 128}},
+            {"weight": 4, "fields": {"arm": 459088, "arm_num": 1, "attribute": 128}},
+            {"weight": 4, "fields": {"arm": 459093, "arm_num": 1, "attribute": 128}},
+            {"weight": 3, "fields": {"arm": 459093, "attribute": 1152, "plaga": 1}},
+            {"weight": 3, "fields": {"arm": 459098, "attribute": 128}},
+            {"weight": 3, "fields": {"arm": 459116, "arm_num": 1, "attribute": 128, "plaga": 1}},
+            {"weight": 2, "fields": {"arm": 459122, "arm_num": 1, "attribute": 128, "plaga": 1}},
+            {"weight": 2, "fields": {"arm": 459091, "attribute": 128}},
+            {"weight": 2, "fields": {"arm": 459123, "arm_num": 1, "attribute": 128}},
+            {"weight": 2, "fields": {"arm": 459093, "attribute": 128}},
+            {"weight": 2, "fields": {"arm": 459116, "arm_num": 1, "attribute": 128}},
+            {"weight": 2, "fields": {"arm": 459089, "attribute": 128}},
+            {"weight": 2, "fields": {"arm": 459123, "attribute": 128}},
+            {"weight": 1, "fields": {"arm": 459122, "attribute": 128, "plaga": 1}},
+            {"weight": 1, "fields": {"arm": 459093, "arm_num": 1, "attribute": 1152, "plaga": 1}}
+          ]
         },
         {
           "class": "uEm13",
-          "weight": 3,
-          "min_tier": 2
+          "weight": 7,
+          "special": true,
+          "profiles": [
+            {"weight": 4, "fields": {"arm": 459008, "armed": 0, "attribute": 128}}
+          ]
         },
         {
           "class": "uEm26",
           "weight": 1,
-          "min_tier": 2
+          "special": true
         },
         {
           "class": "uEm20",
           "weight": 1,
-          "min_tier": 2
+          "special": true
         }
       ]
     }

@@ -1,6 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 // The enemy director (ROADMAP.md, milestone M1): the mod decides which enemies exist.
 //
@@ -24,6 +28,19 @@ int TakeBlockedAttempts();
 
 /// Developer survey: log every native spawn (class, weapon id, set record, position).
 void SetSurvey(bool on);
+
+/// What to spawn. The descriptor starts from the values the game's own Mercenaries
+/// descriptors hold (the enemy already knows where the player is, mIsFindPL), then takes
+/// `fields` (a surveyed profile: "armed", "arm_num", "arm", "plaga", "mask", ...; see
+/// kSpawnFields in director.cpp) and `weapon`.
+struct SpawnSpec {
+    std::string unitClass;                // "uEm10"
+    float pos[3]{};
+    std::optional<float> facing;          // radians about Y (forward = sin, cos)
+    int weapon = -1;                      // descriptor weapon id (-1 = profile or default)
+    std::vector<std::pair<std::string, double>> fields;
+};
+std::uintptr_t Spawn(const SpawnSpec& spec);
 
 /// E1: an enemy of `unitClass` ("uEm10") at `pos` (x, y, z) with descriptor weapon id
 /// `weapon` (-1 = the descriptor's default). Returns the unit or 0.

@@ -128,6 +128,9 @@ constexpr std::uintptr_t kDtiSetInfoPawn = 0x0120BEA0;     // cSetInfoPawn DTI (
 constexpr std::uintptr_t kFnLinkUnits = 0x0072CD00;        // this = [[kLinkUnitRoot] + kLinkUnitManager], unit
 constexpr std::uintptr_t kLinkUnitRoot = 0x01234578;
 constexpr int kEnemyUnitGroup = 9;
+// cSetInfoEm10 vtable (dump: slot 6 = apply 0x00CC70E0, the descriptor's "Apply to Pawn").
+constexpr std::uintptr_t kSetInfoEm10Vtable = 0x01049C94;
+constexpr std::uintptr_t kFnSetInfoEm10Apply = 0x00CC70E0;
 // Campaign shop screen uIdShop00 (vtable 0x00FA8878): the title-flow step FUN_00BF24D0 creates
 // it with kFnShopCreate (ECX = kShopCreateThis), sets obj+4 |= 0x2000, registers it with
 // kFnUnitRegister(this = [kUnitManager], group 0x1A, obj), waits for obj+0x3C (closed) and
@@ -194,12 +197,23 @@ constexpr std::size_t kSceneRequestArg = 0xFC;
 constexpr std::size_t kSEnemyVtableCreate = 0x2C;
 constexpr std::size_t kSetInfoPosition = 0x20;    // float x, y, z
 constexpr std::size_t kSetInfoEm10Weapon = 0xF0;  // cSetInfoEm10 mArmId (0x70100 = default)
+constexpr std::size_t kSetInfoEm10Armed = 0xE9;   // cSetInfoEm10 mbArmed (1 in 179 of 187 surveyed descriptors)
+constexpr std::size_t kSetInfoEm10Mask = 0x108;   // cSetInfoEm10 mMaskType (-1 in every surveyed descriptor)
+constexpr std::size_t kSetInfoAngleY = 0x34;      // cSetInfoCoord rotation about Y, radians (forward = sin, cos)
 constexpr std::size_t kSetInfoVtableApply = 0x18;
 constexpr std::size_t kEnemySetGroup = 0xD50;
 constexpr std::size_t kEnemySetId = 0xD54;
 constexpr std::size_t kLinkUnitManager = 0x3830;
 constexpr std::size_t kUnitPosition = 0x30;       // float x, y, z of any uCoord unit
 constexpr std::size_t kEnemyArmId = 0x1BE4;       // uEm10 weapon id copied from the descriptor (+4: count)
+constexpr std::size_t kUnitRotation = 0x40;       // quaternion x, y, z, w of any uCoord unit (MT uCoord layout)
+// cSetInfoEnemy reflected fields (property list FUN_00CCE070): the enemy's starting behaviour.
+constexpr std::size_t kSetInfoEnemyFirst = 0x70;  // mInAir; the enemy fields run to mbForceMoveFSM (+0xD5)
+constexpr std::size_t kSetInfoIsForNet = 0x84;
+constexpr std::size_t kSetInfoIsFindPl = 0x85;    // bool mIsFindPL
+constexpr std::size_t kSetInfoIsGoto = 0x86;
+constexpr std::size_t kSetInfoSearchType = 0xB0;  // u32 mSearchType; +0xB4 mSearchForward, +0xB8 mSearchCircle (float)
+constexpr std::size_t kSetInfoAreaKeepType = 0xC0;  // u32; +0xC4 mAreaKeepDist (float), +0xC8 mAreaKeepHitNo
 // Application object ([addr::kGameRoot]): flags and the lock around them.
 constexpr std::size_t kAppLock = 0x4;
 constexpr std::size_t kAppThreadedFlag = 0x1C;

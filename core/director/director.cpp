@@ -24,14 +24,38 @@ Director::Director(const MapDef& map, int budget, int tier, std::uint64_t seed)
 const MapEnemy* Director::PickEnemy() {
     std::vector<const MapEnemy*> pool;
     std::vector<double> weights;
-    for (const bool tierGate : {true, false}) {
-        // Nothing allowed at this tier: the whole roster, rather than an arena that never fills.
+    // Normal enemies at this tier; failing that, any tier; a roster of specials only, as normal.
+    constexpr std::pair<bool, bool> kPasses[] = {{true, false}, {false, false}, {true, true}, {false, true}};
+    for (const auto& [tierGate, withSpecial] : kPasses) {
         for (const MapEnemy& e : map_.roster) {
-            if ((tierGate && e.min_tier > tier_) || e.weight <= 0.0) continue;
+            if ((tierGate && e.min_tier > tier_) || e.weight <= 0.0 || (e.special && !withSpecial)) continue;
             pool.push_back(&e);
             weights.push_back(e.weight);
         }
         if (!pool.empty()) break;
+    }
+    if (pool.empty()) return nullptr;
+    const std::size_t i = rng_.WeightedIndex(weights);
+    return i < pool.size() ? pool[i] : pool.front();
+}
+
+int Director::Active(const MapEnemy* enemy) const {
+    int n = 0;
+    for (const auto& [ticket, e] : ticket_enemy_) n += e == enemy ? 1 : 0;
+    return n;
+}
+
+const MapEnemy* Director::PickSpecial() {
+    if (static_cast<double>(dead_) < map_.special_after * static_cast<double>(budget_)) return nullptr;
+    int specials = 0;
+    for (const auto& [ticket, e] : ticket_enemy_) specials += e->special ? 1 : 0;
+    if (specials >= std::max(1, map_.max_specials) + tier_ - 1) return nullptr;
+    std::vector<const MapEnemy*> pool;
+    std::vector<double> weights;
+    for (const MapEnemy& e : map_.roster) {
+        if (!e.special || e.min_tier > tier_ || Active(&e) >= std::max(1, e.max_alive)) continue;
+        pool.push_back(&e);
+        weights.push_back(std::max(e.weight, 0.001));
     }
     if (pool.empty()) return nullptr;
     const std::size_t i = rng_.WeightedIndex(weights);
@@ -63,15 +87,26 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::ar
     last_now_ = now;
     const int cap = std::max(1, map_.max_alive);
     while (requested_ < budget_ && alive() + pending() < cap && now >= next_spawn_time_) {
-        const MapEnemy* enemy = PickEnemy();
+        const MapEnemy* enemy = PickSpecial();
+        if (enemy == nullptr) enemy = PickEnemy();
         const int point = PickPoint(player);
         if (enemy == nullptr || point < 0) break;
         SpawnRequest r;
         r.ticket = next_ticket_++;
         r.unit_class = enemy->unit_class;
         r.arm = enemy->arms.empty() ? -1 : enemy->arms[rng_.Index(enemy->arms.size())];
+        if (!enemy->profiles.empty()) {
+            std::vector<double> weights;
+            for (const EnemyProfile& p : enemy->profiles) weights.push_back(std::max(0.0, p.weight));
+            const std::size_t i = rng_.WeightedIndex(weights);
+            r.fields = enemy->profiles[i < enemy->profiles.size() ? i : 0].fields;
+            for (const auto& [name, value] : r.fields) {
+                if (name == "arm") r.arm = static_cast<std::int64_t>(value);
+            }
+        }
         r.pos = map_.points[static_cast<std::size_t>(point)];
         pending_.emplace_back(r.ticket, point);
+        ticket_enemy_[r.ticket] = enemy;
         last_point_ = point;
         ++requested_;
         out.push_back(std::move(r));
@@ -93,6 +128,7 @@ void Director::SpawnFailed(std::uint64_t ticket) {
     if (it == pending_.end()) return;
     if (it->second >= 0 && it->second < static_cast<int>(point_failures_.size())) ++point_failures_[static_cast<std::size_t>(it->second)];
     pending_.erase(it);
+    ticket_enemy_.erase(ticket);
     --requested_;
     // No retry in the same frame: a refused spawn waits like a refill.
     next_spawn_time_ = std::max(next_spawn_time_, last_now_ + kSpawnInterval);
@@ -101,6 +137,7 @@ void Director::SpawnFailed(std::uint64_t ticket) {
 bool Director::Died(const std::string& unit_id) {
     const auto it = alive_.find(unit_id);
     if (it == alive_.end()) return false;
+    ticket_enemy_.erase(it->second);
     alive_.erase(it);
     ++dead_;
     return true;

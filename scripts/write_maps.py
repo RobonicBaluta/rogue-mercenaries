@@ -4,12 +4,13 @@
   python scripts/write_maps.py [--exclude uEmXX,uEmYY]
 
 Per surveyed stage: the spawn points the game itself used (close points merged), and a roster
-of the enemy classes it spawned there, weighted by how often; rare classes need tier 2.
+of the enemy classes it spawned there, weighted by how often; classes other than the stage's main
+Majini are its special enemies ("special": true).
 max_alive follows the size of the game's own opening wave (set 0). Only classes the stage spawned
 are listed: their models are loaded with the stage (other classes need ROADMAP M3).
-Weapon ids ("arms") are kept as surveyed; the adapter applies them only to classes it places with
-the uEm10 descriptor (uEm10..uEm14, uEm2x Majini), whose weapon field is verified. A list that is
-only the default 0x70100 is left out.
+Majini-family classes get "profiles": the game's own descriptor fields (weapon, plaga, mask, ...)
+with their counts as weights, minus what the adapter's template already holds. Other classes keep
+"arms" (weapon ids as surveyed; a list that is only the default 0x70100 is left out).
 """
 import argparse
 import json
@@ -23,12 +24,26 @@ STAGE_NAMES = {
     4: 'Experimental Facility', 5: 'Missile Area', 6: 'Ship Deck', 7: 'Prison',
 }
 MERGE_DISTANCE = 150.0   # points closer than this (x/z) are one spawn point
-RARE_SHARE = 0.10        # classes below this share of a stage's spawns (mini-bosses) need tier 2
+MAIN_SHARE = 0.15        # Majini classes with at least this share of a stage's spawns are its main enemies
+# Never in a roster: uEm62 is a chicken (seen in game 2026-11-01).
+ALWAYS_EXCLUDED = {'uEm62'}
 DEFAULT_ARM = 0x70100
+# What the adapter's descriptor template already holds (director.cpp): profile fields with these
+# values are left out of maps.json.
+TEMPLATE = {'search_type': 1, 'search_forward': 0.0, 'search_circle': 1000.0, 'armed': 1, 'mask': 0xFFFFFFFF}
+
+
+def compact_profiles(profiles):
+    merged = {}
+    for p in profiles:
+        fields = {k: v for k, v in p['fields'].items() if v != TEMPLATE.get(k, 0)}
+        key = json.dumps(fields, sort_keys=True)
+        merged[key] = merged.get(key, 0) + p['count']
+    return [{'weight': n, 'fields': json.loads(k)} for k, n in sorted(merged.items(), key=lambda kv: -kv[1])]
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--exclude', default='', help='comma-separated classes to leave out (animals, bosses)')
-exclude = {c for c in parser.parse_args().exclude.split(',') if c}
+parser.add_argument('--exclude', default='', help='comma-separated classes to leave out (uEm62, a chicken, always is)')
+exclude = {c for c in parser.parse_args().exclude.split(',') if c} | ALWAYS_EXCLUDED
 
 survey = json.load(open('research/spawn_survey.json', encoding='utf-8'))['stages']
 maps = []
@@ -48,9 +63,16 @@ for stage_text, data in survey.items():
         if cls in exclude:
             continue
         entry = {'class': cls, 'weight': info['count']}
-        if info['count'] < RARE_SHARE * total:
-            entry['min_tier'] = 2
-        if info['arms'] and info['arms'] != [DEFAULT_ARM]:
+        # Everything that is not a main Majini class is the stage's special enemy (the big ones
+        # the game keeps one of at a time and respawns when killed): the director brings them in
+        # once a quarter of the arena is dead, one at a time (more on harder routes).
+        majini = bool(info.get('profiles'))
+        if not majini or info['count'] < MAIN_SHARE * total:
+            entry['special'] = True
+        if info.get('profiles'):
+            # The game's own descriptors for this class (weapon, plaga, mask, ...), with its odds.
+            entry['profiles'] = compact_profiles(info['profiles'])
+        elif info['arms'] and info['arms'] != [DEFAULT_ARM]:
             entry['arms'] = sorted(info['arms'])
         roster.append(entry)
     if not points or not roster:
@@ -79,6 +101,9 @@ with open('configs/maps.json', 'w', encoding='utf-8', newline='\n') as f:
     text = re.sub(r'\[\s+(-?[\d.]+),\s+(-?[\d.]+),\s+(-?[\d.]+)\s+\]', r'[\1, \2, \3]', text)
     text = re.sub(r'"arms": \[([^\]]*)\]',
                   lambda m: '"arms": [' + ', '.join(x.strip() for x in m.group(1).split(',')) + ']', text)
+    # One profile per line.
+    text = re.sub(r'\{\s+"weight": (\d+),\s+"fields": \{([^}]*)\}\s+\}',
+                  lambda m: '{"weight": ' + m.group(1) + ', "fields": {' + ', '.join(x.strip() for x in m.group(2).split(',') if x.strip()) + '}}', text)
     f.write(text + '\n')
 for m in maps:
     print(f"{m['stage']} {m['name']}: {len(m['points'])} points, roster " +

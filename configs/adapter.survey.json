@@ -1,6 +1,7 @@
 {
   "log_level": "info",
   "developer_mode": true,
+  "director": false,
   "dev": {
     "probe_interval_ms": 0,
     "probe_hits": false,

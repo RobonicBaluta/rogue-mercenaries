@@ -108,6 +108,8 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
 5. ~~Adapter director~~ Done 2026-11-01: spawns what the core asks, gives each unit its own
    id, reports kills from both kill paths (E5).
 6. ~~Arena end by the director~~ Done 2026-11-01: the arena clears when exactly its budget has died.
+7. ~~Enemies as the game spawns them~~ Done 2026-11-01: native descriptor template (they hunt the
+   player from the start), surveyed profiles (weapons, plagas), each stage's special enemies one at a time.
 
 ### M2 — No timer, no score
 1. E4: remove the countdown and score from the screen and every path that ends the match.
