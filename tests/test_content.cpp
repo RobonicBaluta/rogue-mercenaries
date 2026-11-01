@@ -75,18 +75,16 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
     CHECK(sheva->enabled);
     CHECK(chris->unlock_cost_credits == 0);
     CHECK(sheva->unlock_cost_credits == 0);
-    // Everyone else is enabled but locked behind a challenge, never behind credits.
+    // Everyone is enabled and available from the start (the challenge machinery stays for later).
     for (const CharacterDef& other : c.characters()) {
         if (other.id == "chris" || other.id == "sheva") continue;
         INFO(other.id);
         CHECK(other.enabled);
-        CHECK(other.unlock.kind != ChallengeKind::None);
-        CHECK(other.unlock.count >= 1);
-        CHECK_FALSE(other.unlock.text.empty());
+        CHECK(other.unlock.kind == ChallengeKind::None);
         REQUIRE_FALSE(other.skins.empty());
-        CHECK(other.skins.front().unlock.kind == ChallengeKind::None);  // the default skin is free
+        for (const SkinDef& skin : other.skins) CHECK(skin.unlock.kind == ChallengeKind::None);
         CHECK(other.unlock_cost_credits == 0);
-        CHECK(CheckCharacter(&other, {}) == CharacterGate::Locked);
+        CHECK(CheckCharacter(&other, {}) == CharacterGate::Selectable);
     }
     const PerkDef* boulder = c.FindPerk("chris_pocket_grenades");
     const PerkDef* marksman = c.FindPerk("sheva_flash_tactics");

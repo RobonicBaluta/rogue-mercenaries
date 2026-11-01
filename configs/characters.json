@@ -1,5 +1,5 @@
 {
-  "_comment": "Playable characters. Only Chris and Sheva start unlocked; the others unlock by themed challenges (unlock_kind/unlock_count, see core/include/rm/characters.h). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin only adds its small trait (a 'skin' perk) and its costume_index (verified: chris 0, 1, 2, sheva 3). Text shown by the game font: letters, digits, space, comma and period only.",
+  "_comment": "Playable characters. Every character and skin is available from the start (the challenge fields unlock_kind/unlock_count/unlock_text/unlock_character, see core/include/rm/characters.h, are kept for later). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin only adds its small trait (a 'skin' perk) and its costume_index (verified: chris 0, 1, 2, sheva 3). Text shown by the game font: letters, digits, space, comma and period only.",
   "schema_version": 1,
   "characters": [
     {
@@ -28,37 +28,23 @@
           "id": "chris_safari",
           "name": "Safari",
           "costume_index": 1,
-          "starting_passive": "chris_safari_trait",
-          "unlock_kind": "runs_completed_as",
-          "unlock_count": 1,
-          "unlock_text": "Complete a run as Chris",
-          "unlock_character": "chris"
+          "starting_passive": "chris_safari_trait"
         },
         {
           "id": "chris_stars",
           "name": "STARS",
           "costume_index": 2,
-          "starting_passive": "chris_stars_trait",
-          "unlock_kind": "s_rank_arenas",
-          "unlock_count": 1,
-          "unlock_text": "Earn an S rating in an arena"
+          "starting_passive": "chris_stars_trait"
         },
         {
           "id": "chris_warrior",
           "name": "Warrior",
-          "costume_index": 14,
-          "unlock_kind": "runs_completed_as",
-          "unlock_count": 3,
-          "unlock_text": "Complete 3 runs as Chris",
-          "unlock_character": "chris"
+          "costume_index": 14
         },
         {
           "id": "chris_heavy_metal",
           "name": "Heavy Metal",
-          "costume_index": 10,
-          "unlock_kind": "total_kills",
-          "unlock_count": 500,
-          "unlock_text": "Reach 500 kills"
+          "costume_index": 10
         }
       ]
     },
@@ -88,38 +74,24 @@
           "id": "sheva_clubbin",
           "name": "Clubbin",
           "costume_index": 4,
-          "starting_passive": "sheva_clubbin_trait",
-          "unlock_kind": "runs_completed_as",
-          "unlock_count": 1,
-          "unlock_text": "Complete a run as Sheva",
-          "unlock_character": "sheva"
+          "starting_passive": "sheva_clubbin_trait"
         },
         {
           "id": "sheva_tribal",
           "name": "Tribal",
           "costume_index": 5,
-          "starting_passive": "sheva_tribal_trait",
-          "unlock_kind": "total_kills",
-          "unlock_count": 200,
-          "unlock_text": "Kill 200 enemies in total"
+          "starting_passive": "sheva_tribal_trait"
         },
         {
           "id": "sheva_business",
           "name": "Business",
           "costume_index": 11,
-          "starting_passive": "sheva_business_trait",
-          "unlock_kind": "credits_earned",
-          "unlock_count": 500,
-          "unlock_text": "Earn 500 credits in total"
+          "starting_passive": "sheva_business_trait"
         },
         {
           "id": "sheva_fairy_tale",
           "name": "Fairy Tale",
-          "costume_index": 15,
-          "unlock_kind": "runs_completed_as",
-          "unlock_count": 3,
-          "unlock_text": "Complete 3 runs as Sheva",
-          "unlock_character": "sheva"
+          "costume_index": 15
         }
       ]
     },
@@ -137,10 +109,6 @@
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
-      "unlock_kind": "runs_completed_as",
-      "unlock_character": "chris",
-      "unlock_count": 1,
-      "unlock_text": "Complete a run as Chris",
       "costume_index": 7,
       "skins": [
         {
@@ -152,11 +120,7 @@
           "id": "jill_battle_suit",
           "name": "Battle Suit",
           "costume_index": 7,
-          "starting_passive": "jill_battle_suit_trait",
-          "unlock_kind": "runs_completed_as",
-          "unlock_count": 1,
-          "unlock_text": "Complete a run as Jill",
-          "unlock_character": "jill"
+          "starting_passive": "jill_battle_suit_trait"
         }
       ]
     },
@@ -174,10 +138,6 @@
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
-      "unlock_kind": "runs_completed_as",
-      "unlock_character": "sheva",
-      "unlock_count": 1,
-      "unlock_text": "Complete a run as Sheva",
       "costume_index": 11,
       "skins": [
         {
@@ -201,9 +161,6 @@
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
-      "unlock_kind": "total_kills",
-      "unlock_count": 500,
-      "unlock_text": "Kill 500 enemies in total",
       "costume_index": 12,
       "skins": [
         {
@@ -227,9 +184,6 @@
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
-      "unlock_kind": "s_rank_arenas",
-      "unlock_count": 3,
-      "unlock_text": "Earn an S rating in 3 arenas",
       "costume_index": 13,
       "skins": [
         {
@@ -253,9 +207,6 @@
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
-      "unlock_kind": "credits_earned",
-      "unlock_count": 1500,
-      "unlock_text": "Earn 1500 credits in total",
       "costume_index": 14,
       "skins": [
         {
@@ -279,9 +230,6 @@
       ],
       "exclusive_mechanic": "",
       "unlock_cost_credits": 0,
-      "unlock_kind": "no_damage_arenas",
-      "unlock_count": 3,
-      "unlock_text": "Clear 3 arenas without taking damage",
       "costume_index": 9,
       "skins": [
         {
@@ -293,11 +241,7 @@
           "id": "wesker_stars",
           "name": "STARS",
           "costume_index": 9,
-          "starting_passive": "wesker_stars_trait",
-          "unlock_kind": "runs_completed_as",
-          "unlock_count": 1,
-          "unlock_text": "Complete a run as Wesker",
-          "unlock_character": "wesker"
+          "starting_passive": "wesker_stars_trait"
         }
       ]
     }
