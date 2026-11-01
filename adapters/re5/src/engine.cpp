@@ -116,6 +116,8 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.pauseScreen = g_caps.playMenu && SignatureOk("pause_move");
     g_caps.slotClear = g_caps.inventory && SignatureOk("inventory_slot_clear");
     g_caps.gameShop = SignatureOk("shop_create") && SignatureOk("unit_register");
+    g_caps.enemySpawn = g_caps.enemies && SignatureOk("enemy_create") && SignatureOk("enemy_set_spawn") &&
+                        SignatureOk("class_lookup") && SignatureOk("link_units");
     g_caps.timeBonus = g_caps.mercCountdown && SignatureOk("merc_add_countdown") && SignatureOk("time_bonus_action");
     return all;
 }

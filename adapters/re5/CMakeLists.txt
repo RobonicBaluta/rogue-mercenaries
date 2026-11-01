@@ -50,6 +50,7 @@ set(RM_RE5_SOURCES
     src/native_menu.cpp
     src/autopilot.cpp
     src/match_ui.cpp
+    src/director.cpp
     dinput8.def)
 
 if(TARGET rm_core AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/mod.cpp)

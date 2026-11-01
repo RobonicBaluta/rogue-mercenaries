@@ -108,6 +108,13 @@ See `research/capabilities.md` (per-capability evidence) and `research/re5-engin
 - [x] Roadmap written (2026-11-01): target product, architecture (flow, host, director, resources, inventory, UI, content), engine spikes E1–E12 with "done when" tests, milestones M1–M9.
 - [x] E1 enemy spawn (2026-11-01). A logging hook on `sEnemy::Create` (`0x007AF550`, vtable slot 11) showed every Mercenaries enemy created by `0x007AF5F0` with group 9, mode 1, flag 1. Its recipe was reproduced without set data: class lookup `0x006D05F0(name, 0x011AF714)`, a fresh `cSetInfoEmXX` from its DTI (lookup base `0x0120BEA0`, `newInstance` vtable `+4`), position at descriptor `+0x20`, weapon at `+0xF0`, `Create(dti, 9, 1, 1)`, set ids `unit+0xD50/0xD54`, apply (descriptor vtable `+0x18`), link pass `0x0072CD00` on `[[0x01234578]+0x3830]`. Dev `spawn uEm10 70100 3`: three `uEm10` units, which fell off the walkway 2.5 m away and were scored and counted by the game (`build/shots/cap-20261101-190730.png`); `spawn uEm10 70100 2 0`: two at the player's spot, who attacked at once (`cap-20261101-190943.png`). Next: E2 (the spawner gate), then the director.
 
+- [x] M1.1 / E2 native spawner off (2026-11-01). New module `adapters/re5/src/director.cpp`: spawn function (E1 recipe moved out of `mod.cpp`), a gate on the game's set spawn `0x007AF5F0` (scripts and Mercenaries waves all end there: callers `0x007AF6E0`/`0x007B0D90`, script actions `0x00C2A880`, `0x00C2AA80`, `0x00C2E070`), and the `sEnemy::Create` probe at debug level; capability `enemySpawn` (four new signatures). Dev `nativespawns off` before START RUN: Ship Deck stayed empty (`dev enemies: 0 listed, 0 alive, 48 native spawns refused` after 25 s, `build/shots/cap-20261101-192251.png`); `spawn uEm10 70100 2 300` then gave exactly two live Majini, who attacked (`cap-20261101-192314.png`). Not yet automatic in runs (it waits for the director, or runs would have no enemies). The refused calls name the stage's set records (`set 0, id 0..`, `set 4, id 18`), which is where M1.3 gets its spawn points.
+- [ ] M1.2 Spawn table: enemy classes, descriptor class, valid weapon ids (`mArmId`, e.g. `0x70100`), stages that load each model.
+- [ ] M1.3 Spawn points per map: survey the native set spawns (positions of the units they create) on each Mercenaries stage.
+- [ ] M1.4 `arenas.json` (waves, counts, weapons, timing, max alive) in the core with tests.
+- [ ] M1.5 Director in the adapter: runs the waves, tracks its own units, exact kill count.
+- [ ] M1.6 Arena ends when the last wave dies.
+
 ## Phase 5 — Stabilization/release
 
 - [x] Repeat three-round run and inspect crash logs. Evidence:

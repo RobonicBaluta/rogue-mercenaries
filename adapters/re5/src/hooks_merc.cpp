@@ -63,22 +63,6 @@ void __fastcall AddTimeDetour(std::uintptr_t self, void*, int seconds) {
     g_origAddTime(self, seconds);
 }
 
-// Developer probe (roadmap E1/E2): every enemy the game creates through sEnemy::Create
-// (0x007AF550, vtable slot 11): class, arguments and caller.
-using EnemyCreateFn = std::uintptr_t(__thiscall*)(std::uintptr_t self, std::uintptr_t dti, int group, int mode, int flag);
-EnemyCreateFn g_origEnemyCreate = nullptr;
-std::atomic<int> g_enemyCreateLogged{0};
-std::uintptr_t __fastcall EnemyCreateDetour(std::uintptr_t self, void*, std::uintptr_t dti, int group, int mode, int flag) {
-    const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
-    const std::uintptr_t unit = g_origEnemyCreate(self, dti, group, mode, flag);
-    if (g_enemyCreateLogged.fetch_add(1) < 60) {
-        const auto namePtr = ReadOr<std::uintptr_t>(dti + 4, 0);
-        RM_LOGD("sEnemy::Create %s group %d mode %d flag %d -> %08X (caller %08X)", namePtr ? ReadCString(namePtr, 32).c_str() : "?",
-                group, mode, flag & 0xFF, static_cast<unsigned>(unit), static_cast<unsigned>(caller));
-    }
-    return unit;
-}
-
 void __fastcall TimeBonusActionDetour(std::uintptr_t self, void*) {
     const auto before = ReadOr<std::uint8_t>(self + 0x14, 0xFF);
     const auto object = ReadOr<std::uintptr_t>(self + 0x18, 0);
@@ -134,10 +118,6 @@ bool InstallMercHooks() {
         if (a == MH_OK) a = MH_QueueEnableHook(addTime);
         MH_STATUS b = MH_CreateHook(action, reinterpret_cast<void*>(&TimeBonusActionDetour), reinterpret_cast<void**>(&g_origTimeBonus));
         if (b == MH_OK) b = MH_QueueEnableHook(action);
-        auto* create = reinterpret_cast<void*>(0x007AF550);
-        if (MH_CreateHook(create, reinterpret_cast<void*>(&EnemyCreateDetour), reinterpret_cast<void**>(&g_origEnemyCreate)) == MH_OK) {
-            MH_QueueEnableHook(create);
-        }
         if (a == MH_OK && b == MH_OK) {
             RM_LOGI("hooks cMercs::AddTime and the time-bonus pickup queued (chests)");
         } else {

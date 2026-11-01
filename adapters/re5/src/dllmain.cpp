@@ -14,6 +14,7 @@
 #include "autopilot.h"
 #include "native_menu.h"
 #include "match_ui.h"
+#include "director.h"
 #include "mod.h"
 #include "overlay.h"
 #include "probe.h"
@@ -97,6 +98,7 @@ DWORD WINAPI Worker(LPVOID) {
         nativemenu::Install();
         if (settings.developerMode) nativemenu::EnableDrawProbe();
         if (settings.nativeMatchUi) matchui::Install();
+        director::Install();
         if (settings.directStart) autopilot::Install();
     }
     if (settings.developerMode && settings.devMenuProbe && engine::Caps().buildIdentity) {

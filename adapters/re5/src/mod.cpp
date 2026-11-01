@@ -33,6 +33,7 @@
 #include "autopilot.h"
 #include "native_menu.h"
 #include "match_ui.h"
+#include "director.h"
 #include "mod.h"
 #include "overlay.h"
 #include "probe.h"
@@ -1084,43 +1085,6 @@ std::uint32_t AmmoItemFor(rm::WeaponCategory category) {
     }
 }
 
-// ---- Roadmap E1: spawning an enemy where the mod wants it ------------------------------
-// The game's own recipe (sEnemy's set spawn 0x007AF5F0) without the stage's set data: class
-// lookup by name (0x006D05F0), a fresh descriptor from its DTI (newInstance, vtable +4) with
-// our position and weapon, sEnemy::Create (vtable +0x2C) into unit group 9, the descriptor
-// applied (vtable +0x18), then the link-unit pass (0x0072CD00 on [[0x01234578]+0x3830]).
-std::uintptr_t SpawnEnemyNative(const char* unitClass, const char* infoClass, const float* pos, int weapon) {
-    using LookupFn = std::uintptr_t(__cdecl*)(const char* name, std::uintptr_t baseDti);
-    using NewFn = std::uintptr_t(__thiscall*)(std::uintptr_t dti);
-    using CreateFn = std::uintptr_t(__thiscall*)(std::uintptr_t self, std::uintptr_t dti, int group, int mode, int flag);
-    using ApplyFn = int(__thiscall*)(std::uintptr_t info, std::uintptr_t unit);
-    using LinkFn = void(__thiscall*)(std::uintptr_t self, std::uintptr_t unit);
-    __try {
-        const auto lookup = reinterpret_cast<LookupFn>(0x006D05F0);
-        const std::uintptr_t unitDti = lookup(unitClass, 0x011AF714);
-        const std::uintptr_t infoDti = lookup(infoClass, 0x0120BEA0);
-        if (!unitDti || !infoDti) return 0;
-        const std::uintptr_t info = reinterpret_cast<NewFn>(*reinterpret_cast<std::uintptr_t*>(*reinterpret_cast<std::uintptr_t*>(infoDti) + 4))(infoDti);
-        if (!info) return 0;
-        *reinterpret_cast<float*>(info + 0x20) = pos[0];
-        *reinterpret_cast<float*>(info + 0x24) = pos[1];
-        *reinterpret_cast<float*>(info + 0x28) = pos[2];
-        if (weapon >= 0) *reinterpret_cast<std::int32_t*>(info + 0xF0) = weapon;
-        const auto sEnemy = *reinterpret_cast<std::uintptr_t*>(re5::addr::kSEnemyInstance);
-        const auto create = *reinterpret_cast<std::uintptr_t*>(*reinterpret_cast<std::uintptr_t*>(sEnemy) + 0x2C);
-        const std::uintptr_t unit = reinterpret_cast<CreateFn>(create)(sEnemy, unitDti, 9, 1, 1);
-        if (!unit) return 0;
-        *reinterpret_cast<std::int32_t*>(unit + 0xD50) = 0;
-        *reinterpret_cast<std::int32_t*>(unit + 0xD54) = -1;
-        reinterpret_cast<ApplyFn>(*reinterpret_cast<std::uintptr_t*>(*reinterpret_cast<std::uintptr_t*>(info) + 0x18))(info, unit);
-        const auto linker = *reinterpret_cast<std::uintptr_t*>(*reinterpret_cast<std::uintptr_t*>(0x01234578) + 0x3830);
-        if (linker) reinterpret_cast<LinkFn>(0x0072CD00)(linker, unit);
-        return unit;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-}
-
 // Clears an inventory record the way the game discards an item: the record's weapon object
 // (the holstered model) is deleted too. Falls back to wiping the record without the routine.
 bool ClearSlotNative(std::uintptr_t slot) {
@@ -1875,15 +1839,30 @@ void PollDevCommand(double now) {
         float distance = 150.0f;
         words >> cls >> weaponText >> count >> distance;
         const int weapon = weaponText.empty() ? -1 : static_cast<int>(std::strtoul(weaponText.c_str(), nullptr, 16));
-        const std::string info = "cSetInfo" + cls.substr(1);  // uEm10 -> cSetInfoEm10
         const auto player = engine::LocalPlayer();
-        float pos[3] = {ReadOr<float>(player + 0x30, 0.0f), ReadOr<float>(player + 0x34, 0.0f), ReadOr<float>(player + 0x38, 0.0f)};
+        const float pos[3] = {ReadOr<float>(player + re5::off::kUnitPosition, 0.0f), ReadOr<float>(player + re5::off::kUnitPosition + 4, 0.0f),
+                              ReadOr<float>(player + re5::off::kUnitPosition + 8, 0.0f)};
         for (int i = 0; i < std::clamp(count, 1, 20); ++i) {
             const float spawnAt[3] = {pos[0] + distance + 60.0f * static_cast<float>(i), pos[1], pos[2]};
-            const std::uintptr_t unit = player ? SpawnEnemyNative(cls.c_str(), info.c_str(), spawnAt, weapon) : 0;
-            RM_LOGW("dev spawn %s (%s, weapon %X) at %.0f %.0f %.0f -> %08X %s", cls.c_str(), info.c_str(), weapon, spawnAt[0],
-                    spawnAt[1], spawnAt[2], static_cast<unsigned>(unit), unit ? engine::ClassName(unit).c_str() : "failed");
+            const std::uintptr_t unit = player ? director::Spawn(cls.c_str(), spawnAt, weapon) : 0;
+            RM_LOGW("dev spawn %s (weapon %X) at %.0f %.0f %.0f -> %08X %s", cls.c_str(), weapon, spawnAt[0], spawnAt[1], spawnAt[2],
+                    static_cast<unsigned>(unit), unit ? engine::ClassName(unit).c_str() : "failed");
         }
+    } else if (command == "enemies") {
+        const auto states = engine::ReadEnemyStates();
+        int alive = 0;
+        for (const auto& e : states) alive += e.hp > 0 ? 1 : 0;
+        RM_LOGW("dev enemies: %zu listed, %d alive, %d native spawns refused", states.size(), alive, director::TakeBlockedAttempts());
+        for (const auto& e : states) {
+            if (e.hp <= 0) continue;
+            RM_LOGW("  %08X %s hp %d/%d at %.0f %.0f %.0f", static_cast<unsigned>(e.object), engine::ClassName(e.object).c_str(), e.hp, e.max,
+                    ReadOr<float>(e.object + re5::off::kUnitPosition, 0.0f), ReadOr<float>(e.object + re5::off::kUnitPosition + 4, 0.0f),
+                    ReadOr<float>(e.object + re5::off::kUnitPosition + 8, 0.0f));
+        }
+    } else if (command.rfind("nativespawns ", 0) == 0) {
+        // "nativespawns off|on": the game's own set spawns (Mercenaries waves, scripts).
+        director::BlockNativeSpawns(command.substr(13) == "off");
+        RM_LOGW("dev native spawns %s", director::NativeSpawnsBlocked() ? "blocked" : "allowed");
     } else if (command == "timeup") {
         RequestMercMatchEnd();
         RM_LOGW("dev timeup requested");

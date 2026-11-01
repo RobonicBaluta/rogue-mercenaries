@@ -117,6 +117,17 @@ constexpr std::uintptr_t kFnInventoryCreate = 0x00C4B480;
 // weapon object +0x2C through the unit manager): the game's own discard; wiping the record
 // by hand leaves the weapon model holstered on the character.
 constexpr std::uintptr_t kFnInventorySlotClear = 0x00C4C4E0;
+// Enemy spawning (roadmap E1/E2). sEnemy::Create(this = [kSEnemyInstance], dti, group, mode,
+// flag) is vtable slot 11; the game's set spawn (scripts, Mercenaries waves) is kFnEnemySetSpawn
+// (this = sEnemy, group, id, flag). Class lookup by name: kFnClassLookup(name, base DTI).
+constexpr std::uintptr_t kFnEnemyCreate = 0x007AF550;
+constexpr std::uintptr_t kFnEnemySetSpawn = 0x007AF5F0;
+constexpr std::uintptr_t kFnClassLookup = 0x006D05F0;
+constexpr std::uintptr_t kDtiLookupUnitBase = 0x011AF714;  // base passed by the set spawn for unit classes
+constexpr std::uintptr_t kDtiSetInfoPawn = 0x0120BEA0;     // cSetInfoPawn DTI (descriptor base)
+constexpr std::uintptr_t kFnLinkUnits = 0x0072CD00;        // this = [[kLinkUnitRoot] + kLinkUnitManager], unit
+constexpr std::uintptr_t kLinkUnitRoot = 0x01234578;
+constexpr int kEnemyUnitGroup = 9;
 // Campaign shop screen uIdShop00 (vtable 0x00FA8878): the title-flow step FUN_00BF24D0 creates
 // it with kFnShopCreate (ECX = kShopCreateThis), sets obj+4 |= 0x2000, registers it with
 // kFnUnitRegister(this = [kUnitManager], group 0x1A, obj), waits for obj+0x3C (closed) and
@@ -179,6 +190,15 @@ constexpr std::size_t kSlotEquipped = 0x1C;  // int32 == 1 for the weapon in the
 // Scene manager ([addr::kSceneManager]): pending scene request and its argument.
 constexpr std::size_t kSceneRequest = 0xF8;
 constexpr std::size_t kSceneRequestArg = 0xFC;
+// Enemy spawning.
+constexpr std::size_t kSEnemyVtableCreate = 0x2C;
+constexpr std::size_t kSetInfoPosition = 0x20;    // float x, y, z
+constexpr std::size_t kSetInfoEm10Weapon = 0xF0;  // cSetInfoEm10 mArmId (0x70100 = default)
+constexpr std::size_t kSetInfoVtableApply = 0x18;
+constexpr std::size_t kEnemySetGroup = 0xD50;
+constexpr std::size_t kEnemySetId = 0xD54;
+constexpr std::size_t kLinkUnitManager = 0x3830;
+constexpr std::size_t kUnitPosition = 0x30;       // float x, y, z of any uCoord unit
 // Application object ([addr::kGameRoot]): flags and the lock around them.
 constexpr std::size_t kAppLock = 0x4;
 constexpr std::size_t kAppThreadedFlag = 0x1C;
@@ -301,6 +321,10 @@ inline constexpr Signature kSignatures[] = {
     {"merce_results_move", addr::kFnMerceResultsMove, "53 56 57 6A FF 6A FF 8B F1 E8 82 2B FC FF 8B 0D"},
     {"pause_move", addr::kFnPauseMove, "A1 A4 40 23 01 F7 80 34 04 01 00 00 05 00 00 56"},
     {"inventory_slot_clear", addr::kFnInventorySlotClear, "8B 44 24 04 53 56 57 50 8B F1 E8 B1 EE FF FF 6A 2C 33 DB 8D"},
+    {"enemy_create", addr::kFnEnemyCreate, "8B 15 50 4F 1F 01 56 8B F1 8B 4C 24 08 39 51 04 74 20 8B 41"},
+    {"enemy_set_spawn", addr::kFnEnemySetSpawn, "56 8B F1 8B 06 8B 50 40 FF D2 3C 01 75 06 33 C0 5E C2 0C 00"},
+    {"class_lookup", addr::kFnClassLookup, "56 8B 74 24 08 85 F6 75 04 33 C0 5E C3 53 56 E8 0C 73 01 00"},
+    {"link_units", addr::kFnLinkUnits, "53 57 8B D9 33 FF 39 BB E8 05 00 00 76 65 55 8B 6C 24 10 56"},
     {"shop_create", addr::kFnShopCreate, "8B 0D 94 F2 1A 01 8B 01 8B 50 14 56 6A 10 68 C4 1D 00 00 FF"},
     {"unit_register", addr::kFnUnitRegister, "56 8B 74 24 0C 85 F6 57 8B F9 75 07 5F 32 C0 5E C2 08 00 80"},
     {"merc_add_countdown", addr::kFnMercAddCountdown, "A1 A4 40 23 01 56 8B F1 8B 88 2C 04 01 00 8B 41 58 85 C0 0F"},

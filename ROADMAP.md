@@ -98,7 +98,7 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
 ### M1 — The director (enemies under our control)
 1. ~~E1 spike: spawn one uEm10 with a descriptor next to the player (dev command `spawn`).~~ Done 2026-11-01. The Mercenaries spawner calls the same path from `0x007AF6E0` (callers `0x00C2A880`, `0x00C2AA80`, `0x00C2E070`): the gate for E2.
 2. Spawn table: enemy type → DTI, default descriptor fields, which stages load it.
-3. E2: switch off the Mercenaries spawner in runs.
+3. ~~E2: switch off the Mercenaries spawner in runs.~~ Gate done 2026-11-01 (`director.cpp`, dev `nativespawns off`); switched on automatically once the director runs waves.
 4. Core: `arenas.json` with spawn points and waves (type, count, weapon, timing, max alive);
    core tests for wave pacing and kill accounting.
 5. Adapter director: runs the waves, tracks its units, reports kills (E5).

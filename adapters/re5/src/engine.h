@@ -32,6 +32,7 @@ struct Verified {
     bool timeBonus = false;     // time-bonus pickups and the countdown add (chests)
     bool slotClear = false;     // the game's inventory record clear (releases weapon models)
     bool gameShop = false;      // campaign shop screen constructor and unit registration
+    bool enemySpawn = false;    // sEnemy::Create, the set spawn, class lookup (director)
 };
 const Verified& Caps();
 
