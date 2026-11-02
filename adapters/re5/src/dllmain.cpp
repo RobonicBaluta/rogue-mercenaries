@@ -50,6 +50,7 @@ DWORD WINAPI Worker(LPVOID) {
     }
 
     InstallCrashDiagnostics();
+    if (settings.developerMode) StartHangWatchdog();
     if (settings.muteAudio || std::filesystem::exists(paths.dataDir / L"dev_muted.flag")) {
         // Own thread so the mute lands before the intro starts playing.
         static Paths audioPaths = paths;
@@ -91,6 +92,7 @@ DWORD WINAPI Worker(LPVOID) {
     } else if (!InstallD3d9Hooks()) {
         RM_LOGE("d3d9 hooks failed: no overlay");
     }
+    if (engine::Caps().buildIdentity) InstallFatalErrorHook();
     if (settings.disableCombatHooks) {
         RM_LOGW("dev: combat hooks disabled");
     } else if (engine::Caps().buildIdentity) {

@@ -144,7 +144,13 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    the Mercenaries host loads any stage number in place of its own (`host.cpp`, dev `stage <n>`); the
    area starts at its own player start with no story script; s503 (ship deck) ran a director arena from
    its AI waypoints (`scripts/campaign_maps.py`) and cleared at its budget.
-2. Arena catalogue: Mercenaries maps + selected campaign areas with spawn points and chest positions.
+2. ~~Arena catalogue: Mercenaries maps + selected campaign areas with spawn points and chest positions.~~
+   Done 2026-11-02: 17 campaign areas vetted in game and listed in `maps.json`, 16 of them in the run
+   rotation (AI waypoints around the area's start, chests, the roster of a similar Mercenaries stage
+   and everything that stage and the area load for their enemies); runs pick from the 8 Mercenaries
+   stages and those areas for every arena (`"campaign_arenas": false` to keep to Mercenaries). The
+   fatal error seen on campaign areas (`Failed open file ... wp6f00.mod`) was a weapon model the area
+   never loaded; fixed by those preloads.
 3. Run map: branching arenas with difficulty tiers.
 
 ### M6 — Bosses

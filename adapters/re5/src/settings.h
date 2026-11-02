@@ -60,6 +60,9 @@ struct Settings {
     // results screen is accepted behind a black fade, the title-flow script restarts the
     // match on the next stage and the inventory is carried over. false: one map per run.
     bool stagePerArena = true;
+    // Runs also pick the campaign areas listed in maps.json (stage numbers 100 and up), loaded
+    // in place of a Mercenaries stage. false: Mercenaries stages only.
+    bool campaignArenas = true;
     // Results, rewards, shop and route as native in-match screens (world paused); false keeps
     // the overlay windows for them.
     bool nativeMatchUi = true;

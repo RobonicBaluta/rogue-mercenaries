@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -864,7 +865,8 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
         MapDef map;
         if (!ReadId(d, e, map.id)) continue;
         d = file.Sub(": map " + Q(map.id));
-        CheckKeys(d, e, {"id", "name", "stage", "points", "chests", "roster", "max_alive", "min_player_distance", "special_after", "max_specials"});
+        CheckKeys(d, e, {"id", "name", "stage", "rotation", "points", "chests", "preload", "roster", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
+        GetBool(d, e, "rotation", map.rotation, false);
         GetString(d, e, "name", map.name, true);
         std::int64_t stage = -1;
         if (GetInt(d, e, "stage", stage, true) && stage < 0) d.Error("field 'stage' must be >= 0");
@@ -874,6 +876,9 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
         map.max_alive = static_cast<int>(maxAlive);
         if (GetNumber(d, e, "min_player_distance", map.min_player_distance, false) && map.min_player_distance < 0) {
             d.Error("field 'min_player_distance' must be >= 0");
+        }
+        if (GetNumber(d, e, "max_player_distance", map.max_player_distance, false) && map.max_player_distance < 0) {
+            d.Error("field 'max_player_distance' must be >= 0");
         }
         if (GetNumber(d, e, "special_after", map.special_after, false) && (map.special_after < 0 || map.special_after > 1)) {
             d.Error("field 'special_after' must be 0..1");
@@ -890,6 +895,18 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
                 map.points.push_back({p[0].get<double>(), p[1].get<double>(), p[2].get<double>()});
             }
             if (map.points.empty()) d.Error("needs at least one spawn point");
+        }
+        if (const auto preload = e.find("preload"); preload != e.end()) {
+            if (!preload->is_array()) d.Error("field 'preload' must be a list of archive names");
+            for (const json& p : preload->is_array() ? *preload : json::array()) {
+                const std::string name = p.is_string() ? p.get<std::string>() : std::string();
+                if (name.empty() || name.size() > 48 ||
+                    !std::all_of(name.begin(), name.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; })) {
+                    d.Error("every preload entry must be an archive name (letters, digits, _)");
+                    continue;
+                }
+                map.preload.push_back(name);
+            }
         }
         if (const auto chests = e.find("chests"); chests != e.end()) {
             if (!chests->is_array()) d.Error("field 'chests' must be a list of [x, y, z]");

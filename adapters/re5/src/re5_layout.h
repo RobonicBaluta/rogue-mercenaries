@@ -69,6 +69,9 @@ constexpr std::uintptr_t kResourceLoader = 0x011B26C4;
 constexpr std::uintptr_t kFnLoadListCommit = 0x007D4A10;
 constexpr std::uintptr_t kFnLoadClassArchive = 0x007D6770;
 constexpr std::uintptr_t kFnLoadUnitArchive = 0x007D5820;
+// LoadRequest(this = loader, path, dti or 0, flag) (FUN_007D4960, ret 0xC): queues
+// "Image\Archive\<name>" on the list being built (an existing path is only kept).
+constexpr std::uintptr_t kFnLoadRequest = 0x007D4960;
 // Object manager sObjModel (instance [0x011B2720], vtable 0x00F65240): Create (slot 11,
 // this, dti, group, mode, flag; ret 0x10) and the set spawn (slot 13, this, group, id; ret 8).
 // Set record of a set manager (sEnemy or sObjModel): GetRecord(this, group, id), record +0xC
@@ -92,6 +95,10 @@ constexpr std::uintptr_t kFnMercMatchSetup = 0x00BF5050;
 // Save/progress data: [kSaveData] + [+0x20 slot] * 0x5940; +0x273D8 the stage number of the
 // current/next match, +0x273DC its room (0 for Mercenaries).
 constexpr std::uintptr_t kSaveData = 0x011B2158;
+// The engine's fatal error handler: (context, format, ...) formats, calls the context's
+// report callback (FatalAppExitA through 0x00422D00) and exits. Callers include
+// "ERROR!!!! sActionButton::setResource : no resource" and "Failed open file. %s %d".
+constexpr std::uintptr_t kFnGameFatalError = 0x006CFEF0;
 // Class by class id (FUN_006D0690, cdecl): hash buckets at 0x012386A0, chain +0x14, id +0x20.
 constexpr std::uintptr_t kFnClassById = 0x006D0690;
 // Play menu screen (uIdStartUp01) per-frame move, and the menu input query
@@ -411,6 +418,7 @@ inline constexpr Signature kSignatures[] = {
     {"layout_set_element_draw", addr::kFnLayoutSetElementDraw, "8B 44 24 08 83 F8 5C 73 38 56 8B 74 81 20 85 F6 74 2E 8B 46 08 85 C0 74"},
     {"load_list_commit", addr::kFnLoadListCommit, "51 53 55 57 8B F9 8B 87 D0 07 02 00 8D 04 80 33 ED 33 C9 8D 04 87 33 DB"},
     {"load_class_archive", addr::kFnLoadClassArchive, "8B 44 24 04 85 C0 74 21 8B 40 20 8B 54 24 08 52 0F B6 D0 52 8B D0 C1 EA"},
+    {"load_request", addr::kFnLoadRequest, "53 8B 5C 24 08 85 DB 57 8B F9 0F 84 99 00 00 00 83 BF D0 07 02 00 04 75"},
     {"load_unit_archive", addr::kFnLoadUnitArchive, "81 EC 08 01 00 00 8B 84 24 0C 01 00 00 0F B6 94 24 14 01 00 00 53 8B 9C"},
     // The Mercenaries set loader queues each record's class on the loader instance:
     // `mov ecx, [0x011B26C4]; push ebx; push 0; push esi; call LoadClassArchive`.
@@ -428,6 +436,7 @@ inline constexpr Signature kSignatures[] = {
     {"merc_match_setup", addr::kFnMercMatchSetup, "83 EC 08 A1 A4 40 23 01 8B 80 2C 04 01 00 8B 88 DC 05 00 00 8B 90 D4 05"},
     // `movzx ebx, word [edx*2 + 0x010CB9B0]`: the stage choice's stage number.
     {"merc_stage_table_use", 0x00BF506B, "0F B7 1C 55 B0 B9 0C 01"},
+    {"game_fatal_error", addr::kFnGameFatalError, "8B 4C 24 08 81 EC 00 04 00 00 8D 84 24 0C 04 00 00 50 51 8D"},
     {"class_by_id", addr::kFnClassById, "8B 4C 24 04 8B C1 C1 E8 04 25 FF 0F 00 00 8B 04 85 A0 86 23 01 85 C0 74"},
     // The element count the clear loop reads: `mov eax, [ecx+0xC]; ret`.
     {"layout_element_count", 0x00CDADA0, "8B 41 0C C3"},

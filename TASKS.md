@@ -122,6 +122,71 @@ See `research/capabilities.md` (per-capability evidence) and `research/re5-engin
 - [x] M4.1 / E10 Chests placed by the arena data (2026-11-02). Map objects come from the object manager sObjModel (`[0x011B2720]`, vtable `0x00F65240`: Create slot 11 `0x007E2410`, set spawn slot 13 `0x007E2480`) and items from sItem (`[0x011B2200]`, `0x007BE760`/`0x007C0A80`); `adapters/re5/src/world.cpp` hooks both (dev `survey on` logs every object, `scripts/survey_objects.sh`). The Mercenaries time bonus is the statue class `uOm0100` (uses the uOmHourGlass pickup action; set group 61; descriptor `cSetInfoInsModel`: position `+0x20`, scale `+0x40`, bonus seconds `+0x64`, `+0x74` 0x8020), 7 to 11 per stage (`scripts/survey_chests.sh` → `research/chest_survey.json` → `maps.json` `chests` via `scripts/write_maps.py`). `world::PlaceChest` reproduces the set spawn: descriptor with the game's values, Create(dti, 12, 1, 1), apply, the fields the spawn writes after it (`+0xD78` 1, `+0x120` 0x8020, `+0xFAC` 1, `+6` 13, `+0x124` 3, `+0x128` 1, `+0x20` 4), link. Spike (`scripts/test_chest.sh`, Public Assembly): a placed statue shows the game's own "F Bonus de tiempo" prompt, a shot opened it through the game's pickup (`time bonus picked up: object 0B06CA00 (uOm0100, 30 s)`, `chest 1: CHEST   10 SUPPLIES`, `build/runs/20261102-074731-chest/01-placed.png`); without those fields it could not be broken. In a run (`scripts/test_chests.sh`): the stage's own statues are refused (`time bonus (set 61 id 0) not created`), arena 1 on Public Assembly and arena 2 on Missile Area each placed 3 of 3 chests at the director's picks (core `MapDef::chests`, `Director::PickChests`, economy `chests.per_arena`, tests in `tests/test_director.cpp`).
 - [-] M4.2 In-world route choice (2026-11-02): dropped by the user after a test version (exit statues placed after the shop, one per route, broken to pick it; the HUD named the nearest). Placing them where the player could reach and hit them did not work reliably and the user did not find it fun; the NEXT ROUTE menu stays. Code reverted (not committed).
 - [x] M5.1 / E6 A campaign area as an arena (2026-11-02). The Mercenaries match setup `FUN_00BF5050` maps the stage choice through the table `0x010CB9B0` to the stage numbers 400..407 (the Mercenaries stages `s400.arc`..`s407.arc`) and stores it in the save (`[0x011B2158] + slot*0x5940 + 0x273D8`); the match's scene switch `FUN_00716C80` creates `aS<stage>` and the area load reads `s<stage>.arc`. `adapters/re5/src/host.cpp` hooks the setup and writes another stage number (dev `stage <n>`). Campaign stages 100, 102, 203, 304, 503 loaded in a Mercenaries match and kept running 75 s each with the player at the area's own start and no cutscene (`scripts/survey_campaign.sh`, `build/runs/20261102-085557-campaign/sheet-t75.png`); 102 showed a scripted action prompt, 203 an ally NPC, 607 no player (only sky). They spawn no enemies of their own and hold no enemy set records in this mode (dev `setdump`), but their archives hold the AI waypoints (`rAIWayPoint` `stage\sNNN\soft\sNNN_g`, format in the engine map) and the navigation mesh. `scripts/campaign_maps.py` turns the waypoints into a director map (`maps.json` `campaign_s503`: 59 points, 8 chest points, the Ship Deck roster preloaded by M3; campaign maps are keyed by stage number). First try crashed: the chest statue (uOm0100) is not loaded on a campaign stage; chests now check the archive and the run preloads it. In game (`scripts/test_campaign_arena.sh`, s503): 20 director spawns, 0 failures, the enemies closed in (mean distance 1086 → 369), 3 chests placed, `arena cleared in 26 s` (`build/runs/20261102-091847-arena503/02-after-20-s.png`: Majini and the chainsaw special on the campaign ship deck).
+- [x] M5.2 Arena catalogue (2026-11-02). Every campaign archive scanned offline for AI waypoints (`s6xx` have none: chapter 6 is not walkable in this mode). 26 candidates loaded through the host (`scripts/vet_campaign.sh`, contact sheets in `build/runs/20261102-092324-vet/`): 108 never started, 201 and 307 hung, 109/119/313/702 put the player outside the waypoint grid, 107 and 705 render black, 209 shows a leftover NPC; 17 kept (100, 104, 105, 113, 114, 202, 204, 300, 302, 310, 314, 500, 503, 505, 506, 508, 700). `scripts/campaign_maps.py` writes them to `maps.json` keyed by stage number: waypoints within 70 m of the recorded player start, chests within 40 m, `max_player_distance` 35 m (new core option: the director prefers points within reach, tested), the roster of a Mercenaries stage of the same look. Runs: `PickMap`/`ArmMap` pick among the Mercenaries stages and the campaign maps (`rotation`, `"campaign_arenas"`), a campaign pick arms Mercenaries stage 0 with the host loading its number, the override is cleared when the run ends; dev `nextmap <key>`. The director waits 3 s after an arena begins (inventory, chests and carried state first).
+  Crash on campaign areas (reported twice by the player, during grabs): a hook on the engine's fatal handler `0x006CFEF0` now logs its message and the game code on the stack. It named `Failed open file. ...\pawn\wp\wp6f\model\wp6f00.mod 183` 1 ms after the director's first spawns on s302, every time: a weapon unit's first update (`0x00B95C80` -> `0x00A79B80`) loads its resource list synchronously (`0x00BC2810` -> `0x00448B70`), and the file is in no loaded archive. One uEm12 per arm on s302: only arm 0x7015F (uWp5f) ends the game; the same arm is fine on the Mercenaries Ruins. Only the cave stages s300-s302 use 0x7016F in their story layouts. Fix: new `maps.json` field `preload` (archive names; core validation, tested) that the adapter queues with the enemies (`0x007D4960`); `scripts/survey_stage_preloads.sh` recorded every Mercenaries stage's enemy list (`research/stage_preloads.json`), and `campaign_maps.py` gives each campaign map its template stage's list plus the weapons of the area's own story layouts (s300/s302: uWp63, uWp6f). After the fix every arm spawns on s302 and its arena clears (20 spawns, no fatal error). Arena checks (`scripts/check_campaign_arenas.sh`, director spawns, failures, unloaded classes, fatal errors, chests, distance to the player first and last, clear):
+
+```
+s100: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 1785 2160 | arena cleared in 28 s
+s104: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 1646 1555 | arena cleared in 29 s
+s105: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 2249 1963 | arena cleared in 29 s
+s113: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 2184 1818 | arena cleared in 30 s
+s114: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 2298 1767 | arena cleared in 30 s
+s202: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 1677 1521 | arena cleared in 29 s
+s204: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 1637 1985 | arena cleared in 29 s
+s500: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 1860 2157 | arena cleared in 29 s
+s503: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 5928 5628 | arena cleared in 29 s
+s300: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 2009 2082 | arena cleared in 29 s
+s302: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 1724 1811 | arena cleared in 29 s
+s314: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 1961 1386 | arena cleared in 29 s
+s310: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 2009 658 | arena cleared in 35 s (from the log: this first harness run cut the line off its excerpt)
+s505: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 1685 1816 | arena cleared in 29 s
+s506: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 1724 1633 | arena cleared in 29 s
+s508: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 1459 2514 | arena cleared in 23 s
+s700: spawned: 20 units; failed: 0; not loaded: 0; fatal: 0 | chests: 3 of 3 | distance 1533 2139 | arena cleared in 30 s
+```
+
+  Where the player starts in a campaign area depends on how the match was reached. As a later arena (after a stage change; `scripts/check_campaign_starts.sh`: Mercenaries stage 3 first) several areas start elsewhere than the start recorded for a first arena, and the director's preference for points within reach still brings the enemies in everywhere:
+
+```
+s100: later-arena start 8091 -0 1767 (66 m from the recorded start) | distance 1886 1380 
+s104: later-arena start 1547 -400 -11946 (12 m from the recorded start) | distance 1971 1534 
+s105: later-arena start 4056 620 -3002 (45 m from the recorded start) | distance 1390 1316 
+s113: later-arena start -93 17 -4678 (0 m from the recorded start) | distance 2252 1718 
+s114: later-arena start 148 70 2214 (13 m from the recorded start) | distance 1971 1813 
+s202: later-arena start -3970 301 7727 (0 m from the recorded start) | distance 1965 1259 
+s204: later-arena start 33885 51 -87306 (0 m from the recorded start) | distance 2402 2353 
+s500: later-arena start 529 -0 2613 (0 m from the recorded start) | distance 1822 1445 
+s300: later-arena start -136 1589 44883 (38 m from the recorded start) | distance 1651 1342 
+s302: later-arena start 537 118 21735 (74 m from the recorded start) | distance 1972 1567 
+s314: later-arena start -3643 900 -18544 (42 m from the recorded start) | distance 2007 1674 
+s310: later-arena start 342 -1300 -23565 (0 m from the recorded start) | distance 1344 953 
+s505: later-arena start -2266 301 3771 (45 m from the recorded start) | distance 1435 1087 
+s506: later-arena start -81 -700 889 (1 m from the recorded start) | distance 1335 968 
+s508: later-arena start 328 40 -670 (19 m from the recorded start) | distance 1598 1269 
+s700: later-arena start 0 -0 0 (0 m from the recorded start) | distance 1482 1432
+```
+
+  s503 as the first arena of a session puts the player on the upper deck (-627, 1350, 25225), 55 m from the nearest AI waypoint (all at y 0..200), so the enemies never reach them (mean distance 59 m after 20 s); after a stage change it starts at 845 200 18738 (from 500 and from 503). It stays in `maps.json` for developer tests with `"rotation": false` (`NO_ROTATION` in `campaign_maps.py`).
+
+Rotation (`scripts/test_rotation.sh`):
+
+```
+dev next map 508 (rotation of 24 maps)
+resources: run, stage 508: 19 guns, 3 enemy classes, 10 enemy weapons and 24 archives go with every load
+host: match setup chose stage 400; loading stage 508 instead
+chests: 3 of 3 placed for arena 1
+phase idle -> arena_active
+setdump: player at -977.0 -4.2 826.2
+ui: arena cleared in 18 s
+phase arena_active -> arena_results
+dev next map 3 (rotation of 24 maps)
+stage change: stage 508 -> 3 (costume slot 0), ending the match
+resources: run, stage 3: 19 guns, 3 enemy classes, 6 enemy weapons and 0 archives go with every load
+host: match setup chose stage 403
+chests: 3 of 3 placed for arena 2
+phase route_selection -> arena_active
+setdump: player at 215.0 950.0 18254.9
+```
 
 ## Phase 5 — Stabilization/release
 

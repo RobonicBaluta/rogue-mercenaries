@@ -4,12 +4,12 @@
 # AI waypoints, a Mercenaries roster preloaded with the run), chests are placed, the enemies come
 # for the player and the arena clears at its budget. Needs the game at the Play menu with a dev
 # adapter config (build/restart_to_play_menu.sh configs/adapter.director.json). Saves and restores
-# the profile; closes the game at the end.   NUMBER (default 503)  OBSERVE (default 20)
+# the profile; closes the game at the end.   NUMBER (default 100)  OBSERVE (default 20)
 cd "$(dirname "$0")/.."
 D="$LOCALAPPDATA/RogueMercenaries"
 LOG="$D/logs/adapter.log"
 PS="powershell -NoProfile -ExecutionPolicy Bypass -File"
-NUMBER=${NUMBER:-503}
+NUMBER=${NUMBER:-100}
 OBSERVE=${OBSERVE:-20}
 OUT="build/runs/$(date +%Y%m%d-%H%M%S)-arena$NUMBER"
 mkdir -p "$OUT"
@@ -26,8 +26,8 @@ sleep 3; cap 01-spawned
 sleep "$OBSERVE"; cap 02-after-$OBSERVE-s
 for _ in $(seq 1 60); do since | grep -q -- "-> arena_results" && break; dev killall; sleep 4; done
 sleep 2; cap 03-cleared
-echo "spawned: $(since | grep -cE 'director: uEm[0-9a-f]+ \(arm') units; failed: $(since | grep -c 'director: .* failed'); not loaded: $(since | grep -c 'is not loaded')"
-since | grep -E "host:|resources: run|chests: |mean distance|arena cleared|phase .*arena" | cut -c40-170 | head -20
+echo "spawned: $(since | grep -cE 'director: uEm[0-9a-f]+ \(arm') units; failed: $(since | grep -c 'director: .* failed'); not loaded: $(since | grep -c 'is not loaded'); fatal: $(since | grep -c 'game fatal error'); $(since | grep -oE 'arena cleared in [0-9]+ s' | head -1)"
+since | grep -E "host:|resources: run|chests: |mean distance|arena cleared|phase .*arena|game fatal error" | cut -c40-220 | head -60
 $PS scripts/gamectl.ps1 -Action close >/dev/null
 for _ in $(seq 1 30); do tasklist | grep -qi re5dx9 || break; sleep 1; done
 tasklist | grep -qi re5dx9 && $PS scripts/gamectl.ps1 -Action kill >/dev/null

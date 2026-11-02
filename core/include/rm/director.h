@@ -41,12 +41,20 @@ struct MapEnemy {
 struct MapDef {
     std::string id;
     std::string name;
-    int stage = -1;  // engine stage index (Mercenaries stage for now)
+    /// Mercenaries maps: the stage index 0..7; campaign areas: their stage number (100 and up),
+    /// which the adapter's host loads in place of a Mercenaries stage.
+    int stage = -1;
+    bool rotation = true;  // runs may pick it (false keeps it for tests)
     std::vector<std::array<double, 3>> points;  // spawn positions known to be on walkable ground
     std::vector<std::array<double, 3>> chests;  // chest positions (where the game puts its time bonuses)
     std::vector<MapEnemy> roster;
+    /// Archives (Image\Archive\<name>) the adapter loads with the arena's enemies: everything the
+    /// roster's own stage loads for them (weapons they carry, plagas, effects), for maps whose
+    /// stage does not load them itself (campaign areas).
+    std::vector<std::string> preload;
     int max_alive = 8;
     double min_player_distance = 800.0;  // engine units; points closer than this are avoided
+    double max_player_distance = 0.0;    // > 0: points farther than this are avoided (large areas)
     double special_after = 0.25;         // share of the budget dead before specials join
     int max_specials = 1;                // specials alive at once on tier 1 (+1 per tier above)
 };

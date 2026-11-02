@@ -207,6 +207,28 @@ TEST_CASE("an arena places a few of the map's chest positions, distinct and repe
     CHECK(d.PickChests(3).empty());
 }
 
+TEST_CASE("on a large map spawn points within reach of the player are preferred", "[director]") {
+    MapDef map = TestMap(1);
+    map.min_player_distance = 500.0;
+    map.max_player_distance = 3000.0;
+    map.points = {{0, 0, 0}, {1500, 0, 0}, {20000, 0, 0}, {0, 0, 25000}};
+    Director d(map, 40, 1, 11);
+    const std::array<double, 3> player{0, 0, 0};
+    for (double now = 0.0; now < 20.0; now += 1.0) {
+        for (const auto& r : d.Tick(now, player)) {
+            CHECK(r.pos == map.points[1]);  // the only point between 5 and 30 m
+            d.Spawned(r.ticket, "u" + std::to_string(r.ticket));
+            CHECK(d.Died("u" + std::to_string(r.ticket)));
+        }
+    }
+    // Nothing in reach: the far points are used rather than none.
+    map.points = {{0, 0, 0}, {20000, 0, 0}};
+    Director far(map, 5, 1, 11);
+    const auto spawns = far.Tick(0.0, player);
+    REQUIRE(spawns.size() == 1);
+    CHECK(spawns[0].pos == map.points[1]);
+}
+
 TEST_CASE("spawn points away from the player are preferred", "[director]") {
     Director d(TestMap(1), 50, 1, 9);
     const std::array<double, 3> player{0, 0, 0};
@@ -293,5 +315,9 @@ TEST_CASE("maps.json is validated", "[director]") {
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "roster": [{"class": "uEm10", "profiles": [{"fields": {"Arm": 1}}]}]}]})").empty());
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "roster": [{"class": "uEm10", "profiles": [{"weight": 2, "fields": {"arm": 459088, "plaga": 1}}]}]}]})").empty());
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "chests": [[1,2,3]], "roster": [{"class": "uEm10"}]}]})").empty());
+    CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 503, "rotation": false, "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
+    CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 503, "preload": ["uWp6f", "uEm10Eff"], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 503, "preload": ["../x"], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 503, "rotation": "no", "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "chests": [[1,2]], "roster": [{"class": "uEm10"}]}]})").empty());
 }

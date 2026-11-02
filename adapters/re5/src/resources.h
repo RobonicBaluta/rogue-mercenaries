@@ -18,6 +18,7 @@ struct Extras {
     std::vector<std::string> enemyClasses;     // with the stage's enemies: "uEm11"
     std::vector<std::uint32_t> enemyWeapons;   // weapons enemies hold, category<<16 | id: 0x70160
     std::vector<std::uint16_t> playerWeapons;  // weapon item ids, with the player's items: 0x011A
+    std::vector<std::string> enemyArchives;    // Image\Archive\<name>, with the enemies: "uWp6f"
 };
 
 /// Queues the hook on the list commit. Requires the loader signatures.

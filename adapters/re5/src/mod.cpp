@@ -156,6 +156,7 @@ struct ModState {
     bool arenaEndRequested = false;  // timer forced to 0 after a clear
     bool devQuiet = false;           // developer: no director refills, native spawns blocked
     std::uint64_t chestsPlacedFor = 0;  // (match generation, arena) whose chests are placed
+    double arenaBeganAt = -1.0;         // when the current arena began (director grace period)
     bool matchUiOpenRequested = false;  // native results screen to open once the tick's lock is released
     std::string notice;       // short line shown instead of the status (chest contents)
     int organizePick = -1;    // ORGANIZE: grid cell picked up (-1 = none)
@@ -347,6 +348,43 @@ std::string GridItemName(std::uint32_t id) {
     char buf[16];
     std::snprintf(buf, sizeof(buf), "Item %04X", id);
     return buf;
+}
+
+// M5.2: the maps a run picks its arenas from. Mercenaries stages are their stage index
+// (0..stage_count-1); campaign areas of maps.json their stage number, loaded by the host in
+// place of Mercenaries stage 0 ("campaign_arenas": false leaves them out).
+constexpr int kFirstCampaignStage = 100;
+
+std::vector<int> RotationMaps() {
+    std::vector<int> keys;
+    for (int i = 0; i < std::max(1, g->settings.stageCount); ++i) keys.push_back(i);
+    if (g->settings.campaignArenas && host::Available()) {
+        for (const rm::MapDef& m : g->content->maps()) {
+            if (m.stage >= kFirstCampaignStage && m.rotation) keys.push_back(m.stage);
+        }
+    }
+    return keys;
+}
+
+int g_forcedNextMap = -1;  // developer "nextmap": the next pick
+
+// A random map of the rotation other than `avoid`.
+int PickMap(int avoid) {
+    if (g_forcedNextMap >= 0) return std::exchange(g_forcedNextMap, -1);
+    std::vector<int> keys = RotationMaps();
+    if (keys.size() > 1) std::erase(keys, avoid);
+    LARGE_INTEGER counter{};
+    QueryPerformanceCounter(&counter);
+    return keys[static_cast<std::size_t>(static_cast<std::uint64_t>(counter.QuadPart) % keys.size())];
+}
+
+// Arms the autopilot for the next match on map `key`: a Mercenaries stage directly, a campaign
+// area through Mercenaries stage 0 with the host loading its stage number instead.
+void ArmMap(int key, int costume) {
+    const bool campaign = key >= kFirstCampaignStage;
+    g->currentStage = key;
+    host::SetStageOverride(campaign ? key : -1);
+    autopilot::Arm({campaign ? 0 : key, costume, std::max(1, g->settings.stageCount)});
 }
 
 // Moves the item in cell `from` to cell `to`, swapping with whatever is there.
@@ -743,11 +781,7 @@ private:
                             const rm::SkinAvailability* skin = SelectedSkin(c);
                             costume = std::max<std::int64_t>(skin && skin->costume_index >= 0 ? skin->costume_index : c.costume_index, 0);
                         }
-                        LARGE_INTEGER counter;
-                        QueryPerformanceCounter(&counter);
-                        const int stages = std::max(1, g->settings.stageCount);
-                        autopilot::Arm({(g->currentStage = static_cast<int>(static_cast<std::uint64_t>(counter.QuadPart) % stages)),
-                                        static_cast<int>(costume), stages});
+                        ArmMap(PickMap(-1), static_cast<int>(costume));
                     }
                     d.outcome = Outcome::StartRun;
                 } else {
@@ -934,6 +968,7 @@ void HandleNativeMenu(double now) {
     if (nativemenu::MenuAtInput() && run.phase() == rm::Phase::Idle && run.state().arena_index == 0) {
         g->rogueModePending = false;  // backed out to the Play menu
         autopilot::Disarm("back at the Play menu");
+        host::SetStageOverride(-1);
         return;
     }
     if (!g->match.inMatch) return;
@@ -1360,15 +1395,6 @@ void RestoreCarriedHp() {
     RM_LOGI("carried: health %d -> %d/%d", hp->hp, wanted, hp->max);
 }
 
-// A different random stage for the next arena (session-locked stages are skipped by Arm()).
-int NextStage() {
-    LARGE_INTEGER counter{};
-    QueryPerformanceCounter(&counter);
-    const int stages = std::max(1, g->settings.stageCount);
-    int stage = static_cast<int>(static_cast<std::uint64_t>(counter.QuadPart) % stages);
-    if (stages > 1 && stage == g->currentStage) stage = (stage + 1) % stages;
-    return stage;
-}
 
 // Route chosen: end this match through the game's own time-up, accept its results screen
 // behind the fader and let the title-flow script restart the match on another stage.
@@ -1380,13 +1406,12 @@ void StartStageTransition(double now) {
     }
     const auto gw = GameWorkPtr();
     const int costume = gw ? std::max(0, ReadOr<std::int32_t>(gw + re5::off::kGameWorkCharacter, 0)) : 0;
-    const int stage = NextStage();
+    const int stage = PickMap(g->currentStage);
     g->transition.pending = true;
     g->transition.generation = g->matchGeneration;
     g->transition.startedAt = now;
     RM_LOGI("stage change: stage %d -> %d (costume slot %d), ending the match", g->currentStage, stage, costume);
-    g->currentStage = stage;
-    autopilot::Arm({stage, costume, std::max(1, g->settings.stageCount)});
+    ArmMap(stage, costume);
     g->arenaEndRequested = true;
     RequestMercMatchEnd();
 }
@@ -1453,6 +1478,7 @@ void TryBeginArena(double now) {
             Report(status, "begin arena");
             g->arenaEndRequested = false;
             if (status.ok()) {
+                g->arenaBeganAt = now;
                 ApplyCarriedInventory();
                 RestoreCarriedHp();
                 g->transition.pending = false;
@@ -1469,6 +1495,7 @@ void TryBeginArena(double now) {
     const rm::Status status = run.BeginArena(now);
     Report(status, "begin arena");
     g->arenaEndRequested = false;
+    if (status.ok()) g->arenaBeganAt = now;
     if (status.ok() && waitingFirst) ApplyLoadoutToInventory();
 }
 
@@ -1521,6 +1548,10 @@ void DriveDirector(double now) {
     run.SetMapStage(g->match.inMatch ? CurrentMapKey() : -1);
     if (!g->match.inMatch) g->directorUnits.clear();
     if (!run.DirectorActive() || run.phase() != rm::Phase::ArenaActive || g->devQuiet) return;
+    // A moment before the first enemies: the arena's inventory, chests and carried state are
+    // set up first, and the player gets their bearings.
+    constexpr double kDirectorGraceSeconds = 3.0;
+    if (g->arenaBeganAt >= 0.0 && now - g->arenaBeganAt < kDirectorGraceSeconds) return;
     std::optional<std::array<double, 3>> player;
     if (const auto local = engine::LocalPlayer()) {
         player = std::array<double, 3>{ReadOr<float>(local + re5::off::kUnitPosition, 0.0f),
@@ -1609,6 +1640,7 @@ void UpdatePreloads() {
         // The chest statue (M4.1), so chests work on any stage.
         extras.enemyClasses.push_back("uOm0100");
         if (const rm::MapDef* map = CurrentMap()) {
+            extras.enemyArchives = map->preload;
             for (const rm::MapEnemy& e : map->roster) {
                 extras.enemyClasses.push_back(e.unit_class);
                 for (const std::int64_t arm : e.arms) addWeapon(arm);
@@ -1620,9 +1652,9 @@ void UpdatePreloads() {
             }
         }
     }
-    RM_LOGI("resources: %s, stage %d: %zu guns, %zu enemy classes and %zu enemy weapons go with every load",
+    RM_LOGI("resources: %s, stage %d: %zu guns, %zu enemy classes, %zu enemy weapons and %zu archives go with every load",
             runLoads ? "run" : "no run", CurrentMapKey(), extras.playerWeapons.size(), extras.enemyClasses.size(),
-            extras.enemyWeapons.size());
+            extras.enemyWeapons.size(), extras.enemyArchives.size());
     resources::SetRunExtras(std::move(extras));
 }
 
@@ -1788,6 +1820,7 @@ void SettleFinishedRun() {
             g->matchUiOpenRequested = false;
             g_enemyTracks.clear();
             autopilot::Disarm("run over");
+            host::SetStageOverride(-1);  // plain Mercenaries loads its own stages again
             if (phase == rm::Phase::RunFailed) ClearMercMatchEnd();
             SetStatus("run ended (" + summary->end_reason + "): +" + std::to_string(summary->credits_banked) +
                       " credits banked");
@@ -2054,6 +2087,15 @@ void PollDevCommand(double now) {
                     ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f), ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f));
         }
         world::DumpSetRecords();
+    } else if (command == "fataltest") {
+        // The game's own fatal error handler (shows its message box and exits the game).
+        using FatalFn = void(__cdecl*)(void* context, const char* format, ...);
+        RM_LOGW("dev fataltest: calling the game's fatal error handler");
+        reinterpret_cast<FatalFn>(re5::addr::kFnGameFatalError)(reinterpret_cast<void*>(0x011AF634), "dev fataltest %d", 42);
+    } else if (command.rfind("nextmap ", 0) == 0) {
+        // "nextmap <key>": the run's next map pick (Mercenaries index 0..7 or a campaign stage number).
+        g_forcedNextMap = std::atoi(command.c_str() + 8);
+        RM_LOGW("dev next map %d (rotation of %zu maps)", g_forcedNextMap, RotationMaps().size());
     } else if (command.rfind("stage ", 0) == 0) {
         // "stage <n>": the next Mercenaries matches load stage number n (campaign s1xx..s6xx,
         // Mercenaries 400..407); "stage -1" goes back to the chosen Mercenaries stage.

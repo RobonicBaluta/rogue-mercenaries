@@ -119,13 +119,14 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.enemySpawn = g_caps.enemies && SignatureOk("enemy_create") && SignatureOk("enemy_set_spawn") &&
                         SignatureOk("class_lookup") && SignatureOk("link_units");
     g_caps.timeBonus = g_caps.mercCountdown && SignatureOk("merc_add_countdown") && SignatureOk("time_bonus_action");
+    g_caps.fatalHandler = SignatureOk("game_fatal_error");
     g_caps.matchSetup = g_caps.gameWork && SignatureOk("merc_match_setup") && SignatureOk("merc_stage_table_use");
     g_caps.worldObjects = SignatureOk("obj_create") && SignatureOk("obj_set_spawn") && SignatureOk("set_record") && SignatureOk("set_record_count") &&
                           SignatureOk("obj_model_vtable") && SignatureOk("class_lookup") &&
                           SignatureOk("item_create") && SignatureOk("item_set_spawn") && SignatureOk("item_vtable") &&
                           SignatureOk("hourglass_ctor");
     g_caps.resources = g_caps.gameWork && SignatureOk("load_list_commit") && SignatureOk("load_class_archive") &&
-                       SignatureOk("load_unit_archive") && SignatureOk("loader_instance_use") && SignatureOk("class_lookup") &&
+                       SignatureOk("load_unit_archive") && SignatureOk("load_request") && SignatureOk("loader_instance_use") && SignatureOk("class_lookup") &&
                        SignatureOk("class_by_id");
     g_caps.mercHud = g_caps.mercCountdown && SignatureOk("merc_kill_cap") && SignatureOk("cockpit_draw_timer") &&
                      SignatureOk("cockpit_move_slot") && SignatureOk("merce_hud_draw") &&

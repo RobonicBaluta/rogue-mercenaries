@@ -72,20 +72,27 @@ const std::vector<std::array<double, 3>>& Director::PickChests(int count) {
 
 int Director::PickPoint(const std::optional<std::array<double, 3>>& player) {
     std::vector<int> usable;
-    std::vector<int> far;
+    std::vector<int> far;      // neither too close nor too far, not the last point used
+    std::vector<int> inReach;  // neither too close nor too far
+    std::vector<int> apart;    // not too close
     for (int i = 0; i < static_cast<int>(map_.points.size()); ++i) {
         if (point_failures_[static_cast<std::size_t>(i)] >= kMaxPointFailures) continue;
         usable.push_back(i);
-        const bool tooClose =
-            player && DistanceSq(map_.points[static_cast<std::size_t>(i)], *player) < map_.min_player_distance * map_.min_player_distance;
-        if (!tooClose && i != last_point_) far.push_back(i);
+        const double d = player ? DistanceSq(map_.points[static_cast<std::size_t>(i)], *player) : 0.0;
+        const bool tooClose = player && d < map_.min_player_distance * map_.min_player_distance;
+        const bool tooFar = player && map_.max_player_distance > 0.0 && d > map_.max_player_distance * map_.max_player_distance;
+        if (tooClose) continue;
+        apart.push_back(i);
+        if (tooFar) continue;
+        inReach.push_back(i);
+        if (i != last_point_) far.push_back(i);
     }
     if (usable.empty() && !map_.points.empty()) {
         // Every point failed often: forget the failures and keep trying (slowly, see SpawnFailed).
         std::fill(point_failures_.begin(), point_failures_.end(), 0);
         return PickPoint(player);
     }
-    const std::vector<int>& from = far.empty() ? usable : far;
+    const std::vector<int>& from = !far.empty() ? far : !inReach.empty() ? inReach : !apart.empty() ? apart : usable;
     if (from.empty()) return -1;
     return from[rng_.Index(from.size())];
 }

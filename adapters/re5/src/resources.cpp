@@ -25,6 +25,7 @@ using LoadClassFn = void(__thiscall*)(std::uintptr_t loader, std::uintptr_t dti,
 using LoadUnitFn = void(__thiscall*)(std::uintptr_t loader, int category, unsigned id, unsigned variant, int flag);
 using LookupFn = std::uintptr_t(__cdecl*)(const char* name, std::uintptr_t baseDti);
 using ByIdFn = std::uintptr_t(__cdecl*)(std::uint32_t classId);
+using RequestFn = void(__thiscall*)(std::uintptr_t loader, const char* path, std::uintptr_t dti, int flag);
 
 // Loader ([kResourceLoader]): list n has its request count at +0x2070C + n*0x14 and its
 // request array at +0x20718 + n*0x14; +0x207D0 is the list being built. A request (0x54
@@ -76,6 +77,15 @@ bool QueueUnit(std::uintptr_t loader, int category, unsigned id) {
     }
 }
 
+bool QueueArchive(std::uintptr_t loader, const char* path) {
+    __try {
+        reinterpret_cast<RequestFn>(re5::addr::kFnLoadRequest)(loader, path, 0, 0);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 template <typename T>
 void AddUnique(std::vector<T>& to, const std::vector<T>& from) {
     for (const T& v : from) {
@@ -93,6 +103,7 @@ int __fastcall CommitDetour(std::uintptr_t loader, void*) {
             AddUnique(extras.enemyClasses, g_dev.enemyClasses);
             AddUnique(extras.enemyWeapons, g_dev.enemyWeapons);
             AddUnique(extras.playerWeapons, g_dev.playerWeapons);
+            AddUnique(extras.enemyArchives, g_dev.enemyArchives);
         }
         // Requests already in the list are only kept (the loader skips duplicates).
         std::string done;
@@ -106,6 +117,11 @@ int __fastcall CommitDetour(std::uintptr_t loader, void*) {
                 char buf[16];
                 std::snprintf(buf, sizeof(buf), " %X", weapon);
                 if (QueueUnit(loader, static_cast<int>(weapon >> 16), weapon & 0xFFFF)) done += buf;
+                else ++failed;
+            }
+            for (const std::string& name : extras.enemyArchives) {
+                const std::string path = "Image\\Archive\\" + name;
+                if (QueueArchive(loader, path.c_str())) done += " " + name;
                 else ++failed;
             }
         } else {
