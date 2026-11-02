@@ -15,13 +15,15 @@ if (-not (Test-Path -LiteralPath $dllPath)) { throw "build the adapter first: $d
 $stage = Join-Path $repoRoot "build\package\RogueMercenaries-$Version"
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
 $gameFiles = Join-Path $stage 'copy-into-game-folder'
-New-Item -ItemType Directory -Force -Path (Join-Path $gameFiles 'RogueMercenaries\configs') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $gameFiles 'RogueMercenaries\configs\icons') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'licenses') | Out-Null
 
 Copy-Item -LiteralPath $dllPath -Destination (Join-Path $gameFiles 'dinput8.dll')
 Get-ChildItem -LiteralPath (Join-Path $repoRoot 'configs') -Filter '*.json' -File |
     Where-Object { $_.Name -notlike 'adapter*.json' } |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $gameFiles 'RogueMercenaries\configs') }
+Get-ChildItem -LiteralPath (Join-Path $repoRoot 'configs\icons') -Filter '*.png' -File |
+    ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $gameFiles 'RogueMercenaries\configs\icons') }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'configs\adapter.json') -Destination (Join-Path $gameFiles 'RogueMercenaries\adapter.json')
 
 $licenses = @{

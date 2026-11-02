@@ -29,6 +29,7 @@ std::atomic<DWORD> g_lastToggle{0};
 std::atomic<DWORD> g_lastDirectInputKeys{0};
 bool g_initialized = false;
 bool g_deviceObjectsLost = false;
+IDirect3DDevice9* g_frameDevice = nullptr;  // during the draw callback
 HWND g_window = nullptr;
 WNDPROC g_originalWndProc = nullptr;
 unsigned char g_prevKeys[256]{};
@@ -154,6 +155,7 @@ unsigned TakeHotkeys() { return g_hotkeys.exchange(0); }
 void SetToggleKey(int virtualKey) { g_toggleKey = virtualKey; }
 bool IsFocused() { return g_focused.load(); }
 bool IsInitialized() { return g_initialized; }
+IDirect3DDevice9* FrameDevice() { return g_frameDevice; }
 
 void SetFocused(bool focused) {
     if (focused && !g_focused.load()) {
@@ -267,9 +269,11 @@ void OnPresent(IDirect3DDevice9* device) {
         }
     }
     ImGui::NewFrame();
+    g_frameDevice = device;
     if (g_draw) {
         g_draw();
     }
+    g_frameDevice = nullptr;
     ImGui::EndFrame();
     if (SUCCEEDED(device->BeginScene())) {
         ImGui::Render();

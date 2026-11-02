@@ -89,6 +89,19 @@ thread_local std::uintptr_t t_drawingMenu = 0;
 thread_local std::uint32_t t_lockedRows = 0;  // bit per visible row drawn red
 thread_local std::uint32_t t_rowColors[8] = {};  // rarity colour per visible row (0 = default)
 
+// Where each visible row's label was drawn, for the icons the overlay puts next to it.
+struct RowDraw {
+    std::string icon;
+    int x = 0, y = 0;
+    float scale = 1.0f;
+    int textWidth = 0;  // the label's glyph widths, unscaled
+    int glyphs = 0;
+    std::uint32_t argb = 0;
+    DWORD drawnAt = 0;
+};
+std::mutex g_rowMutex;
+std::array<RowDraw, 8> g_rowDraws{};
+
 // ---- borrowed messages -------------------------------------------------------
 
 // Texts are lent from menu job threads and returned from the game tick.
@@ -377,6 +390,12 @@ void SyncRows(std::uintptr_t self) {
         if (item.locked) t_lockedRows |= 1u << r;
         t_rowColors[r] = item.color;
     }
+    {
+        std::lock_guard lock(g_rowMutex);
+        for (int r = 0; r < kMaxRows; ++r) {
+            g_rowDraws[r].icon = r < visible ? g_screen.items[static_cast<std::size_t>(level.offset + r)].icon : std::string();
+        }
+    }
     if (!g_dirty) return;
     g_dirty = false;
     for (int r = 0; r < kMaxRows; ++r) {
@@ -556,6 +575,29 @@ void ProbeDraw(const char* kind, std::uintptr_t self, int message, int x, int y,
             y, scale);
 }
 
+void RecordRowDraw(int row, int x, int y, float scale, std::uint32_t argb) {
+    int width = 0;
+    int glyphs = 0;
+    const auto& buf = g_buffers[static_cast<std::size_t>(row)];
+    for (std::size_t i = 0; i + 1 < buf.size() && !(buf[i] == 0 && (buf[i + 1] == 0x0401 || buf[i + 1] == 0x0403)); i += 2) {
+        width += buf[i + 1];
+        ++glyphs;
+    }
+    std::lock_guard lock(g_rowMutex);
+    RowDraw& d = g_rowDraws[static_cast<std::size_t>(row)];
+    static std::set<std::tuple<int, int, int>> logged;
+    if (!d.icon.empty() && logged.size() < 64 && logged.insert({row, width, static_cast<int>(scale * 1000)}).second) {
+        RM_LOGI("native menu: row %d label at (%d, %d) scale %.3f, glyph widths %d", row, x, y, scale, width);
+    }
+    d.x = x;
+    d.y = y;
+    d.scale = scale;
+    d.textWidth = width;
+    d.glyphs = glyphs;
+    d.argb = argb;
+    d.drawnAt = GetTickCount();
+}
+
 void __fastcall DrawLabelDetour(void* ecx, void*, int message, int x, int y, const std::uint32_t* argb,
                                 float scale) {
     if (g_drawProbe.load() && !t_drawingMenu) ProbeDraw("label", reinterpret_cast<std::uintptr_t>(ecx), message, x, y, scale);
@@ -575,6 +617,7 @@ void __fastcall DrawLabelDetour(void* ecx, void*, int message, int x, int y, con
                     tint = ((argb ? *argb : 0xFFFFFFFFu) & 0xFF000000u) | (t_rowColors[row] & 0x00FFFFFFu);
                     argb = &tint;
                 }
+                RecordRowDraw(row, x, y, scale, argb ? *argb : 0xFFFFFFFFu);
             }
         } else if (message == re5::addr::kMessageItem8Label && y == kRogueRowY) {
             message = kPool[0];
@@ -629,6 +672,18 @@ void Sound(SoundKind kind, std::uintptr_t self) {
               : kind == SoundKind::Cancel ? re5::addr::kFnMenuSoundCancel : re5::addr::kFnMenuSoundDeny, self);
 }
 std::string WrapText(const std::string& text, std::size_t width) { return Wrap(text, width); }
+
+std::vector<RowIcon> VisibleRowIcons() {
+    std::vector<RowIcon> out;
+    if (!g_modMenu.load() || !MenuAtInput()) return out;
+    const DWORD now = GetTickCount();
+    std::lock_guard lock(g_rowMutex);
+    for (const RowDraw& d : g_rowDraws) {
+        if (d.icon.empty() || now - d.drawnAt > 150) continue;
+        out.push_back({d.icon, d.x, d.y, d.scale, d.textWidth, d.glyphs, d.argb});
+    }
+    return out;
+}
 
 bool SetItemBoxLabels(const std::string& first, const std::string& second) {
     std::lock_guard lock(g_textMutex);

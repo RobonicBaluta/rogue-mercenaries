@@ -21,7 +21,8 @@
       ],
       "characters": [
         "chris"
-      ]
+      ],
+      "icon": "medal"
     },
     {
       "id": "chris_pocket_grenades",
@@ -44,7 +45,8 @@
       "characters": [
         "chris"
       ],
-      "unlock_cost_credits": 120
+      "unlock_cost_credits": 120,
+      "icon": "grenade"
     },
     {
       "id": "sheva_field_training",
@@ -64,7 +66,8 @@
       ],
       "characters": [
         "sheva"
-      ]
+      ],
+      "icon": "heal"
     },
     {
       "id": "sheva_flash_tactics",
@@ -87,7 +90,8 @@
       "characters": [
         "sheva"
       ],
-      "unlock_cost_credits": 120
+      "unlock_cost_credits": 120,
+      "icon": "flash"
     },
     {
       "id": "jill_battle_instinct",
@@ -108,7 +112,8 @@
       ],
       "characters": [
         "jill"
-      ]
+      ],
+      "icon": "crosshair"
     },
     {
       "id": "wesker_firestarter",
@@ -130,7 +135,8 @@
       ],
       "characters": [
         "wesker"
-      ]
+      ],
+      "icon": "fire"
     },
     {
       "id": "josh_squad_tactics",
@@ -151,7 +157,8 @@
       ],
       "characters": [
         "josh"
-      ]
+      ],
+      "icon": "supplies"
     },
     {
       "id": "barry_demolition_man",
@@ -178,7 +185,8 @@
       ],
       "characters": [
         "barry"
-      ]
+      ],
+      "icon": "explosion"
     },
     {
       "id": "rebecca_combat_medic",
@@ -204,7 +212,8 @@
       ],
       "characters": [
         "rebecca"
-      ]
+      ],
+      "icon": "medkit"
     },
     {
       "id": "excella_executive_bonus",
@@ -225,7 +234,8 @@
       ],
       "characters": [
         "excella"
-      ]
+      ],
+      "icon": "supplies"
     },
     {
       "id": "supply_grenades",
@@ -244,7 +254,8 @@
           "amount": 2
         }
       ],
-      "unlock_cost_credits": 60
+      "unlock_cost_credits": 60,
+      "icon": "grenade"
     },
     {
       "id": "supply_flash",
@@ -263,7 +274,8 @@
           "amount": 2
         }
       ],
-      "unlock_cost_credits": 50
+      "unlock_cost_credits": 50,
+      "icon": "flash"
     },
     {
       "id": "supply_incendiary",
@@ -282,7 +294,8 @@
           "amount": 2
         }
       ],
-      "unlock_cost_credits": 70
+      "unlock_cost_credits": 70,
+      "icon": "fire"
     },
     {
       "id": "supply_spray",
@@ -301,7 +314,8 @@
           "amount": 1
         }
       ],
-      "unlock_cost_credits": 80
+      "unlock_cost_credits": 80,
+      "icon": "medkit"
     },
     {
       "id": "supply_ammo",
@@ -320,7 +334,8 @@
           "amount": 30
         }
       ],
-      "unlock_cost_credits": 40
+      "unlock_cost_credits": 40,
+      "icon": "ammo"
     },
     {
       "id": "chris_shotgun",
@@ -347,7 +362,8 @@
       "characters": [
         "chris"
       ],
-      "unlock_cost_credits": 150
+      "unlock_cost_credits": 150,
+      "icon": "shotgun"
     },
     {
       "id": "sheva_smg",
@@ -374,7 +390,8 @@
       "characters": [
         "sheva"
       ],
-      "unlock_cost_credits": 150
+      "unlock_cost_credits": 150,
+      "icon": "smg"
     },
     {
       "id": "jill_smg",
@@ -401,7 +418,8 @@
       "characters": [
         "jill"
       ],
-      "unlock_cost_credits": 150
+      "unlock_cost_credits": 150,
+      "icon": "smg"
     },
     {
       "id": "wesker_magnum",
@@ -428,7 +446,8 @@
       "characters": [
         "wesker"
       ],
-      "unlock_cost_credits": 200
+      "unlock_cost_credits": 200,
+      "icon": "magnum"
     },
     {
       "id": "josh_magnum",
@@ -455,7 +474,8 @@
       "characters": [
         "josh"
       ],
-      "unlock_cost_credits": 150
+      "unlock_cost_credits": 150,
+      "icon": "magnum"
     },
     {
       "id": "barry_smg",
@@ -482,7 +502,8 @@
       "characters": [
         "barry"
       ],
-      "unlock_cost_credits": 150
+      "unlock_cost_credits": 150,
+      "icon": "smg"
     },
     {
       "id": "rebecca_rifle",
@@ -509,7 +530,8 @@
       "characters": [
         "rebecca"
       ],
-      "unlock_cost_credits": 150
+      "unlock_cost_credits": 150,
+      "icon": "rifle"
     },
     {
       "id": "excella_rifle",
@@ -536,7 +558,8 @@
       "characters": [
         "excella"
       ],
-      "unlock_cost_credits": 150
+      "unlock_cost_credits": 150,
+      "icon": "rifle"
     },
     {
       "id": "second_wind",
@@ -555,7 +578,8 @@
           "leave_hp_fraction": 0.25
         }
       ],
-      "unlock_cost_credits": 250
+      "unlock_cost_credits": 250,
+      "icon": "second_wind"
     },
     {
       "id": "last_stand",
@@ -577,7 +601,8 @@
           }
         }
       ],
-      "unlock_cost_credits": 120
+      "unlock_cost_credits": 120,
+      "icon": "last_stand"
     },
     {
       "id": "adrenaline_shield",
@@ -599,7 +624,8 @@
           }
         }
       ],
-      "unlock_cost_credits": 120
+      "unlock_cost_credits": 120,
+      "icon": "shield"
     },
     {
       "id": "field_medic",
@@ -617,7 +643,8 @@
           "amount_fraction_of_max": 0.02
         }
       ],
-      "unlock_cost_credits": 100
+      "unlock_cost_credits": 100,
+      "icon": "heal"
     },
     {
       "id": "clean_sweep",
@@ -636,7 +663,8 @@
           "require_no_damage": true
         }
       ],
-      "unlock_cost_credits": 90
+      "unlock_cost_credits": 90,
+      "icon": "supplies"
     },
     {
       "id": "chris_safari_trait",

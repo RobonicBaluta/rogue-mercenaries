@@ -544,8 +544,11 @@ void ParsePerks(const Diag& file, const json& doc, std::vector<PerkDef>& out) {
         d = file.Sub(": perk " + Q(p.id));
         CheckKeys(d, e, {"id", "name", "description", "category", "rarity", "tags", "max_stacks",
                          "exclusive_with", "characters", "unlock_cost_credits",
-                         "requires_capabilities", "enabled", "effects"});
+                         "requires_capabilities", "enabled", "effects", "icon"});
         GetString(d, e, "name", p.name, true);
+        if (GetString(d, e, "icon", p.icon, false) && !IsValidId(p.icon)) {
+            d.Error("field 'icon' " + Q(p.icon) + " must use only a-z, 0-9 and '_'");
+        }
         GetString(d, e, "description", p.description, false);
         ReadEnum(d, e, "category", p.category, ParsePerkCategory,
                  "style, supply, support, skin, curse");

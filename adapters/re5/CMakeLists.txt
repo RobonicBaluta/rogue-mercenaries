@@ -42,6 +42,7 @@ set(RM_RE5_SOURCES
     src/hooks_input.cpp
     src/hooks_d3d9.cpp
     src/overlay.cpp
+    src/icons.cpp
     src/settings.cpp
     src/dev_audio.cpp
     src/dev_capture.cpp
@@ -71,7 +72,7 @@ target_compile_features(rm_re5 PRIVATE cxx_std_20)
 target_compile_definitions(rm_re5 PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
 target_compile_options(rm_re5 PRIVATE /W4 /permissive- /utf-8 /EHsc)
 target_include_directories(rm_re5 PRIVATE src ${RM_THIRD_PARTY}/nlohmann/include)
-target_link_libraries(rm_re5 PRIVATE rm_minhook rm_imgui d3d9 dxguid ole32 shell32 user32)
+target_link_libraries(rm_re5 PRIVATE rm_minhook rm_imgui d3d9 dxguid ole32 shell32 user32 windowscodecs)
 if(RM_RE5_WITH_CORE)
     target_link_libraries(rm_re5 PRIVATE rm_core)
 endif()

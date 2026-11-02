@@ -19,6 +19,9 @@ void SetFocused(bool focused);
 
 bool IsInitialized();
 
+// The device being drawn on, inside the draw callback only (else nullptr).
+IDirect3DDevice9* FrameDevice();
+
 // Menu hotkeys pressed while focused since the last call: bit n (1..9) for the
 // digit keys, kHotkeyEnter for Enter. Read by the draw callback.
 inline constexpr unsigned kHotkeyEnter = 1u << 10;

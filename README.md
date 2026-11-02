@@ -47,7 +47,7 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
 2. In the game's **Play** menu choose **ROGUE MERCENARIES**, the last row (Up from the first row gets there). It opens the mod's own menu, drawn by the game itself:
    - **START RUN**: Solo, a random arena (one of the eight Mercenaries stages or one of the campaign areas in `configs/maps.json`) and your character and skin are handed to the game's own menu script, so no setup screen appears; the screen fades to black and the match loads about 1.5 s later. The run starts with it.
    - **CHARACTERS**: pick who you play. All eight characters and every skin are available for now (the challenge unlocks come back once the roster is settled). The game's own character select must also have them unlocked. Choosing a character opens its **SKINS**: a skin changes the archetype a little (the weapons a run can start with, the starting perk, extra character skills), and most skins have their own challenge.
-   - **PERKS**: three slots for the selected character, one per kind. *Style* defines how the character plays (Chris restocks a spray per arena, Sheva heals on kills); *Supply* is what a run starts with (grenade pouch, medkit, a shotgun for Chris); *Support* helps in bad situations (Second Wind, Last Stand below 30% health). Each slot opens its list: pick one (it shows SELECTED), press it again to clear the slot, and buy locked ones with Credits. The style slot falls back to the character's own trait. Skins carry the small percentage tweaks.
+   - **PERKS**: three slots for the selected character, one per kind. *Style* defines how the character plays (Chris restocks a spray per arena, Sheva heals on kills); *Supply* is what a run starts with (grenade pouch, medkit, a shotgun for Chris); *Support* helps in bad situations (Second Wind, Last Stand below 30% health). Each slot opens its list, every perk with its icon: pick one (it shows SELECTED), press it again to clear the slot, and buy locked ones with Credits. The style slot falls back to the character's own trait. Skins carry the small percentage tweaks.
    - **CREDITS**: your balance, lifetime records and weapon unlocks.
    Esc goes back one screen; locked entries are red, like the game's own disabled rows.
 3. Every run starts with one gun: the game's Mercenaries loadout is cut down to the weapon in your hands, its ammo and the knife when the first arena starts (for most costumes that is the pistol; Sheva keeps her VZ61), and your Supply perks then add their items and weapons (a weapon arrives with a full magazine). Everything else comes from rewards and the shop, which can offer any gun of `configs/weapons.json`: during a run every stage loads all of their models along with yours (about 20 MB), and what you buy comes with you to the next stage. The game's grid has nine slots; the number keys 1 to 4 pick its first four cells. (`configs/loadouts.json` still holds the item catalog and an optional point-budget roll, off by default.)
@@ -92,7 +92,8 @@ Install with `adapter.test.json` to get the developer section and detailed logs.
 
 ```
 core/        portable roguelite rules (no game code)      tests/       Catch2 tests
-configs/     perks, weapons, characters, routes, economy   simulation/  rm_sim (10k-run balance)
+configs/     perks, weapons, characters, routes, economy,  simulation/  rm_sim (10k-run balance)
+             icons (scripts/make_icons.py draws them)
 adapters/re5 dinput8.dll: hooks, overlay, mod glue        scripts/     build/deploy/smoke/RE tools
 research/    capability ledger, engine map, sim reports    third_party/ MinHook, Dear ImGui, nlohmann/json, Catch2
 ```

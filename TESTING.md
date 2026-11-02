@@ -75,7 +75,9 @@ and `$ctest` to `ctest.exe` in the same folder.
   Exit code 0 = all invariants pass, 1 = an invariant failed, 2 = usage/config error.
   Other options: `--capabilities all|none|<comma list>` (e.g. drop `heal` to check capability gating), `--policy mix|random|greedy|safe`.
   Publish: `Copy-Item build\sim\summary.md research\sim\summary-<date>.md` (current: `research/sim/summary-2026-10-27.md`).
-- Content validation only: any `rm_tests "[content]"` run loads `configs/` and fails with the loader's error list if the data is invalid.
+- Content validation only: any `rm_tests "[content]"` run loads `configs/` and fails with the loader's error list if the data is invalid
+  (it also checks that every perk the menus list names an icon whose `configs/icons/<icon>.png` exists).
+- Menu icons: `python scripts/make_icons.py [--sheet]` redraws `configs/icons/*.png` (`--sheet`: `build/icons_sheet.png` for review).
 - Runtime (RE5, game must be closed first; all scripts restore what they change):
   - Switch the game to 1280x720 windowed + VSync for tests / restore the player's config:
     `scripts\game_config.ps1 -Mode test` / `-Mode restore` (original kept in `build\backup\config.ini.original`).

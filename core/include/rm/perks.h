@@ -105,6 +105,8 @@ struct PerkDef {
     std::vector<std::string> requires_capabilities;
     std::vector<EffectDef> effects;
     bool enabled = true;
+    /// Icon name (a-z, 0-9, '_'): the adapter shows icons/<icon>.png next to the perk; empty = none.
+    std::string icon;
 
     [[nodiscard]] bool IsCurse() const { return category == PerkCategory::Curse; }
 };

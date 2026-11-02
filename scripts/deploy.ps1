@@ -73,6 +73,7 @@ switch ($Mode) {
 
         $files = @()
         $configDst = Join-Path $modDir 'configs'
+        $iconDst = Join-Path $configDst 'icons'
         try {
             Copy-Item -LiteralPath $Dll -Destination $targetDll
             $files += [pscustomobject]@{ path = $targetDll; sha256 = Get-Hash $targetDll }
@@ -84,6 +85,15 @@ switch ($Mode) {
                     Copy-Item -LiteralPath $_.FullName -Destination $dst
                     $files += [pscustomobject]@{ path = $dst; sha256 = Get-Hash $dst }
                 }
+                $iconSrc = Join-Path $configSrc 'icons'
+                if (Test-Path -LiteralPath $iconSrc) {
+                    New-Item -ItemType Directory -Force -Path $iconDst | Out-Null
+                    Get-ChildItem -LiteralPath $iconSrc -Filter '*.png' -File | ForEach-Object {
+                        $dst = Join-Path $iconDst $_.Name
+                        Copy-Item -LiteralPath $_.FullName -Destination $dst
+                        $files += [pscustomobject]@{ path = $dst; sha256 = Get-Hash $dst }
+                    }
+                }
             }
             if (-not $AdapterConfig) { $AdapterConfig = Join-Path $repoRoot 'configs\adapter.json' }
             if (-not (Test-Path -LiteralPath $AdapterConfig)) { throw "adapter config not found: $AdapterConfig" }
@@ -93,7 +103,7 @@ switch ($Mode) {
         } catch {
             # All-or-nothing: remove whatever this attempt copied, then report.
             foreach ($f in $files) { Remove-Item -LiteralPath $f.path -ErrorAction SilentlyContinue }
-            foreach ($d in @($configDst, $modDir)) {
+            foreach ($d in @($iconDst, $configDst, $modDir)) {
                 if ((Test-Path -LiteralPath $d) -and -not (Get-ChildItem -LiteralPath $d -Force)) { Remove-Item -LiteralPath $d }
             }
             throw "install failed and was rolled back: $_"
@@ -102,7 +112,7 @@ switch ($Mode) {
             installed = (Get-Date).ToString('o')
             source_dll = (Resolve-Path $Dll).Path
             exe_sha256 = $expectedExeHash
-            dirs = @($configDst, $modDir)
+            dirs = @($iconDst, $configDst, $modDir)
             files = $files
         }
         New-Item -ItemType Directory -Force -Path (Split-Path $manifestPath) | Out-Null

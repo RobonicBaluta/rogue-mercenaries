@@ -26,6 +26,7 @@
 
 #include "engine.h"
 #include "imgui.h"
+#include "icons.h"
 #include "imgui_internal.h"
 #include "log.h"
 #include "memory.h"
@@ -645,6 +646,7 @@ private:
                     Item item;
                     const rm::PerkDef* equipped = character.empty() ? nullptr : run.EquippedPerk(character, c);
                     item.label = CategoryTag(c) + (equipped ? Upper(Plain(equipped->name)) : std::string("NONE"));
+                    if (equipped) item.icon = equipped->icon;
                     item.help = equipped ? Plain(equipped->description) + "\nPress to change it."
                                          : "Nothing chosen for this slot.\nPress to choose.";
                     screen.items.push_back(std::move(item));
@@ -664,6 +666,7 @@ private:
                     if (selected) item.label += "   SELECTED";
                     item.locked = locked;
                     item.color = RarityColour(rm::RarityName(perk->rarity));
+                    item.icon = perk->icon;
                     item.help = Plain(perk->description);
                     if (locked) item.help += "\nUnlock for " + Plural(perk->unlock_cost_credits, "credit") + ".";
                     else if (selected) item.help += "\nYour pick for this slot. Press to remove it.";
@@ -3583,6 +3586,7 @@ void ModInit(const Paths& paths, const Settings& settings) {
     g->settings = settings;
 
     auto loaded = rm::Content::LoadFromDirectory(paths.configDir);
+    icons::SetDirectory(paths.configDir / L"icons");
     for (const auto& w : loaded.warnings) RM_LOGW("content: %s", w.c_str());
     for (const auto& e : loaded.errors) RM_LOGE("content: %s", e.c_str());
     g->contentErrors = loaded.errors;
@@ -3646,6 +3650,37 @@ void DrawDisabled() {
     ImGui::End();
 }
 
+// The icons of the Play menu's mod rows, left of each label: drawn over the finished frame in the
+// game's 1280x720 layout scaled to the back buffer, in the label's colour and alpha.
+// A label's width in layout units is scale x (kGlyphUnit x its glyph widths + kGlyphSpacing per
+// glyph): fitted to the perk lists at 1920x1080 (cursor rows exact, the others about 4 % wide).
+// Labels are centred on their x and y.
+constexpr float kGlyphUnit = 0.1907f;
+constexpr float kGlyphSpacing = 5.64f;
+constexpr float kIconSize = 34.0f;  // layout units at scale 1
+constexpr float kIconGap = 10.0f;
+
+void DrawMenuIcons() {
+    IDirect3DDevice9* device = overlay::FrameDevice();
+    const auto rows = nativemenu::VisibleRowIcons();
+    if (!device || rows.empty()) return;
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const float sx = display.x / 1280.0f;
+    const float sy = display.y / 720.0f;
+    ImDrawList* list = ImGui::GetBackgroundDrawList();
+    for (const nativemenu::RowIcon& r : rows) {
+        const auto texture = icons::Texture(device, r.icon);
+        if (!texture) continue;
+        const float half = (static_cast<float>(r.textWidth) * kGlyphUnit + static_cast<float>(r.glyphs) * kGlyphSpacing) * r.scale * 0.5f;
+        const float size = kIconSize * r.scale;
+        const float right = static_cast<float>(r.x) - half - kIconGap * r.scale;
+        const float top = static_cast<float>(r.y) - size * 0.5f;
+        const std::uint32_t a = r.argb >> 24, red = (r.argb >> 16) & 0xFF, green = (r.argb >> 8) & 0xFF, blue = r.argb & 0xFF;
+        list->AddImage(static_cast<ImTextureID>(texture), ImVec2((right - size) * sx, top * sy), ImVec2(right * sx, (top + size) * sy),
+                       ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), IM_COL32(red, green, blue, a));
+    }
+}
+
 void DrawUnguarded();
 
 void ModDraw() {
@@ -3673,6 +3708,7 @@ void DrawUnguarded() {
         ImGui::End();
         return;
     }
+    DrawMenuIcons();
     std::lock_guard lock(g->mutex);
     const rm::RunSnapshot snapshot = g->run->Snapshot(Now());
     if (!(g->settings.nativeMatchUi && g->match.inMatch && g->run->HasActiveRun())) DrawHud(snapshot);

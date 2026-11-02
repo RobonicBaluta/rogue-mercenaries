@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <filesystem>
 #include <set>
 #include <string>
 
@@ -64,6 +65,13 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
     }
     CHECK(rarities.size() >= 4);
     CHECK(curses >= 2);
+    // Every perk the menus list has an icon, and its picture ships in configs/icons.
+    for (const PerkDef& p : c.perks()) {
+        if (!p.enabled || p.category == PerkCategory::Skin || p.IsCurse()) continue;
+        INFO(p.id);
+        CHECK_FALSE(p.icon.empty());
+        CHECK(std::filesystem::exists(test::ConfigDir() / "icons" / (p.icon + ".png")));
+    }
 
 
     // Character restrictions and capability flags.
@@ -200,6 +208,7 @@ TEST_CASE("broken configs report human-readable errors", "[content]") {
                                                                    {"per_kill", 0.1}, {"max_bonus", 0.2}};
             PerkById(perks, "medic")["requires_capabilities"] = json::array({"telepathy"});
             PerkById(perks, "scav")["max_stack"] = 2;
+            PerkById(perks, "turtle")["icon"] = "Shield.png";
             PerkById(perks, "crit_up")["effects"][0]["per_stack"] = {{"value", 0.1}};
             weapons["affixes"][0]["kind"] = "lifesteal";
         });
@@ -208,6 +217,7 @@ TEST_CASE("broken configs report human-readable errors", "[content]") {
         CHECK(HasError(errors, "condition 'kill_streak' is not supported for effect kind 'incoming_damage_mult'"));
         CHECK(HasError(errors, "perk 'medic': unknown capability 'telepathy'"));
         CHECK(HasError(errors, "perk 'scav': unknown field 'max_stack'"));
+        CHECK(HasError(errors, "perk 'turtle': field 'icon' 'Shield.png' must use only a-z, 0-9 and '_'"));
         CHECK(HasError(errors, "per_stack key 'value' is not a parameter of this effect"));
         CHECK(HasError(errors, "unsupported kind 'lifesteal'"));
     }

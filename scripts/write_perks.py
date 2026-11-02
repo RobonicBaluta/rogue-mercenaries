@@ -96,6 +96,21 @@ perks += [
     perk('curse_dull_blades', 'Dull Blades', 'Curse. Your shots deal 15 percent less damage.', 'curse', [{'kind': 'outgoing_damage_mult', 'value': -0.15}], tags=['curse']),
 ]
 
+# Icons the menus show next to each listed perk (configs/icons/<icon>.png, drawn by scripts/make_icons.py).
+ICONS = {
+    'chris_veteran': 'medal', 'chris_pocket_grenades': 'grenade', 'sheva_field_training': 'heal',
+    'sheva_flash_tactics': 'flash', 'jill_battle_instinct': 'crosshair', 'wesker_firestarter': 'fire',
+    'josh_squad_tactics': 'supplies', 'barry_demolition_man': 'explosion', 'rebecca_combat_medic': 'medkit',
+    'excella_executive_bonus': 'supplies', 'supply_grenades': 'grenade', 'supply_flash': 'flash',
+    'supply_incendiary': 'fire', 'supply_spray': 'medkit', 'supply_ammo': 'ammo', 'chris_shotgun': 'shotgun',
+    'sheva_smg': 'smg', 'jill_smg': 'smg', 'wesker_magnum': 'magnum', 'josh_magnum': 'magnum', 'barry_smg': 'smg',
+    'rebecca_rifle': 'rifle', 'excella_rifle': 'rifle', 'second_wind': 'second_wind', 'last_stand': 'last_stand',
+    'adrenaline_shield': 'shield', 'field_medic': 'heal', 'clean_sweep': 'supplies',
+}
+for p in perks:
+    if p['id'] in ICONS:
+        p['icon'] = ICONS[p['id']]
+
 doc = {
     '_comment': ("Perks are per character and come only from the mod menu. category: style = the character's way of playing "
                  "(no plain stat perks), supply = what you start with (item_on_start puts game_item into the inventory at the first "

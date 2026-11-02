@@ -20,6 +20,7 @@ struct Item {
     std::string help;   // up to two lines under the list
     bool locked = false;  // drawn in the game's "disabled" red
     std::uint32_t color = 0;  // 0xAARRGGBB rarity colour (0 = the game's own)
+    std::string icon;   // icons\<icon>.png drawn left of the label by the overlay (empty = none)
 };
 
 struct Screen {
@@ -78,6 +79,19 @@ int Navigate(std::uintptr_t self, int cursor, int count);
 enum class SoundKind { Decide, Cancel, Deny };
 void Sound(SoundKind kind, std::uintptr_t self);
 std::string WrapText(const std::string& text, std::size_t width);
+/// A visible mod-menu row with an icon, as its label was drawn last frame: the label's centre in
+/// the game's 1280x720 layout, its scale (1 on the cursor row, 0.8 on the others), the sum of its
+/// glyph widths (font units, unscaled), its glyph count and colour.
+struct RowIcon {
+    std::string icon;
+    int x = 0, y = 0;
+    float scale = 1.0f;
+    int textWidth = 0;
+    int glyphs = 0;
+    std::uint32_t argb = 0;
+};
+/// Empty unless the mod menu is up and waiting for input (no icons over its fades).
+std::vector<RowIcon> VisibleRowIcons();
 /// The game's Organize/Buy screen labels its two grids with mes_system 2366 and 2367 ("Chris",
 /// "Sheva"); these texts stand in for them until RestoreItemBoxLabels. False (labels kept) when
 /// the messages are not loaded or are not those names.
