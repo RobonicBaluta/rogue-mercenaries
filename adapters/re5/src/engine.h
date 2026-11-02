@@ -31,6 +31,7 @@ struct Verified {
     bool pauseScreen = false;   // pause screen move (host of the in-match screens)
     bool timeBonus = false;     // time-bonus pickups and the countdown add (chests)
     bool fatalHandler = false;  // the engine's fatal error handler (its message is logged)
+    bool itemBox = false;       // the campaign Organize/Buy screen can be created (M7, research)
     bool matchSetup = false;    // the Mercenaries match setup and the save's stage field
     bool worldObjects = false;  // the object manager: set spawn, create, set records
     bool resources = false;     // the archive loader: list commit and the unit archive requests

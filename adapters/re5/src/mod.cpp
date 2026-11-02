@@ -1983,6 +1983,67 @@ void DriveUiDemo(double now) {
     step(6, 25.0, [&] { Report(run.ChooseRoute(run.RouteChoices().size() > 1 ? 1 : 0), "demo choose route"); });
 }
 
+// M7 research: the campaign Organize/Buy screen (uIdItemBox00) in a match, created as the match's
+// phase 3 does (re5_layout.h kFnItemBoxCreate); its archive (ShopResource) must be loaded.
+std::uintptr_t g_itemBox = 0;
+
+std::uintptr_t CreateItemBox() {
+    __try {
+        const std::uintptr_t obj = reinterpret_cast<std::uintptr_t(__cdecl*)()>(re5::addr::kFnItemBoxCreate)();
+        if (!obj) return 0;
+        *reinterpret_cast<std::uint32_t*>(obj + 4) |= 0x2000;
+        const auto manager = *reinterpret_cast<std::uintptr_t*>(re5::addr::kUnitManager);
+        reinterpret_cast<bool(__thiscall*)(std::uintptr_t, int, std::uintptr_t)>(re5::addr::kFnUnitRegister)(manager, 0x1A, obj);
+        if (const auto flow = *reinterpret_cast<std::uintptr_t*>(re5::addr::kGameFlow)) {
+            *reinterpret_cast<std::uintptr_t*>(flow + re5::off::kGameFlowItemBox) = obj;
+        }
+        return obj;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+bool DeleteItemBox(std::uintptr_t obj) {
+    __try {
+        if (const auto flow = *reinterpret_cast<std::uintptr_t*>(re5::addr::kGameFlow)) {
+            *reinterpret_cast<std::uintptr_t*>(flow + re5::off::kGameFlowItemBox) = 0;
+        }
+        *reinterpret_cast<std::uint32_t*>(obj + 4) &= ~0x2000u;
+        const auto vtable = *reinterpret_cast<std::uintptr_t*>(obj);
+        reinterpret_cast<void(__thiscall*)(std::uintptr_t)>(*reinterpret_cast<std::uintptr_t*>(vtable + 0x30))(obj);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+void OpenItemBox() {
+    if (!engine::Caps().itemBox) {
+        RM_LOGW("itembox: signatures missing");
+    } else if (g_itemBox) {
+        RM_LOGW("itembox: already open (%08X)", static_cast<unsigned>(g_itemBox));
+    } else if (!resources::ArchiveLoaded("ShopResource")) {
+        RM_LOGW("itembox: ShopResource is not loaded (dev uipreload ShopResource, then a new match)");
+    } else {
+        g_itemBox = CreateItemBox();
+        RM_LOGW("itembox: created %08X", static_cast<unsigned>(g_itemBox));
+    }
+}
+
+// Every frame: once the screen reports it is done (obj+0x3C), it goes, as in phase 3.
+void PollItemBox() {
+    if (!g_itemBox) return;
+    if (!g->match.inMatch) {
+        g_itemBox = 0;  // gone with the match
+        return;
+    }
+    if (ReadOr<std::uint8_t>(g_itemBox + 0x3C, 0) == 0) return;
+    RM_LOGW("itembox: closed (+0x3E %u, +0x5B6C %u, +0x5B6D %u); deleted: %s", ReadOr<std::uint8_t>(g_itemBox + 0x3E, 0),
+            ReadOr<std::uint8_t>(g_itemBox + 0x5B6C, 0), ReadOr<std::uint8_t>(g_itemBox + 0x5B6D, 0),
+            DeleteItemBox(g_itemBox) ? "yes" : "no");
+    g_itemBox = 0;
+}
+
 // Developer automation: <data>\dev.command holds one command per file drop.
 // Only in developer mode; every command is logged.
 void PollDevCommand(double now) {
@@ -2281,6 +2342,15 @@ void PollDevCommand(double now) {
             }
         }
         RM_LOGW("dev where: player at %.1f %.1f %.1f; copies at%s", x, y, z, copies.c_str());
+    } else if (command.rfind("uipreload ", 0) == 0) {
+        // "uipreload ShopResource ...": screen archives (loader list 1) for the following loads.
+        resources::Extras extras;
+        std::istringstream in(command.substr(10));
+        for (std::string word; in >> word;) extras.uiArchives.push_back(word);
+        RM_LOGW("dev uipreload: %zu screen archives for the next loads", extras.uiArchives.size());
+        resources::SetDevExtras(std::move(extras));
+    } else if (command == "itembox") {
+        OpenItemBox();
     } else if (command.rfind("enemyhp ", 0) == 0) {
         // "enemyhp <n>": every live enemy's health down to n (a boss finished by gunfire in tests).
         const int hp = std::atoi(command.c_str() + 8);
@@ -2685,6 +2755,7 @@ private:
         }
         if (g->settings.developerMode) ProbeScene();
         PollDevCommand(now);
+        PollItemBox();
         SettleFinishedRun();
         UpdateTimerPolicy();
         UpdatePreloads();

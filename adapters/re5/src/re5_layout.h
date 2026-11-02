@@ -195,6 +195,12 @@ constexpr std::uintptr_t kFnShopCreate = 0x00A35C10;
 constexpr std::uintptr_t kShopCreateThis = 0x011F5608;
 constexpr std::uintptr_t kFnUnitRegister = 0x00428B80;
 constexpr std::uintptr_t kUnitManager = 0x012340B0;
+// Campaign Organize/Buy screen uIdItemBox00 (vtable 0x00FA60A8, 0x5B88 bytes): the match's phase
+// 3 (FUN_007189F0) loads Image\Archive\ShopResource (layout id\jpn\itembox\itembox_360 and its
+// textures) into loader list 1, creates the screen with kFnItemBoxCreate() (cdecl, allocates and
+// constructs), sets obj+4 |= 0x2000, registers it (kFnUnitRegister, group 0x1A), stores it at
+// [kGameFlow] + off::kGameFlowItemBox, waits for obj+0x3C and deletes it like the shop screen.
+constexpr std::uintptr_t kFnItemBoxCreate = 0x00A07980;
 // Item records: [kItemTableRoot + category*4] + index*0x48; dword 2 = magazine (weapons) or
 // pickup amount, dword 8 = stack maximum (-1 for weapons), dword 12 = kind (3 = weapon).
 constexpr std::uintptr_t kItemTableRoot = 0x010EACF0;
@@ -298,6 +304,7 @@ constexpr std::size_t kMercScore = 0x6B4;     // int32 (from the 2021 trainer's 
 constexpr std::size_t kSaveSlot = 0x20;
 constexpr std::size_t kSaveSlotStride = 0x5940;
 constexpr std::size_t kSaveStage = 0x273D8;
+constexpr std::size_t kGameFlowItemBox = 0x1840;  // [kGameFlow]: the open Organize/Buy screen (uIdItemBox00)
 // Mercenaries match object (`this` of kFnMercUpdateCountdown)
 constexpr std::size_t kMercCountdown = 0x4DC;  // float seconds remaining (authoritative)
 constexpr std::size_t kMercState = 0x4D4;      // int32: 0 running, 1 time up / finished
@@ -402,6 +409,7 @@ inline constexpr Signature kSignatures[] = {
     {"link_units", addr::kFnLinkUnits, "53 57 8B D9 33 FF 39 BB E8 05 00 00 76 65 55 8B 6C 24 10 56"},
     {"shop_create", addr::kFnShopCreate, "8B 0D 94 F2 1A 01 8B 01 8B 50 14 56 6A 10 68 C4 1D 00 00 FF"},
     {"unit_register", addr::kFnUnitRegister, "56 8B 74 24 0C 85 F6 57 8B F9 75 07 5F 32 C0 5E C2 08 00 80"},
+    {"itembox_create", addr::kFnItemBoxCreate, "8B 0D 94 F2 1A 01 8B 01 8B 50 14 6A 10 68 88 5B 00 00 FF D2"},
     {"merc_add_countdown", addr::kFnMercAddCountdown, "A1 A4 40 23 01 56 8B F1 8B 88 2C 04 01 00 8B 41 58 85 C0 0F"},
     {"time_bonus_action", addr::kFnTimeBonusAction, "55 8B EC 83 E4 F0 83 EC 24 53 56 57 8B F1 E8 6D FC FF FF 83"},
     // Countdown update: `cmp [eax+0x58C], edx; jl` is the kill cap (150, or 400) ending the match.

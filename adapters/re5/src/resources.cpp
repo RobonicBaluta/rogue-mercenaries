@@ -121,11 +121,17 @@ int __fastcall CommitDetour(std::uintptr_t loader, void*) {
             AddUnique(extras.enemyWeapons, g_dev.enemyWeapons);
             AddUnique(extras.playerWeapons, g_dev.playerWeapons);
             AddUnique(extras.enemyArchives, g_dev.enemyArchives);
+            AddUnique(extras.uiArchives, g_dev.uiArchives);
         }
         // Requests already in the list are only kept (the loader skips duplicates).
         std::string done;
         int failed = 0;
         if (list == kEnemyList) {
+            // Screen archives too: the screens' own list (1) is released when a match starts.
+            for (const std::string& name : extras.uiArchives) {
+                if (QueueArchive(loader, name)) done += " " + name;
+                else ++failed;
+            }
             // Only classes whose archive exists; a name that is no class (an effect, a boss's
             // parts) loads as its archive.
             for (const std::string& name : extras.enemyClasses) {

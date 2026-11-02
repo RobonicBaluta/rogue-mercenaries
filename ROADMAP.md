@@ -171,6 +171,9 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
 
 ### M7 — Between arenas and menus that look native
 1. E7: the game's Organize/Buy screen between arenas (fallback: our screens with E8 sprites).
+   Spike 2026-11-02: the screen opens and closes in a Mercenaries match once its archive
+   (`ShopResource`) loads with the stage (dev `uipreload ShopResource`, `itembox`); it shows the
+   campaign save's inventories, storage and treasures, so the run's state must stand in for them.
 2. E8: perk icons in the PERKS screen; E9: character and skin previews.
 3. Title menus with icons and previews; results of a run.
 

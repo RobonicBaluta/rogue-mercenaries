@@ -122,6 +122,7 @@ bool VerifySignatures(unsigned timeoutMs) {
                         SignatureOk("class_lookup") && SignatureOk("link_units");
     g_caps.timeBonus = g_caps.mercCountdown && SignatureOk("merc_add_countdown") && SignatureOk("time_bonus_action");
     g_caps.fatalHandler = SignatureOk("game_fatal_error");
+    g_caps.itemBox = SignatureOk("itembox_create") && SignatureOk("unit_register");
     g_caps.matchSetup = g_caps.gameWork && SignatureOk("merc_match_setup") && SignatureOk("merc_stage_table_use");
     g_caps.worldObjects = SignatureOk("obj_create") && SignatureOk("obj_set_spawn") && SignatureOk("set_record") && SignatureOk("set_record_count") &&
                           SignatureOk("obj_model_vtable") && SignatureOk("class_lookup") &&
