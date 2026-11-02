@@ -1984,8 +1984,60 @@ void DriveUiDemo(double now) {
 }
 
 // M7 research: the campaign Organize/Buy screen (uIdItemBox00) in a match, created as the match's
-// phase 3 does (re5_layout.h kFnItemBoxCreate); its archive (ShopResource) must be loaded.
+// phase 3 does (re5_layout.h kFnItemBoxCreate); its archive (ShopResource) must be loaded. The
+// screen edits the campaign save, so the save data ([kSaveData], plain in memory) is copied when it
+// opens and put back byte for byte when it closes; what it changed is logged first.
 std::uintptr_t g_itemBox = 0;
+constexpr std::size_t kSaveSnapshotBytes = 0x30000;  // covers slot 0's inventories, storage and stage
+std::vector<char> g_saveSnapshot;
+std::uintptr_t g_saveSnapshotBase = 0;
+
+bool CopySave(std::uintptr_t base, std::vector<char>& out) {
+    out.resize(kSaveSnapshotBytes);
+    for (std::size_t at = 0; at < out.size(); at += 0x1000) {
+        if (!SafeCopy(out.data() + at, base + at, std::min<std::size_t>(0x1000, out.size() - at))) return false;
+    }
+    return true;
+}
+
+void SnapshotSave() {
+    g_saveSnapshotBase = ReadOr<std::uintptr_t>(re5::addr::kSaveData, 0);
+    if (!g_saveSnapshotBase || !CopySave(g_saveSnapshotBase, g_saveSnapshot)) {
+        g_saveSnapshot.clear();
+        RM_LOGE("itembox: could not copy the save data");
+    }
+}
+
+// Logs the changed ranges, then writes the copy back.
+void RestoreSave() {
+    if (g_saveSnapshot.empty() || !g_saveSnapshotBase) return;
+    std::vector<char> now;
+    if (CopySave(g_saveSnapshotBase, now)) {
+        std::string ranges;
+        int count = 0;
+        for (std::size_t i = 0; i < now.size();) {
+            if (now[i] == g_saveSnapshot[i]) {
+                ++i;
+                continue;
+            }
+            std::size_t j = i;
+            while (j < now.size() && (now[j] != g_saveSnapshot[j] || (j + 1 < now.size() && now[j + 1] != g_saveSnapshot[j + 1]))) ++j;
+            if (count++ < 40) {
+                char buf[48];
+                std::snprintf(buf, sizeof(buf), " +%zX..%zX", i, j);
+                ranges += buf;
+            }
+            i = j;
+        }
+        RM_LOGW("itembox: the screen changed %d ranges of the save data:%s", count, ranges.c_str());
+    }
+    bool ok = true;
+    for (std::size_t at = 0; at < g_saveSnapshot.size(); at += 0x1000) {
+        ok &= SafeWrite(g_saveSnapshotBase + at, g_saveSnapshot.data() + at, std::min<std::size_t>(0x1000, g_saveSnapshot.size() - at));
+    }
+    RM_LOGW("itembox: save data restored: %s", ok ? "yes" : "NO");
+    g_saveSnapshot.clear();
+}
 
 std::uintptr_t CreateItemBox() {
     __try {
@@ -2017,7 +2069,7 @@ bool DeleteItemBox(std::uintptr_t obj) {
     }
 }
 
-void OpenItemBox() {
+void OpenItemBox(const std::vector<std::pair<std::size_t, std::uint32_t>>& pokes = {}) {
     if (!engine::Caps().itemBox) {
         RM_LOGW("itembox: signatures missing");
     } else if (g_itemBox) {
@@ -2025,8 +2077,16 @@ void OpenItemBox() {
     } else if (!resources::ArchiveLoaded("ShopResource")) {
         RM_LOGW("itembox: ShopResource is not loaded (dev uipreload ShopResource, then a new match)");
     } else {
+        SnapshotSave();
+        if (g_saveSnapshot.empty()) return;  // no screen that could change the save without its copy
+        // Research: values written into the save data after the copy (so the restore undoes them).
+        for (const auto& [offset, value] : pokes) {
+            if (offset + 4 <= kSaveSnapshotBytes) SafeStore(g_saveSnapshotBase + offset, value);
+            RM_LOGW("itembox: save +%zX = %u", offset, value);
+        }
         g_itemBox = CreateItemBox();
         RM_LOGW("itembox: created %08X", static_cast<unsigned>(g_itemBox));
+        if (!g_itemBox) g_saveSnapshot.clear();
     }
 }
 
@@ -2035,6 +2095,7 @@ void PollItemBox() {
     if (!g_itemBox) return;
     if (!g->match.inMatch) {
         g_itemBox = 0;  // gone with the match
+        RestoreSave();
         return;
     }
     if (ReadOr<std::uint8_t>(g_itemBox + 0x3C, 0) == 0) return;
@@ -2042,6 +2103,7 @@ void PollItemBox() {
             ReadOr<std::uint8_t>(g_itemBox + 0x5B6C, 0), ReadOr<std::uint8_t>(g_itemBox + 0x5B6D, 0),
             DeleteItemBox(g_itemBox) ? "yes" : "no");
     g_itemBox = 0;
+    RestoreSave();
 }
 
 // Developer automation: <data>\dev.command holds one command per file drop.
@@ -2349,8 +2411,33 @@ void PollDevCommand(double now) {
         for (std::string word; in >> word;) extras.uiArchives.push_back(word);
         RM_LOGW("dev uipreload: %zu screen archives for the next loads", extras.uiArchives.size());
         resources::SetDevExtras(std::move(extras));
-    } else if (command == "itembox") {
-        OpenItemBox();
+    } else if (command.rfind("itembox", 0) == 0) {
+        // "itembox [poke <hex offset> <decimal value> ...]": opens the screen; pokes go into the
+        // save data after its copy is taken (undone on close).
+        std::vector<std::pair<std::size_t, std::uint32_t>> pokes;
+        std::istringstream in(command.substr(7));
+        std::string word, offset, value;
+        while (in >> word) {
+            if (word == "poke" && in >> offset >> value) {
+                pokes.emplace_back(std::strtoul(offset.c_str(), nullptr, 16), static_cast<std::uint32_t>(std::strtoul(value.c_str(), nullptr, 10)));
+            }
+        }
+        OpenItemBox(pokes);
+    } else if (command.rfind("savedump", 0) == 0) {
+        // "savedump [hex bytes]": the game's save data ([kSaveData], plain in memory; the file is
+        // obfuscated) to <data>\savedump.bin, for offline study (M7.1: what the item box shows).
+        const auto base = ReadOr<std::uintptr_t>(re5::addr::kSaveData, 0);
+        std::size_t size = command.size() > 9 ? std::strtoul(command.c_str() + 9, nullptr, 16) : 0x30000;
+        size = std::min<std::size_t>(size, 0x100000);
+        std::vector<char> buffer(size);
+        std::size_t copied = 0;
+        while (base && copied < size && SafeCopy(buffer.data() + copied, base + copied, std::min<std::size_t>(0x1000, size - copied))) {
+            copied += std::min<std::size_t>(0x1000, size - copied);
+        }
+        std::ofstream out(g->paths.dataDir / L"savedump.bin", std::ios::binary);
+        out.write(buffer.data(), static_cast<std::streamsize>(copied));
+        RM_LOGW("dev savedump: %zu bytes from %08X (slot %d)", copied, static_cast<unsigned>(base),
+                base ? ReadOr<std::int32_t>(base + re5::off::kSaveSlot, -1) : -1);
     } else if (command.rfind("enemyhp ", 0) == 0) {
         // "enemyhp <n>": every live enemy's health down to n (a boss finished by gunfire in tests).
         const int hp = std::atoi(command.c_str() + 8);
