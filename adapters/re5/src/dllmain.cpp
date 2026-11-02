@@ -17,6 +17,7 @@
 #include "director.h"
 #include "resources.h"
 #include "world.h"
+#include "host.h"
 #include "mod.h"
 #include "overlay.h"
 #include "probe.h"
@@ -103,6 +104,7 @@ DWORD WINAPI Worker(LPVOID) {
         director::Install();
         resources::Install();
         world::Install();
+        host::Install();
         if (settings.directStart) autopilot::Install();
     }
     if (settings.developerMode && settings.devMenuProbe && engine::Caps().buildIdentity) {

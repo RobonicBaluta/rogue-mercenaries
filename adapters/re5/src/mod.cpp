@@ -36,6 +36,7 @@
 #include "director.h"
 #include "resources.h"
 #include "world.h"
+#include "host.h"
 #include "mod.h"
 #include "overlay.h"
 #include "probe.h"
@@ -1503,15 +1504,21 @@ void TraceDirectorArena(double now, const std::optional<std::array<double, 3>>& 
     }
 }
 
+// The director map of the stage being played. maps.json keys Mercenaries maps by their stage
+// index (0..7) and campaign areas by their stage number (100 and up), which the host loads in
+// place of the chosen Mercenaries stage (M5).
+int CurrentMapKey() { return host::StageOverride() >= 0 ? host::StageOverride() : g->currentStage; }
+const rm::MapDef* CurrentMap() { return g->content->FindMapByStage(CurrentMapKey()); }
+
 // ROADMAP M1: on a stage listed in maps.json the run owns the arena. The game's own spawns
 // stay off for the whole match (also between arenas), and the core's director decides what
 // to spawn where; the adapter spawns it and reports which unit became which ticket.
 void DriveDirector(double now) {
     rm::RunController& run = *g->run;
     const bool directorStage = g->match.inMatch && run.HasActiveRun() && run.capabilities().Has(rm::cap::kDirector) &&
-                               g->content->FindMapByStage(g->currentStage) != nullptr;
+                               CurrentMap() != nullptr;
     director::BlockNativeSpawns(directorStage || g->devQuiet);
-    run.SetMapStage(g->match.inMatch ? g->currentStage : -1);
+    run.SetMapStage(g->match.inMatch ? CurrentMapKey() : -1);
     if (!g->match.inMatch) g->directorUnits.clear();
     if (!run.DirectorActive() || run.phase() != rm::Phase::ArenaActive || g->devQuiet) return;
     std::optional<std::array<double, 3>> player;
@@ -1585,9 +1592,9 @@ void UpdatePreloads() {
     const bool runLoads = g->run->HasActiveRun() || g->rogueModePending || autopilot::Armed();
     static int lastStage = -2;
     static bool lastRun = false;
-    if (runLoads == lastRun && g->currentStage == lastStage) return;
+    if (runLoads == lastRun && CurrentMapKey() == lastStage) return;
     lastRun = runLoads;
-    lastStage = g->currentStage;
+    lastStage = CurrentMapKey();
     resources::Extras extras;
     if (runLoads) {
         for (const rm::WeaponBaseDef& w : g->content->weapons()) {
@@ -1599,7 +1606,9 @@ void UpdatePreloads() {
                 extras.enemyWeapons.push_back(id);
             }
         };
-        if (const rm::MapDef* map = g->content->FindMapByStage(g->currentStage)) {
+        // The chest statue (M4.1), so chests work on any stage.
+        extras.enemyClasses.push_back("uOm0100");
+        if (const rm::MapDef* map = CurrentMap()) {
             for (const rm::MapEnemy& e : map->roster) {
                 extras.enemyClasses.push_back(e.unit_class);
                 for (const std::int64_t arm : e.arms) addWeapon(arm);
@@ -1612,7 +1621,7 @@ void UpdatePreloads() {
         }
     }
     RM_LOGI("resources: %s, stage %d: %zu guns, %zu enemy classes and %zu enemy weapons go with every load",
-            runLoads ? "run" : "no run", g->currentStage, extras.playerWeapons.size(), extras.enemyClasses.size(),
+            runLoads ? "run" : "no run", CurrentMapKey(), extras.playerWeapons.size(), extras.enemyClasses.size(),
             extras.enemyWeapons.size());
     resources::SetRunExtras(std::move(extras));
 }
@@ -1624,7 +1633,7 @@ void PlaceArenaChests() {
     if (!world::Available()) return;
     rm::RunController& run = *g->run;
     const bool runLoads = run.HasActiveRun() || g->rogueModePending || autopilot::Armed();
-    const rm::MapDef* map = g->content->FindMapByStage(g->currentStage);
+    const rm::MapDef* map = CurrentMap();
     world::BlockNativeChests(runLoads && map != nullptr && !map->chests.empty() && run.capabilities().Has(rm::cap::kDirector));
     const rm::Director* director = run.director();
     if (!director || !run.DirectorActive() || run.phase() != rm::Phase::ArenaActive || !g->match.inMatch) return;
@@ -2038,6 +2047,18 @@ void PollDevCommand(double now) {
                                   ReadOr<float>(player + re5::off::kUnitPosition + 8, 0.0f) + fz / len * distance};
             world::PlaceChest(pos, seconds);
         }
+    } else if (command == "setdump") {
+        // Every set record of the stage, and where the player stands.
+        if (const auto local = engine::LocalPlayer()) {
+            RM_LOGW("setdump: player at %.1f %.1f %.1f", ReadOr<float>(local + re5::off::kUnitPosition, 0.0f),
+                    ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f), ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f));
+        }
+        world::DumpSetRecords();
+    } else if (command.rfind("stage ", 0) == 0) {
+        // "stage <n>": the next Mercenaries matches load stage number n (campaign s1xx..s6xx,
+        // Mercenaries 400..407); "stage -1" goes back to the chosen Mercenaries stage.
+        host::SetStageOverride(std::atoi(command.c_str() + 6));
+        RM_LOGW("dev stage override %d (saved stage now %d)", host::StageOverride(), host::SavedStage());
     } else if (command.rfind("cell ", 0) == 0) {
         // "cell <from> <to>": moves an inventory grid cell (1..9) like ORGANIZE does.
         int from = 0, to = 0;

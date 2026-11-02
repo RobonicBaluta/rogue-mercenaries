@@ -77,6 +77,7 @@ constexpr std::uintptr_t kObjModelManager = 0x011B2720;
 constexpr std::uintptr_t kFnObjCreate = 0x007E2410;
 constexpr std::uintptr_t kFnObjSetSpawn = 0x007E2480;
 constexpr std::uintptr_t kFnSetRecord = 0x007F3D70;
+constexpr std::uintptr_t kFnSetRecordCount = 0x007F3DD0;  // RecordCount(this = set manager, group)
 // Item manager sItem (instance [0x011B2200], vtable 0x00F63578): Create (slot 11) and set
 // spawn (slot 13), the same calls as sObjModel's.
 constexpr std::uintptr_t kItemManager = 0x011B2200;
@@ -85,6 +86,12 @@ constexpr std::uintptr_t kFnItemSetSpawn = 0x007C0A80;
 // uOmHourGlass (the Mercenaries time-bonus statue, DTI 0x011FCAC0, vtable 0x00FEFFB0):
 // constructor (this; returns this), bonus seconds int16 at +0x1364 (default 60).
 constexpr std::uintptr_t kFnHourGlassCtor = 0x00AD8CB0;
+// Mercenaries match setup (FUN_00BF5050, cdecl, no arguments): stage choice gw+0x5D4 ->
+// stage number (table 0x010CB9B0: 400..407) -> the save's progress stage.
+constexpr std::uintptr_t kFnMercMatchSetup = 0x00BF5050;
+// Save/progress data: [kSaveData] + [+0x20 slot] * 0x5940; +0x273D8 the stage number of the
+// current/next match, +0x273DC its room (0 for Mercenaries).
+constexpr std::uintptr_t kSaveData = 0x011B2158;
 // Class by class id (FUN_006D0690, cdecl): hash buckets at 0x012386A0, chain +0x14, id +0x20.
 constexpr std::uintptr_t kFnClassById = 0x006D0690;
 // Play menu screen (uIdStartUp01) per-frame move, and the menu input query
@@ -280,6 +287,10 @@ constexpr std::size_t kGameStage = 0x574;     // int32 (hypothesis: stage/area i
 constexpr std::size_t kMercTimer = 0x680;     // float seconds remaining (display mirror, rewritten each frame)
 constexpr std::size_t kMercKills = 0x58C;     // int32 Mercenaries kill counter (150/400 cap ends the match)
 constexpr std::size_t kMercScore = 0x6B4;     // int32 (from the 2021 trainer's pointer path)
+// save data ([addr::kSaveData])
+constexpr std::size_t kSaveSlot = 0x20;
+constexpr std::size_t kSaveSlotStride = 0x5940;
+constexpr std::size_t kSaveStage = 0x273D8;
 // Mercenaries match object (`this` of kFnMercUpdateCountdown)
 constexpr std::size_t kMercCountdown = 0x4DC;  // float seconds remaining (authoritative)
 constexpr std::size_t kMercState = 0x4D4;      // int32: 0 running, 1 time up / finished
@@ -406,6 +417,7 @@ inline constexpr Signature kSignatures[] = {
     {"loader_instance_use", 0x0072AB6D, "8B 0D C4 26 1B 01 53 6A 00 56 E8"},
     {"obj_create", addr::kFnObjCreate, "8B 44 24 10 8B 54 24 08 56 57 50 8B 44 24 10 8B F9 8B 4C 24 18 51 52 50"},
     {"obj_set_spawn", addr::kFnObjSetSpawn, "83 EC 6C 57 8B F9 8B 07 8B 50 40 FF D2 3C 01 75 09 33 C0 5F 83 C4 6C C2"},
+    {"set_record_count", addr::kFnSetRecordCount, "8A 44 24 04 0F B6 D0 3B 51 60 73 1F 8B 49 6C 0F BE C0 83 3C"},
     {"set_record", addr::kFnSetRecord, "8A 44 24 04 0F B6 D0 3B 51 60 56 73 21 8B 49 6C 0F BE C0 83 3C 81 00 8D"},
     // sObjModel vtable slots 11..13: Create, the shared 0x007F3A80, the set spawn.
     {"obj_model_vtable", 0x00F6526C, "10 24 7E 00 80 3A 7F 00 80 24 7E 00"},
@@ -413,6 +425,9 @@ inline constexpr Signature kSignatures[] = {
     {"item_set_spawn", addr::kFnItemSetSpawn, "56 8B F1 8B 06 8B 50 40 FF D2 3C 01 75 06 33 C0 5E C2 08 00 80 7C 24 08"},
     {"item_vtable", 0x00F635A4, "60 E7 7B 00 80 3A 7F 00 80 0A 7C 00"},
     {"hourglass_ctor", addr::kFnHourGlassCtor, "56 8B F1 E8 C8 B2 FA FF 33 C0 88 86 70 19 00 00 89 86 58 13 00 00 C7 06"},
+    {"merc_match_setup", addr::kFnMercMatchSetup, "83 EC 08 A1 A4 40 23 01 8B 80 2C 04 01 00 8B 88 DC 05 00 00 8B 90 D4 05"},
+    // `movzx ebx, word [edx*2 + 0x010CB9B0]`: the stage choice's stage number.
+    {"merc_stage_table_use", 0x00BF506B, "0F B7 1C 55 B0 B9 0C 01"},
     {"class_by_id", addr::kFnClassById, "8B 4C 24 04 8B C1 C1 E8 04 25 FF 0F 00 00 8B 04 85 A0 86 23 01 85 C0 74"},
     // The element count the clear loop reads: `mov eax, [ecx+0xC]; ret`.
     {"layout_element_count", 0x00CDADA0, "8B 41 0C C3"},

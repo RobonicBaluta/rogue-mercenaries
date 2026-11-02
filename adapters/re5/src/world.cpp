@@ -7,6 +7,7 @@
 
 #include <MinHook.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <string>
@@ -15,6 +16,7 @@
 #include "log.h"
 #include "memory.h"
 #include "re5_layout.h"
+#include "resources.h"
 
 namespace rmre5::world {
 namespace {
@@ -22,6 +24,7 @@ namespace {
 using SetSpawnFn = std::uintptr_t(__thiscall*)(std::uintptr_t self, int group, int id);
 using CreateFn = std::uintptr_t(__thiscall*)(std::uintptr_t self, std::uintptr_t dti, int group, int mode, int flag);
 using RecordFn = std::uintptr_t(__thiscall*)(std::uintptr_t setManager, int group, int id);
+using CountFn = int(__thiscall*)(std::uintptr_t setManager, int group);
 using LookupFn = std::uintptr_t(__cdecl*)(const char* name, std::uintptr_t baseDti);
 using NewFn = std::uintptr_t(__thiscall*)(std::uintptr_t dti);
 using ApplyFn = void(__thiscall*)(std::uintptr_t info, std::uintptr_t unit);
@@ -126,6 +129,14 @@ std::uintptr_t PlaceNative(const float* pos, int seconds) {
     }
 }
 
+int RecordCount(std::uintptr_t manager, int group) {
+    __try {
+        return reinterpret_cast<CountFn>(re5::addr::kFnSetRecordCount)(manager, group);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
 // The class a set record names (record +0xC holds the name at +8).
 std::string RecordClass(std::uintptr_t manager, int group, int id) {
     const std::uintptr_t record = Record(manager, group, id);
@@ -219,6 +230,39 @@ bool Available() { return g_available.load(); }
 
 void SetSurvey(bool on) { g_survey = on; }
 
+int DumpSetRecords() {
+    if (!g_available.load()) return 0;
+    struct Manager {
+        const char* name;
+        std::uintptr_t instance;
+    };
+    const Manager managers[] = {{"sEnemy", re5::addr::kSEnemyInstance}, {"sObjModel", re5::addr::kObjModelManager},
+                                {"sItem", re5::addr::kItemManager}};
+    int logged = 0;
+    for (const Manager& m : managers) {
+        const auto manager = ReadOr<std::uintptr_t>(m.instance, 0);
+        const int groups = manager ? std::min(ReadOr<std::int32_t>(manager + 0x60, 0), 256) : 0;
+        for (int group = 0; group < groups; ++group) {
+            const int count = std::min(RecordCount(manager, group), 2048);
+            for (int id = 0; id < count; ++id) {
+                const std::uintptr_t record = Record(manager, group, id);
+                if (!record) continue;
+                const auto holder = ReadOr<std::uintptr_t>(record + 0xC, 0);
+                const auto descriptor = ReadOr<std::uintptr_t>(record + 0x10, 0);
+                RM_LOGI("setdump: %s set %d id %d %s (%s) at %.1f %.1f %.1f", m.name, group, id,
+                        holder ? ReadCString(holder + 8, 64).c_str() : "?",
+                        descriptor ? engine::ClassName(descriptor).c_str() : "no descriptor",
+                        descriptor ? ReadOr<float>(descriptor + re5::off::kSetInfoPosition, 0.0f) : 0.0f,
+                        descriptor ? ReadOr<float>(descriptor + re5::off::kSetInfoPosition + 4, 0.0f) : 0.0f,
+                        descriptor ? ReadOr<float>(descriptor + re5::off::kSetInfoPosition + 8, 0.0f) : 0.0f);
+                ++logged;
+            }
+        }
+    }
+    RM_LOGI("setdump: %d records", logged);
+    return logged;
+}
+
 void BlockNativeChests(bool blocked) {
     if (g_blockChests.exchange(blocked) != blocked) {
         RM_LOGI("world: the stage's own time bonuses %s", blocked ? "blocked" : "allowed");
@@ -228,6 +272,11 @@ void BlockNativeChests(bool blocked) {
 
 std::uintptr_t PlaceChest(const float pos[3], int seconds) {
     if (!g_available.load()) return 0;
+    // Creating a class whose models the stage did not load hangs the game.
+    if (resources::Available() && !resources::ArchiveLoaded(kChestClass)) {
+        RM_LOGW("world: %s is not loaded on this stage; chest not placed", kChestClass);
+        return 0;
+    }
     const std::uintptr_t unit = PlaceNative(pos, seconds);
     if (unit) {
         RM_LOGI("world: chest %s %08X at %.0f %.0f %.0f | +6 %u +20 %u +120 %d +124 %d +128 %d +D78 %d +FAC %u +1364 %d",

@@ -25,6 +25,10 @@ std::uintptr_t PlaceChest(const float pos[3], int seconds);
 /// a run places its chests itself.
 void BlockNativeChests(bool blocked);
 
+/// Developer: logs every set record of the stage (enemies, objects, items: class, descriptor
+/// class and position), whether or not it was ever spawned. Returns the records logged.
+int DumpSetRecords();
+
 /// Developer survey: logs every object the stage creates (class, set record, position, the
 /// fields the spawn sets, the descriptor's class and contents).
 void SetSurvey(bool on);
