@@ -60,6 +60,17 @@ constexpr std::uintptr_t kFnMerceHudDraw = 0x00A1E580;
 constexpr std::uintptr_t kLayoutManager = 0x011B2334;
 constexpr std::uintptr_t kFnLayoutPageElements = 0x007C16B0;
 constexpr std::uintptr_t kFnLayoutSetElementDraw = 0x007C1600;
+// Archive loader (research/re5-engine-map.md, "Resources"): the instance, the commit of the
+// list being built (FUN_007D4A10), and the two ways to queue a unit class's archive:
+// LoadClassArchive(this, dti, flag) (FUN_007D6770, the class id at dti+0x20) and
+// LoadUnitArchive(this, category, id, variant, flag) (FUN_007D5820, class id
+// category<<24 | id<<8 | variant; it also queues the class's companions).
+constexpr std::uintptr_t kResourceLoader = 0x011B26C4;
+constexpr std::uintptr_t kFnLoadListCommit = 0x007D4A10;
+constexpr std::uintptr_t kFnLoadClassArchive = 0x007D6770;
+constexpr std::uintptr_t kFnLoadUnitArchive = 0x007D5820;
+// Class by class id (FUN_006D0690, cdecl): hash buckets at 0x012386A0, chain +0x14, id +0x20.
+constexpr std::uintptr_t kFnClassById = 0x006D0690;
 // Play menu screen (uIdStartUp01) per-frame move, and the menu input query
 // (__stdcall int(int pad, int mode)) it calls first.
 constexpr std::uintptr_t kFnPlayMenuMove = 0x00A396C0;
@@ -371,6 +382,13 @@ inline constexpr Signature kSignatures[] = {
      "51 53 55 56 8B E9 57 8D 5D 44 C7 44 24 10 02 00 00 00 8B 03 8B 0D 34 23 1B 01 50 E8"},
     {"layout_page_elements", addr::kFnLayoutPageElements, "8B 44 24 04 83 F8 5C 73 19 8B 44 81 20 85 C0 74 11 8B 40 08 85 C0 74 0A"},
     {"layout_set_element_draw", addr::kFnLayoutSetElementDraw, "8B 44 24 08 83 F8 5C 73 38 56 8B 74 81 20 85 F6 74 2E 8B 46 08 85 C0 74"},
+    {"load_list_commit", addr::kFnLoadListCommit, "51 53 55 57 8B F9 8B 87 D0 07 02 00 8D 04 80 33 ED 33 C9 8D 04 87 33 DB"},
+    {"load_class_archive", addr::kFnLoadClassArchive, "8B 44 24 04 85 C0 74 21 8B 40 20 8B 54 24 08 52 0F B6 D0 52 8B D0 C1 EA"},
+    {"load_unit_archive", addr::kFnLoadUnitArchive, "81 EC 08 01 00 00 8B 84 24 0C 01 00 00 0F B6 94 24 14 01 00 00 53 8B 9C"},
+    // The Mercenaries set loader queues each record's class on the loader instance:
+    // `mov ecx, [0x011B26C4]; push ebx; push 0; push esi; call LoadClassArchive`.
+    {"loader_instance_use", 0x0072AB6D, "8B 0D C4 26 1B 01 53 6A 00 56 E8"},
+    {"class_by_id", addr::kFnClassById, "8B 4C 24 04 8B C1 C1 E8 04 25 FF 0F 00 00 8B 04 85 A0 86 23 01 85 C0 74"},
     // The element count the clear loop reads: `mov eax, [ecx+0xC]; ret`.
     {"layout_element_count", 0x00CDADA0, "8B 41 0C C3"},
     {"flow_step20", addr::kFnFlowStep20, "56 8B F1 0F BE 46 25 83 E8 00 74 57 83 E8 01 74"},

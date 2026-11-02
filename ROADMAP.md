@@ -44,7 +44,7 @@ Mercenaries spawner decides what spawns; kills are counted from hooks and a deat
 weapons/enemies are limited to what the stage loaded; the arena ends through the game's
 time-up; the shop and route are list screens; chests depend on the map's time bonuses.
 
-Missing: spawn control, resource preloading, campaign areas, bosses, custom icons and
+Missing: campaign areas, bosses, custom icons and
 previews, the native organize/buy screen, in-world route choice.
 
 ## 3. Architecture: the Rogue mode layer
@@ -79,7 +79,7 @@ Each line is a research spike with a concrete starting point and a test that clo
 |---|---|---|---|---|
 | E1 ✔ | Spawn any enemy at a point (proven 2026-11-01: dev `spawn uEm10 70100 2 0` created two Majini at the player, who attacked at once; the game scored and counted them like its own) | `sEnemy::Create(dti, group, mode, flag)` `0x007AF550` → `0x007F4BA0` (DTI `newInstance`, unit group registration); descriptors `cSetInfoEmXX` (e.g. `cSetInfoEm10` vtable `0x01049C94`) are reflected objects (`0x00422C00` registers `mbArmed`, `mArmId` …) applied to a unit by vtable slot 10 (`0x00CC70E0` → base `0x00CCDD20`: position, rotation, weapon, AI flags) | dev command: create a uEm10 next to the player with a filled descriptor; then a list of types | a Majini of a chosen weapon type appears at a chosen point and fights normally; its death is reported |
 | E2 | Turn off the native spawner | Mercenaries spawns from its stage set data | find the Mercenaries generator (callers of `sEnemy::Create`'s vtable slot, set-file processing, `cActEvEmSet` for campaign) and gate it | a Mercenaries map stays empty until the director spawns |
-| E3 | Load models on demand | formats `%s\em\em%02x\em%02x%02x`, `%s\wp\wp%02x\wp%02x%02x`, `%s\stage\s%03d\s%3d%02x`; classes `sResource`, `rArchive`, `rArchivePack`, `sLoadMan`; creating an unloaded weapon or screen freezes the game | find the function that formats the em/wp paths and the request it makes; call it for extra types during the arena's loading screen; wait for completion | the shop sells a gun outside the costume's loadout and it can be fired; an enemy type foreign to the map spawns |
+| E3 ✔ | Load models on demand (done 2026-11-02: the loader's area lists, `research/re5-engine-map.md` "Resources"; every gun of the content and the stage's roster load with each stage of a run) | formats `%s\em\em%02x\em%02x%02x`, `%s\wp\wp%02x\wp%02x%02x`, `%s\stage\s%03d\s%3d%02x`; classes `sResource`, `rArchive`, `rArchivePack`, `sLoadMan`; creating an unloaded weapon or screen freezes the game | find the function that formats the em/wp paths and the request it makes; call it for extra types during the arena's loading screen; wait for completion | the shop sells a gun outside the costume's loadout and it can be fired; an enemy type foreign to the map spawns |
 | E4 ✔ | No timer, no score (done 2026-11-02: the clock is the cockpit HUD's timer draw `0x009F0390`, the score/combo panels the Mercenaries HUD's draw `0x00A1E580`; both skipped in a run, the 150-kill cap held off) | the countdown is held (`0x00717850`), bonuses suppressed (`0x0071CBF0`) | with E2 done, stop the HUD instead: kill `uIdMerce00` or keep it from being created; or use the campaign host (no countdown) | no clock or score on screen in a run; nothing ends the match except the mod |
 | E5 | Count kills exactly | hooks + death detector + "all deaths count" | the director tracks its own units: a death = its unit dead or removed | counter equals spawned-and-dead across explosions, fire, falls, flash on plagas |
 | E6 | Campaign areas as arenas | `cScenarioArg_AreaJump` (vtable `0x010497E4`), `cStageInfo`, `sBioArea`; stage numbers s1xx–s6xx | trace the campaign's area jump and chapter start; load one area directly from the menu, skip scripts and cutscenes, place the player | a run's arena takes place in a campaign area with director spawns and no story script |
@@ -120,9 +120,14 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    supplies where the combo was. Waves come with M6 (the director refills continuously until then).
 
 ### M3 — Resources
-1. E3 spike: preload one enemy type and one weapon during an arena's loading.
-2. Preload list per arena (enemies of its waves, the run's weapons); the shop and chests may
-   then offer any gun.
+1. ~~E3 spike: preload one enemy type and one weapon during an arena's loading.~~ Done 2026-11-02: queued
+   into the loader's lists right before the game commits them; uEm11 spawned in the Village and the
+   L.Hawk was created, equipped and fired there (Chris's loadout has neither).
+2. ~~Preload list per arena (enemies of its waves, the run's weapons); the shop and chests may then
+   offer any gun.~~ Done 2026-11-02: every gun of `weapons.json` (19, about 20 MB) and the armed stage's
+   roster with its weapons go with every load of a run; rewards, the shop and chests offer any loaded
+   gun, purchases carry over and fire on the next stage; the director never spawns a class whose
+   archive is not loaded.
 
 ### M4 — World objects
 1. E10: chests placed by the arena data (no more reliance on time bonuses).

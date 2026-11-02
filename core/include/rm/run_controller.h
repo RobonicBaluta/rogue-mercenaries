@@ -282,6 +282,8 @@ public:
     Status DevGrantPerk(std::string_view perk_id);
     /// Adds a weapon instance under the normal slot rules (see weapons.h).
     Status DevGrantWeapon(WeaponInstance weapon);
+    /// Credits supplies to the active run; each call is its own transaction (reason "dev").
+    Status DevGrantSupplies(std::int64_t amount);
     /// The adapter found another gun in the player's hands at match start: it becomes the
     /// run's starting weapon (replacing the rolled one), so upgrades and the shop follow it.
     Status SwapStartingWeapon(std::string_view base_id);
@@ -360,6 +362,7 @@ private:
     int map_stage_ = -1;
     std::optional<Director> director_;
     std::optional<StringSet> placeable_weapons_;
+    int dev_supply_grants_ = 0;
     IEventSink* sink_ = nullptr;
     ProfileStore* store_ = nullptr;
     int damage_sample_every_ = 50;

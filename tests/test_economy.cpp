@@ -101,6 +101,17 @@ TEST_CASE("perk and weapon unlocks gate offers", "[economy]") {
     CHECK(h.rc.DevGrantPerk("jackpot").ok());
 }
 
+TEST_CASE("developer supplies are credited once per call", "[economy]") {
+    test::Harness h(test::LoadFixture());
+    CHECK(h.rc.DevGrantSupplies(50).code == ErrorCode::NoActiveRun);
+    REQUIRE(h.rc.StartRun("alpha", 1).ok());
+    const std::int64_t before = h.rc.state().supplies.balance();
+    REQUIRE(h.rc.DevGrantSupplies(50).ok());
+    REQUIRE(h.rc.DevGrantSupplies(50).ok());
+    CHECK(h.rc.state().supplies.balance() == before + 100);
+    CHECK(h.rc.DevGrantSupplies(0).code == ErrorCode::InvalidAmount);
+}
+
 TEST_CASE("unlock is rolled back when the profile cannot be saved", "[economy]") {
     test::TempDir dir("unlock_rollback");
     // A directory where the profile file should be makes the final rename fail.

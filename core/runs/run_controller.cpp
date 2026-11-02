@@ -1354,6 +1354,15 @@ Status RunController::DevGrantWeapon(WeaponInstance weapon) {
     return Status::Success();
 }
 
+Status RunController::DevGrantSupplies(std::int64_t amount) {
+    if (!run_.active) return Fail("dev_grant_supplies", ErrorCode::NoActiveRun, "no active run");
+    if (amount <= 0) return Fail("dev_grant_supplies", ErrorCode::InvalidAmount, "amount must be positive");
+    if (!CreditSupplies("dev:supplies:" + std::to_string(++dev_supply_grants_), amount, "dev")) {
+        return Fail("dev_grant_supplies", ErrorCode::AlreadyApplied, "credit refused");
+    }
+    return Status::Success();
+}
+
 Result<RunSummary> RunController::EndRun() {
     constexpr std::string_view op = "end_run";
     if (!run_.active) {

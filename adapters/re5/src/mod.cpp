@@ -34,6 +34,7 @@
 #include "native_menu.h"
 #include "match_ui.h"
 #include "director.h"
+#include "resources.h"
 #include "mod.h"
 #include "overlay.h"
 #include "probe.h"
@@ -151,6 +152,7 @@ struct ModState {
     std::unique_ptr<rm::RunController> run;
     MatchState match;
     bool arenaEndRequested = false;  // timer forced to 0 after a clear
+    bool devQuiet = false;           // developer: no director refills, native spawns blocked
     bool matchUiOpenRequested = false;  // native results screen to open once the tick's lock is released
     std::string notice;       // short line shown instead of the status (chest contents)
     int organizePick = -1;    // ORGANIZE: grid cell picked up (-1 = none)
@@ -1038,6 +1040,27 @@ void DetectEnemyDeaths(double now) {
     }
 }
 
+// A weapon's model is loaded in this match: the character's own loadout put it there, or its
+// class archive is in the loader's lists (M3 preloads every gun of the content in a run).
+bool WeaponModelLoaded(std::uint32_t id) {
+    if (g->loadedWeaponItems.count(id)) return true;
+    return resources::Available() && (id >> 8) == 1 && resources::WeaponLoaded(static_cast<std::uint16_t>(id));
+}
+
+// The weapons rewards, the shop and chests may hand out: those whose model is loaded.
+void RefreshPlaceableWeapons() {
+    rm::StringSet placeable;
+    std::string names;
+    for (const rm::WeaponBaseDef& w : g->content->weapons()) {
+        if (w.game_item >= 0 && WeaponModelLoaded(static_cast<std::uint32_t>(w.game_item))) {
+            placeable.insert(w.id);
+            names += " " + w.id;
+        }
+    }
+    RM_LOGI("inventory: %zu weapons placeable in the run:%s", placeable.size(), names.c_str());
+    g->run->SetPlaceableWeapons(std::move(placeable));
+}
+
 // Returns the units placed (stacked or in new slots); 0 when nothing fit or no player.
 int GiveItem(const char* source, std::int64_t gameItem, int count) {
     const auto player = engine::LocalPlayer();
@@ -1063,8 +1086,8 @@ int GiveItem(const char* source, std::int64_t gameItem, int count) {
     const auto table = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + ((id >> 8) & 0xFF) * 4, 0);
     const auto record = table ? table + (id & 0xFF) * 0x48 : 0;
     if (record && ReadOr<std::int32_t>(record + 0x30, 0) == 3) {
-        if (!g->loadedWeaponItems.count(static_cast<std::uint32_t>(id))) {
-            // Its model is not loaded for this character; creating it hangs the game.
+        if (!WeaponModelLoaded(static_cast<std::uint32_t>(id))) {
+            // Its model is not loaded in this match; creating it hangs the game.
             RM_LOGW("%s: weapon %04X is not loaded for this character, not created", source, id);
             return 0;
         }
@@ -1147,12 +1170,8 @@ void StripToPistol() {
             loaded += buf;
         }
     }
-    rm::StringSet placeable;
-    for (const rm::WeaponBaseDef& w : g->content->weapons()) {
-        if (w.game_item >= 0 && g->loadedWeaponItems.count(static_cast<std::uint32_t>(w.game_item))) placeable.insert(w.id);
-    }
-    g->run->SetPlaceableWeapons(placeable);
-    RM_LOGI("inventory: weapons loaded for this character:%s (%zu placeable in the run)", loaded.c_str(), placeable.size());
+    RM_LOGI("inventory: weapons loaded for this character:%s", loaded.c_str());
+    RefreshPlaceableWeapons();
     std::int64_t pistol = re5::addr::kItemM92F;
     if (const rm::WeaponBaseDef* w = g->content->FindWeapon(g->run->state().loadout.weapon_id)) {
         if (w->game_item >= 0) pistol = w->game_item;
@@ -1289,6 +1308,7 @@ void SnapshotInventory() {
 // items that were used up are set to 0.
 void ApplyCarriedInventory() {
     if (!engine::Caps().inventory || !engine::LocalPlayer()) return;
+    RefreshPlaceableWeapons();
     std::map<std::uint32_t, int> wanted;
     for (const auto& [id, count] : g->transition.carry) wanted[id] += count;
     std::map<std::uint32_t, int> have;
@@ -1488,10 +1508,10 @@ void DriveDirector(double now) {
     rm::RunController& run = *g->run;
     const bool directorStage = g->match.inMatch && run.HasActiveRun() && run.capabilities().Has(rm::cap::kDirector) &&
                                g->content->FindMapByStage(g->currentStage) != nullptr;
-    director::BlockNativeSpawns(directorStage);
+    director::BlockNativeSpawns(directorStage || g->devQuiet);
     run.SetMapStage(g->match.inMatch ? g->currentStage : -1);
     if (!g->match.inMatch) g->directorUnits.clear();
-    if (!run.DirectorActive() || run.phase() != rm::Phase::ArenaActive) return;
+    if (!run.DirectorActive() || run.phase() != rm::Phase::ArenaActive || g->devQuiet) return;
     std::optional<std::array<double, 3>> player;
     if (const auto local = engine::LocalPlayer()) {
         player = std::array<double, 3>{ReadOr<float>(local + re5::off::kUnitPosition, 0.0f),
@@ -1506,6 +1526,12 @@ void DriveDirector(double now) {
         spec.weapon = static_cast<int>(r.arm);
         spec.fields = r.fields;
         const float* pos = spec.pos;
+        // A class whose archive is not loaded would hang the game when created.
+        if (resources::Available() && !resources::ArchiveLoaded(r.unit_class)) {
+            RM_LOGW("director: %s is not loaded on this stage; not spawned", r.unit_class.c_str());
+            run.DirectorSpawnFailed(r.ticket);
+            continue;
+        }
         const std::uintptr_t unit = director::Spawn(spec);
         if (!unit) {
             RM_LOGW("director: %s at %.0f %.0f %.0f failed", r.unit_class.c_str(), pos[0], pos[1], pos[2]);
@@ -1546,6 +1572,47 @@ void DriveArena(double now) {
         }
         return;
     }
+}
+
+// M3: from START RUN on, every load of the run brings every gun of the content with the
+// player's items (rewards, the shop, chests and carried-over purchases may hold any of them)
+// and the armed stage's roster with its enemies (a class or weapon the stage does not use
+// itself loads too). Outside runs nothing extra loads.
+void UpdatePreloads() {
+    if (!resources::Available()) return;
+    const bool runLoads = g->run->HasActiveRun() || g->rogueModePending || autopilot::Armed();
+    static int lastStage = -2;
+    static bool lastRun = false;
+    if (runLoads == lastRun && g->currentStage == lastStage) return;
+    lastRun = runLoads;
+    lastStage = g->currentStage;
+    resources::Extras extras;
+    if (runLoads) {
+        for (const rm::WeaponBaseDef& w : g->content->weapons()) {
+            if ((w.game_item >> 8) == 1) extras.playerWeapons.push_back(static_cast<std::uint16_t>(w.game_item));
+        }
+        auto addWeapon = [&](std::int64_t arm) {
+            const auto id = static_cast<std::uint32_t>(arm);
+            if (arm > 0xFFFF && std::find(extras.enemyWeapons.begin(), extras.enemyWeapons.end(), id) == extras.enemyWeapons.end()) {
+                extras.enemyWeapons.push_back(id);
+            }
+        };
+        if (const rm::MapDef* map = g->content->FindMapByStage(g->currentStage)) {
+            for (const rm::MapEnemy& e : map->roster) {
+                extras.enemyClasses.push_back(e.unit_class);
+                for (const std::int64_t arm : e.arms) addWeapon(arm);
+                for (const rm::EnemyProfile& p : e.profiles) {
+                    for (const auto& [field, value] : p.fields) {
+                        if (field == "arm") addWeapon(static_cast<std::int64_t>(value));
+                    }
+                }
+            }
+        }
+    }
+    RM_LOGI("resources: %s, stage %d: %zu guns, %zu enemy classes and %zu enemy weapons go with every load",
+            runLoads ? "run" : "no run", g->currentStage, extras.playerWeapons.size(), extras.enemyClasses.size(),
+            extras.enemyWeapons.size());
+    resources::SetRunExtras(std::move(extras));
 }
 
 // The countdown floor only applies while an arena is being fought.
@@ -1930,6 +1997,14 @@ void PollDevCommand(double now) {
             RM_LOGW("dev buy %s (%s) -> %s", kind.c_str(), s.shop_offers[i].title.c_str(), st.ok() ? "ok" : st.message.c_str());
         }
         if (!found) RM_LOGW("dev buy %s: no such offer", kind.c_str());
+    } else if (command.rfind("cell ", 0) == 0) {
+        // "cell <from> <to>": moves an inventory grid cell (1..9) like ORGANIZE does.
+        int from = 0, to = 0;
+        std::istringstream(command.substr(5)) >> from >> to;
+        RM_LOGW("dev cell %d -> %d: %s", from, to, SwapGridCells(from - 1, to - 1) ? "moved" : "nothing moved");
+    } else if (command.rfind("supplies ", 0) == 0) {
+        // "supplies <n>": credits n supplies to the active run.
+        Report(run.DevGrantSupplies(std::atoll(command.c_str() + 9)), "dev supplies");
     } else if (command == "chest" && run.phase() == rm::Phase::ArenaActive) {
         SimulateTimeBonusPickup();  // goes through the same path as a real pickup
         RM_LOGW("dev chest: pickup simulated");
@@ -2005,6 +2080,32 @@ void PollDevCommand(double now) {
         // "merchud on|off": the game's clock and score panels during a run.
         g->settings.mercHud = command.substr(8) == "on";
         RM_LOGW("dev merc hud %s", g->settings.mercHud ? "shown" : "hidden");
+    } else if (command.rfind("preload ", 0) == 0) {
+        // "preload uEm11 011A 70160 ...": class archives (with the enemies), weapon item ids in hex
+        // (with the player's items) and enemy weapon ids (category<<16 | id, with the enemies)
+        // for every following Mercenaries load, on top of the run's; "preload clear".
+        resources::Extras extras;
+        std::istringstream in(command.substr(8));
+        for (std::string word; in >> word;) {
+            if (word == "clear") continue;
+            const auto value = std::strtoul(word.c_str(), nullptr, 16);
+            if (word.rfind("u", 0) == 0) extras.enemyClasses.push_back(word);
+            else if (value > 0xFFFF) extras.enemyWeapons.push_back(static_cast<std::uint32_t>(value));
+            else extras.playerWeapons.push_back(static_cast<std::uint16_t>(value));
+        }
+        RM_LOGW("dev preload: %zu classes, %zu enemy weapons, %zu guns for the next loads", extras.enemyClasses.size(),
+                extras.enemyWeapons.size(), extras.playerWeapons.size());
+        resources::SetDevExtras(std::move(extras));
+    } else if (command.rfind("quiet ", 0) == 0) {
+        // "quiet on|off": the director stops refilling and the game's own spawns stay off, so
+        // after a killall the arena is empty (screenshots, weapon tests).
+        g->devQuiet = command.substr(6) == "on";
+        RM_LOGW("dev quiet %s", g->devQuiet ? "on" : "off");
+    } else if (command == "loadlists") {
+        resources::LogLists();
+    } else if (command.rfind("archive ", 0) == 0) {
+        const std::string name = command.substr(8);
+        RM_LOGW("dev archive %s: %s", name.c_str(), resources::ArchiveLoaded(name) ? "loaded" : "not loaded");
     } else if (command.rfind("merckills ", 0) == 0) {
         // "merckills N": sets the game's Mercenaries kill counter (its cap ends a match).
         const auto work = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
@@ -2342,6 +2443,7 @@ private:
         PollDevCommand(now);
         SettleFinishedRun();
         UpdateTimerPolicy();
+        UpdatePreloads();
         UpdateMatchStatus();
         const rm::Phase phase = g->run->phase();
         if (phase != g->lastPhase) {

@@ -82,6 +82,17 @@ On The Mines the player was caught by a large insect's grab twice; with dev invu
 | Mercenaries timer | `float` seconds at game work `+0x680` | verified-static: `0x00718050` adds bonus seconds to it (`AddTime(int)`), sets `+0x688` (bonus) and `+0x68C` (popup flag) |
 | Mercenaries score | `int32` game work `+0x6B4` | hypothesis (trainer pointer path, not yet observed) |
 
+## Resources (verified-runtime, 2026-11-02)
+
+| Fact | Value | Status |
+|---|---|---|
+| Archives | One per unit class: `nativePC_MT\Image\Archive\<class>.arc` (`uEm11.arc`, `uWp1a.arc`, `uOm...`, `s100.arc` stages); weapons about 1 MB, Majini 15-30 MB | verified-runtime |
+| Class ids | `dti+0x20` = `category<<24 \| id<<8 \| variant`; categories 1 players, 3 enemies (`uEm11` = 0x03001100), 6 objects/parts, 7 weapons and items (`uWp1a` = 0x07011A00: weapon item 0x01NN loads class 0x0701NN00; Majini weapons 0x0701NN00 with NN 50..80, the descriptors' `mArmId` 0x701NN). Lookup by id `0x006D0690` (cdecl; buckets `0x012386A0[(id>>4)&0xFFF]`, chain `+0x14`) | verified-runtime |
+| Loader | `[0x011B26C4]`: lists n at `+0x2070C + n*0x14` (count) / `+0x20718` (requests), `+0x207D0` the list being built. Request (0x54 bytes, vtable `0x00F643A4`): `+4` path, `+0x44` loaded resource, `+0x48` state (0 not asked this time, 1/4 new, 3 kept), `+0x4C` class. `0x007D4870(n)` starts list n (all states 0), `0x007D4960(path, dti, flag)` queues (an existing path is kept), `0x007D4A10()` commits (releases state 0, starts loading the new) | verified-runtime |
+| Queue a class | `0x007D5820(this = loader, category, id, variant, flag)` (ret 0x10): `Image\Archive\<class name>` plus companions (e.g. uEm41 also queues uEm40 variant 1); `0x007D6770(this, dti, flag)` (ret 8) the same from a class | verified-runtime |
+| Area load | `0x0072EAC0` (aGame vtables): list 3 `0x0072E6E0` (players `0x00728150`: character and every inventory item of the save's Mercenaries loadout), list 4 `0x0072CF40` (every set record's class through `0x0072AB20`, which adds Majini weapons and plagas `uEm0b..0e` by plaga type), list 5 `0x0072ADE0` (objects); list 2 `0x007D67A0` the game resources (common items, grenades, ammo) | verified-static, lists verified at runtime |
+| Preloading | Queue extras on the loader right before the game commits list 3 or 4; they load behind the loading screen and stay while re-queued. Spawning or creating a class whose archive is not loaded hangs the game | verified-runtime (uEm11 in the Village, 19 guns on four stages) |
+
 ## Menus and messages (verified-runtime, 2026-10-27)
 
 Found with the developer menu probe (`dev.menu_probe`: hooks `move()`, vtable slot 6, of every `uId*` class under `uIdBase`), byte diffs while navigating, and static disassembly.
