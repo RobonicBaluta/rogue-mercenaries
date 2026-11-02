@@ -50,6 +50,7 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
         settings.endMatchOnClear = json.value("end_match_on_clear", settings.endMatchOnClear);
         settings.stagePerArena = json.value("stage_per_arena", settings.stagePerArena);
         settings.campaignArenas = json.value("campaign_arenas", settings.campaignArenas);
+        settings.nativeItemBox = json.value("native_item_box", settings.nativeItemBox);
         settings.nativeMatchUi = json.value("native_match_ui", settings.nativeMatchUi);
         settings.director = json.value("director", settings.director);
         settings.nativeMenu = json.value("native_menu", settings.nativeMenu);

@@ -63,6 +63,9 @@ struct Settings {
     // Runs also pick the campaign areas listed in maps.json (stage numbers 100 and up), loaded
     // in place of a Mercenaries stage. false: Mercenaries stages only.
     bool campaignArenas = true;
+    // The SHOP's organize row opens the game's own Organize/Buy screen with the run in it (the
+    // campaign save data is copied before and restored after). false: the mod's grid screen.
+    bool nativeItemBox = true;
     // Results, rewards, shop and route as native in-match screens (world paused); false keeps
     // the overlay windows for them.
     bool nativeMatchUi = true;

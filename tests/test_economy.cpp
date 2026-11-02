@@ -112,6 +112,22 @@ TEST_CASE("developer supplies are credited once per call", "[economy]") {
     CHECK(h.rc.DevGrantSupplies(0).code == ErrorCode::InvalidAmount);
 }
 
+TEST_CASE("supplies from the game's own shop screen are credited or debited between arenas", "[economy]") {
+    test::Harness h(test::LoadFixture());
+    CHECK(h.rc.AdjustSupplies(10, "native_shop").code == ErrorCode::NoActiveRun);
+    REQUIRE(h.rc.StartRun("alpha", 1).ok());
+    CHECK(h.rc.AdjustSupplies(10, "native_shop").code == ErrorCode::WrongPhase);  // not before an arena
+    test::ClearArena(h.rc, 0.0);
+    CHECK(h.rc.AdjustSupplies(10, "native_shop").ok());  // results screen onwards
+    const std::int64_t balance = h.rc.state().supplies.balance();
+    REQUIRE(h.rc.AdjustSupplies(25, "native_shop").ok());
+    REQUIRE(h.rc.AdjustSupplies(-15, "native_shop").ok());
+    CHECK(h.rc.state().supplies.balance() == balance + 10);
+    CHECK(h.rc.AdjustSupplies(-(balance + 1000), "native_shop").code == ErrorCode::InsufficientFunds);
+    CHECK(h.rc.state().supplies.balance() == balance + 10);
+    CHECK(h.rc.AdjustSupplies(0, "native_shop").ok());
+}
+
 TEST_CASE("unlock is rolled back when the profile cannot be saved", "[economy]") {
     test::TempDir dir("unlock_rollback");
     // A directory where the profile file should be makes the final rename fail.

@@ -174,6 +174,10 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    Spike 2026-11-02: the screen opens and closes in a Mercenaries match once its archive
    (`ShopResource`) loads with the stage (dev `uipreload ShopResource`, `itembox`); it shows the
    campaign save's inventories, storage and treasures, so the run's state must stand in for them.
+   Done for Chris (2026-11-02): the SHOP's ORGANIZE row opens it with the run swapped into the
+   save data (grid, supplies as money, a run stash as the storage) and the campaign data written
+   back on close; moves, sells, buys and gun upgrades work, and upgrades are the game's own (slot
+   levels, kept on the gun for the run). Open: other characters, treasures, the grid labels.
 2. E8: perk icons in the PERKS screen; E9: character and skin previews.
 3. Title menus with icons and previews; results of a run.
 

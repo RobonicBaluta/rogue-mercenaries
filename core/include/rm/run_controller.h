@@ -295,6 +295,10 @@ public:
     Status DevGrantWeapon(WeaponInstance weapon);
     /// Credits supplies to the active run; each call is its own transaction (reason "dev").
     Status DevGrantSupplies(std::int64_t amount);
+    /// Supplies earned (> 0) or spent (< 0) outside the run's own screens (the game's
+    /// Organize/Buy screen between arenas). Each call is its own transaction; a debit larger
+    /// than the balance is refused.
+    Status AdjustSupplies(std::int64_t delta, std::string_view reason);
     /// The adapter found another gun in the player's hands at match start: it becomes the
     /// run's starting weapon (replacing the rolled one), so upgrades and the shop follow it.
     Status SwapStartingWeapon(std::string_view base_id);
@@ -376,6 +380,7 @@ private:
     std::optional<Director> director_;
     std::optional<StringSet> placeable_weapons_;
     int dev_supply_grants_ = 0;
+    int external_supply_changes_ = 0;
     IEventSink* sink_ = nullptr;
     ProfileStore* store_ = nullptr;
     int damage_sample_every_ = 50;

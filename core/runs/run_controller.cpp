@@ -1392,6 +1392,23 @@ Status RunController::DevGrantSupplies(std::int64_t amount) {
     return Status::Success();
 }
 
+Status RunController::AdjustSupplies(std::int64_t delta, std::string_view reason) {
+    constexpr std::string_view op = "adjust_supplies";
+    if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    if (run_.phase == Phase::Idle || run_.phase == Phase::ArenaActive || run_.phase == Phase::RunComplete ||
+        run_.phase == Phase::RunFailed) {
+        return Fail(op, ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
+    }
+    if (delta == 0) return Status::Success();
+    const std::string tx = std::string(reason) + ":" + std::to_string(++external_supply_changes_);
+    if (delta > 0) {
+        if (!CreditSupplies(tx, delta, reason)) return Fail(op, ErrorCode::AlreadyApplied, "credit refused");
+    } else if (DebitSupplies(tx, -delta, reason) != TxResult::Applied) {
+        return Fail(op, ErrorCode::InsufficientFunds, "debit of " + std::to_string(-delta) + " refused");
+    }
+    return Status::Success();
+}
+
 Result<RunSummary> RunController::EndRun() {
     constexpr std::string_view op = "end_run";
     if (!run_.active) {

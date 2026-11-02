@@ -158,6 +158,8 @@ struct ModState {
     std::uint64_t chestsPlacedFor = 0;  // (match generation, arena) whose chests are placed
     double arenaBeganAt = -1.0;         // when the current arena began (director grace period)
     bool matchUiOpenRequested = false;  // native results screen to open once the tick's lock is released
+    bool itemBoxRequested = false;      // M7.1: the game's Organize/Buy screen, from the SHOP's organize row
+    bool shopUiRequested = false;       // back to the SHOP screen when that screen closes
     std::string notice;       // short line shown instead of the status (chest contents)
     int organizePick = -1;    // ORGANIZE: grid cell picked up (-1 = none)
     double noticeUntil = 0.0;
@@ -305,6 +307,7 @@ void ObserveMatch(double now) {
 // --- native mod menu content -------------------------------------------------
 
 std::string Plain(const std::string& s);
+bool NativeItemBoxReady();
 // ---- ORGANIZE: the inventory grid ------------------------------------------------------
 // The game's item grid has nine cells (record +0x18 = 0..8); the in-match inventory and the
 // d-pad shortcuts read the cell, so swapping the cells of two records rearranges the grid.
@@ -331,6 +334,56 @@ std::array<GridCell, kGridCells> ReadGrid() {
                                                         ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0)};
     }
     return grid;
+}
+
+int ItemStackMax(std::uint32_t id) {
+    const auto table = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + ((id >> 8) & 0xFF) * 4, 0);
+    const auto record = table ? table + (id & 0xFF) * 0x48 : 0;
+    if (!record || ReadOr<std::int32_t>(record + 0x30, 0) == 3) return 0;  // weapons do not stack
+    return std::max(1, ReadOr<std::int32_t>(record + 0x20, 1));
+}
+
+// A run's guns keep their upgrade levels (re5_layout.h kSlotUpgrades) for the whole run. The match
+// recreates the inventory at every stage with its own levels (the character's Mercenaries loadout
+// guns come upgraded, other guns stock) and the Organize/Buy screen changes them, so the levels
+// are recorded before a stage change and when the screen closes, and written back after the
+// inventory is rebuilt.
+using WeaponLevels = std::array<std::uint32_t, 2>;
+struct RunWeaponLevels {
+    std::string runId;
+    std::map<std::uint32_t, WeaponLevels> byItem;
+};
+RunWeaponLevels g_weaponLevels;
+
+std::map<std::uint32_t, WeaponLevels>& RunLevels() {
+    if (g_weaponLevels.runId != g->run->state().run_id) {
+        g_weaponLevels.runId = g->run->state().run_id;
+        g_weaponLevels.byItem.clear();
+    }
+    return g_weaponLevels.byItem;
+}
+
+WeaponLevels SlotLevels(std::uintptr_t slot) {
+    return {ReadOr<std::uint32_t>(slot + re5::off::kSlotUpgrades, 0), ReadOr<std::uint32_t>(slot + re5::off::kSlotUpgrades + 4, 0)};
+}
+
+void RecordWeaponLevels() {
+    if (!g->run->HasActiveRun()) return;
+    for (const GridCell& c : ReadGrid()) {
+        if (c.record && ItemStackMax(c.id) == 0) RunLevels()[c.id] = SlotLevels(c.record);
+    }
+}
+
+void ApplyWeaponLevels() {
+    if (!g->run->HasActiveRun()) return;
+    auto& levels = RunLevels();
+    for (const GridCell& c : ReadGrid()) {
+        const auto it = c.record ? levels.find(c.id) : levels.end();
+        if (it == levels.end() || SlotLevels(c.record) == it->second) continue;
+        SafeStore(c.record + re5::off::kSlotUpgrades, it->second[0]);
+        SafeStore(c.record + re5::off::kSlotUpgrades + 4, it->second[1]);
+        RM_LOGI("upgrades: %04X levels %08X %08X", c.id, it->second[0], it->second[1]);
+    }
 }
 
 // Name of an inventory item for the game font: the run's weapons and catalog first.
@@ -892,6 +945,13 @@ private:
                     break;
                 }
                 if (index == offers) {  // ORGANIZE INVENTORY
+                    // The game's own Organize/Buy screen when it can open here (M7.1); the mod's
+                    // grid screen otherwise.
+                    if (NativeItemBoxReady()) {
+                        g->itemBoxRequested = true;
+                        d.outcome = Outcome::Close;
+                        break;
+                    }
                     g->organizePick = -1;
                     d.outcome = Outcome::Push;
                     d.next = ScreenId::MatchOrganize;
@@ -1383,6 +1443,7 @@ void SnapshotInventory() {
     g->transition.carry = ReadInventory();
     const auto grid = ReadGrid();
     for (std::size_t c = 0; c < grid.size(); ++c) g->transition.cells[c] = grid[c].record ? grid[c].id : 0;
+    RecordWeaponLevels();
     std::string text;
     for (const auto& [id, count] : g->transition.carry) {
         char buf[24];
@@ -1433,6 +1494,7 @@ void ApplyCarriedInventory() {
         }
     }
     g->transition.cells = {};
+    ApplyWeaponLevels();
 }
 
 // Health carries over a stage change (a new match starts at full health).
@@ -1736,6 +1798,8 @@ void UpdatePreloads() {
         };
         // The chest statue (M4.1), so chests work on any stage.
         extras.enemyClasses.push_back("uOm0100");
+        // The game's Organize/Buy screen (M7.1).
+        if (g->settings.nativeItemBox && engine::Caps().itemBox) extras.uiArchives.push_back("ShopResource");
         if (const rm::MapDef* map = CurrentMap()) {
             extras.enemyArchives = map->preload;
             if (map->boss) extras.enemyClasses.push_back(map->boss->unit_class);
@@ -1983,10 +2047,10 @@ void DriveUiDemo(double now) {
     step(6, 25.0, [&] { Report(run.ChooseRoute(run.RouteChoices().size() > 1 ? 1 : 0), "demo choose route"); });
 }
 
-// M7 research: the campaign Organize/Buy screen (uIdItemBox00) in a match, created as the match's
-// phase 3 does (re5_layout.h kFnItemBoxCreate); its archive (ShopResource) must be loaded. The
-// screen edits the campaign save, so the save data ([kSaveData], plain in memory) is copied when it
-// opens and put back byte for byte when it closes; what it changed is logged first.
+// M7.1: the game's Organize/Buy screen (uIdItemBox00) in a match, created as the match's phase 3
+// does (re5_layout.h kFnItemBoxCreate); its archive (ShopResource) must be loaded. The screen
+// edits the campaign save, so the save data ([kSaveData], plain in memory) is copied when it opens
+// and put back byte for byte when it closes; what it changed is logged first.
 std::uintptr_t g_itemBox = 0;
 constexpr std::size_t kSaveSnapshotBytes = 0x30000;  // covers slot 0's inventories, storage and stage
 std::vector<char> g_saveSnapshot;
@@ -2007,6 +2071,32 @@ void SnapshotSave() {
         RM_LOGE("itembox: could not copy the save data");
     }
 }
+
+// Research: the ranges where `now` differs from `from`, with their bytes (old>new) when short.
+void LogSaveDiff(const char* label, const std::vector<char>& from, const std::vector<char>& now) {
+    std::string ranges;
+    int count = 0;
+    for (std::size_t i = 0; i < now.size() && i < from.size();) {
+        if (now[i] == from[i]) {
+            ++i;
+            continue;
+        }
+        std::size_t j = i;
+        while (j < now.size() && (now[j] != from[j] || (j + 1 < now.size() && now[j + 1] != from[j + 1]))) ++j;
+        if (count++ < 60) {
+            char buf[48];
+            std::snprintf(buf, sizeof(buf), " +%zX:", i);
+            ranges += buf;
+            for (std::size_t k = i; k < j && k < i + 12; ++k) {
+                std::snprintf(buf, sizeof(buf), "%02X>%02X,", static_cast<std::uint8_t>(from[k]), static_cast<std::uint8_t>(now[k]));
+                ranges += buf;
+            }
+        }
+        i = j;
+    }
+    RM_LOGW("itembox: %s: %d ranges:%s", label, count, ranges.c_str());
+}
+std::vector<char> g_saveSwappedIn;  // developer mode: the save data right after the run went in
 
 // Logs the changed ranges, then writes the copy back.
 void RestoreSave() {
@@ -2069,7 +2159,205 @@ bool DeleteItemBox(std::uintptr_t obj) {
     }
 }
 
-void OpenItemBox(const std::vector<std::pair<std::size_t, std::uint32_t>>& pokes = {}) {
+// M7.1: the run inside the screen. While it is open the save data holds the run: Chris's grid is
+// the match inventory, Sheva's grid, the storage and the treasures are empty, and the gold is the
+// run's supplies (x kGoldPerSupply: the game's prices are in hundreds). When it closes the match
+// inventory follows Chris's grid, the supplies follow the gold, and the copy taken before is
+// written back (research/re5-engine-map.md "Save data").
+constexpr std::size_t kSaveGold = 0x1C0;
+// The inventories keep each slot as the match has it (re5_layout.h kSlot*): 0x2C bytes of the
+// 0x30-byte inventory slot, the pointer at +0x00 being the screen's.
+constexpr std::size_t kSaveGridChris = 0x2344C;  // the inventory block the screen edits
+constexpr std::size_t kSaveGridSheva = kSaveGridChris + 0x420;
+// The screen fills the block it edits from one of the other two when it opens: all three get the run.
+constexpr std::size_t kSaveGridBlocks[] = {0x2344C, 0x249DC, 0x2761C};
+constexpr std::size_t kSaveRecordSize = 0x2C;
+constexpr std::size_t kSaveRecordItem = re5::off::kSlotItemId, kSaveRecordCount = re5::off::kSlotCount,
+                      kSaveRecordMax = re5::off::kSlotMax, kSaveRecordCell = kSlotCell,
+                      kSaveRecordUpgrades = re5::off::kSlotUpgrades;
+constexpr int kSaveGridRecords = 10;  // cells 0..8 and the knife (9)
+// 12-byte records (u16 item, u16 count, ...); a purchase lands in the first (+0x3878), what is
+// before it is other data.
+constexpr std::size_t kSaveStorageFrom = 0x3878, kSaveStorageTo = 0x3B00;
+constexpr std::size_t kSaveTreasuresFrom = 0x3B00, kSaveTreasuresTo = 0x3C00;
+constexpr std::int64_t kGoldPerSupply = 100;
+
+struct RunInBox {
+    bool active = false;
+    bool checked = false;   // the screen's first frames showed the run's grid
+    std::int64_t gold = 0;  // what the screen started with
+    std::int64_t remainder = 0;  // gold short of a whole supply, kept for the next visit (same run)
+    std::string runId;
+    // The run's stash: the storage records (12 bytes: u16 item, u16 count, upgrade bytes) the
+    // player left there (bought, or moved out of the grid); back in the storage next visit.
+    std::vector<std::array<std::uint8_t, 12>> stash;
+    std::array<std::uint32_t, kGridCells> cells{};  // the grid written
+};
+RunInBox g_runInBox;
+
+
+void WriteSaveGrid(std::uintptr_t block, const std::array<GridCell, kGridCells>* grid) {
+    for (int r = 0; r < kSaveGridRecords; ++r) {
+        const auto rec = block + static_cast<std::size_t>(r) * kSaveRecordSize;
+        if (ReadOr<std::int32_t>(rec + kSaveRecordCell, -1) == 9) continue;  // the knife stays
+        const GridCell* c = grid != nullptr && r < kGridCells ? &(*grid)[static_cast<std::size_t>(r)] : nullptr;
+        const bool item = c != nullptr && c->record != 0;
+        SafeStore<std::uint32_t>(rec + kSaveRecordItem, item ? c->id : 0);
+        SafeStore<std::int32_t>(rec + kSaveRecordCount, item ? c->count : 0);
+        SafeStore<std::int32_t>(rec + kSaveRecordMax, item ? ItemStackMax(c->id) : 0);
+        SafeStore<std::int32_t>(rec + kSaveRecordCell, r);
+        // The rest of the campaign's slot (two words before the cell, the equipped mark) goes;
+        // the weapon keeps the levels it has in the match.
+        for (const std::size_t field : {std::size_t{0x10}, std::size_t{0x14}, re5::off::kSlotEquipped}) {
+            SafeStore<std::int32_t>(rec + field, 0);
+        }
+        for (const std::size_t word : {std::size_t{0}, std::size_t{4}}) {
+            SafeStore<std::uint32_t>(rec + kSaveRecordUpgrades + word, item ? ReadOr<std::uint32_t>(c->record + re5::off::kSlotUpgrades + word, 0) : 0);
+        }
+    }
+}
+
+// The run goes into the save data (after its copy is taken).
+void PutRunInSave(std::uintptr_t save) {
+    const auto grid = ReadGrid();
+    for (const std::size_t block : kSaveGridBlocks) {
+        WriteSaveGrid(save + block, &grid);
+        WriteSaveGrid(save + block + 0x420, nullptr);  // Sheva
+    }
+    for (int c = 0; c < kGridCells; ++c) {
+        g_runInBox.cells[static_cast<std::size_t>(c)] = grid[static_cast<std::size_t>(c)].record ? grid[static_cast<std::size_t>(c)].id : 0;
+    }
+    g_runInBox.checked = false;
+    for (std::size_t at = kSaveStorageFrom; at < kSaveStorageTo; ++at) SafeStore<std::uint8_t>(save + at, 0);
+    for (std::size_t at = kSaveTreasuresFrom; at < kSaveTreasuresTo; ++at) SafeStore<std::uint8_t>(save + at, 0);
+    if (g_runInBox.runId != g->run->state().run_id) {
+        g_runInBox.runId = g->run->state().run_id;
+        g_runInBox.remainder = 0;
+        g_runInBox.stash.clear();
+    }
+    // The run's stash in the storage (as many records as fit).
+    std::size_t at = kSaveStorageFrom;
+    for (const auto& record : g_runInBox.stash) {
+        if (at + 12 > kSaveStorageTo) break;
+        SafeWrite(save + at, record.data(), record.size());
+        at += 12;
+    }
+    g_runInBox.gold = g->run->Snapshot(Now()).supplies * kGoldPerSupply + g_runInBox.remainder;
+    SafeStore<std::uint32_t>(save + kSaveGold, static_cast<std::uint32_t>(g_runInBox.gold));
+    g_runInBox.active = true;
+    std::string text;
+    for (int c = 0; c < kGridCells; ++c) {
+        if (!grid[static_cast<std::size_t>(c)].record) continue;
+        char buf[24];
+        std::snprintf(buf, sizeof(buf), " %d:%04Xx%d", c, grid[static_cast<std::size_t>(c)].id, grid[static_cast<std::size_t>(c)].count);
+        text += buf;
+    }
+    RM_LOGI("itembox: the run is in the screen (gold %lld; grid%s)", static_cast<long long>(g_runInBox.gold), text.c_str());
+}
+
+// The screen closed: the match inventory follows Chris's grid, the supplies follow the gold
+// (before the save data is restored).
+void TakeRunFromSave(std::uintptr_t save) {
+    if (!g_runInBox.active) return;
+    g_runInBox.active = false;
+    if (!g_runInBox.checked) {
+        // The screen never showed the run: what it holds is not the run's (campaign items).
+        RM_LOGE("itembox: the screen did not show the run's grid; its result is ignored");
+        return;
+    }
+    g->transition.carry.clear();
+    g->transition.cells = {};
+    // What is not in the nine cells (the knife, unarmed) stays as it is.
+    if (const auto player = engine::LocalPlayer()) {
+        const auto inv = player + re5::off::kPlayerInventory;
+        for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+            const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+            if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+            const int cell = ReadOr<std::int32_t>(slot + kSlotCell, -1);
+            if (cell >= 0 && cell < kGridCells) continue;
+            g->transition.carry.emplace_back(ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0), ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0));
+        }
+    }
+    std::string text;
+    for (int r = 0; r < kSaveGridRecords; ++r) {
+        const auto rec = save + kSaveGridChris + static_cast<std::size_t>(r) * kSaveRecordSize;
+        const auto id = ReadOr<std::uint32_t>(rec + kSaveRecordItem, 0);
+        const int count = ReadOr<std::int32_t>(rec + kSaveRecordCount, 0);
+        const int cell = ReadOr<std::int32_t>(rec + kSaveRecordCell, -1);
+        if (id == 0 || cell < 0 || cell >= kGridCells || (id != re5::addr::kItemKnife && count <= 0 && ItemStackMax(id) > 0)) continue;
+        g->transition.carry.emplace_back(id, count);
+        g->transition.cells[static_cast<std::size_t>(cell)] = id;
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), " %d:%04Xx%d", cell, id, count);
+        text += buf;
+        if (ItemStackMax(id) == 0) {  // a weapon: its levels as the screen left them
+            const WeaponLevels levels = SlotLevels(rec);
+            RunLevels()[id] = levels;
+            std::snprintf(buf, sizeof(buf), "[%08X %08X]", levels[0], levels[1]);
+            text += buf;
+        }
+    }
+    RM_LOGI("itembox: the run's grid from the screen:%s", text.c_str());
+    // The storage becomes the run's stash.
+    g_runInBox.stash.clear();
+    std::string stashed;
+    for (std::size_t at = kSaveStorageFrom; at + 12 <= kSaveStorageTo; at += 12) {
+        std::array<std::uint8_t, 12> record{};
+        if (!SafeCopy(record.data(), save + at, record.size())) continue;
+        const std::uint16_t id = static_cast<std::uint16_t>(record[0] | (record[1] << 8));
+        if (id == 0) continue;
+        g_runInBox.stash.push_back(record);
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), " %04X x%u @+%zX [%02X%02X%02X%02X %02X%02X%02X%02X]", id, static_cast<unsigned>(record[2] | (record[3] << 8)),
+                      at, record[4], record[5], record[6], record[7], record[8], record[9], record[10], record[11]);
+        stashed += buf;
+    }
+    // Items given to the partner ("Dar"): a solo run has none, so they go to the stash too.
+    for (int r = 0; r < kSaveGridRecords; ++r) {
+        const auto rec = save + kSaveGridSheva + static_cast<std::size_t>(r) * kSaveRecordSize;
+        const auto id = ReadOr<std::uint32_t>(rec + kSaveRecordItem, 0);
+        const int count = ReadOr<std::int32_t>(rec + kSaveRecordCount, 0);
+        if (id == 0 || id == re5::addr::kItemKnife || ReadOr<std::int32_t>(rec + kSaveRecordCell, -1) >= kGridCells) continue;
+        std::array<std::uint8_t, 12> record{};
+        record[0] = static_cast<std::uint8_t>(id & 0xFF);
+        record[1] = static_cast<std::uint8_t>(id >> 8);
+        record[2] = static_cast<std::uint8_t>(count & 0xFF);
+        record[3] = static_cast<std::uint8_t>((count >> 8) & 0xFF);
+        g_runInBox.stash.push_back(record);
+        char buf[40];
+        std::snprintf(buf, sizeof(buf), " %04X x%d (from the partner)", id, count);
+        stashed += buf;
+    }
+    RM_LOGI("itembox: stash (%zu):%s", g_runInBox.stash.size(), stashed.c_str());
+    const auto wanted = g->transition.carry;
+    ApplyCarriedInventory();
+    // What the match could not take (a gun whose model is not loaded here) goes to the stash.
+    std::map<std::uint32_t, int> have;
+    for (const auto& [id, count] : ReadInventory()) have[id] += count;
+    std::map<std::uint32_t, int> want;
+    for (const auto& [id, count] : wanted) want[id] += count;
+    for (const auto& [id, count] : want) {
+        const int missing = count - (have.count(id) ? have[id] : 0);
+        if (missing <= 0 || id == 0) continue;
+        std::array<std::uint8_t, 12> record{};
+        record[0] = static_cast<std::uint8_t>(id & 0xFF);
+        record[1] = static_cast<std::uint8_t>(id >> 8);
+        record[2] = static_cast<std::uint8_t>(missing & 0xFF);
+        record[3] = static_cast<std::uint8_t>((missing >> 8) & 0xFF);
+        g_runInBox.stash.push_back(record);
+        RM_LOGW("itembox: %04X x%d could not go into the match; kept in the stash", id, missing);
+    }
+    // Supplies follow the gold; what is short of a whole supply waits for the next visit.
+    const auto gold = static_cast<std::int64_t>(ReadOr<std::uint32_t>(save + kSaveGold, 0));
+    const std::int64_t supplies = g->run->Snapshot(Now()).supplies;
+    const std::int64_t delta = gold / kGoldPerSupply - supplies;
+    if (delta != 0) Report(g->run->AdjustSupplies(delta, "native_shop"), "native shop supplies");
+    g_runInBox.remainder = gold % kGoldPerSupply;
+    RM_LOGI("itembox: gold %lld -> %lld: supplies %+lld (%lld gold kept)", static_cast<long long>(g_runInBox.gold),
+            static_cast<long long>(gold), static_cast<long long>(delta), static_cast<long long>(g_runInBox.remainder));
+}
+
+void OpenItemBox(const std::vector<std::pair<std::size_t, std::uint32_t>>& pokes = {}, bool withRun = false) {
     if (!engine::Caps().itemBox) {
         RM_LOGW("itembox: signatures missing");
     } else if (g_itemBox) {
@@ -2084,26 +2372,87 @@ void OpenItemBox(const std::vector<std::pair<std::size_t, std::uint32_t>>& pokes
             if (offset + 4 <= kSaveSnapshotBytes) SafeStore(g_saveSnapshotBase + offset, value);
             RM_LOGW("itembox: save +%zX = %u", offset, value);
         }
+        if (withRun && g->run->HasActiveRun()) PutRunInSave(g_saveSnapshotBase);
+        if (!g->settings.developerMode || !CopySave(g_saveSnapshotBase, g_saveSwappedIn)) g_saveSwappedIn.clear();
         g_itemBox = CreateItemBox();
         RM_LOGW("itembox: created %08X", static_cast<unsigned>(g_itemBox));
         if (!g_itemBox) g_saveSnapshot.clear();
     }
 }
 
+// The SHOP's organize row opens the game's screen when it can here: its signatures, its archive
+// loaded with this stage, and a run between arenas.
+bool NativeItemBoxReady() {
+    return g->settings.nativeItemBox && engine::Caps().itemBox && g->match.inMatch && g->run->phase() == rm::Phase::Shop &&
+           !g_itemBox && resources::ArchiveLoaded("ShopResource");
+}
+
 // Every frame: once the screen reports it is done (obj+0x3C), it goes, as in phase 3.
 void PollItemBox() {
+    static double openedAt = 0.0;
+    static bool paused = false;
+    if (g->itemBoxRequested && !matchui::IsOpen()) {
+        g->itemBoxRequested = false;
+        OpenItemBox({}, true);
+        if (!g_itemBox) {
+            g->shopUiRequested = true;  // it did not open: back to the shop
+        } else {
+            // The world stands still while it is open, as under the mod's own screens.
+            matchui::SetWorldPause(true);
+            paused = true;
+            openedAt = Now();
+        }
+    }
     if (!g_itemBox) return;
+    // Never stuck in it: after 90 s the screen goes (the save data is restored all the same).
+    if (paused && Now() - openedAt > 90.0 && ReadOr<std::uint8_t>(g_itemBox + 0x3C, 0) == 0) {
+        RM_LOGE("itembox: no answer after 90 s; closing it");
+        DeleteItemBox(g_itemBox);
+        g_itemBox = 0;
+        g_runInBox.active = false;
+        RestoreSave();
+        matchui::SetWorldPause(false);
+        paused = false;
+        if (g->run->phase() == rm::Phase::Shop) g->shopUiRequested = true;
+        return;
+    }
     if (!g->match.inMatch) {
         g_itemBox = 0;  // gone with the match
+        g_runInBox.active = false;
         RestoreSave();
         return;
+    }
+    // Once, while it is open: does the block the screen edits hold the run's grid?
+    if (g_runInBox.active && !g_runInBox.checked && g_saveSnapshotBase && ReadOr<std::uint8_t>(g_itemBox + 0x3C, 0) == 0) {
+        static int frames = 0;
+        if (++frames >= 30) {
+            frames = 0;
+            bool same = true;
+            for (int c = 0; c < kGridCells && same; ++c) {
+                const auto rec = g_saveSnapshotBase + kSaveGridChris + static_cast<std::size_t>(c) * kSaveRecordSize;
+                same = ReadOr<std::uint32_t>(rec + kSaveRecordItem, 0) == g_runInBox.cells[static_cast<std::size_t>(c)];
+            }
+            g_runInBox.checked = same;
+            RM_LOGW("itembox: the screen shows %s", same ? "the run's grid" : "another grid (not the run's)");
+            if (!same) g_runInBox.active = false;
+        }
     }
     if (ReadOr<std::uint8_t>(g_itemBox + 0x3C, 0) == 0) return;
     RM_LOGW("itembox: closed (+0x3E %u, +0x5B6C %u, +0x5B6D %u); deleted: %s", ReadOr<std::uint8_t>(g_itemBox + 0x3E, 0),
             ReadOr<std::uint8_t>(g_itemBox + 0x5B6C, 0), ReadOr<std::uint8_t>(g_itemBox + 0x5B6D, 0),
             DeleteItemBox(g_itemBox) ? "yes" : "no");
     g_itemBox = 0;
+    if (std::vector<char> now; !g_saveSwappedIn.empty() && CopySave(g_saveSnapshotBase, now)) {
+        LogSaveDiff("the screen's own changes", g_saveSwappedIn, now);
+    }
+    TakeRunFromSave(g_saveSnapshotBase);
     RestoreSave();
+    // Unpaused here, before the SHOP screen (opened after this tick) asks for its own pause.
+    if (paused) {
+        matchui::SetWorldPause(false);
+        paused = false;
+    }
+    if (g->run->phase() == rm::Phase::Shop) g->shopUiRequested = true;
 }
 
 // Developer automation: <data>\dev.command holds one command per file drop.
@@ -2417,12 +2766,15 @@ void PollDevCommand(double now) {
         std::vector<std::pair<std::size_t, std::uint32_t>> pokes;
         std::istringstream in(command.substr(7));
         std::string word, offset, value;
+        bool withRun = false;
         while (in >> word) {
             if (word == "poke" && in >> offset >> value) {
                 pokes.emplace_back(std::strtoul(offset.c_str(), nullptr, 16), static_cast<std::uint32_t>(std::strtoul(value.c_str(), nullptr, 10)));
+            } else if (word == "run") {
+                withRun = true;  // "itembox run": the run's inventory and supplies in the screen
             }
         }
-        OpenItemBox(pokes);
+        OpenItemBox(pokes, withRun);
     } else if (command.rfind("savedump", 0) == 0) {
         // "savedump [hex bytes]": the game's save data ([kSaveData], plain in memory; the file is
         // obfuscated) to <data>\savedump.bin, for offline study (M7.1: what the item box shows).
@@ -2607,8 +2959,8 @@ void PollDevCommand(double now) {
             if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
             std::uint32_t raw[12]{};
             for (int k = 0; k < 12; ++k) SafeRead(slot + k * 4, raw[k]);
-            RM_LOGW("dev inv slot %2d: item %04X count %d max %d | %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X",
-                    i, ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0),
+            RM_LOGW("dev inv slot %2d @%08X: item %04X count %d max %d | %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X %08X",
+                    i, static_cast<unsigned>(slot), ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0),
                     ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0), ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0),
                     raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7], raw[8], raw[9], raw[10], raw[11]);
         }
@@ -2816,6 +3168,10 @@ private:
         if (g->matchUiOpenRequested) {
             g->matchUiOpenRequested = false;
             matchui::Open(nativemenu::ScreenId::MatchResults);  // builds the screen under the mutex itself
+        }
+        if (g->shopUiRequested) {
+            g->shopUiRequested = false;
+            matchui::Open(nativemenu::ScreenId::MatchShop);
         }
     }
 

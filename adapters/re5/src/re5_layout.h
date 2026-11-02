@@ -252,6 +252,10 @@ constexpr std::size_t kSlotCount = 0x8;    // int32
 constexpr std::size_t kSlotMax = 0xC;      // int32 stack capacity
 constexpr std::size_t kSlotValid = 0x29;   // uint8 == 1 for a used slot
 constexpr std::size_t kSlotEquipped = 0x1C;  // int32 == 1 for the weapon in the player's hands
+// A weapon's upgrade levels, one byte per stat over two uint32 (M92F: byte 0 firepower, 2 reload,
+// 3 capacity, 5 critical); read live (a reload fills to the capacity level). Mercenaries guns come
+// with levels set (M92F 0A000005 00000200: capacity 10 = 50 rounds).
+constexpr std::size_t kSlotUpgrades = 0x20;
 // Scene manager ([addr::kSceneManager]): pending scene request and its argument.
 constexpr std::size_t kSceneRequest = 0xF8;
 constexpr std::size_t kSceneRequestArg = 0xFC;
