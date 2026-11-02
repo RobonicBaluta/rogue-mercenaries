@@ -43,6 +43,7 @@ set(RM_RE5_SOURCES
     src/hooks_d3d9.cpp
     src/overlay.cpp
     src/icons.cpp
+    src/portraits.cpp
     src/settings.cpp
     src/dev_audio.cpp
     src/dev_capture.cpp

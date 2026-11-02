@@ -101,6 +101,7 @@ struct RowDraw {
 };
 std::mutex g_rowMutex;
 std::array<RowDraw, 8> g_rowDraws{};
+std::atomic<int> g_cursorPortrait{-1};
 
 // ---- borrowed messages -------------------------------------------------------
 
@@ -390,6 +391,8 @@ void SyncRows(std::uintptr_t self) {
         if (item.locked) t_lockedRows |= 1u << r;
         t_rowColors[r] = item.color;
     }
+    const int portrait = n > 0 ? g_screen.items[static_cast<std::size_t>(level.cursor)].portrait : -1;
+    g_cursorPortrait = portrait >= 0 ? portrait : g_screen.portrait;
     {
         std::lock_guard lock(g_rowMutex);
         for (int r = 0; r < kMaxRows; ++r) {
@@ -684,6 +687,8 @@ std::vector<RowIcon> VisibleRowIcons() {
     }
     return out;
 }
+
+int CursorPortrait() { return g_modMenu.load() && MenuAtInput() ? g_cursorPortrait.load() : -1; }
 
 bool SetItemBoxLabels(const std::string& first, const std::string& second) {
     std::lock_guard lock(g_textMutex);

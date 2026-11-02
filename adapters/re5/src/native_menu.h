@@ -21,12 +21,14 @@ struct Item {
     bool locked = false;  // drawn in the game's "disabled" red
     std::uint32_t color = 0;  // 0xAARRGGBB rarity colour (0 = the game's own)
     std::string icon;   // icons\<icon>.png drawn left of the label by the overlay (empty = none)
+    int portrait = -1;  // costume slot whose bust the overlay shows while the cursor is here
 };
 
 struct Screen {
     std::string header;  // small line above the list
     std::vector<Item> items;
     std::string empty_help;  // help line when there are no items
+    int portrait = -1;       // bust shown when the cursor row has none (-1 = none)
 };
 
 enum class Outcome {
@@ -92,6 +94,9 @@ struct RowIcon {
 };
 /// Empty unless the mod menu is up and waiting for input (no icons over its fades).
 std::vector<RowIcon> VisibleRowIcons();
+/// The costume slot whose bust goes with the cursor row (its own, else the screen's); -1 when
+/// there is none or the mod menu is not up and waiting for input.
+int CursorPortrait();
 /// The game's Organize/Buy screen labels its two grids with mes_system 2366 and 2367 ("Chris",
 /// "Sheva"); these texts stand in for them until RestoreItemBoxLabels. False (labels kept) when
 /// the messages are not loaded or are not those names.

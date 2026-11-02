@@ -1,5 +1,5 @@
 {
-  "_comment": "Playable characters. Every character and skin is available from the start (the challenge fields unlock_kind/unlock_count/unlock_text/unlock_character, see core/include/rm/characters.h, are kept for later). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin only adds its small trait (a 'skin' perk) and its costume_index (verified: chris 0, 1, 2, sheva 3). Text shown by the game font: letters, digits, space, comma and period only.",
+  "_comment": "Playable characters. Every character and skin is available from the start (the challenge fields unlock_kind/unlock_count/unlock_text/unlock_character, see core/include/rm/characters.h, are kept for later). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin only adds its small trait (a 'skin' perk) and its costume_index (the class and the model each slot loads, checked in game: 0..2 and 10 Heavy Metal, 14 Warrior Chris; 3 and 11 Fairy Tale, 15 Business Sheva; 9 Wesker S.T.A.R.S.; 12 Josh, 13 Excella, 16 Barry, 17 Rebecca). Text shown by the game font: letters, digits, space, comma and period only.",
   "schema_version": 1,
   "characters": [
     {
@@ -85,13 +85,13 @@
         {
           "id": "sheva_business",
           "name": "Business",
-          "costume_index": 11,
+          "costume_index": 15,
           "starting_passive": "sheva_business_trait"
         },
         {
           "id": "sheva_fairy_tale",
           "name": "Fairy Tale",
-          "costume_index": 15
+          "costume_index": 11
         }
       ]
     },

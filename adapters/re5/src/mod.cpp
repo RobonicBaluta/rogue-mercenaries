@@ -27,6 +27,7 @@
 #include "engine.h"
 #include "imgui.h"
 #include "icons.h"
+#include "portraits.h"
 #include "imgui_internal.h"
 #include "log.h"
 #include "memory.h"
@@ -575,6 +576,21 @@ std::string SkinForRun(const std::vector<rm::CharacterAvailability>& characters,
     return skin ? skin->id : std::string();
 }
 
+// The costume slot a character would wear: its chosen skin if it is the selected character,
+// else its default.
+int CostumeOf(const std::vector<rm::CharacterAvailability>& characters, std::size_t index) {
+    const auto& c = characters[index];
+    const rm::SkinAvailability* skin = static_cast<int>(index) == g->selectedCharacter ? SelectedSkin(c) : nullptr;
+    return static_cast<int>(skin && skin->costume_index >= 0 ? skin->costume_index : c.costume_index);
+}
+
+// The selected character's costume slot (-1 = none selected).
+int SelectedCostume(rm::RunController& run) {
+    const auto characters = run.Characters();
+    if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) return -1;
+    return CostumeOf(characters, static_cast<std::size_t>(g->selectedCharacter));
+}
+
 // Screens of the native menu, built from the run controller. Called on the
 // game's menu thread, so everything happens under the mod mutex.
 class MenuModel final : public nativemenu::Model {
@@ -603,6 +619,7 @@ private:
         switch (id) {
             case ScreenId::Main:
                 screen.header = "ROGUE MERCENARIES   " + Upper(CreditsLine());
+                screen.portrait = SelectedCostume(run);
                 screen.items = {
                     {"START RUN", "Solo Mercenaries on any stage. Pick your character,\nthe run starts with the match."},
                     {"CHARACTERS", "Choose who you play. Locked characters show\nhow to unlock them."},
@@ -617,6 +634,7 @@ private:
                     const auto& c = characters[i];
                     Item item;
                     item.label = Upper(c.name);
+                    item.portrait = CostumeOf(characters, i);
                     if (c.gate == rm::CharacterGate::Selectable) {
                         const bool selected = static_cast<int>(i) == g->selectedCharacter;
                         if (selected) item.label += "   SELECTED";
@@ -641,6 +659,7 @@ private:
             case ScreenId::Perks: {
                 // One slot per category; each row opens that category's list.
                 screen.header = "PERKS   " + Upper(CreditsLine());
+                screen.portrait = SelectedCostume(run);
                 const std::string character = SelectedCharacterId(run);
                 for (rm::PerkCategory c : kSlotCategories) {
                     Item item;
@@ -657,6 +676,7 @@ private:
                 const std::string character = SelectedCharacterId(run);
                 screen.header = Upper(std::string(rm::PerkCategoryName(g->perkCategory))) + "   " + Upper(CreditsLine());
                 screen.empty_help = "No perk of this kind for this character yet.";
+                screen.portrait = SelectedCostume(run);
                 const rm::PerkDef* equipped = character.empty() ? nullptr : run.EquippedPerk(character, g->perkCategory);
                 for (const rm::PerkDef* perk : MenuPerks(run, g->perkCategory)) {
                     Item item;
@@ -794,6 +814,7 @@ private:
                 for (const auto& s : c.skins) {
                     Item item;
                     item.label = Upper(s.name);
+                    item.portrait = static_cast<int>(s.costume_index);
                     if (s.gate == rm::CharacterGate::Selectable) {
                         const bool selected = current != nullptr && current->id == s.id;
                         if (selected) item.label += "   SELECTED";
@@ -3587,6 +3608,7 @@ void ModInit(const Paths& paths, const Settings& settings) {
 
     auto loaded = rm::Content::LoadFromDirectory(paths.configDir);
     icons::SetDirectory(paths.configDir / L"icons");
+    portraits::SetGameDirectory(paths.gameDir);
     for (const auto& w : loaded.warnings) RM_LOGW("content: %s", w.c_str());
     for (const auto& e : loaded.errors) RM_LOGE("content: %s", e.c_str());
     g->contentErrors = loaded.errors;
@@ -3683,6 +3705,45 @@ void DrawMenuIcons() {
     }
 }
 
+// The bust that goes with the cursor row, on the left of the Play menu as on the game's own
+// character select: same canvas mapping as the icons, the cut-off bottom faded out.
+constexpr float kPortraitLeft = -40.0f;  // canvas units
+constexpr float kPortraitTop = 96.0f;
+constexpr float kPortraitHeight = 440.0f;
+constexpr float kPortraitFade = 0.3f;    // of the height, at the bottom
+
+void DrawMenuPortrait() {
+    IDirect3DDevice9* device = overlay::FrameDevice();
+    const int costume = nativemenu::CursorPortrait();
+    if (!device || costume < 0) return;
+    const portraits::Portrait p = portraits::Get(device, costume);
+    if (!p.texture || p.height <= 0) return;
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const float k = std::min(display.x / 1280.0f, display.y / 720.0f);
+    const float ox = (display.x - 1280.0f * k) * 0.5f;
+    const float oy = (display.y - 720.0f * k) * 0.5f;
+    const float w = kPortraitHeight * static_cast<float>(p.width) / static_cast<float>(p.height);
+    const float x0 = ox + kPortraitLeft * k, x1 = ox + (kPortraitLeft + w) * k;
+    const float y0 = oy + kPortraitTop * k, y2 = oy + (kPortraitTop + kPortraitHeight) * k;
+    const float y1 = y0 + (y2 - y0) * (1.0f - kPortraitFade);
+    const float v1 = 1.0f - kPortraitFade;
+    ImDrawList* list = ImGui::GetBackgroundDrawList();
+    list->PushTextureID(static_cast<ImTextureID>(p.texture));
+    list->PrimReserve(12, 8);
+    const ImU32 solid = IM_COL32(255, 255, 255, 255), clear = IM_COL32(255, 255, 255, 0);
+    // Two quads: the upper part opaque, the lower part from opaque to clear.
+    const struct { float ya, yb, va, vb; ImU32 ca, cb; } parts[] = {{y0, y1, 0.0f, v1, solid, solid}, {y1, y2, v1, 1.0f, solid, clear}};
+    for (const auto& q : parts) {
+        const auto base = static_cast<ImDrawIdx>(list->_VtxCurrentIdx);
+        list->PrimWriteVtx(ImVec2(x0, q.ya), ImVec2(0.0f, q.va), q.ca);
+        list->PrimWriteVtx(ImVec2(x1, q.ya), ImVec2(1.0f, q.va), q.ca);
+        list->PrimWriteVtx(ImVec2(x1, q.yb), ImVec2(1.0f, q.vb), q.cb);
+        list->PrimWriteVtx(ImVec2(x0, q.yb), ImVec2(0.0f, q.vb), q.cb);
+        for (const int i : {0, 1, 2, 0, 2, 3}) list->PrimWriteIdx(static_cast<ImDrawIdx>(base + i));
+    }
+    list->PopTextureID();
+}
+
 void DrawUnguarded();
 
 void ModDraw() {
@@ -3710,6 +3771,7 @@ void DrawUnguarded() {
         ImGui::End();
         return;
     }
+    DrawMenuPortrait();
     DrawMenuIcons();
     std::lock_guard lock(g->mutex);
     const rm::RunSnapshot snapshot = g->run->Snapshot(Now());

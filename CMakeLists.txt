@@ -44,6 +44,7 @@ add_library(rm_core STATIC
     core/common/capabilities.cpp
     core/common/rarity.cpp
     core/common/status.cpp
+    core/common/inflate.cpp
     core/rng/rng.cpp
     core/content/content_loader.cpp
     core/characters/characters.cpp
@@ -93,6 +94,7 @@ if(RM_BUILD_TESTS)
         tests/test_items.cpp
         tests/test_director.cpp
         tests/test_run_map.cpp
+        tests/test_inflate.cpp
     )
     target_link_libraries(rm_tests PRIVATE rm_core rm_json rm_catch2)
     target_compile_definitions(rm_tests PRIVATE RM_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
