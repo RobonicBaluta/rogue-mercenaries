@@ -16,11 +16,11 @@ means; a fully homemade mode is fine. This has to ship.*
 - **Title**: a ROGUE MERCENARIES entry in the Play menu opening the mod's own menus:
   characters and skins with a preview (model or portrait), perks with icons in three slots
   (style, supply, support), meta currency, unlocks, records.
-- **A run**: a sequence of arenas (Mercenaries maps and campaign areas), chosen in the world,
-  ending in a boss. No countdown, no score, no Mercenaries results.
+- **A run**: a sequence of arenas (Mercenaries maps and campaign areas), chosen in the NEXT
+  ROUTE menu, ending in a boss. No countdown, no score, no Mercenaries results.
 - **An arena**: the mod's director spawns exactly the enemies the arena defines (types,
-  counts, waves, positions), counts every death (any cause), places chests, then opens the
-  exits. Health, inventory and layout carry over.
+  counts, waves, positions), counts every death (any cause) and places chests. Health,
+  inventory and layout carry over.
 - **Between arenas**: the game's own Organize/Buy screen (or one indistinguishable from it):
   buy, sell, upgrade, rearrange; rewards in chests and in that screen.
 - **Character identity**: perks change how a character plays (grab immunity with a cost,
@@ -45,7 +45,7 @@ weapons/enemies are limited to what the stage loaded; the arena ends through the
 time-up; the shop and route are list screens.
 
 Missing: campaign areas, bosses, custom icons and
-previews, the native organize/buy screen, in-world route choice.
+previews, the native organize/buy screen.
 
 ## 3. Architecture: the Rogue mode layer
 
@@ -86,7 +86,7 @@ Each line is a research spike with a concrete starting point and a test that clo
 | E7 | The game's Organize/Buy screen | `uIdItemBox00` (vtable `0x00FA60A8`, `0x00A07980`) opens only in the chapter flow (`0x00BF22A0`); creating screens outside their context freezes | open it in its own context: between arenas as a chapter-style transition (campaign host) or by reproducing what the chapter flow loads first (its layout/texture set) before creating it; map supplies to the screen's gold | buy, sell, upgrade and rearrange in the game's own screen between two arenas |
 | E8 | Custom icons and sprites | menus draw the game's text; `sLayoutSpr`, `rLayout`, `rLayoutSpr`, `cSprite` children in screens | load our own textures (an `.arc` in `nativePC` loaded through `sResource`) and draw them with the game's sprite routine; fallback: draw textured quads in the D3D9 present hook, styled like the game | perk icons visible next to the perk rows in the PERKS screen |
 | E9 | Character/skin preview | the game's character select (`uIdStartUp22`) shows the model for a costume slot | host the preview in that screen with our selection driving it; fallback: portraits as E8 textures | choosing a skin shows its model or portrait |
-| E10 | World objects: chests and exits (chests done 2026-11-02: `research/re5-engine-map.md` "World objects") | pickups are `uOm08xx` (descriptors at `0x00EF0CA0`…), time-bonus action `0x00AD9130` | same path as E1 for objects (find the om manager's create and `cSetInfoOm…` descriptors, `cSetInfoOmArea`) | the director places a chest and an exit object where the arena says |
+| E10 ✔ | World objects: chests (done 2026-11-02; exits dropped, see M4.2: `research/re5-engine-map.md` "World objects") | pickups are `uOm08xx` (descriptors at `0x00EF0CA0`…), time-bonus action `0x00AD9130` | same path as E1 for objects (find the om manager's create and `cSetInfoOm…` descriptors, `cSetInfoOmArea`) | the director places a chest and an exit object where the arena says |
 | E11 | Bosses | boss classes and their setup descriptors exist (`cSetInfoEm4x/6x/8x…`) | per boss: spawn through E1 with E3 resources in a fitting arena; script dependencies listed per boss | one boss fight as the last arena of a run |
 | E12 | Perk mechanics | kills, damage, heal, items done; missing grab, move speed, weapon category damage | grab: the `cEm…PlEvent_Catch`/`_PL` actions (refuse or shorten a grab); move speed: player motion rate field; weapon category: equipped record id → category (done) | each mechanic used by a perk works in game |
 
@@ -134,11 +134,14 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    mod creates the time-bonus statue itself (uOm0100 through sObjModel, as the stage's set spawn does);
    in a run the stage's own statues stay off and each arena places `chests.per_arena` (3) of the map's
    chest positions (`maps.json` `chests`, where the game puts its statues).
-2. Exits as objects: walking into one picks the next arena (in-world route choice).
+2. ~~Exits as objects: walking into one picks the next arena (in-world route choice).~~ Dropped
+   2026-11-02 by the user: tried as larger exit statues to break after the shop (one per route,
+   the HUD naming the nearest), which was awkward to reach and aim at and not fun; the route
+   stays the NEXT ROUTE menu. The attempt is not in the code.
 
 ### M5 — Arenas beyond Mercenaries
 1. E6 spike: load one campaign area directly with the player placed and scripts off.
-2. Arena catalogue: Mercenaries maps + selected campaign areas with spawn points and exits.
+2. Arena catalogue: Mercenaries maps + selected campaign areas with spawn points and chest positions.
 3. Run map: branching arenas with difficulty tiers.
 
 ### M6 — Bosses
