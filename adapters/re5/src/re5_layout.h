@@ -363,6 +363,10 @@ inline constexpr Signature kSignatures[] = {
     {"merc_kill_cap", 0x007178FD, "39 90 8C 05 00 00 7C 0A C7 87 D4 04 00 00 01 00"},
     {"cockpit_draw_timer", addr::kFnCockpitDrawTimer, "51 A1 A4 40 23 01 F7 80 38 04 01 00 00 04 00 70 57 8B F9 0F 85"},
     {"cockpit_move_slot", 0x00F9E498, "C0 8F 9F 00"},
+    // The timer draw's digit tables: templates 0..9 = cockpit sprites 276..285; targets
+    // (hundredths, seconds, minutes, units first) = 291..286.
+    {"cockpit_digit_templates", 0x01122BF8, "14 01 00 00 15 01 00 00 16 01 00 00 17 01 00 00 18 01 00 00 19 01 00 00 1A 01 00 00 1B 01 00 00 1C 01 00 00 1D 01 00 00"},
+    {"cockpit_digit_targets", 0x01122C20, "23 01 00 00 22 01 00 00 21 01 00 00 20 01 00 00 1F 01 00 00 1E 01 00 00"},
     {"merce_hud_draw", addr::kFnMerceHudDraw,
      "51 53 55 56 8B E9 57 8D 5D 44 C7 44 24 10 02 00 00 00 8B 03 8B 0D 34 23 1B 01 50 E8"},
     {"layout_page_elements", addr::kFnLayoutPageElements, "8B 44 24 04 83 F8 5C 73 19 8B 44 81 20 85 C0 74 11 8B 40 08 85 C0 74 0A"},

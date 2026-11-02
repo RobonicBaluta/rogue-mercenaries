@@ -8,8 +8,11 @@
 
 #include <MinHook.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cstdint>
+#include <utility>
 
 #include "engine.h"
 #include "hooks.h"
@@ -76,11 +79,48 @@ using DrawFn = void(__thiscall*)(std::uintptr_t self);
 DrawFn g_origCockpitTimer = nullptr;
 DrawFn g_origMerceHud = nullptr;
 
+std::atomic<int> g_counter{-1};
+
+// Cockpit sprites (children at +0x12D0): digit templates 0..9, and the clock's big seconds
+// digits (tens, units) centred where the clock was. The minutes, hundredths and the two
+// separators (292, 293) stay off.
+constexpr std::size_t kCockpitSprites = 0x12D0;
+constexpr int kDigitTemplate0 = 276;
+constexpr int kClockSecondsTens = 288;
+constexpr int kClockSecondsUnits = 289;
+constexpr std::size_t kSpriteDraw = 0x8;
+constexpr std::size_t kSpriteUv = 0x24;  // 16 bytes: the source rectangle
+constexpr std::size_t kCockpitShowTimer = 0x344;
+
+std::uintptr_t CockpitSprite(std::uintptr_t cockpit, int index) {
+    return ReadOr<std::uintptr_t>(cockpit + kCockpitSprites + static_cast<std::size_t>(index) * 4, 0);
+}
+
 // The cockpit's move clears its sprites' draw bytes every frame, so a skipped timer draw
-// leaves the clock off screen.
+// leaves the clock off screen. In a run the same two digits show the mod's counter instead,
+// under the conditions the timer draw itself checks (a match with a timer, nothing paused).
 void __fastcall CockpitTimerDetour(std::uintptr_t self, void*) {
-    if (g_hideHud.load()) return;
-    g_origCockpitTimer(self);
+    if (!g_hideHud.load()) {
+        g_origCockpitTimer(self);
+        return;
+    }
+    const int counter = g_counter.load();
+    const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+    if (counter < 0 || !app || (ReadOr<std::uint32_t>(app + re5::off::kAppFlags, ~0u) & 0x70000400u) != 0 ||
+        (ReadOr<std::uint32_t>(app + re5::off::kAppFlags + 4, ~0u) & 0x8000u) != 0 ||
+        ReadOr<std::uint8_t>(self + kCockpitShowTimer, 0) == 0) {
+        return;
+    }
+    const int value = std::min(counter, 99);
+    const std::pair<int, int> digits[] = {{kClockSecondsTens, value / 10}, {kClockSecondsUnits, value % 10}};
+    for (const auto& [target, digit] : digits) {
+        const std::uintptr_t sprite = CockpitSprite(self, target);
+        const std::uintptr_t glyph = CockpitSprite(self, kDigitTemplate0 + digit);
+        std::array<std::uint32_t, 4> uv{};
+        if (!sprite || !glyph || !SafeRead(glyph + kSpriteUv, uv)) continue;
+        SafeStore(sprite + kSpriteUv, uv);
+        SafeStore(sprite + kSpriteDraw, std::uint8_t{1});
+    }
 }
 
 using PageElementsFn = std::uintptr_t(__thiscall*)(std::uintptr_t layout, std::uint32_t page);
@@ -133,6 +173,7 @@ void __fastcall TimeBonusActionDetour(std::uintptr_t self, void*) {
 
 void SetMercTimerFloor(float seconds) { g_floor = seconds; }
 void SetMercHudHidden(bool hidden) { g_hideHud = hidden; }
+void SetMercHudCounter(int value) { g_counter = value; }
 void SuppressMercAddTime(bool suppress) { g_suppressAddTime = suppress; }
 int TakeTimeBonusPickups() { return g_pickups.exchange(0); }
 void SimulateTimeBonusPickup() { g_pickups.fetch_add(1); }

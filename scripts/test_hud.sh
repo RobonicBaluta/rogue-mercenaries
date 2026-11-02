@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Developer check (ROADMAP M2.1): a run shows no Mercenaries clock or score, the game's kill cap
+# Developer check (ROADMAP M2.1/M2.2): a run shows no Mercenaries clock or score but the mod's HUD, the game's kill cap
 # no longer ends the match, and the stage change into arena 2 keeps both off screen. Needs the
 # game at the Play menu with a dev adapter config (build/restart_to_play_menu.sh
 # configs/adapter.director.json). Saves the profile first; closes the game and restores it at the end.
@@ -36,6 +36,8 @@ cap 03-after-kill-cap
 since | grep -E "kill cap held off|countdown forced|merckills|mercenaries kill" | cut -c1-160
 since | grep -q "countdown forced" && echo "FAIL: the match ended" || echo "match still running at 160 kills"
 dev "merckills 0"
+dev killall; sleep 2; cap 03b-counter-after-kills
+dev chest; sleep 0.5; cap 03c-chest-notice
 for _ in $(seq 1 60); do
     since | grep -q -- "-> arena_results" && break
     dev killall; sleep 4

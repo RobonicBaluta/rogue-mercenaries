@@ -90,6 +90,7 @@ struct MercTimerView {
 };
 void SetMercTimerFloor(float seconds);  // <= 0 disables the floor; > 0 also holds off the kill cap
 void SetMercHudHidden(bool hidden);     // clock and score panels off screen
+void SetMercHudCounter(int value);      // hidden HUD: 0..99 in the clock's big digits, < 0 none
 void RequestMercMatchEnd();
 void ClearMercMatchEnd();  // drop a pending request (a new match must not inherit it)
 void SuppressMercAddTime(bool suppress);  // countdown bonuses ignored (a run holds the countdown)

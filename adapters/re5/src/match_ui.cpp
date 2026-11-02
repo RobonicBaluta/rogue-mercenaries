@@ -38,11 +38,19 @@ constexpr int kHeaderY = 150;
 constexpr int kFirstRowY = 230;
 constexpr int kRowPitch = 42;
 constexpr int kHelpY = 600;
-constexpr int kStatusY = 36;
+// HUD (1280x720 canvas, x = text centre): the Mercenaries HUD put the score at 100..347 and
+// the combo at 923..1127 (y 117..160) and the clock's big digits at 613..667 (y 110..163).
+constexpr int kNoticeY = 36;
+constexpr int kSideY = 128;
+constexpr int kLeftX = 224;
+constexpr int kRightX = 1056;
+constexpr int kCenterY = 176;
 constexpr float kHeaderScale = 0.55f;
 constexpr float kRowScale = 0.5f;
 constexpr float kHelpScale = 0.42f;
-constexpr float kStatusScale = 0.38f;
+constexpr float kNoticeScale = 0.38f;
+constexpr float kSideScale = 0.46f;
+constexpr float kCenterScale = 0.36f;
 constexpr std::uint32_t kWhite = 0xFFFFFFFFu;
 constexpr std::uint32_t kSelected = 0xFFFFD27Fu;
 constexpr std::uint32_t kLocked = 0xFFFF5050u;
@@ -63,7 +71,7 @@ struct Level {
 std::mutex g_mutex;  // the game thread (move) and the mod tick
 std::vector<Level> g_stack;
 Screen g_screen;
-std::string g_status;
+Hud g_hud;
 bool g_dirty = false;
 bool g_latch = false;
 
@@ -197,14 +205,30 @@ void __fastcall PauseMoveDetour(std::uintptr_t self, void*) {
     if (!blockPause) g_origMove(self, nullptr);
     if (!g_enabled.load()) return;
     std::lock_guard lock(g_mutex);
-    const bool wantsTexts = (g_open.load() && !g_stack.empty()) || !g_status.empty();
+    const bool hud = !g_hud.notice.empty() || !g_hud.left.empty() || !g_hud.center.empty() || !g_hud.right.empty();
+    const bool wantsTexts = (g_open.load() && !g_stack.empty()) || hud;
     nativemenu::HoldTexts(wantsTexts);
     if (!wantsTexts || !nativemenu::TextsReady()) return;
     if (g_open.load() && !g_stack.empty()) {
         Frame(self);
     } else {
-        nativemenu::SetSlotText(nativemenu::kHelpSlot, g_status);
-        Draw(self, nativemenu::kHelpSlot, 640, kStatusY, kStatusScale, kWhite);
+        // Row slots 0..2 and the help slot; an opening screen rewrites them all (Rebuild).
+        const struct {
+            const std::string& text;
+            int slot, x, y;
+            float scale;
+            std::uint32_t argb;
+        } texts[] = {
+            {g_hud.notice, nativemenu::kHelpSlot, 640, kNoticeY, kNoticeScale, kWhite},
+            {g_hud.left, 0, kLeftX, kSideY, kSideScale, kWhite},
+            {g_hud.center, 1, 640, kCenterY, kCenterScale, kDim},
+            {g_hud.right, 2, kRightX, kSideY, kSideScale, kWhite},
+        };
+        for (const auto& t : texts) {
+            if (t.text.empty()) continue;
+            nativemenu::SetSlotText(t.slot, t.text);
+            Draw(self, t.slot, t.x, t.y, t.scale, t.argb);
+        }
     }
 }
 
@@ -249,9 +273,9 @@ void Close() {
 
 bool IsOpen() { return g_open.load(); }
 
-void SetStatus(const std::string& line) {
+void SetHud(const Hud& hud) {
     std::lock_guard lock(g_mutex);
-    g_status = line;
+    g_hud = hud;
 }
 
 void SetWorldPause(bool paused) {

@@ -1647,20 +1647,26 @@ void UpdateMatchStatus() {
                          phase == rm::Phase::Shop || phase == rm::Phase::RouteSelection ||
                          phase == rm::Phase::RunComplete;
     if (matchui::IsOpen() && (!run.HasActiveRun() || !between || !g->match.inMatch)) matchui::Close();
-    std::string line;
+    matchui::Hud hud;
+    int counter = -1;
     if (g->settings.nativeMatchUi && run.HasActiveRun() && g->match.inMatch) {
         const rm::RunSnapshot s = run.Snapshot(Now());
-        if (phase == rm::Phase::ArenaActive && Now() < g->noticeUntil) {
-            line = g->notice;
-        } else if (phase == rm::Phase::ArenaActive) {
-            line = "ARENA " + std::to_string(s.arena) + " OF " + std::to_string(s.arena_count) + "   " +
-                   std::to_string(s.remaining) + (s.remaining == 1 ? " ENEMY LEFT   " : " ENEMIES LEFT   ") +
-                   std::to_string(s.supplies) + " SUPPLIES";
+        if (phase == rm::Phase::ArenaActive) {
+            // With the game's clock hidden its big digits count the enemies left; otherwise
+            // the number goes into the label.
+            const bool digits = engine::Caps().mercHud && !g->settings.mercHud;
+            counter = digits ? s.remaining : -1;
+            hud.left = "ARENA " + std::to_string(s.arena) + " OF " + std::to_string(s.arena_count);
+            hud.center = (digits ? std::string() : std::to_string(s.remaining) + " ") +
+                         (s.remaining == 1 ? "ENEMY LEFT" : "ENEMIES LEFT");
+            hud.right = std::to_string(s.supplies) + " SUPPLIES";
+            if (Now() < g->noticeUntil) hud.notice = g->notice;
         } else if (phase == rm::Phase::RouteSelection && run.state().route_chosen) {
-            line = "NEXT STAGE LOADING";
+            hud.notice = "NEXT STAGE LOADING";
         }
     }
-    matchui::SetStatus(line);
+    SetMercHudCounter(counter);
+    matchui::SetHud(hud);
 }
 
 void SettleFinishedRun() {

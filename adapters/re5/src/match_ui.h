@@ -20,8 +20,16 @@ void Open(nativemenu::ScreenId first);
 void Close();
 bool IsOpen();
 
-/// Status line drawn at the top during a match (empty = nothing).
-void SetStatus(const std::string& line);
+/// The fight's HUD texts in the game's font, laid out like the Mercenaries HUD: the arena on
+/// the left (where the score was), a label under the counter in the clock's place, supplies
+/// on the right (where the combo was) and a notice line above. Empty texts are not drawn.
+struct Hud {
+    std::string notice;
+    std::string left;
+    std::string center;
+    std::string right;
+};
+void SetHud(const Hud& hud);
 
 /// Developer: the world-pause request bit the pause menu uses.
 void SetWorldPause(bool paused);

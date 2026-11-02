@@ -122,7 +122,8 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.mercHud = g_caps.mercCountdown && SignatureOk("merc_kill_cap") && SignatureOk("cockpit_draw_timer") &&
                      SignatureOk("cockpit_move_slot") && SignatureOk("merce_hud_draw") &&
                      SignatureOk("layout_page_elements") && SignatureOk("layout_set_element_draw") &&
-                     SignatureOk("layout_element_count");
+                     SignatureOk("layout_element_count") && SignatureOk("cockpit_digit_templates") &&
+                     SignatureOk("cockpit_digit_targets");
     return all;
 }
 

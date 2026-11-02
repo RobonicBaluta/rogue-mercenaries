@@ -115,7 +115,9 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
 1. ~~E4: remove the countdown and score from the screen and every path that ends the match.~~ Done 2026-11-02:
    no clock, score or combo on screen for the whole run; the countdown stays held and the game's
    150-kill cap is held off, so only the mod (or the player's death) ends a run's match.
-2. Replace the status line with a small HUD in the game's style (arena, wave, kills left).
+2. ~~Replace the status line with a small HUD in the game's style (arena, wave, kills left).~~ Done 2026-11-02:
+   the clock's own big orange digits count the enemies left, with the arena where the score was and the
+   supplies where the combo was. Waves come with M6 (the director refills continuously until then).
 
 ### M3 — Resources
 1. E3 spike: preload one enemy type and one weapon during an arena's loading.
