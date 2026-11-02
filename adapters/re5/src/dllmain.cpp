@@ -16,6 +16,7 @@
 #include "match_ui.h"
 #include "director.h"
 #include "resources.h"
+#include "world.h"
 #include "mod.h"
 #include "overlay.h"
 #include "probe.h"
@@ -101,6 +102,7 @@ DWORD WINAPI Worker(LPVOID) {
         if (settings.nativeMatchUi) matchui::Install();
         director::Install();
         resources::Install();
+        world::Install();
         if (settings.directStart) autopilot::Install();
     }
     if (settings.developerMode && settings.devMenuProbe && engine::Caps().buildIdentity) {

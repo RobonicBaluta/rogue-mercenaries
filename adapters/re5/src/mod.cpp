@@ -35,6 +35,7 @@
 #include "match_ui.h"
 #include "director.h"
 #include "resources.h"
+#include "world.h"
 #include "mod.h"
 #include "overlay.h"
 #include "probe.h"
@@ -153,6 +154,7 @@ struct ModState {
     MatchState match;
     bool arenaEndRequested = false;  // timer forced to 0 after a clear
     bool devQuiet = false;           // developer: no director refills, native spawns blocked
+    std::uint64_t chestsPlacedFor = 0;  // (match generation, arena) whose chests are placed
     bool matchUiOpenRequested = false;  // native results screen to open once the tick's lock is released
     std::string notice;       // short line shown instead of the status (chest contents)
     int organizePick = -1;    // ORGANIZE: grid cell picked up (-1 = none)
@@ -1615,6 +1617,28 @@ void UpdatePreloads() {
     resources::SetRunExtras(std::move(extras));
 }
 
+// M4.1: a run on a map with chest positions brings its own chests. The stage's time-bonus
+// statues stay off from START RUN on (they are created while the match loads); each arena
+// places the positions its director picked, once, when the match is running.
+void PlaceArenaChests() {
+    if (!world::Available()) return;
+    rm::RunController& run = *g->run;
+    const bool runLoads = run.HasActiveRun() || g->rogueModePending || autopilot::Armed();
+    const rm::MapDef* map = g->content->FindMapByStage(g->currentStage);
+    world::BlockNativeChests(runLoads && map != nullptr && !map->chests.empty() && run.capabilities().Has(rm::cap::kDirector));
+    const rm::Director* director = run.director();
+    if (!director || !run.DirectorActive() || run.phase() != rm::Phase::ArenaActive || !g->match.inMatch) return;
+    const std::uint64_t key = (static_cast<std::uint64_t>(g->matchGeneration) << 8) | static_cast<std::uint64_t>(run.state().arena_index);
+    if (g->chestsPlacedFor == key) return;
+    g->chestsPlacedFor = key;
+    int placed = 0;
+    for (const auto& p : director->chests()) {
+        const float pos[3] = {static_cast<float>(p[0]), static_cast<float>(p[1]), static_cast<float>(p[2])};
+        if (world::PlaceChest(pos, 30)) ++placed;
+    }
+    RM_LOGI("chests: %d of %zu placed for arena %d", placed, director->chests().size(), run.state().arena_index);
+}
+
 // The countdown floor only applies while an arena is being fought.
 void UpdateTimerPolicy() {
     // The whole run (arenas, rewards, shop, route choice) happens inside one match, so the
@@ -1997,6 +2021,23 @@ void PollDevCommand(double now) {
             RM_LOGW("dev buy %s (%s) -> %s", kind.c_str(), s.shop_offers[i].title.c_str(), st.ok() ? "ok" : st.message.c_str());
         }
         if (!found) RM_LOGW("dev buy %s: no such offer", kind.c_str());
+    } else if (command.rfind("placechest", 0) == 0) {
+        // "placechest [distance] [seconds]": a time-bonus statue (chest) in front of the player.
+        float distance = 250.0f;
+        int seconds = 30;
+        std::istringstream(command.size() > 10 ? command.substr(11) : std::string()) >> distance >> seconds;
+        const auto player = engine::LocalPlayer();
+        if (player) {
+            const float qx = ReadOr<float>(player + re5::off::kUnitRotation, 0.0f), qy = ReadOr<float>(player + re5::off::kUnitRotation + 4, 0.0f);
+            const float qz = ReadOr<float>(player + re5::off::kUnitRotation + 8, 0.0f), qw = ReadOr<float>(player + re5::off::kUnitRotation + 12, 1.0f);
+            // +Z forward rotated by the player's quaternion.
+            const float fx = 2.0f * (qx * qz + qw * qy), fz = 1.0f - 2.0f * (qx * qx + qy * qy);
+            const float len = std::max(0.001f, std::sqrt(fx * fx + fz * fz));
+            const float pos[3] = {ReadOr<float>(player + re5::off::kUnitPosition, 0.0f) + fx / len * distance,
+                                  ReadOr<float>(player + re5::off::kUnitPosition + 4, 0.0f),
+                                  ReadOr<float>(player + re5::off::kUnitPosition + 8, 0.0f) + fz / len * distance};
+            world::PlaceChest(pos, seconds);
+        }
     } else if (command.rfind("cell ", 0) == 0) {
         // "cell <from> <to>": moves an inventory grid cell (1..9) like ORGANIZE does.
         int from = 0, to = 0;
@@ -2067,6 +2108,7 @@ void PollDevCommand(double now) {
         RM_LOGW("dev killall: %d enemies killed", killed);
     } else if (command.rfind("survey ", 0) == 0) {
         director::SetSurvey(command.substr(7) == "on");
+        world::SetSurvey(command.substr(7) == "on");
         const auto work = engine::ReadGameWork();
         RM_LOGW("dev survey %s (stage %d)", command.substr(7).c_str(), work ? work->stage : -1);
     } else if (command.rfind("nativespawns ", 0) == 0) {
@@ -2444,6 +2486,7 @@ private:
         SettleFinishedRun();
         UpdateTimerPolicy();
         UpdatePreloads();
+        PlaceArenaChests();
         UpdateMatchStatus();
         const rm::Phase phase = g->run->phase();
         if (phase != g->lastPhase) {

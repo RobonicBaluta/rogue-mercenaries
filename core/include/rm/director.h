@@ -43,6 +43,7 @@ struct MapDef {
     std::string name;
     int stage = -1;  // engine stage index (Mercenaries stage for now)
     std::vector<std::array<double, 3>> points;  // spawn positions known to be on walkable ground
+    std::vector<std::array<double, 3>> chests;  // chest positions (where the game puts its time bonuses)
     std::vector<MapEnemy> roster;
     int max_alive = 8;
     double min_player_distance = 800.0;  // engine units; points closer than this are avoided
@@ -74,6 +75,10 @@ public:
     void SpawnFailed(std::uint64_t ticket);
     /// A unit died or vanished. True (once) when it was one of ours.
     bool Died(const std::string& unit_id);
+    /// Picks `count` distinct chest positions of the map for this arena (all of them when the
+    /// map has fewer); they stay available as chests().
+    const std::vector<std::array<double, 3>>& PickChests(int count);
+    [[nodiscard]] const std::vector<std::array<double, 3>>& chests() const { return chests_; }
 
     [[nodiscard]] int budget() const { return budget_; }
     [[nodiscard]] int dead() const { return dead_; }
@@ -103,6 +108,7 @@ private:
     std::vector<std::pair<std::uint64_t, int>> pending_;  // ticket -> point index
     std::vector<int> point_failures_;
     std::unordered_map<std::uint64_t, const MapEnemy*> ticket_enemy_;  // pending and alive tickets
+    std::vector<std::array<double, 3>> chests_;
 };
 
 }  // namespace rm

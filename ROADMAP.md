@@ -36,13 +36,13 @@ match with any stage and costume; one run per match with the countdown held; sta
 between arenas without the results screen; inventory control (strip to one gun, create items
 and loaded models only, discard with the model, carry-over with layout); native in-match
 screens in the game's font (results, rewards, shop with rarity colours, organize, route, run
-complete); chests from time-bonus pickups; perks in three slots per character; all
+complete); chests placed by the mod at the map's chest positions; perks in three slots per character; all
 characters and skins.
 
 Hacked (replace): the Mercenaries countdown still runs underneath (held, off screen); the
 Mercenaries spawner decides what spawns; kills are counted from hooks and a death detector;
 weapons/enemies are limited to what the stage loaded; the arena ends through the game's
-time-up; the shop and route are list screens; chests depend on the map's time bonuses.
+time-up; the shop and route are list screens.
 
 Missing: campaign areas, bosses, custom icons and
 previews, the native organize/buy screen, in-world route choice.
@@ -86,7 +86,7 @@ Each line is a research spike with a concrete starting point and a test that clo
 | E7 | The game's Organize/Buy screen | `uIdItemBox00` (vtable `0x00FA60A8`, `0x00A07980`) opens only in the chapter flow (`0x00BF22A0`); creating screens outside their context freezes | open it in its own context: between arenas as a chapter-style transition (campaign host) or by reproducing what the chapter flow loads first (its layout/texture set) before creating it; map supplies to the screen's gold | buy, sell, upgrade and rearrange in the game's own screen between two arenas |
 | E8 | Custom icons and sprites | menus draw the game's text; `sLayoutSpr`, `rLayout`, `rLayoutSpr`, `cSprite` children in screens | load our own textures (an `.arc` in `nativePC` loaded through `sResource`) and draw them with the game's sprite routine; fallback: draw textured quads in the D3D9 present hook, styled like the game | perk icons visible next to the perk rows in the PERKS screen |
 | E9 | Character/skin preview | the game's character select (`uIdStartUp22`) shows the model for a costume slot | host the preview in that screen with our selection driving it; fallback: portraits as E8 textures | choosing a skin shows its model or portrait |
-| E10 | World objects: chests and exits | pickups are `uOm08xx` (descriptors at `0x00EF0CA0`…), time-bonus action `0x00AD9130` | same path as E1 for objects (find the om manager's create and `cSetInfoOm…` descriptors, `cSetInfoOmArea`) | the director places a chest and an exit object where the arena says |
+| E10 | World objects: chests and exits (chests done 2026-11-02: `research/re5-engine-map.md` "World objects") | pickups are `uOm08xx` (descriptors at `0x00EF0CA0`…), time-bonus action `0x00AD9130` | same path as E1 for objects (find the om manager's create and `cSetInfoOm…` descriptors, `cSetInfoOmArea`) | the director places a chest and an exit object where the arena says |
 | E11 | Bosses | boss classes and their setup descriptors exist (`cSetInfoEm4x/6x/8x…`) | per boss: spawn through E1 with E3 resources in a fitting arena; script dependencies listed per boss | one boss fight as the last arena of a run |
 | E12 | Perk mechanics | kills, damage, heal, items done; missing grab, move speed, weapon category damage | grab: the `cEm…PlEvent_Catch`/`_PL` actions (refuse or shorten a grab); move speed: player motion rate field; weapon category: equipped record id → category (done) | each mechanic used by a perk works in game |
 
@@ -130,7 +130,10 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    archive is not loaded.
 
 ### M4 — World objects
-1. E10: chests placed by the arena data (no more reliance on time bonuses).
+1. ~~E10: chests placed by the arena data (no more reliance on time bonuses).~~ Done 2026-11-02: the
+   mod creates the time-bonus statue itself (uOm0100 through sObjModel, as the stage's set spawn does);
+   in a run the stage's own statues stay off and each arena places `chests.per_arena` (3) of the map's
+   chest positions (`maps.json` `chests`, where the game puts its statues).
 2. Exits as objects: walking into one picks the next arena (in-world route choice).
 
 ### M5 — Arenas beyond Mercenaries

@@ -11,6 +11,8 @@ are listed: their models are loaded with the stage (other classes need ROADMAP M
 Majini-family classes get "profiles": the game's own descriptor fields (weapon, plaga, mask, ...)
 with their counts as weights, minus what the adapter's template already holds. Other classes keep
 "arms" (weapon ids as surveyed; a list that is only the default 0x70100 is left out).
+"chests" are where the stage puts its own time-bonus statues (research/chest_survey.json, from
+scripts/survey_chests.sh); a run's arena places a few of them as chests (ROADMAP M4.1).
 """
 import argparse
 import json
@@ -46,6 +48,10 @@ parser.add_argument('--exclude', default='', help='comma-separated classes to le
 exclude = {c for c in parser.parse_args().exclude.split(',') if c} | ALWAYS_EXCLUDED
 
 survey = json.load(open('research/spawn_survey.json', encoding='utf-8'))['stages']
+try:
+    chest_survey = json.load(open('research/chest_survey.json', encoding='utf-8'))['stages']
+except FileNotFoundError:
+    chest_survey = {}
 maps = []
 for stage_text, data in survey.items():
     stage = int(stage_text)
@@ -85,6 +91,7 @@ for stage_text, data in survey.items():
         'max_alive': max(6, min(12, sum(1 for p in data['points'] if p['set'] == 0))),
         'min_player_distance': 800,
         'points': points,
+        **({'chests': [c['pos'] for c in chest_survey[stage_text]]} if chest_survey.get(stage_text) else {}),
         'roster': roster,
     })
 
@@ -106,5 +113,5 @@ with open('configs/maps.json', 'w', encoding='utf-8', newline='\n') as f:
                   lambda m: '{"weight": ' + m.group(1) + ', "fields": {' + ', '.join(x.strip() for x in m.group(2).split(',') if x.strip()) + '}}', text)
     f.write(text + '\n')
 for m in maps:
-    print(f"{m['stage']} {m['name']}: {len(m['points'])} points, roster " +
+    print(f"{m['stage']} {m['name']}: {len(m['points'])} points, {len(m.get('chests', []))} chests, roster " +
           ', '.join(f"{r['class']} x{r['weight']}" for r in m['roster']))

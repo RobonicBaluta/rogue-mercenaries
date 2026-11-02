@@ -62,6 +62,14 @@ const MapEnemy* Director::PickSpecial() {
     return i < pool.size() ? pool[i] : pool.front();
 }
 
+const std::vector<std::array<double, 3>>& Director::PickChests(int count) {
+    std::vector<std::array<double, 3>> pool = map_.chests;
+    rng_.Shuffle(pool);
+    pool.resize(std::min(pool.size(), static_cast<std::size_t>(std::max(0, count))));
+    chests_ = std::move(pool);
+    return chests_;
+}
+
 int Director::PickPoint(const std::optional<std::array<double, 3>>& player) {
     std::vector<int> usable;
     std::vector<int> far;

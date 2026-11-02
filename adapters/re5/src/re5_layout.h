@@ -69,6 +69,22 @@ constexpr std::uintptr_t kResourceLoader = 0x011B26C4;
 constexpr std::uintptr_t kFnLoadListCommit = 0x007D4A10;
 constexpr std::uintptr_t kFnLoadClassArchive = 0x007D6770;
 constexpr std::uintptr_t kFnLoadUnitArchive = 0x007D5820;
+// Object manager sObjModel (instance [0x011B2720], vtable 0x00F65240): Create (slot 11,
+// this, dti, group, mode, flag; ret 0x10) and the set spawn (slot 13, this, group, id; ret 8).
+// Set record of a set manager (sEnemy or sObjModel): GetRecord(this, group, id), record +0xC
+// the class name holder (+8 the name), +0x10 the descriptor.
+constexpr std::uintptr_t kObjModelManager = 0x011B2720;
+constexpr std::uintptr_t kFnObjCreate = 0x007E2410;
+constexpr std::uintptr_t kFnObjSetSpawn = 0x007E2480;
+constexpr std::uintptr_t kFnSetRecord = 0x007F3D70;
+// Item manager sItem (instance [0x011B2200], vtable 0x00F63578): Create (slot 11) and set
+// spawn (slot 13), the same calls as sObjModel's.
+constexpr std::uintptr_t kItemManager = 0x011B2200;
+constexpr std::uintptr_t kFnItemCreate = 0x007BE760;
+constexpr std::uintptr_t kFnItemSetSpawn = 0x007C0A80;
+// uOmHourGlass (the Mercenaries time-bonus statue, DTI 0x011FCAC0, vtable 0x00FEFFB0):
+// constructor (this; returns this), bonus seconds int16 at +0x1364 (default 60).
+constexpr std::uintptr_t kFnHourGlassCtor = 0x00AD8CB0;
 // Class by class id (FUN_006D0690, cdecl): hash buckets at 0x012386A0, chain +0x14, id +0x20.
 constexpr std::uintptr_t kFnClassById = 0x006D0690;
 // Play menu screen (uIdStartUp01) per-frame move, and the menu input query
@@ -388,6 +404,15 @@ inline constexpr Signature kSignatures[] = {
     // The Mercenaries set loader queues each record's class on the loader instance:
     // `mov ecx, [0x011B26C4]; push ebx; push 0; push esi; call LoadClassArchive`.
     {"loader_instance_use", 0x0072AB6D, "8B 0D C4 26 1B 01 53 6A 00 56 E8"},
+    {"obj_create", addr::kFnObjCreate, "8B 44 24 10 8B 54 24 08 56 57 50 8B 44 24 10 8B F9 8B 4C 24 18 51 52 50"},
+    {"obj_set_spawn", addr::kFnObjSetSpawn, "83 EC 6C 57 8B F9 8B 07 8B 50 40 FF D2 3C 01 75 09 33 C0 5F 83 C4 6C C2"},
+    {"set_record", addr::kFnSetRecord, "8A 44 24 04 0F B6 D0 3B 51 60 56 73 21 8B 49 6C 0F BE C0 83 3C 81 00 8D"},
+    // sObjModel vtable slots 11..13: Create, the shared 0x007F3A80, the set spawn.
+    {"obj_model_vtable", 0x00F6526C, "10 24 7E 00 80 3A 7F 00 80 24 7E 00"},
+    {"item_create", addr::kFnItemCreate, "8B 44 24 10 8B 54 24 08 56 57 50 8B 44 24 10 8B F9 8B 4C 24 18 51 52 50"},
+    {"item_set_spawn", addr::kFnItemSetSpawn, "56 8B F1 8B 06 8B 50 40 FF D2 3C 01 75 06 33 C0 5E C2 08 00 80 7C 24 08"},
+    {"item_vtable", 0x00F635A4, "60 E7 7B 00 80 3A 7F 00 80 0A 7C 00"},
+    {"hourglass_ctor", addr::kFnHourGlassCtor, "56 8B F1 E8 C8 B2 FA FF 33 C0 88 86 70 19 00 00 89 86 58 13 00 00 C7 06"},
     {"class_by_id", addr::kFnClassById, "8B 4C 24 04 8B C1 C1 E8 04 25 FF 0F 00 00 8B 04 85 A0 86 23 01 85 C0 74"},
     // The element count the clear loop reads: `mov eax, [ecx+0xC]; ret`.
     {"layout_element_count", 0x00CDADA0, "8B 41 0C C3"},

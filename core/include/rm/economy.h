@@ -105,7 +105,9 @@ struct EconomyConfig {
 
     /// Chests (the adapter opens one for each time-bonus pickup during an arena): supplies
     /// always, plus a catalog item (item_chance) or a weapon the match can place (weapon_chance).
+    /// On a director map the arena places `per_arena` of the map's chest positions.
     struct Chests {
+        int per_arena = 3;
         std::int64_t supplies_base = 10;
         std::int64_t supplies_per_arena = 5;
         double item_chance = 0.6;

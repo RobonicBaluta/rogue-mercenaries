@@ -93,6 +93,15 @@ On The Mines the player was caught by a large insect's grab twice; with dev invu
 | Area load | `0x0072EAC0` (aGame vtables): list 3 `0x0072E6E0` (players `0x00728150`: character and every inventory item of the save's Mercenaries loadout), list 4 `0x0072CF40` (every set record's class through `0x0072AB20`, which adds Majini weapons and plagas `uEm0b..0e` by plaga type), list 5 `0x0072ADE0` (objects); list 2 `0x007D67A0` the game resources (common items, grenades, ammo) | verified-static, lists verified at runtime |
 | Preloading | Queue extras on the loader right before the game commits list 3 or 4; they load behind the loading screen and stay while re-queued. Spawning or creating a class whose archive is not loaded hangs the game | verified-runtime (uEm11 in the Village, 19 guns on four stages) |
 
+## World objects (verified-runtime, 2026-11-02)
+
+| Fact | Value | Status |
+|---|---|---|
+| Managers | Map objects: sObjModel `[0x011B2720]` (vtable `0x00F65240`); items (dropped ammo, herbs, weapons): sItem `[0x011B2200]` (vtable `0x00F63578`); enemies: sEnemy `[0x011B1FCC]`. Each has Create in slot 11 (`this, dti, group, mode, flag`, ret 0x10: sObjModel `0x007E2410`, sItem `0x007BE760`, sEnemy `0x007AF550`) and a set spawn in slot 13 (`this, set group, id`, ret 8: sObjModel `0x007E2480`, sItem `0x007C0A80`) | verified-runtime |
+| Set records | `GetRecord(this = set manager, group, id)` `0x007F3D70` (groups at `+0x6C`, count `+0x60`): `+0xC` holder of the class name (at `+8`), `+0x10` the descriptor (a cSetInfo*, getDTI at vtable `+0x10`, apply at `+0x18`) | verified-runtime |
+| Object set spawn | `0x007E2480`: class from the record, Create(dti, group from a per-class table (12 for statues), 1, flag), descriptor apply, `+0xD50`/`+0xD54` set group/id, name (`0x007E0720`, a refcounted string at `+0xD7C`), then `+0xD78`, `+0x120` (and `+0xFAC` = 1 when it was 0), `+6`, `+0x124`, `+0x128` from the class's table and `+0x20` = 4, link `0x0072CD00` | verified-static; values verified at runtime |
+| Time bonus | Statue class `uOm0100` (pickup action from the uOmHourGlass family: action vtable `0x00FEFF60`, update `0x00AD9130` reads the seconds at `+0x1364`; uOmHourGlass itself, DTI `0x011FCAC0`, is not used in Mercenaries). Set group 61, 7 to 11 per stage (`research/chest_survey.json`). Descriptor `cSetInfoInsModel` (DTI `0x0120BB60`, parent cSetInfoPawn, vtable `0x0104A75C`): `+0x20` position, `+0x30` rotation, `+0x40` scale (1, 1, 1), `+0x50` 4, `+0x60` 1, `+0x64` bonus seconds (30/60/90), `+0x74` 0x8020. After the spawn the statue holds `+6` 13, `+0x20` 4, `+0x120` 0x8020, `+0x124` 3, `+0x128` 1, `+0xD78` 1, `+0xFAC` 1; without the last group it cannot be broken. It shows the action prompt "Bonus de tiempo"; shooting it or pressing the action key grants its seconds | verified-runtime (statue created by the mod, opened by a shot) |
+
 ## Menus and messages (verified-runtime, 2026-10-27)
 
 Found with the developer menu probe (`dev.menu_probe`: hooks `move()`, vtable slot 6, of every `uId*` class under `uIdBase`), byte diffs while navigating, and static disassembly.

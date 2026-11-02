@@ -620,6 +620,7 @@ Status RunController::BeginArena(double now) {
     if (caps_.Has(cap::kDirector)) {
         if (const MapDef* map = content_->FindMapByStage(map_stage_)) {
             director_.emplace(*map, route->enemy_budget, route->difficulty_tier, streams_->director.Next());
+            director_->PickChests(content_->economy().chests.per_arena);
         }
     }
 

@@ -864,7 +864,7 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
         MapDef map;
         if (!ReadId(d, e, map.id)) continue;
         d = file.Sub(": map " + Q(map.id));
-        CheckKeys(d, e, {"id", "name", "stage", "points", "roster", "max_alive", "min_player_distance", "special_after", "max_specials"});
+        CheckKeys(d, e, {"id", "name", "stage", "points", "chests", "roster", "max_alive", "min_player_distance", "special_after", "max_specials"});
         GetString(d, e, "name", map.name, true);
         std::int64_t stage = -1;
         if (GetInt(d, e, "stage", stage, true) && stage < 0) d.Error("field 'stage' must be >= 0");
@@ -890,6 +890,16 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
                 map.points.push_back({p[0].get<double>(), p[1].get<double>(), p[2].get<double>()});
             }
             if (map.points.empty()) d.Error("needs at least one spawn point");
+        }
+        if (const auto chests = e.find("chests"); chests != e.end()) {
+            if (!chests->is_array()) d.Error("field 'chests' must be a list of [x, y, z]");
+            for (const json& p : chests->is_array() ? *chests : json::array()) {
+                if (!p.is_array() || p.size() != 3 || !p[0].is_number() || !p[1].is_number() || !p[2].is_number()) {
+                    d.Error("every chest must be [x, y, z]");
+                    continue;
+                }
+                map.chests.push_back({p[0].get<double>(), p[1].get<double>(), p[2].get<double>()});
+            }
         }
         if (const json* roster = ListField(d, e, "roster")) {
             for (const json& r : *roster) {
@@ -1173,7 +1183,10 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     if (Get(doc, "chests") != nullptr) {
         if (const json* s = Section(d, doc, "chests")) {
             const Diag sd = d.Sub(": chests");
-            CheckKeys(sd, *s, {"supplies_base", "supplies_per_arena", "item_chance", "weapon_chance"});
+            CheckKeys(sd, *s, {"per_arena", "supplies_base", "supplies_per_arena", "item_chance", "weapon_chance"});
+            std::int64_t perArena = eco.chests.per_arena;
+            if (GetInt(sd, *s, "per_arena", perArena, false) && (perArena < 0 || perArena > 16)) sd.Error("per_arena must be 0..16");
+            eco.chests.per_arena = static_cast<int>(perArena);
             if (GetInt(sd, *s, "supplies_base", eco.chests.supplies_base, false) && eco.chests.supplies_base < 0) {
                 sd.Error("supplies_base must be >= 0");
             }

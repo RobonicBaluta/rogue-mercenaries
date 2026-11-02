@@ -25,7 +25,7 @@ MapDef TestMap(int max_alive = 3) {
 
 constexpr const char* kMapsJson = R"({"schema_version": 1, "maps": [
   {"id": "test_map", "name": "Test Map", "stage": 4, "max_alive": 3, "min_player_distance": 500,
-   "points": [[0, 0, 0], [1000, 0, 0], [0, 0, 1000], [2000, 0, 2000]],
+   "points": [[0, 0, 0], [1000, 0, 0], [0, 0, 1000], [2000, 0, 2000]], "chests": [[10, 0, 10], [20, 0, 20]],
    "roster": [{"class": "uEm10", "arms": [458992, 458993], "weight": 3}, {"class": "uEm22", "min_tier": 3}]}]})";
 
 }  // namespace
@@ -186,6 +186,27 @@ TEST_CASE("several special types share the map's special limit, which grows with
     CHECK(specialsAtStart(3) == 2);  // each type is still one at a time
 }
 
+TEST_CASE("an arena places a few of the map's chest positions, distinct and repeatable", "[director]") {
+    MapDef map = TestMap(3);
+    map.chests = {{0, 0, 0}, {100, 0, 0}, {200, 0, 0}, {300, 0, 0}, {400, 0, 0}};
+    Director a(map, 10, 1, 9);
+    const auto picked = a.PickChests(3);
+    REQUIRE(picked.size() == 3);
+    CHECK(a.chests() == picked);
+    for (std::size_t i = 0; i < picked.size(); ++i) {
+        CHECK(std::find(map.chests.begin(), map.chests.end(), picked[i]) != map.chests.end());
+        for (std::size_t j = i + 1; j < picked.size(); ++j) CHECK(picked[i] != picked[j]);
+    }
+    Director b(map, 10, 1, 9);
+    CHECK(b.PickChests(3) == picked);  // same seed, same chests
+    Director c(map, 10, 1, 9);
+    CHECK(c.PickChests(9).size() == 5);  // never more than the map has
+    CHECK(c.PickChests(0).empty());
+    MapDef bare = TestMap(3);
+    Director d(bare, 10, 1, 9);
+    CHECK(d.PickChests(3).empty());
+}
+
 TEST_CASE("spawn points away from the player are preferred", "[director]") {
     Director d(TestMap(1), 50, 1, 9);
     const std::array<double, 3> player{0, 0, 0};
@@ -210,6 +231,8 @@ TEST_CASE("arenas on a listed map are run by the director", "[director]") {
     REQUIRE(h.rc.StartRun("alpha", 3).ok());
     REQUIRE(h.rc.BeginArena(0.0).ok());
     REQUIRE(h.rc.DirectorActive());
+    REQUIRE(h.rc.director() != nullptr);
+    CHECK(h.rc.director()->chests().size() == 2);  // the test map has two chest positions (per_arena 3)
     const int budget = h.rc.RemainingEnemies();
     REQUIRE(budget > 0);
     auto spawns = h.rc.DirectorTick(0.0, std::nullopt);
@@ -269,4 +292,6 @@ TEST_CASE("maps.json is validated", "[director]") {
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "special_after": 0.5, "points": [[0,0,0]], "roster": [{"class": "uEm10"}, {"class": "uEm0b", "special": true, "max_alive": 1}]}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "roster": [{"class": "uEm10", "profiles": [{"fields": {"Arm": 1}}]}]}]})").empty());
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "roster": [{"class": "uEm10", "profiles": [{"weight": 2, "fields": {"arm": 459088, "plaga": 1}}]}]}]})").empty());
+    CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "chests": [[1,2,3]], "roster": [{"class": "uEm10"}]}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "chests": [[1,2]], "roster": [{"class": "uEm10"}]}]})").empty());
 }
