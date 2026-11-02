@@ -196,7 +196,8 @@ struct OfferView {
     std::string rarity;
     std::int64_t price = 0;
     bool purchased = false;
-    int tier = 0;  // routes: difficulty tier
+    int tier = 0;       // routes: difficulty tier
+    bool boss = false;  // routes: a boss arena (titled with the boss)
 };
 
 struct RunMapNodeView {
@@ -205,6 +206,7 @@ struct RunMapNodeView {
     std::string route_id;
     std::string route_name;
     int tier = 0;
+    std::string boss_name;  // a boss arena's boss, empty otherwise
     std::vector<int> next;
     bool current = false;  // the node of the current arena (or of the next once chosen)
 };

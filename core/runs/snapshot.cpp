@@ -29,6 +29,12 @@ std::string ArenaName(const Content& content, int map_key) {
     return map != nullptr ? map->name : std::string();
 }
 
+// The boss of a boss arena's map key; empty otherwise.
+std::string BossName(const Content& content, int map_key) {
+    const MapDef* map = map_key >= 0 ? content.FindMapByStage(map_key) : nullptr;
+    return map != nullptr && map->boss ? map->boss->name : std::string();
+}
+
 std::string WeaponName(const WeaponInstance& w, const Content& content) {
     const WeaponBaseDef* def = content.FindWeapon(w.base_id);
     return def != nullptr ? def->name : w.base_id;
@@ -179,6 +185,7 @@ RunSnapshot RunController::Snapshot(double now) const {
             RunMapNodeView v;
             v.map_key = node.map_key;
             v.arena_name = ArenaName(c, node.map_key);
+            v.boss_name = BossName(c, node.map_key);
             v.route_id = node.route_id;
             if (const RouteDef* r = c.FindRoute(node.route_id)) {
                 v.route_name = r->name;
@@ -197,16 +204,22 @@ RunSnapshot RunController::Snapshot(double now) const {
         v.id = rc.route_id;
         const RouteDef* r = c.FindRoute(rc.route_id);
         const std::string arena = ArenaName(c, rc.map_key);
-        v.title = !arena.empty() ? arena : (r != nullptr ? r->name : rc.route_id);
+        const std::string boss = BossName(c, rc.map_key);
+        v.boss = !boss.empty();
+        v.title = v.boss ? boss : !arena.empty() ? arena : (r != nullptr ? r->name : rc.route_id);
         // Two short lines for the game's help box, whose font has no ':' or apostrophe: the route
         // and its rewards (the curse in place of the credits when it carries one), then where the
         // choice leads.
         if (r != nullptr) {
             v.tier = r->difficulty_tier;
             char buf[200];
-            std::snprintf(buf, sizeof(buf), "%s, %d enemies, rewards x%.2f",
-                          arena.empty() ? ("Tier " + std::to_string(r->difficulty_tier)).c_str() : r->name.c_str(),
-                          r->enemy_budget, r->reward_mult);
+            if (v.boss) {
+                std::snprintf(buf, sizeof(buf), "Boss fight, rewards x%.2f", r->reward_mult);
+            } else {
+                std::snprintf(buf, sizeof(buf), "%s, %d enemies, rewards x%.2f",
+                              arena.empty() ? ("Tier " + std::to_string(r->difficulty_tier)).c_str() : r->name.c_str(),
+                              r->enemy_budget, r->reward_mult);
+            }
             v.detail = buf;
             if (rc.curse_perk_id.empty()) {
                 std::snprintf(buf, sizeof(buf), ", credits x%.2f", r->credit_mult);
@@ -224,7 +237,8 @@ RunSnapshot RunController::Snapshot(double now) const {
             std::string then;
             for (std::size_t i = 0; i < node.next.size() && next_layer + 1 < layers.size(); ++i) {
                 const RunMapNode& after = layers[next_layer + 1][static_cast<std::size_t>(node.next[i])];
-                const std::string name = ArenaName(c, after.map_key);
+                const std::string after_boss = BossName(c, after.map_key);
+                const std::string name = !after_boss.empty() ? after_boss : ArenaName(c, after.map_key);
                 const RouteDef* ar = c.FindRoute(after.route_id);
                 if (!then.empty()) then += i + 1 == node.next.size() ? " or " : ", ";
                 then += !name.empty() ? name : ar != nullptr ? "tier " + std::to_string(ar->difficulty_tier) : after.route_id;

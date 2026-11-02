@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Developer check (ROADMAP M5.3): a whole run through the run map. START RUN; every arena is
+# Developer check (ROADMAP M5.3, M6): a whole run through the run map. START RUN; every arena is
 # cleared (dev killall), its results, reward and shop are passed with the menu keys (each step
 # repeated until the log shows the phase change), the NEXT ROUTE menu is captured and a route is
-# chosen (after arena 1 the last option, after arena 2 the first). Checks that each stage change
-# loads the chosen run map node's arena and prints the run map, the choices and the arenas played.
+# chosen (after arena 1 the last option, then the first). Checks that each stage change loads
+# the chosen run map node's arena and, with a boss arena in the pool, that the run ends on the
+# boss; prints the run map, the choices and the arenas played.
 # Needs the game at the Play menu with a dev adapter config. Saves and restores the profile;
 # closes the game at the end.
 cd "$(dirname "$0")/.."
@@ -23,7 +24,11 @@ press_until() { for _ in 1 2 3 4 5; do [ "$(count "$2")" -ge "$3" ] && return 0;
 cp "$D/profile.json" "$D/profile.runmap-backup.json" || exit 1
 before=$(grep -c "" "$LOG")
 keys "up+900,enter+2500,enter+2500"
-for arena in 1 2 3; do
+wait_for "run map: arena 1:" 1 60
+sleep 1
+ARENAS=$(count "run map: arena [0-9]+:")
+echo "run of $ARENAS arenas"
+for arena in $(seq 1 "$ARENAS"); do
     wait_for "phase .* -> arena_active" "$arena" 150 || { echo "arena $arena did not start"; break; }
     wait_for "\] arena [0-9]: " "$arena" 10 && { sleep 1; cap "notice$arena"; }
     wait_for "director: uEm" 1 30
@@ -33,7 +38,7 @@ for arena in 1 2 3; do
     press_until "enter+1500" "arena_results -> reward_selection" "$arena" || { echo "results screen stuck after arena $arena"; break; }
     sleep 1
     press_until "enter+1500" "reward_selection -> (shop|run_complete)" "$arena" || { echo "reward screen stuck after arena $arena"; break; }
-    [ "$arena" -eq 3 ] && break
+    [ "$arena" -eq "$ARENAS" ] && break
     sleep 2
     press_until "up+700,enter+1500" "shop -> route_selection" "$arena" || { echo "shop stuck after arena $arena"; break; }
     sleep 2; cap "route$arena"
@@ -64,7 +69,9 @@ for c in (m for m in (re.search(r'route: choice \d+ of \d+, \S+ on stage (-?\d+)
     good = expected == stage and played is not None and int(played.group(1)) == stage
     ok &= good
     print(f"{'ok' if good else 'FAIL'}: arena {layer + 1} chosen node {node} = stage {expected}, played on stage {played.group(1) if played else '?'}")
-print('RUN MAP CHECK', 'PASS' if ok and len(layers) == 3 else 'FAIL')
+boss_last = re.search(rf'\] arena {len(layers)}: .*BOSS', '\n'.join(lines)) is not None
+print(f"last arena {'is' if boss_last else 'is not'} a boss arena")
+print('RUN MAP CHECK', 'PASS' if ok and len(layers) >= 3 else 'FAIL')
 PY
 $PS scripts/gamectl.ps1 -Action close >/dev/null
 for _ in $(seq 1 30); do tasklist | grep -qi re5dx9 || break; sleep 1; done

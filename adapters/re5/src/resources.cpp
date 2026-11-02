@@ -77,13 +77,30 @@ bool QueueUnit(std::uintptr_t loader, int category, unsigned id) {
     }
 }
 
-bool QueueArchive(std::uintptr_t loader, const char* path) {
+bool QueueRequest(std::uintptr_t loader, const char* path) {
     __try {
         reinterpret_cast<RequestFn>(re5::addr::kFnLoadRequest)(loader, path, 0, 0);
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
+}
+
+// The game ends with "Failed open file" when an archive it was asked for does not exist, so
+// archives are queued only when <game>\nativePC_MT\Image\Archive\<name>.arc is there.
+bool ArchiveFileExists(const std::string& name) {
+    char exe[MAX_PATH] = {};
+    const DWORD n = GetModuleFileNameA(nullptr, exe, MAX_PATH);
+    std::string path(exe, n);
+    path = path.substr(0, path.find_last_of("\\/") + 1) + "nativePC_MT\\Image\\Archive\\" + name + ".arc";
+    const DWORD attributes = GetFileAttributesA(path.c_str());
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0;
+}
+
+bool QueueArchive(std::uintptr_t loader, const std::string& name) {
+    if (!ArchiveFileExists(name)) return false;
+    const std::string path = "Image\\Archive\\" + name;
+    return QueueRequest(loader, path.c_str());
 }
 
 template <typename T>
@@ -109,8 +126,12 @@ int __fastcall CommitDetour(std::uintptr_t loader, void*) {
         std::string done;
         int failed = 0;
         if (list == kEnemyList) {
+            // Only classes whose archive exists; a name that is no class (an effect, a boss's
+            // parts) loads as its archive.
             for (const std::string& name : extras.enemyClasses) {
-                if (QueueClass(loader, name.c_str())) done += " " + name;
+                if (!ArchiveFileExists(name)) ++failed;
+                else if (QueueClass(loader, name.c_str())) done += " " + name;
+                else if (QueueArchive(loader, name)) done += " " + name + "(archive)";
                 else ++failed;
             }
             for (const std::uint32_t weapon : extras.enemyWeapons) {
@@ -120,8 +141,7 @@ int __fastcall CommitDetour(std::uintptr_t loader, void*) {
                 else ++failed;
             }
             for (const std::string& name : extras.enemyArchives) {
-                const std::string path = "Image\\Archive\\" + name;
-                if (QueueArchive(loader, path.c_str())) done += " " + name;
+                if (QueueArchive(loader, name)) done += " " + name;
                 else ++failed;
             }
         } else {
@@ -134,7 +154,7 @@ int __fastcall CommitDetour(std::uintptr_t loader, void*) {
         }
         if (!done.empty() || failed) {
             RM_LOGI("resources: list %d (%s) extras queued:%s%s", list, list == kEnemyList ? "enemies" : "player items",
-                    done.c_str(), failed ? " (some unknown)" : "");
+                    done.c_str(), failed ? " (some unknown or without an archive)" : "");
         }
     }
     return g_origCommit(loader);

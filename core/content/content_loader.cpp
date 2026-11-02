@@ -865,7 +865,7 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
         MapDef map;
         if (!ReadId(d, e, map.id)) continue;
         d = file.Sub(": map " + Q(map.id));
-        CheckKeys(d, e, {"id", "name", "stage", "rotation", "points", "chests", "preload", "roster", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
+        CheckKeys(d, e, {"id", "name", "stage", "rotation", "points", "chests", "preload", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
         GetBool(d, e, "rotation", map.rotation, false);
         GetString(d, e, "name", map.name, true);
         std::int64_t stage = -1;
@@ -918,7 +918,24 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
                 map.chests.push_back({p[0].get<double>(), p[1].get<double>(), p[2].get<double>()});
             }
         }
-        if (const json* roster = ListField(d, e, "roster")) {
+        if (const auto boss = e.find("boss"); boss != e.end()) {
+            const Diag bd = d.Sub(" boss");
+            if (!boss->is_object()) {
+                bd.Error("must be an object");
+            } else {
+                CheckKeys(bd, *boss, {"class", "name", "hp"});
+                MapBoss b;
+                GetString(bd, *boss, "class", b.unit_class, true);
+                if (b.unit_class.rfind("uEm", 0) != 0) bd.Error("class must be an enemy class (uEm..)");
+                GetString(bd, *boss, "name", b.name, true);
+                std::int64_t hp = 0;
+                if (GetInt(bd, *boss, "hp", hp, false) && (hp < 0 || hp > 32767)) bd.Error("hp must be 0..32767");
+                b.hp = static_cast<int>(hp);
+                map.boss = std::move(b);
+            }
+        }
+        // A boss map spawns only its boss: its roster is optional.
+        if (const json* roster = map.boss && !e.contains("roster") ? nullptr : ListField(d, e, "roster")) {
             for (const json& r : *roster) {
                 const Diag rd = d.Sub(" roster entry");
                 if (!r.is_object()) {

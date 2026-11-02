@@ -19,7 +19,15 @@ double DistanceSq(const std::array<double, 3>& a, const std::array<double, 3>& b
 }  // namespace
 
 Director::Director(const MapDef& map, int budget, int tier, std::uint64_t seed)
-    : map_(map), budget_(std::max(0, budget)), tier_(std::max(1, tier)), rng_(seed), point_failures_(map.points.size(), 0) {}
+    : map_(map), budget_(std::max(0, budget)), tier_(std::max(1, tier)), rng_(seed), point_failures_(map.points.size(), 0) {
+    if (map_.boss) {
+        // The boss alone: the roster becomes it, and its death is the whole budget.
+        MapEnemy boss;
+        boss.unit_class = map_.boss->unit_class;
+        map_.roster = {boss};
+        budget_ = 1;
+    }
+}
 
 const MapEnemy* Director::PickEnemy() {
     std::vector<const MapEnemy*> pool;
@@ -120,6 +128,10 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::ar
             }
         }
         r.pos = map_.points[static_cast<std::size_t>(point)];
+        if (map_.boss) {
+            r.boss = true;
+            r.hp = map_.boss->hp;
+        }
         pending_.emplace_back(r.ticket, point);
         ticket_enemy_[r.ticket] = enemy;
         last_point_ = point;

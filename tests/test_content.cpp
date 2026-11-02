@@ -105,7 +105,8 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
     CHECK(requires_cap(*c.FindPerk("field_medic"), cap::kHeal));
     CHECK(c.weapons().size() >= 8);
     CHECK(c.unique_affixes().size() >= 2);
-    CHECK(c.economy().run.arena_count == 3);
+    CHECK(c.economy().run.arena_count == 4);  // three arenas, then the boss (M6)
+    CHECK(std::any_of(c.maps().begin(), c.maps().end(), [](const MapDef& m) { return m.boss.has_value(); }));
 }
 
 TEST_CASE("loader derives implied capabilities and symmetric exclusions", "[content]") {

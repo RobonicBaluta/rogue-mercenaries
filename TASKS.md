@@ -207,6 +207,34 @@ ok: arena 2 chosen node 2 = stage 700, played on stage 700
 ok: arena 3 chosen node 1 = stage 202, played on stage 202
 RUN MAP CHECK PASS
 ```
+- [x] M6.1 / E11 First boss (2026-11-02). Survey: the enemy DTIs (category 0x03, class id `0x0300NN00`, read from the memory dump) and every stage's set layouts (rLayout name the unit classes as text) list the boss candidates by home area: uEm40 s103, uEm41 s308, uEm42 s511/512, uEm43 s304, uEm44 s108/s301, uEm45 s111, uEm46 s205, uEm52 s109, uEm60 s305, uEm80/83/84 s309, uEm81 s506, uEm82/8c/8e s508. `scripts/test_boss_spawn.sh` loaded each home area through the host, preloaded the class (dev `preload` now loads any archive by name and only archives that exist), spawned it with the director's descriptor and watched it: uEm40 (Uroboros, 15000 hp) hunts the player in s103's corridors; uEm43 (a giant Uroboros, 8500) fills s304's dome and brings uEmc5 minions; uEm81 (Wesker) and uEm82 (Uroboros Wesker, with uEm8c and ten uEm8e) fight at once but survive their health reaching zero (scripted deaths); uEm42 and uEm60 never moved, uEm44 fell through s301's floor, uEm46 brought 89 uEmc0..c4 at the origin, uEm52 ran off, s308 crashed (0x0074D12A) and s111 never started. Gunfire on the Uroboros (aim first: the spawn lands in the line of fire): 100 per hit, 250 on its weak spots, through `uEnemy::OnHit` (perks apply); brought to 200 hp (dev `enemyhp`) it died to a pistol shot with the game's death sequence. Core: `MapBoss` (`maps.json` `"boss": {class, name, hp}`, roster optional), the director spawns the boss alone (budget 1, its health in the request), the arena budget follows the director's, the run map puts boss arenas only in its last layer (every node before leads there, fought with a highest-tier route), offers read `UROBOROS   BOSS` with `Boss fight, rewards ...`; tests for the loader, director, run map and a run ending on the boss (its minions do not count). Adapter: boss archives load with the stage, its health is set once spawned (15000 -> 6000), the HUD digits show its health in percent under its name, boss maps never start a run. Content: s103 "Pump Rooms" with the Uroboros (6000 hp, `uEm40Dummy`/`uEm40Parts` preloaded), economy `arena_count` 4. In game: the boss arena alone (spawned, health set, cleared, no fatal error) and a whole run (`scripts/test_run_map.sh`, `build/runs/20261102-151827-runmap/`):
+
+```
+run of 4 arenas
+run complete
+run map: arena 1: 508 outskirts_patrol -> 0 1 2
+run map: arena 2: 204 market_sweep -> 0 1 | 114 mine_shaft -> 1 2 | 505 outskirts_patrol -> 1 2
+run map: arena 3: 310 dockside_push -> 0 | 6 deck_siege -> 0 | 105 mine_shaft -> 0
+run map: arena 4: 103 ruins_gauntlet
+arena 1: VOLCANO   PATROL (stage 508)
+route: choice 3 of 3, outskirts_patrol on stage 505 (layer 1 node 2)
+stage change: stage 508 -> 505 (costume slot 0, run map), ending the match
+arena 2: FACTORY FLOOR   PATROL (stage 505)
+stage change: arena 2 started on stage 505
+route: choice 1 of 2, deck_siege on stage 6 (layer 2 node 1)
+stage change: stage 505 -> 6 (costume slot 0, run map), ending the match
+arena 3: SHIP DECK   SIEGE (stage 6)
+stage change: arena 3 started on stage 6
+route: choice 1 of 1, ruins_gauntlet on stage 103 (layer 3 node 0)
+stage change: stage 6 -> 103 (costume slot 0, run map), ending the match
+arena 4: PUMP ROOMS   BOSS UROBOROS (stage 103)
+stage change: arena 4 started on stage 103
+ok: arena 2 chosen node 2 = stage 505, played on stage 505
+ok: arena 3 chosen node 1 = stage 6, played on stage 6
+ok: arena 4 chosen node 0 = stage 103, played on stage 103
+last arena is a boss arena
+RUN MAP CHECK PASS
+```
 
 ## Phase 5 — Stabilization/release
 

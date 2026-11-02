@@ -87,7 +87,7 @@ Each line is a research spike with a concrete starting point and a test that clo
 | E8 | Custom icons and sprites | menus draw the game's text; `sLayoutSpr`, `rLayout`, `rLayoutSpr`, `cSprite` children in screens | load our own textures (an `.arc` in `nativePC` loaded through `sResource`) and draw them with the game's sprite routine; fallback: draw textured quads in the D3D9 present hook, styled like the game | perk icons visible next to the perk rows in the PERKS screen |
 | E9 | Character/skin preview | the game's character select (`uIdStartUp22`) shows the model for a costume slot | host the preview in that screen with our selection driving it; fallback: portraits as E8 textures | choosing a skin shows its model or portrait |
 | E10 ✔ | World objects: chests (done 2026-11-02; exits dropped, see M4.2: `research/re5-engine-map.md` "World objects") | pickups are `uOm08xx` (descriptors at `0x00EF0CA0`…), time-bonus action `0x00AD9130` | same path as E1 for objects (find the om manager's create and `cSetInfoOm…` descriptors, `cSetInfoOmArea`) | the director places a chest and an exit object where the arena says |
-| E11 | Bosses | boss classes and their setup descriptors exist (`cSetInfoEm4x/6x/8x…`) | per boss: spawn through E1 with E3 resources in a fitting arena; script dependencies listed per boss | one boss fight as the last arena of a run |
+| E11 ✔ | Bosses (done 2026-11-02 for the Uroboros uEm40: `research/re5-engine-map.md` "Bosses") | boss classes and their setup descriptors exist (`cSetInfoEm4x/6x/8x…`) | per boss: spawn through E1 with E3 resources in a fitting arena; script dependencies listed per boss | one boss fight as the last arena of a run |
 | E12 | Perk mechanics | kills, damage, heal, items done; missing grab, move speed, weapon category damage | grab: the `cEm…PlEvent_Catch`/`_PL` actions (refuse or shorten a grab); move speed: player motion rate field; weapon category: equipped record id → category (done) | each mechanic used by a perk works in game |
 
 ## 5. The to-do list
@@ -158,7 +158,11 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    and the arenas each leads to; the stage change loads the chosen node's arena.
 
 ### M6 — Bosses
-1. E11 spike on one boss; boss arena as the last step of a run.
+1. ~~E11 spike on one boss; boss arena as the last step of a run.~~ Done 2026-11-02: eleven boss
+   candidates spawned in their home areas (`scripts/test_boss_spawn.sh`); the Uroboros (uEm40) in
+   s103 hunts the player, takes gunfire and dies with the game's own death sequence. `maps.json`
+   boss maps (`"boss": {class, name, hp}`) end every run: the director spawns the boss alone, the
+   arena clears when it dies, the HUD's digits show its health. Runs are three arenas and the boss.
 2. More bosses as content allows.
 
 ### M7 — Between arenas and menus that look native

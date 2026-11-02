@@ -41,8 +41,15 @@ STARTS = {
     204: (33885.1, 50.7, -87305.7), 300: (-3314.4, 2996.6, 46320.6), 302: (1696.9, 950.0, 14451.7),
     310: (342.5, -1299.5, -23565.0), 314: (-2455.7, 900.0, -22567.5), 500: (529.4, 0.0, 2613.4),
     503: (1718.5, 0.0, 19263.3), 505: (-2253.9, 703.2, -723.6), 506: (-137.7, -700.0, 821.5),
-    508: (-897.9, -4.2, 798.2), 700: (0.0, 0.0, 0.0),
+    508: (-897.9, -4.2, 798.2), 700: (0.0, 0.0, 0.0), 103: (-810.0, -1200.0, -1140.0),
 }
+# Boss arenas (ROADMAP M6, scripts/test_boss_spawn.sh): the area the boss is fought in, the boss
+# (its class, a name for the menus, its health: the story's is far above a run's guns) and the
+# archives that come with its class. Their maps hold no roster; runs end on one.
+BOSSES = {
+    103: {'class': 'uEm40', 'name': 'Uroboros', 'hp': 6000, 'preload': ['uEm40Dummy', 'uEm40Parts']},
+}
+BOSS_PLAYER_DISTANCE = (1000, 2500)  # the boss appears within sight, not on top of the player
 # Kept for developer tests but out of the run rotation ("rotation": false), with the reason.
 NO_ROTATION = {
     503: 'as the first arena of a session the player starts on the upper deck (-627, 1350, 25225), '
@@ -53,7 +60,7 @@ NAMES = {
     100: 'Kijuju Town', 104: 'Waterfront', 105: 'Back Alleys', 113: 'Warehouse', 114: 'Slums',
     202: 'Marsh Village', 204: 'Port', 300: 'Cave Shrine', 302: 'Ruin Passages', 310: 'Underground Facility',
     314: 'Mine Scaffolds', 500: 'Cargo Hold', 503: 'Freighter Deck', 505: 'Factory Floor', 506: 'Steel Docks',
-    508: 'Volcano', 700: 'Spencer Mansion',
+    508: 'Volcano', 700: 'Spencer Mansion', 103: 'Pump Rooms',
 }
 
 
@@ -134,9 +141,18 @@ for stage in args.stages:
         'preload': preload + [w for w in area_weapons(stage) if w not in preload],
         'roster': template['roster'],
     }
+    if stage in BOSSES:
+        boss = BOSSES[stage]
+        entry = {k: v for k, v in entry.items() if k not in ('roster', 'max_alive', 'preload')}
+        entry['min_player_distance'], entry['max_player_distance'] = BOSS_PLAYER_DISTANCE
+        entry['preload'] = boss['preload']
+        entry['boss'] = {'class': boss['class'], 'name': boss['name'], 'hp': boss['hp']}
     doc['maps'] = [m for m in doc['maps'] if m['stage'] != stage] + [entry]
-    print(f's{stage}: {len(points)} points, {len(entry["chests"])} chests, roster and {len(preload)} archives from '
-          f'{template["name"]}, {len(entry["preload"]) - len(preload)} more weapons of the area')
+    if stage in BOSSES:
+        print(f's{stage}: {len(points)} points, {len(entry["chests"])} chests, boss {entry["boss"]["name"]} ({entry["boss"]["class"]})')
+    else:
+        print(f's{stage}: {len(points)} points, {len(entry["chests"])} chests, roster and {len(preload)} archives from '
+              f'{template["name"]}, {len(entry["preload"]) - len(preload)} more weapons of the area')
 
 with open('configs/maps.json', 'w', encoding='utf-8', newline='\n') as f:
     text = json.dumps(doc, indent=2)

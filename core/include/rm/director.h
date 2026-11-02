@@ -37,6 +37,14 @@ struct MapEnemy {
     int max_alive = 0;
 };
 
+/// A boss (ROADMAP M6): on its map the director spawns only the boss, and the arena clears when
+/// it dies. Runs end on a boss arena when one is in their pool.
+struct MapBoss {
+    std::string unit_class;  // engine class, e.g. "uEm40"
+    std::string name;        // shown in the route menu and on the HUD
+    int hp = 0;              // > 0: its health once spawned (the game's own suits story weapons)
+};
+
 /// A map the director can run an arena on (configs/maps.json).
 struct MapDef {
     std::string id;
@@ -57,6 +65,7 @@ struct MapDef {
     double max_player_distance = 0.0;    // > 0: points farther than this are avoided (large areas)
     double special_after = 0.25;         // share of the budget dead before specials join
     int max_specials = 1;                // specials alive at once on tier 1 (+1 per tier above)
+    std::optional<MapBoss> boss;         // a boss arena (the roster is not used)
 };
 
 /// What the adapter must create now. `ticket` identifies the request until it is answered.
@@ -66,10 +75,13 @@ struct SpawnRequest {
     std::int64_t arm = -1;
     std::array<double, 3> pos{};
     SpawnFields fields;  // from the picked profile (empty = adapter defaults)
+    int hp = 0;          // > 0: the unit's health once spawned (bosses)
+    bool boss = false;
 };
 
 /// Runs one arena: `budget` enemies in total, at most `max_alive` at once, refilled as they
-/// die. Only units it spawned count. Deterministic for a given seed.
+/// die. Only units it spawned count. Deterministic for a given seed. On a boss map the boss is
+/// the only unit (budget 1).
 class Director {
 public:
     Director(const MapDef& map, int budget, int tier, std::uint64_t seed);

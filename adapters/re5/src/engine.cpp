@@ -185,6 +185,14 @@ bool WriteHp(std::uintptr_t character, int hp) {
     return SafeStore(character + re5::off::kHp, clamped);
 }
 
+bool SetHealth(std::uintptr_t character, int hp) {
+    if (!ReadHp(character) || hp <= 0) {
+        return false;
+    }
+    const auto value = static_cast<std::int16_t>(hp > 32767 ? 32767 : hp);
+    return SafeStore(character + re5::off::kMaxHp, value) && SafeStore(character + re5::off::kHp, value);
+}
+
 PlayersSnapshot ReadPlayers() {
     PlayersSnapshot snap;
     if (!g_caps.players) {

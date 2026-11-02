@@ -62,7 +62,9 @@ struct RunMap {
 /// on `first` (or an arena drawn from `arenas` when -1); layer d >= 1 alternates the d-th and
 /// (d+1)-th lowest enabled tiers (the highest repeats). Arenas come from `arenas` (map keys the
 /// adapter can load; empty: every map_key stays -1), distinct within a layer and never the
-/// arena a node is reached from, while there are enough of them.
+/// arena a node is reached from, while there are enough of them. Boss arenas (maps with a
+/// boss) only fill the last layer: up to `width` of them, reached from every node before, fought
+/// with a route of the highest tier.
 RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& arenas, int first);
 
 /// Rolls the curses of route choices: a choice whose route has curse_chance may carry one curse

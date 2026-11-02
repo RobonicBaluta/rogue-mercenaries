@@ -623,11 +623,13 @@ Status RunController::BeginArena(double now) {
         if (const MapDef* map = content_->FindMapByStage(map_stage_)) {
             director_.emplace(*map, route->enemy_budget, route->difficulty_tier, streams_->director.Next());
             director_->PickChests(content_->economy().chests.per_arena);
+            run_.arenas.back().budget = director_->budget();  // a boss arena: the boss alone
         }
     }
 
     Event e = MakeEvent(EventType::ArenaStarted);
-    e.Add("route", route->id).Add("tier", route->difficulty_tier).Add("budget", route->enemy_budget)
+    e.Add("route", route->id).Add("tier", route->difficulty_tier).Add("budget", run_.arenas.back().budget)
+        .Add("boss", director_ && director_->map().boss ? director_->map().boss->unit_class : std::string())
         .Add("par_time_seconds", route->modifiers.par_time_seconds)
         .Add("incoming_mult", route->modifiers.incoming_damage_mult)
         .Add("outgoing_mult", route->modifiers.outgoing_damage_mult).Add("now", now);

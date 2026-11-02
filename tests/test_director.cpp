@@ -97,6 +97,7 @@ TEST_CASE("shipped maps load and every map can spawn at tier 1", "[director]") {
     for (const MapDef& m : r.content->maps()) {
         INFO(m.id);
         CHECK(m.points.size() >= 4);
+        if (m.boss) continue;  // a boss arena spawns its boss alone
         CHECK(std::any_of(m.roster.begin(), m.roster.end(), [](const MapEnemy& e) { return e.min_tier <= 1 && e.weight > 0; }));
     }
 }
@@ -314,10 +315,44 @@ TEST_CASE("maps.json is validated", "[director]") {
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "special_after": 0.5, "points": [[0,0,0]], "roster": [{"class": "uEm10"}, {"class": "uEm0b", "special": true, "max_alive": 1}]}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "roster": [{"class": "uEm10", "profiles": [{"fields": {"Arm": 1}}]}]}]})").empty());
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "roster": [{"class": "uEm10", "profiles": [{"weight": 2, "fields": {"arm": 459088, "plaga": 1}}]}]}]})").empty());
+    // A boss map needs no roster; its boss must be an enemy class with an hp the game can hold.
+    CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "b", "name": "B", "stage": 103, "points": [[0,0,0]], "boss": {"class": "uEm40", "name": "Uroboros", "hp": 6000}}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "b", "name": "B", "stage": 103, "points": [[0,0,0]], "boss": {"class": "uPl00", "name": "X"}}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "b", "name": "B", "stage": 103, "points": [[0,0,0]], "boss": {"class": "uEm40", "name": "U", "hp": 40000}}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "b", "name": "B", "stage": 103, "points": [[0,0,0]], "boss": {"class": "uEm40"}}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]]}]})").empty());  // no roster, no boss
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "chests": [[1,2,3]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 503, "rotation": false, "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 503, "preload": ["uWp6f", "uEm10Eff"], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 503, "preload": ["../x"], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 503, "rotation": "no", "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "chests": [[1,2]], "roster": [{"class": "uEm10"}]}]})").empty());
+}
+
+TEST_CASE("on a boss map the director spawns the boss alone and its death clears the arena", "[director]") {
+    MapDef map = TestMap(5);
+    map.boss = MapBoss{"uEm40", "Uroboros", 6000};
+    Director d(map, 30, 3, 9);  // the route's budget does not apply
+    CHECK(d.budget() == 1);
+    const auto first = d.Tick(0.0, std::array<double, 3>{0, 0, 0});
+    REQUIRE(first.size() == 1);
+    CHECK(first[0].unit_class == "uEm40");
+    CHECK(first[0].boss);
+    CHECK(first[0].hp == 6000);
+    CHECK(first[0].arm == -1);
+    CHECK(d.Tick(5.0, std::nullopt).empty());  // never a second unit
+    d.Spawned(first[0].ticket, "boss");
+    CHECK(d.Tick(10.0, std::nullopt).empty());
+    CHECK_FALSE(d.complete());
+    CHECK(d.Died("boss"));
+    CHECK(d.complete());
+    CHECK(d.Tick(20.0, std::nullopt).empty());
+    // A failed spawn is asked for again.
+    Director retry(map, 30, 3, 9);
+    const auto a = retry.Tick(0.0, std::nullopt);
+    REQUIRE(a.size() == 1);
+    retry.SpawnFailed(a[0].ticket);
+    const auto b = retry.Tick(1.0, std::nullopt);
+    REQUIRE(b.size() == 1);
+    CHECK(b[0].boss);
 }

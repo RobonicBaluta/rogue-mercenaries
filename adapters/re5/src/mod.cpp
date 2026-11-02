@@ -169,6 +169,13 @@ struct ModState {
     // Units the director spawned this match -> their run id ("dir_<ticket>"). A kill report
     // takes the id out, so a later unit in the same memory is not mistaken for it.
     std::unordered_map<std::uintptr_t, std::string> directorUnits;
+    // The boss of a boss arena (M6) and the health the arena gives it.
+    struct Boss {
+        std::uintptr_t unit = 0;  // 0 before its spawn and once its death is reported
+        int hp = 0;
+        double spawnedAt = 0.0;
+        bool dead = false;
+    } boss;
     struct StageTransition {
         bool pending = false;
         int generation = 0;     // matchGeneration when the match end was requested
@@ -368,10 +375,15 @@ std::vector<int> RotationMaps() {
 
 int g_forcedNextMap = -1;  // developer "nextmap": the next pick
 
-// A random map of the rotation other than `avoid`.
+// A random map of the rotation other than `avoid`; never a boss arena (M6: those end a run's
+// map).
 int PickMap(int avoid) {
     if (g_forcedNextMap >= 0) return std::exchange(g_forcedNextMap, -1);
     std::vector<int> keys = RotationMaps();
+    std::erase_if(keys, [](int key) {
+        const rm::MapDef* m = g->content->FindMapByStage(key);
+        return m != nullptr && m->boss.has_value();
+    });
     if (keys.size() > 1) std::erase(keys, avoid);
     LARGE_INTEGER counter{};
     QueryPerformanceCounter(&counter);
@@ -707,9 +719,10 @@ private:
                 // tiers; the help names the route, its rewards and where it leads.
                 for (const auto& o : s.route_offers) {
                     Item item;
-                    item.label = Upper(Plain(o.title)) + (o.tier > 0 ? "   TIER " + std::to_string(o.tier) : "");
+                    item.label = Upper(Plain(o.title)) + (o.boss ? std::string("   BOSS")
+                                                                 : o.tier > 0 ? "   TIER " + std::to_string(o.tier) : "");
                     if (o.tier == 2) item.color = 0xFFFFD27Fu;
-                    if (o.tier >= 3) item.color = 0xFFFF7A5Cu;
+                    if (o.tier >= 3 || o.boss) item.color = 0xFFFF7A5Cu;
                     item.help = Plain(o.detail);
                     screen.items.push_back(std::move(item));
                 }
@@ -1067,6 +1080,10 @@ std::string EnemyKillId(std::uintptr_t enemy, int maxHp) {
     if (const auto it = g->directorUnits.find(enemy); it != g->directorUnits.end()) {
         std::string id = std::move(it->second);
         g->directorUnits.erase(it);
+        if (enemy == g->boss.unit) {
+            g->boss.unit = 0;
+            g->boss.dead = true;
+        }
         return id;
     }
     char id[32];
@@ -1474,14 +1491,16 @@ public:
 };
 InventoryBridge g_inventoryBridge;
 
-// An arena began: the director's grace starts, and the HUD names the map and the route for a
-// few seconds (M5.3).
+// An arena began: the director's grace starts, and the HUD names the map and the route (or the
+// boss) for a few seconds (M5.3).
 void ArenaBegan(double now) {
     g->arenaBeganAt = now;
+    g->boss = {};
     const rm::RunSnapshot s = g->run->Snapshot(now);
     const rm::MapDef* map = CurrentMap();
     std::string line = map != nullptr ? Upper(Plain(map->name)) : std::string();
-    if (!s.route_name.empty()) line += (line.empty() ? "" : "   ") + Upper(Plain(s.route_name));
+    if (map != nullptr && map->boss) line += "   BOSS " + Upper(Plain(map->boss->name));
+    else if (!s.route_name.empty()) line += (line.empty() ? "" : "   ") + Upper(Plain(s.route_name));
     if (line.empty()) return;
     g->notice = line;
     g->noticeUntil = now + 5.0;
@@ -1591,8 +1610,19 @@ void DriveDirector(double now) {
                                CurrentMap() != nullptr;
     director::BlockNativeSpawns(directorStage || g->devQuiet);
     run.SetMapStage(g->match.inMatch ? CurrentMapKey() : -1);
-    if (!g->match.inMatch) g->directorUnits.clear();
+    if (!g->match.inMatch) {
+        g->directorUnits.clear();
+        g->boss = {};
+    }
     if (!run.DirectorActive() || run.phase() != rm::Phase::ArenaActive || g->devQuiet) return;
+    // M6: a boss's health is the arena's, not the story's. Set while it settles (its first
+    // updates may still write its own).
+    if (g->boss.unit && g->boss.hp > 0 && now - g->boss.spawnedAt < 3.0) {
+        const auto hp = engine::ReadHp(g->boss.unit);
+        if (hp && hp->max != g->boss.hp && hp->hp > 0 && engine::SetHealth(g->boss.unit, g->boss.hp)) {
+            RM_LOGI("director: boss health %d/%d -> %d", hp->hp, hp->max, g->boss.hp);
+        }
+    }
     // A moment before the first enemies: the arena's inventory, chests and carried state are
     // set up first, and the player gets their bearings.
     constexpr double kDirectorGraceSeconds = 3.0;
@@ -1626,6 +1656,11 @@ void DriveDirector(double now) {
         std::string id = "dir_" + std::to_string(r.ticket);
         g->directorUnits[unit] = id;
         run.DirectorSpawned(r.ticket, id);
+        if (r.boss) {
+            g->boss = {unit, r.hp, now};
+            RM_LOGI("director: boss %s (%s) spawned, health %d", r.unit_class.c_str(),
+                    CurrentMap() && CurrentMap()->boss ? CurrentMap()->boss->name.c_str() : "?", r.hp);
+        }
         const rm::Director* d = run.director();
         RM_LOGI("director: %s (arm %llX, %zu fields) at %.0f %.0f %.0f -> %08X; %d alive, %d dead of %d", r.unit_class.c_str(),
                 static_cast<unsigned long long>(r.arm), r.fields.size(), pos[0], pos[1], pos[2], static_cast<unsigned>(unit),
@@ -1686,6 +1721,7 @@ void UpdatePreloads() {
         extras.enemyClasses.push_back("uOm0100");
         if (const rm::MapDef* map = CurrentMap()) {
             extras.enemyArchives = map->preload;
+            if (map->boss) extras.enemyClasses.push_back(map->boss->unit_class);
             for (const rm::MapEnemy& e : map->roster) {
                 extras.enemyClasses.push_back(e.unit_class);
                 for (const std::int64_t arm : e.arms) addWeapon(arm);
@@ -1836,6 +1872,15 @@ void UpdateMatchStatus() {
             hud.left = "ARENA " + std::to_string(s.arena) + " OF " + std::to_string(s.arena_count);
             hud.center = (digits ? std::string() : std::to_string(s.remaining) + " ") +
                          (s.remaining == 1 ? "ENEMY LEFT" : "ENEMIES LEFT");
+            // A boss arena (M6): the digits are the boss's health in percent, the label its name.
+            const rm::MapDef* map = CurrentMap();
+            if (map != nullptr && map->boss) {
+                const auto hp = g->boss.unit ? engine::ReadHp(g->boss.unit) : std::nullopt;
+                const int percent = hp && hp->max > 0 ? std::clamp((hp->hp * 100 + hp->max - 1) / hp->max, 0, 99)
+                                                      : (g->boss.dead ? 0 : 99);
+                counter = digits ? percent : -1;
+                hud.center = (digits ? std::string() : std::to_string(percent) + " PERCENT ") + Upper(Plain(map->boss->name));
+            }
             hud.right = std::to_string(s.supplies) + " SUPPLIES";
             if (Now() < g->noticeUntil) hud.notice = g->notice;
         } else if (phase == rm::Phase::RouteSelection && run.state().route_chosen) {
@@ -2196,6 +2241,14 @@ void PollDevCommand(double now) {
             RM_LOGW("dev spawn %s (weapon %X) at %.0f %.0f %.0f -> %08X %s", cls.c_str(), weapon, spawnAt[0], spawnAt[1], spawnAt[2],
                     static_cast<unsigned>(unit), unit ? engine::ClassName(unit).c_str() : "failed");
         }
+    } else if (command.rfind("enemyhp ", 0) == 0) {
+        // "enemyhp <n>": every live enemy's health down to n (a boss finished by gunfire in tests).
+        const int hp = std::atoi(command.c_str() + 8);
+        int changed = 0;
+        for (const auto& e : engine::ReadEnemyStates()) {
+            if (e.hp > 0 && hp > 0 && engine::WriteHp(e.object, hp)) ++changed;
+        }
+        RM_LOGW("dev enemyhp %d: %d enemies", hp, changed);
     } else if (command == "enemies") {
         const auto states = engine::ReadEnemyStates();
         int alive = 0;

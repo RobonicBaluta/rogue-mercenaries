@@ -2,7 +2,7 @@
   "_comment": "Run economy and balance knobs. Supplies are run-only; credits persist in the profile and are banked at EndRun (failed runs bank credits.death_rate of what they earned).",
   "schema_version": 1,
   "run": {
-    "arena_count": 3,
+    "arena_count": 4,
     "starting_route": "outskirts_patrol",
     "starting_supplies": 20,
     "non_player_kills_count_toward_budget": true,

@@ -56,6 +56,8 @@ struct CharacterHp {
 };
 std::optional<CharacterHp> ReadHp(std::uintptr_t character);
 bool WriteHp(std::uintptr_t character, int hp);
+/// Sets a character's health and maximum to `hp` (bosses: the game's own suits story weapons).
+bool SetHealth(std::uintptr_t character, int hp);
 
 struct PlayerInfo {
     std::uintptr_t object = 0;

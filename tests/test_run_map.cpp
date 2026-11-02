@@ -18,6 +18,14 @@ constexpr const char* kArenas = R"({"schema_version": 1, "maps": [
   {"id": "a2", "name": "Arena Two", "stage": 2, "points": [[0, 0, 0]], "roster": [{"class": "uEm10"}]},
   {"id": "a3", "name": "Arena Three", "stage": 103, "points": [[0, 0, 0]], "roster": [{"class": "uEm10"}]}]})";
 
+// The same with a boss arena.
+constexpr const char* kArenasWithBoss = R"({"schema_version": 1, "maps": [
+  {"id": "a0", "name": "Arena Zero", "stage": 0, "points": [[0, 0, 0]], "roster": [{"class": "uEm10"}]},
+  {"id": "a1", "name": "Arena One", "stage": 1, "points": [[0, 0, 0]], "roster": [{"class": "uEm10"}]},
+  {"id": "a2", "name": "Arena Two", "stage": 2, "points": [[0, 0, 0]], "roster": [{"class": "uEm10"}]},
+  {"id": "a3", "name": "Arena Three", "stage": 103, "points": [[0, 0, 0]], "roster": [{"class": "uEm10"}]},
+  {"id": "lair", "name": "Lair", "stage": 200, "points": [[0, 0, 0], [900, 0, 0]], "boss": {"class": "uEm40", "name": "Beast", "hp": 5000}}]})";
+
 int Tier(const Content& c, const RunMapNode& n) { return c.FindRoute(n.route_id)->difficulty_tier; }
 
 }  // namespace
@@ -235,4 +243,79 @@ TEST_CASE("with the shipped content every route offer fits the game's help box",
         REQUIRE(h.rc.EndRun().ok());
     }
     CHECK(offers > 200);
+}
+
+TEST_CASE("boss arenas only end the run map, reached from every node before", "[routes]") {
+    ContentSources src = test::FixtureSources();
+    src.maps = kArenasWithBoss;
+    const auto content = test::Load(src);  // three arenas: start, one layer, the boss
+    for (std::uint64_t seed = 0; seed < 100; ++seed) {
+        Rng rng = Rng::Derive(seed, streams::kRoute);
+        const RunMap map = GenerateRunMap(*content, rng, {0, 1, 2, 103, 200}, -1);
+        REQUIRE(map.layers.size() == 3);
+        CHECK(map.layers[0][0].map_key != 200);
+        for (const RunMapNode& n : map.layers[1]) {
+            CHECK(n.map_key != 200);
+            CHECK(n.next == std::vector<int>{0});  // every node leads to the boss
+        }
+        REQUIRE(map.layers[2].size() == 1);
+        CHECK(map.layers[2][0].map_key == 200);
+        CHECK(Tier(*content, map.layers[2][0]) == 3);  // the highest tier
+    }
+    // Without a boss in the pool the last layer is a normal one.
+    Rng rng = Rng::Derive(1, streams::kRoute);
+    const RunMap plain = GenerateRunMap(*content, rng, {0, 1, 2, 103}, -1);
+    CHECK(plain.layers.back().size() == 3);
+}
+
+TEST_CASE("a run ends on the boss: offered by name, its death alone clears the arena", "[routes]") {
+    ContentSources src = test::FixtureSources();
+    src.maps = kArenasWithBoss;
+    test::Harness h(test::Load(src));
+    h.rc.SetArenaPool({0, 1, 2, 103, 200}, 0);
+    REQUIRE(h.rc.StartRun("alpha", 5).ok());
+    double t = 0.0;
+    for (int arena = 1; arena <= 2; ++arena) {
+        test::ClearArena(h.rc, t);
+        REQUIRE(h.rc.ContinueToRewards().ok());
+        REQUIRE(h.rc.ChooseReward(0).ok());
+        REQUIRE(h.rc.LeaveShop().ok());
+        const RunSnapshot snap = h.rc.Snapshot(t);
+        if (arena == 1) {
+            for (const OfferView& o : snap.route_offers) CHECK(o.detail.find("\nThen Beast.") != std::string::npos);
+        } else {
+            REQUIRE(snap.route_offers.size() == 1);
+            CHECK(snap.route_offers[0].boss);
+            CHECK(snap.route_offers[0].title == "Beast");
+            CHECK(snap.route_offers[0].detail.find("Boss fight, rewards x") == 0);
+            CHECK(snap.route_offers[0].detail.find("\nThe last arena of the run.") != std::string::npos);
+        }
+        REQUIRE(h.rc.ChooseRoute(0).ok());
+        t += 100.0;
+    }
+    CHECK(h.rc.PlannedMapKey() == 200);
+    h.rc.SetMapStage(200);  // the adapter loaded the boss arena
+    REQUIRE(h.rc.BeginArena(t).ok());
+    REQUIRE(h.rc.DirectorActive());
+    CHECK(h.rc.RemainingEnemies() == 1);
+    const auto spawns = h.rc.DirectorTick(t + 1.0, std::array<double, 3>{0, 0, 0});
+    REQUIRE(spawns.size() == 1);
+    CHECK(spawns[0].unit_class == "uEm40");
+    CHECK(spawns[0].hp == 5000);
+    h.rc.DirectorSpawned(spawns[0].ticket, "beast");
+    // Anything else dying (the boss's own minions) does not count.
+    KillEvent minion;
+    minion.now = t + 2.0;
+    minion.by_player = true;
+    minion.enemy_id = "minion";
+    CHECK(h.rc.OnEnemyKilled(minion).ignored);
+    CHECK_FALSE(h.rc.IsArenaComplete());
+    KillEvent boss = minion;
+    boss.enemy_id = "beast";
+    CHECK(h.rc.OnEnemyKilled(boss).counted);
+    CHECK(h.rc.IsArenaComplete());
+    REQUIRE(h.rc.CompleteArena(t + 30.0).ok());
+    REQUIRE(h.rc.ContinueToRewards().ok());
+    REQUIRE(h.rc.ChooseReward(0).ok());
+    CHECK(h.rc.phase() == Phase::RunComplete);
 }
