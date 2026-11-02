@@ -3651,7 +3651,8 @@ void DrawDisabled() {
 }
 
 // The icons of the Play menu's mod rows, left of each label: drawn over the finished frame in the
-// game's 1280x720 layout scaled to the back buffer, in the label's colour and alpha.
+// label's colour and alpha. The game fits its 1280x720 canvas into the back buffer at one scale,
+// centred (3440x1440: x 2.0 from 440, rows centred on x 1720).
 // A label's width in layout units is scale x (kGlyphUnit x its glyph widths + kGlyphSpacing per
 // glyph): fitted to the perk lists at 1920x1080 (cursor rows exact, the others about 4 % wide).
 // Labels are centred on their x and y.
@@ -3665,8 +3666,9 @@ void DrawMenuIcons() {
     const auto rows = nativemenu::VisibleRowIcons();
     if (!device || rows.empty()) return;
     const ImVec2 display = ImGui::GetIO().DisplaySize;
-    const float sx = display.x / 1280.0f;
-    const float sy = display.y / 720.0f;
+    const float k = std::min(display.x / 1280.0f, display.y / 720.0f);
+    const float ox = (display.x - 1280.0f * k) * 0.5f;
+    const float oy = (display.y - 720.0f * k) * 0.5f;
     ImDrawList* list = ImGui::GetBackgroundDrawList();
     for (const nativemenu::RowIcon& r : rows) {
         const auto texture = icons::Texture(device, r.icon);
@@ -3676,7 +3678,7 @@ void DrawMenuIcons() {
         const float right = static_cast<float>(r.x) - half - kIconGap * r.scale;
         const float top = static_cast<float>(r.y) - size * 0.5f;
         const std::uint32_t a = r.argb >> 24, red = (r.argb >> 16) & 0xFF, green = (r.argb >> 8) & 0xFF, blue = r.argb & 0xFF;
-        list->AddImage(static_cast<ImTextureID>(texture), ImVec2((right - size) * sx, top * sy), ImVec2(right * sx, (top + size) * sy),
+        list->AddImage(static_cast<ImTextureID>(texture), ImVec2(ox + (right - size) * k, oy + top * k), ImVec2(ox + right * k, oy + (top + size) * k),
                        ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f), IM_COL32(red, green, blue, a));
     }
 }
