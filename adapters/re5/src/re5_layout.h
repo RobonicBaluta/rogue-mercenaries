@@ -45,6 +45,21 @@ constexpr std::uintptr_t kFnMercAddCountdown = 0x0071CBF0;
 // 0x00FEFF7C): state byte +0x14 (0 delay, 1 grant, 2 fade out), +0x18 the map object
 // (seconds as int16 at +0x1364).
 constexpr std::uintptr_t kFnTimeBonusAction = 0x00AD9130;
+// In-match cockpit HUD uIdCockpit00 (vtable 0x00F9E480, move 0x009F8FC0 = slot 6): its move
+// clears every child sprite's draw byte (+8), copies the Mercenaries countdown (game work
+// +0x680) into +0x34C with the show flag +0x344, and its timer draw (FUN_009F0390) then sets
+// the six digit sprites and the separators. Skipping the draw leaves the clock off screen.
+constexpr std::uintptr_t kFnCockpitDrawTimer = 0x009F0390;
+// Mercenaries HUD uIdMerce00 draw tail (FUN_00A1E580, called from its move 0x00A1E650): clears
+// the draw byte of every element of its two layout pages (handles at +0x44/+0x48), then (unless
+// the game is paused) its helpers switch the score, combo and bonus panels back on.
+constexpr std::uintptr_t kFnMerceHudDraw = 0x00A1E580;
+// Layout sprite manager (sLayoutSpr) and the two calls that clear loop makes:
+// elements = PageElements(this = manager, page) (count at elements+0xC), and
+// SetElementDraw(this = manager, draw, page, element) writes the element's draw byte (+8).
+constexpr std::uintptr_t kLayoutManager = 0x011B2334;
+constexpr std::uintptr_t kFnLayoutPageElements = 0x007C16B0;
+constexpr std::uintptr_t kFnLayoutSetElementDraw = 0x007C1600;
 // Play menu screen (uIdStartUp01) per-frame move, and the menu input query
 // (__stdcall int(int pad, int mode)) it calls first.
 constexpr std::uintptr_t kFnPlayMenuMove = 0x00A396C0;
@@ -344,6 +359,16 @@ inline constexpr Signature kSignatures[] = {
     {"unit_register", addr::kFnUnitRegister, "56 8B 74 24 0C 85 F6 57 8B F9 75 07 5F 32 C0 5E C2 08 00 80"},
     {"merc_add_countdown", addr::kFnMercAddCountdown, "A1 A4 40 23 01 56 8B F1 8B 88 2C 04 01 00 8B 41 58 85 C0 0F"},
     {"time_bonus_action", addr::kFnTimeBonusAction, "55 8B EC 83 E4 F0 83 EC 24 53 56 57 8B F1 E8 6D FC FF FF 83"},
+    // Countdown update: `cmp [eax+0x58C], edx; jl` is the kill cap (150, or 400) ending the match.
+    {"merc_kill_cap", 0x007178FD, "39 90 8C 05 00 00 7C 0A C7 87 D4 04 00 00 01 00"},
+    {"cockpit_draw_timer", addr::kFnCockpitDrawTimer, "51 A1 A4 40 23 01 F7 80 38 04 01 00 00 04 00 70 57 8B F9 0F 85"},
+    {"cockpit_move_slot", 0x00F9E498, "C0 8F 9F 00"},
+    {"merce_hud_draw", addr::kFnMerceHudDraw,
+     "51 53 55 56 8B E9 57 8D 5D 44 C7 44 24 10 02 00 00 00 8B 03 8B 0D 34 23 1B 01 50 E8"},
+    {"layout_page_elements", addr::kFnLayoutPageElements, "8B 44 24 04 83 F8 5C 73 19 8B 44 81 20 85 C0 74 11 8B 40 08 85 C0 74 0A"},
+    {"layout_set_element_draw", addr::kFnLayoutSetElementDraw, "8B 44 24 08 83 F8 5C 73 38 56 8B 74 81 20 85 F6 74 2E 8B 46 08 85 C0 74"},
+    // The element count the clear loop reads: `mov eax, [ecx+0xC]; ret`.
+    {"layout_element_count", 0x00CDADA0, "8B 41 0C C3"},
     {"flow_step20", addr::kFnFlowStep20, "56 8B F1 0F BE 46 25 83 E8 00 74 57 83 E8 01 74"},
     {"flow_merc_setup", addr::kFnFlowMercSetup, "56 8B F1 0F BE 46 24 83 F8 15 0F 87 AE 01 00 00"},
     {"inventory_add_to_stacks", addr::kFnInventoryAddToStacks, "83 EC 64 53 8B 5C 24 6C 55 56 57 33 FF 33 C0 89"},

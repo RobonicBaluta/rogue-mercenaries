@@ -30,6 +30,7 @@ struct Verified {
     bool resultsScreen = false; // Mercenaries results screen move (auto-accept between stages)
     bool pauseScreen = false;   // pause screen move (host of the in-match screens)
     bool timeBonus = false;     // time-bonus pickups and the countdown add (chests)
+    bool mercHud = false;       // the clock (cockpit) and score (Mercenaries HUD) draws, the kill cap
     bool slotClear = false;     // the game's inventory record clear (releases weapon models)
     bool gameShop = false;      // campaign shop screen constructor and unit registration
     bool enemySpawn = false;    // sEnemy::Create, the set spawn, class lookup (director)

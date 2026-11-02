@@ -52,6 +52,8 @@ struct Settings {
     //   "game"  leaves the game's own countdown alone
     std::string timerPolicy = "hold";
     float timerHoldSeconds = 90.0f;
+    // The game's Mercenaries clock and score panels during a run (off: only the mod's HUD).
+    bool mercHud = false;
     // End the Mercenaries match (timer -> 0) once the arena's kill budget is met.
     bool endMatchOnClear = false;  // true: the game's time-up ends the match after every arena
     // Each route leads to a new random stage: the match is ended by the game's time-up, its

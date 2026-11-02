@@ -27,6 +27,7 @@ std::atomic<std::uintptr_t> g_object{0};
 std::atomic<DWORD> g_lastSeen{0};
 std::atomic<float> g_floor{-1.0f};
 std::atomic<bool> g_endRequested{false};
+std::atomic<bool> g_hideHud{false};
 
 void __fastcall UpdateCountdownDetour(std::uintptr_t self, void*, float dt) {
     if (g_object.exchange(self) != self) {
@@ -35,6 +36,8 @@ void __fastcall UpdateCountdownDetour(std::uintptr_t self, void*, float dt) {
     g_lastSeen = GetTickCount();
     float countdown = 0.0f;
     std::int32_t state = -1;
+    std::uintptr_t work = 0;
+    std::int32_t kills = 0;
     if (SafeRead(self + re5::off::kMercCountdown, countdown) && SafeRead(self + re5::off::kMercState, state) &&
         state == 0) {
         if (g_endRequested.exchange(false)) {
@@ -46,9 +49,61 @@ void __fastcall UpdateCountdownDetour(std::uintptr_t self, void*, float dt) {
             if (floor > 0.0f && countdown < floor) {
                 SafeStore(self + re5::off::kMercCountdown, floor);
             }
+            // While the run holds the match, only the mod ends it: the update compares the
+            // kill counter with its cap (150, 400 in Duo), so it sees zero for that one call.
+            if (floor > 0.0f && engine::Caps().mercHud) {
+                work = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
+                if (!work || !SafeRead(work + re5::off::kMercKills, kills) || kills <= 0 ||
+                    !SafeStore(work + re5::off::kMercKills, std::int32_t{0})) {
+                    work = 0;
+                }
+            }
         }
     }
     g_origUpdate(self, dt);
+    if (work) {
+        // The update itself never counts kills; keep any it did add anyway.
+        SafeStore(work + re5::off::kMercKills, kills + ReadOr<std::int32_t>(work + re5::off::kMercKills, 0));
+        static bool logged = false;
+        if (kills >= 150 && !logged) {
+            logged = true;
+            RM_LOGI("mercenaries kill cap held off at %d kills", kills);
+        }
+    }
+}
+
+using DrawFn = void(__thiscall*)(std::uintptr_t self);
+DrawFn g_origCockpitTimer = nullptr;
+DrawFn g_origMerceHud = nullptr;
+
+// The cockpit's move clears its sprites' draw bytes every frame, so a skipped timer draw
+// leaves the clock off screen.
+void __fastcall CockpitTimerDetour(std::uintptr_t self, void*) {
+    if (g_hideHud.load()) return;
+    g_origCockpitTimer(self);
+}
+
+using PageElementsFn = std::uintptr_t(__thiscall*)(std::uintptr_t layout, std::uint32_t page);
+using SetElementDrawFn = void(__thiscall*)(std::uintptr_t layout, int draw, std::uint32_t page, std::uint32_t element);
+
+// Hidden, the Mercenaries HUD's draw only does what it does while the game is paused: it
+// clears its two layout pages and leaves the score, combo and bonus panels off.
+void __fastcall MerceHudDrawDetour(std::uintptr_t self, void*) {
+    if (!g_hideHud.load()) {
+        g_origMerceHud(self);
+        return;
+    }
+    const auto layout = ReadOr<std::uintptr_t>(re5::addr::kLayoutManager, 0);
+    if (!layout) return;
+    const auto pageElements = reinterpret_cast<PageElementsFn>(re5::addr::kFnLayoutPageElements);
+    const auto setElementDraw = reinterpret_cast<SetElementDrawFn>(re5::addr::kFnLayoutSetElementDraw);
+    for (std::uintptr_t handle = self + 0x44; handle <= self + 0x48; handle += 4) {
+        std::uint32_t page = 0;
+        if (!SafeRead(handle, page)) continue;
+        const std::uintptr_t elements = pageElements(layout, page);
+        const auto count = elements ? ReadOr<std::uint32_t>(elements + 0xC, 0) : 0u;
+        for (std::uint32_t e = 0; e < count; ++e) setElementDraw(layout, 0, page, e);
+    }
 }
 
 using AddTimeFn = void(__thiscall*)(std::uintptr_t self, int seconds);
@@ -77,6 +132,7 @@ void __fastcall TimeBonusActionDetour(std::uintptr_t self, void*) {
 }  // namespace
 
 void SetMercTimerFloor(float seconds) { g_floor = seconds; }
+void SetMercHudHidden(bool hidden) { g_hideHud = hidden; }
 void SuppressMercAddTime(bool suppress) { g_suppressAddTime = suppress; }
 int TakeTimeBonusPickups() { return g_pickups.exchange(0); }
 void SimulateTimeBonusPickup() { g_pickups.fetch_add(1); }
@@ -122,6 +178,19 @@ bool InstallMercHooks() {
             RM_LOGI("hooks cMercs::AddTime and the time-bonus pickup queued (chests)");
         } else {
             RM_LOGE("time-bonus hooks failed: %s / %s", MH_StatusToString(a), MH_StatusToString(b));
+        }
+    }
+    if (engine::Caps().mercHud) {
+        auto* timer = reinterpret_cast<void*>(re5::addr::kFnCockpitDrawTimer);
+        auto* hud = reinterpret_cast<void*>(re5::addr::kFnMerceHudDraw);
+        MH_STATUS a = MH_CreateHook(timer, reinterpret_cast<void*>(&CockpitTimerDetour), reinterpret_cast<void**>(&g_origCockpitTimer));
+        if (a == MH_OK) a = MH_QueueEnableHook(timer);
+        MH_STATUS b = MH_CreateHook(hud, reinterpret_cast<void*>(&MerceHudDrawDetour), reinterpret_cast<void**>(&g_origMerceHud));
+        if (b == MH_OK) b = MH_QueueEnableHook(hud);
+        if (a == MH_OK && b == MH_OK) {
+            RM_LOGI("hooks cockpit timer draw and Mercenaries HUD draw queued (clock and score)");
+        } else {
+            RM_LOGE("HUD hooks failed: %s / %s", MH_StatusToString(a), MH_StatusToString(b));
         }
     }
     return true;

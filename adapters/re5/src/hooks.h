@@ -88,7 +88,8 @@ struct MercTimerView {
     float countdown = 0.0f;
     int state = -1;       // 0 running, 1 finished
 };
-void SetMercTimerFloor(float seconds);  // <= 0 disables the floor
+void SetMercTimerFloor(float seconds);  // <= 0 disables the floor; > 0 also holds off the kill cap
+void SetMercHudHidden(bool hidden);     // clock and score panels off screen
 void RequestMercMatchEnd();
 void ClearMercMatchEnd();  // drop a pending request (a new match must not inherit it)
 void SuppressMercAddTime(bool suppress);  // countdown bonuses ignored (a run holds the countdown)

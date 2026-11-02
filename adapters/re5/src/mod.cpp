@@ -1556,6 +1556,9 @@ void UpdateTimerPolicy() {
     const bool alive = g->run->HasActiveRun() && phase != rm::Phase::RunComplete && phase != rm::Phase::RunFailed;
     const bool hold = g->settings.timerPolicy == "hold" && alive && !g->transition.pending;
     SetMercTimerFloor(hold ? g->settings.timerHoldSeconds : -1.0f);
+    // A run has no clock and no score on screen, from the first arena to the stage changes
+    // and the run's last screens; the floor keeps the countdown from ending the match.
+    SetMercHudHidden(g->run->HasActiveRun() && !g->settings.mercHud);
 }
 
 // Developer probe: the scene request fields of the scene manager (what the game's own
@@ -1992,6 +1995,16 @@ void PollDevCommand(double now) {
     } else if (command == "timeup") {
         RequestMercMatchEnd();
         RM_LOGW("dev timeup requested");
+    } else if (command.rfind("merchud ", 0) == 0) {
+        // "merchud on|off": the game's clock and score panels during a run.
+        g->settings.mercHud = command.substr(8) == "on";
+        RM_LOGW("dev merc hud %s", g->settings.mercHud ? "shown" : "hidden");
+    } else if (command.rfind("merckills ", 0) == 0) {
+        // "merckills N": sets the game's Mercenaries kill counter (its cap ends a match).
+        const auto work = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
+        const int kills = std::atoi(command.c_str() + 10);
+        if (work) SafeStore(work + re5::off::kMercKills, static_cast<std::int32_t>(kills));
+        RM_LOGW("dev mercenaries kill counter set to %d", kills);
     } else if (command == "die" && run.phase() == rm::Phase::ArenaActive) {
         Report(run.OnPlayerDied(now), "dev die");
     } else if (command == "itemnames") {

@@ -46,6 +46,7 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
         settings.developerMode = json.value("developer_mode", settings.developerMode);
         settings.timerPolicy = json.value("timer_policy", settings.timerPolicy);
         settings.timerHoldSeconds = json.value("timer_hold_seconds", settings.timerHoldSeconds);
+        settings.mercHud = json.value("merc_hud", settings.mercHud);
         settings.endMatchOnClear = json.value("end_match_on_clear", settings.endMatchOnClear);
         settings.stagePerArena = json.value("stage_per_arena", settings.stagePerArena);
         settings.nativeMatchUi = json.value("native_match_ui", settings.nativeMatchUi);

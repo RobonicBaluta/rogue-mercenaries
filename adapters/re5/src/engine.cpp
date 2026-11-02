@@ -119,6 +119,10 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.enemySpawn = g_caps.enemies && SignatureOk("enemy_create") && SignatureOk("enemy_set_spawn") &&
                         SignatureOk("class_lookup") && SignatureOk("link_units");
     g_caps.timeBonus = g_caps.mercCountdown && SignatureOk("merc_add_countdown") && SignatureOk("time_bonus_action");
+    g_caps.mercHud = g_caps.mercCountdown && SignatureOk("merc_kill_cap") && SignatureOk("cockpit_draw_timer") &&
+                     SignatureOk("cockpit_move_slot") && SignatureOk("merce_hud_draw") &&
+                     SignatureOk("layout_page_elements") && SignatureOk("layout_set_element_draw") &&
+                     SignatureOk("layout_element_count");
     return all;
 }
 

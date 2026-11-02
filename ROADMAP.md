@@ -39,7 +39,7 @@ screens in the game's font (results, rewards, shop with rarity colours, organize
 complete); chests from time-bonus pickups; perks in three slots per character; all
 characters and skins.
 
-Hacked (replace): the Mercenaries timer is held, not removed, and its digits still draw; the
+Hacked (replace): the Mercenaries countdown still runs underneath (held, off screen); the
 Mercenaries spawner decides what spawns; kills are counted from hooks and a death detector;
 weapons/enemies are limited to what the stage loaded; the arena ends through the game's
 time-up; the shop and route are list screens; chests depend on the map's time bonuses.
@@ -80,7 +80,7 @@ Each line is a research spike with a concrete starting point and a test that clo
 | E1 ✔ | Spawn any enemy at a point (proven 2026-11-01: dev `spawn uEm10 70100 2 0` created two Majini at the player, who attacked at once; the game scored and counted them like its own) | `sEnemy::Create(dti, group, mode, flag)` `0x007AF550` → `0x007F4BA0` (DTI `newInstance`, unit group registration); descriptors `cSetInfoEmXX` (e.g. `cSetInfoEm10` vtable `0x01049C94`) are reflected objects (`0x00422C00` registers `mbArmed`, `mArmId` …) applied to a unit by vtable slot 10 (`0x00CC70E0` → base `0x00CCDD20`: position, rotation, weapon, AI flags) | dev command: create a uEm10 next to the player with a filled descriptor; then a list of types | a Majini of a chosen weapon type appears at a chosen point and fights normally; its death is reported |
 | E2 | Turn off the native spawner | Mercenaries spawns from its stage set data | find the Mercenaries generator (callers of `sEnemy::Create`'s vtable slot, set-file processing, `cActEvEmSet` for campaign) and gate it | a Mercenaries map stays empty until the director spawns |
 | E3 | Load models on demand | formats `%s\em\em%02x\em%02x%02x`, `%s\wp\wp%02x\wp%02x%02x`, `%s\stage\s%03d\s%3d%02x`; classes `sResource`, `rArchive`, `rArchivePack`, `sLoadMan`; creating an unloaded weapon or screen freezes the game | find the function that formats the em/wp paths and the request it makes; call it for extra types during the arena's loading screen; wait for completion | the shop sells a gun outside the costume's loadout and it can be fired; an enemy type foreign to the map spawns |
-| E4 | No timer, no score | the countdown is held (`0x00717850`), bonuses suppressed (`0x0071CBF0`), digits not found in `uIdMerce00` | with E2 done, stop the HUD instead: kill `uIdMerce00` or keep it from being created; or use the campaign host (no countdown) | no clock or score on screen in a run; nothing ends the match except the mod |
+| E4 ✔ | No timer, no score (done 2026-11-02: the clock is the cockpit HUD's timer draw `0x009F0390`, the score/combo panels the Mercenaries HUD's draw `0x00A1E580`; both skipped in a run, the 150-kill cap held off) | the countdown is held (`0x00717850`), bonuses suppressed (`0x0071CBF0`) | with E2 done, stop the HUD instead: kill `uIdMerce00` or keep it from being created; or use the campaign host (no countdown) | no clock or score on screen in a run; nothing ends the match except the mod |
 | E5 | Count kills exactly | hooks + death detector + "all deaths count" | the director tracks its own units: a death = its unit dead or removed | counter equals spawned-and-dead across explosions, fire, falls, flash on plagas |
 | E6 | Campaign areas as arenas | `cScenarioArg_AreaJump` (vtable `0x010497E4`), `cStageInfo`, `sBioArea`; stage numbers s1xx–s6xx | trace the campaign's area jump and chapter start; load one area directly from the menu, skip scripts and cutscenes, place the player | a run's arena takes place in a campaign area with director spawns and no story script |
 | E7 | The game's Organize/Buy screen | `uIdItemBox00` (vtable `0x00FA60A8`, `0x00A07980`) opens only in the chapter flow (`0x00BF22A0`); creating screens outside their context freezes | open it in its own context: between arenas as a chapter-style transition (campaign host) or by reproducing what the chapter flow loads first (its layout/texture set) before creating it; map supplies to the screen's gold | buy, sell, upgrade and rearrange in the game's own screen between two arenas |
@@ -112,7 +112,9 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    player from the start), surveyed profiles (weapons, plagas), each stage's special enemies one at a time.
 
 ### M2 — No timer, no score
-1. E4: remove the countdown and score from the screen and every path that ends the match.
+1. ~~E4: remove the countdown and score from the screen and every path that ends the match.~~ Done 2026-11-02:
+   no clock, score or combo on screen for the whole run; the countdown stays held and the game's
+   150-kill cap is held off, so only the mod (or the player's death) ends a run's match.
 2. Replace the status line with a small HUD in the game's style (arena, wave, kills left).
 
 ### M3 — Resources
