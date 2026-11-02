@@ -41,7 +41,9 @@ constexpr std::size_t kRequestResource = 0x44;
 constexpr std::size_t kRequestState = 0x48;
 constexpr int kPlayerList = 3;
 constexpr int kEnemyList = 4;
-constexpr int kWeaponCategory = 7;  // uWpNN: category 7, id = the weapon's item id 0x01NN
+// Category 7, id = the item id: guns uWpNN (0x01NN), other items uItNNNN (the spray 0x0304:
+// uIt0304); the game's area load queues every item of a Mercenaries loadout this way.
+constexpr int kItemCategory = 7;
 
 CommitFn g_origCommit = nullptr;
 std::atomic<bool> g_available{false};
@@ -119,7 +121,7 @@ int __fastcall CommitDetour(std::uintptr_t loader, void*) {
             extras = g_run;
             AddUnique(extras.enemyClasses, g_dev.enemyClasses);
             AddUnique(extras.enemyWeapons, g_dev.enemyWeapons);
-            AddUnique(extras.playerWeapons, g_dev.playerWeapons);
+            AddUnique(extras.playerItems, g_dev.playerItems);
             AddUnique(extras.enemyArchives, g_dev.enemyArchives);
             AddUnique(extras.uiArchives, g_dev.uiArchives);
         }
@@ -151,10 +153,10 @@ int __fastcall CommitDetour(std::uintptr_t loader, void*) {
                 else ++failed;
             }
         } else {
-            for (const std::uint16_t item : extras.playerWeapons) {
+            for (const std::uint16_t item : extras.playerItems) {
                 char buf[16];
                 std::snprintf(buf, sizeof(buf), " %04X", item);
-                if (QueueUnit(loader, kWeaponCategory, item)) done += buf;
+                if (QueueUnit(loader, kItemCategory, item)) done += buf;
                 else ++failed;
             }
         }
@@ -231,7 +233,7 @@ std::string ClassNameById(std::uint32_t classId) {
 }
 
 bool WeaponLoaded(std::uint16_t item) {
-    const std::string name = ClassNameById(static_cast<std::uint32_t>(kWeaponCategory) << 24 | static_cast<std::uint32_t>(item) << 8);
+    const std::string name = ClassNameById(static_cast<std::uint32_t>(kItemCategory) << 24 | static_cast<std::uint32_t>(item) << 8);
     return !name.empty() && ArchiveLoaded(name);
 }
 

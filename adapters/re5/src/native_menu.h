@@ -78,6 +78,11 @@ int Navigate(std::uintptr_t self, int cursor, int count);
 enum class SoundKind { Decide, Cancel, Deny };
 void Sound(SoundKind kind, std::uintptr_t self);
 std::string WrapText(const std::string& text, std::size_t width);
+/// The game's Organize/Buy screen labels its two grids with mes_system 2366 and 2367 ("Chris",
+/// "Sheva"); these texts stand in for them until RestoreItemBoxLabels. False (labels kept) when
+/// the messages are not loaded or are not those names.
+bool SetItemBoxLabels(const std::string& first, const std::string& second);
+void RestoreItemBoxLabels();
 // True once (then cleared) after the player chose START RUN.
 bool TakeChosen();
 bool Chosen();

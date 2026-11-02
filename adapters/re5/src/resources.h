@@ -17,7 +17,7 @@ namespace rmre5::resources {
 struct Extras {
     std::vector<std::string> enemyClasses;     // with the stage's enemies: "uEm11"
     std::vector<std::uint32_t> enemyWeapons;   // weapons enemies hold, category<<16 | id: 0x70160
-    std::vector<std::uint16_t> playerWeapons;  // weapon item ids, with the player's items: 0x011A
+    std::vector<std::uint16_t> playerItems;    // item ids, with the player's items: 0x011A, 0x0304
     std::vector<std::string> enemyArchives;    // Image\Archive\<name>, with the enemies: "uWp6f"
     // Screen archives ("ShopResource"): the game loads them into list 1 (FUN_007D4D90, by a mask at
     // +0x207D4), which a match start releases, so they go with the enemies.

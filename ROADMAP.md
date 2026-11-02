@@ -177,7 +177,10 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    Done for Chris (2026-11-02): the SHOP's ORGANIZE row opens it with the run swapped into the
    save data (grid, supplies as money, a run stash as the storage) and the campaign data written
    back on close; moves, sells, buys and gun upgrades work, and upgrades are the game's own (slot
-   levels, kept on the gun for the run). Open: other characters, treasures, the grid labels.
+   levels, kept on the gun for the run). Every character checked (2026-11-02, one costume each):
+   their run in the first grid, labelled with their name; a supply perk's first aid spray no longer
+   ends the next stage (every item the content hands out preloads). Open: treasures; upgrades
+   checked on the M92F only.
 2. E8: perk icons in the PERKS screen; E9: character and skin previews.
 3. Title menus with icons and previews; results of a run.
 

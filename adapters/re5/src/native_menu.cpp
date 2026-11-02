@@ -135,10 +135,10 @@ bool GlyphFor(char c, std::uint16_t& code) {
     return code < g_width.size() && g_width[code] != 0;
 }
 
-// Writes `text` into a slot: (code, width) pairs, (0, 0x0403) line breaks,
+// Writes `text` into a message buffer: (code, width) pairs, (0, 0x0403) line breaks,
 // (0, 0x0401) terminators filling the rest. Unknown characters become spaces.
-void Encode(int slot, const std::string& text) {
-    auto& buf = g_buffers[static_cast<std::size_t>(slot)];
+template <std::size_t Words>
+void EncodeInto(std::array<std::uint16_t, Words>& buf, const std::string& text) {
     std::size_t n = 0;
     for (char c : text) {
         if (n + 4 > buf.size()) break;
@@ -157,6 +157,8 @@ void Encode(int slot, const std::string& text) {
         buf[n + 1] = 0x0401;
     }
 }
+
+void Encode(int slot, const std::string& text) { EncodeInto(g_buffers[static_cast<std::size_t>(slot)], text); }
 
 // Breaks text into at most two lines of about `width` characters.
 std::string Wrap(const std::string& text, std::size_t width) {
@@ -259,6 +261,29 @@ void RestoreTexts() {
         g_slotAddress[i] = 0;
     }
     RM_LOGI("native menu: texts restored");
+}
+
+// ---- the Organize/Buy screen's grid labels ---------------------------------------------
+
+// mes_system 2366 + the panel's character (0 Chris, 1 Sheva; 2368 Jill, 2369 Wesker follow): the
+// labels over the screen's two grids (drawn at 0x00A06041).
+constexpr int kItemBoxLabels[] = {2366, 2367};
+constexpr const char* kItemBoxLabelTexts[] = {"Chris", "Sheva"};
+std::array<std::array<std::uint16_t, 64>, 2> g_labelBuffers{};
+std::array<std::uintptr_t, 2> g_labelAddress{};
+std::array<std::uintptr_t, 2> g_labelOriginal{};
+
+// The message's text in the Latin encoding (letters only), to check what a cell holds.
+std::string Letters(std::uintptr_t text) {
+    std::string out;
+    for (int i = 0; text && i < 32; ++i) {
+        std::uint16_t glyph[2] = {};
+        if (!SafeCopy(glyph, text + i * 4, sizeof(glyph)) || (glyph[0] == 0 && glyph[1] == 0x0401)) break;
+        if (glyph[0] >= 0x38 && glyph[0] <= 0x6A && glyph[0] % 2 == 0) out += static_cast<char>('A' + (glyph[0] - 0x38) / 2);
+        else if (glyph[0] >= 0x6C && glyph[0] <= 0x9E && glyph[0] % 2 == 0) out += static_cast<char>('a' + (glyph[0] - 0x6C) / 2);
+        else out += '?';
+    }
+    return out;
 }
 
 // ---- game helpers ----------------------------------------------------------------
@@ -604,6 +629,38 @@ void Sound(SoundKind kind, std::uintptr_t self) {
               : kind == SoundKind::Cancel ? re5::addr::kFnMenuSoundCancel : re5::addr::kFnMenuSoundDeny, self);
 }
 std::string WrapText(const std::string& text, std::size_t width) { return Wrap(text, width); }
+
+bool SetItemBoxLabels(const std::string& first, const std::string& second) {
+    std::lock_guard lock(g_textMutex);
+    const Messages m = FindMessages();
+    if (!g_widthsReady || !m.table || m.count <= kItemBoxLabels[1]) return false;
+    for (std::size_t i = 0; i < 2; ++i) {
+        const auto cell = m.table + static_cast<std::uintptr_t>(kItemBoxLabels[i]) * 4;
+        const auto text = ReadOr<std::uintptr_t>(cell, 0);
+        if (text == reinterpret_cast<std::uintptr_t>(g_labelBuffers[i].data())) continue;  // already ours
+        // Only over the game's own names: another language's table may number them differently.
+        if (Letters(text) != kItemBoxLabelTexts[i]) {
+            RM_LOGW("native menu: message %d is not \"%s\"; the item box keeps its labels", kItemBoxLabels[i], kItemBoxLabelTexts[i]);
+            return false;
+        }
+        g_labelAddress[i] = cell;
+        g_labelOriginal[i] = text;
+    }
+    EncodeInto(g_labelBuffers[0], first);
+    EncodeInto(g_labelBuffers[1], second);
+    for (std::size_t i = 0; i < 2; ++i) SafeStore(g_labelAddress[i], reinterpret_cast<std::uintptr_t>(g_labelBuffers[i].data()));
+    return true;
+}
+
+void RestoreItemBoxLabels() {
+    std::lock_guard lock(g_textMutex);
+    for (std::size_t i = 0; i < 2; ++i) {
+        if (g_labelAddress[i] && ReadOr<std::uintptr_t>(g_labelAddress[i], 0) == reinterpret_cast<std::uintptr_t>(g_labelBuffers[i].data())) {
+            SafeStore(g_labelAddress[i], g_labelOriginal[i]);
+        }
+        g_labelAddress[i] = 0;
+    }
+}
 
 bool Install() {
     if (!engine::Caps().playMenu) {

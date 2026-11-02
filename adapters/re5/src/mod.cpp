@@ -721,7 +721,8 @@ private:
                 }
                 Item organize;
                 organize.label = "ORGANIZE INVENTORY";
-                organize.help = "Rearrange the nine cells of your item grid.";
+                organize.help = NativeItemBoxReady() ? "Arrange, sell, buy and upgrade guns in the\ngame screen. Prices are paid in supplies."
+                                                     : "Rearrange the nine cells of your item grid.";
                 screen.items.push_back(std::move(organize));
                 Item leave;
                 leave.label = "LEAVE SHOP";
@@ -1773,7 +1774,7 @@ void DriveArena(double now) {
     }
 }
 
-// M3: from START RUN on, every load of the run brings every gun of the content with the
+// M3: from START RUN on, every load of the run brings every item the content hands out with the
 // player's items (rewards, the shop, chests and carried-over purchases may hold any of them)
 // and the armed stage's roster with its enemies (a class or weapon the stage does not use
 // itself loads too). Outside runs nothing extra loads.
@@ -1787,8 +1788,21 @@ void UpdatePreloads() {
     lastStage = CurrentMapKey();
     resources::Extras extras;
     if (runLoads) {
+        // Every gun, and every other item perks, rewards and the shop hand out: a first aid
+        // spray carried to a stage that does not load it ends the game ("Failed open file ...
+        // it0304.mod").
+        auto addItem = [&](std::int64_t item) {
+            const auto id = static_cast<std::uint16_t>(item);
+            if (item > 0 && item <= 0xFFFF && std::find(extras.playerItems.begin(), extras.playerItems.end(), id) == extras.playerItems.end()) {
+                extras.playerItems.push_back(id);
+            }
+        };
         for (const rm::WeaponBaseDef& w : g->content->weapons()) {
-            if ((w.game_item >> 8) == 1) extras.playerWeapons.push_back(static_cast<std::uint16_t>(w.game_item));
+            if ((w.game_item >> 8) == 1) addItem(w.game_item);
+        }
+        for (const rm::EquipmentDef& e : g->content->loadouts().equipment) addItem(e.game_item);
+        for (const rm::PerkDef& perk : g->content->perks()) {
+            for (const rm::EffectDef& e : perk.effects) addItem(static_cast<std::int64_t>(e.params.game_item));
         }
         auto addWeapon = [&](std::int64_t arm) {
             const auto id = static_cast<std::uint32_t>(arm);
@@ -1814,8 +1828,8 @@ void UpdatePreloads() {
             }
         }
     }
-    RM_LOGI("resources: %s, stage %d: %zu guns, %zu enemy classes, %zu enemy weapons and %zu archives go with every load",
-            runLoads ? "run" : "no run", CurrentMapKey(), extras.playerWeapons.size(), extras.enemyClasses.size(),
+    RM_LOGI("resources: %s, stage %d: %zu player items, %zu enemy classes, %zu enemy weapons and %zu archives go with every load",
+            runLoads ? "run" : "no run", CurrentMapKey(), extras.playerItems.size(), extras.enemyClasses.size(),
             extras.enemyWeapons.size(), extras.enemyArchives.size());
     resources::SetRunExtras(std::move(extras));
 }
@@ -2372,11 +2386,22 @@ void OpenItemBox(const std::vector<std::pair<std::size_t, std::uint32_t>>& pokes
             if (offset + 4 <= kSaveSnapshotBytes) SafeStore(g_saveSnapshotBase + offset, value);
             RM_LOGW("itembox: save +%zX = %u", offset, value);
         }
-        if (withRun && g->run->HasActiveRun()) PutRunInSave(g_saveSnapshotBase);
+        if (withRun && g->run->HasActiveRun()) {
+            PutRunInSave(g_saveSnapshotBase);
+            // The first grid is the character's (its id is the short name the game uses: chris,
+            // wesker), the second (a partner's) stays empty.
+            std::string name = g->run->state().character_id;
+            if (!name.empty()) name[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(name[0])));
+            if (!name.empty() && !nativemenu::SetItemBoxLabels(name, "")) RM_LOGW("itembox: grid labels unchanged");
+        }
         if (!g->settings.developerMode || !CopySave(g_saveSnapshotBase, g_saveSwappedIn)) g_saveSwappedIn.clear();
         g_itemBox = CreateItemBox();
         RM_LOGW("itembox: created %08X", static_cast<unsigned>(g_itemBox));
-        if (!g_itemBox) g_saveSnapshot.clear();
+        if (!g_itemBox) {  // no screen: the run leaves the save data at once
+            g_runInBox.active = false;
+            RestoreSave();
+            nativemenu::RestoreItemBoxLabels();
+        }
     }
 }
 
@@ -2411,6 +2436,7 @@ void PollItemBox() {
         g_itemBox = 0;
         g_runInBox.active = false;
         RestoreSave();
+        nativemenu::RestoreItemBoxLabels();
         matchui::SetWorldPause(false);
         paused = false;
         if (g->run->phase() == rm::Phase::Shop) g->shopUiRequested = true;
@@ -2420,6 +2446,7 @@ void PollItemBox() {
         g_itemBox = 0;  // gone with the match
         g_runInBox.active = false;
         RestoreSave();
+        nativemenu::RestoreItemBoxLabels();
         return;
     }
     // Once, while it is open: does the block the screen edits hold the run's grid?
@@ -2447,6 +2474,7 @@ void PollItemBox() {
     }
     TakeRunFromSave(g_saveSnapshotBase);
     RestoreSave();
+    nativemenu::RestoreItemBoxLabels();
     // Unpaused here, before the SHOP screen (opened after this tick) asks for its own pause.
     if (paused) {
         matchui::SetWorldPause(false);
@@ -2834,7 +2862,7 @@ void PollDevCommand(double now) {
         g->settings.mercHud = command.substr(8) == "on";
         RM_LOGW("dev merc hud %s", g->settings.mercHud ? "shown" : "hidden");
     } else if (command.rfind("preload ", 0) == 0) {
-        // "preload uEm11 011A 70160 ...": class archives (with the enemies), weapon item ids in hex
+        // "preload uEm11 011A 70160 ...": class archives (with the enemies), item ids in hex
         // (with the player's items) and enemy weapon ids (category<<16 | id, with the enemies)
         // for every following Mercenaries load, on top of the run's; "preload clear".
         resources::Extras extras;
@@ -2844,10 +2872,10 @@ void PollDevCommand(double now) {
             const auto value = std::strtoul(word.c_str(), nullptr, 16);
             if (word.rfind("u", 0) == 0) extras.enemyClasses.push_back(word);
             else if (value > 0xFFFF) extras.enemyWeapons.push_back(static_cast<std::uint32_t>(value));
-            else extras.playerWeapons.push_back(static_cast<std::uint16_t>(value));
+            else extras.playerItems.push_back(static_cast<std::uint16_t>(value));
         }
-        RM_LOGW("dev preload: %zu classes, %zu enemy weapons, %zu guns for the next loads", extras.enemyClasses.size(),
-                extras.enemyWeapons.size(), extras.playerWeapons.size());
+        RM_LOGW("dev preload: %zu classes, %zu enemy weapons, %zu player items for the next loads", extras.enemyClasses.size(),
+                extras.enemyWeapons.size(), extras.playerItems.size());
         resources::SetDevExtras(std::move(extras));
     } else if (command.rfind("quiet ", 0) == 0) {
         // "quiet on|off": the director stops refilling and the game's own spawns stay off, so
