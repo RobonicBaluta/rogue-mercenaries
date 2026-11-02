@@ -163,7 +163,11 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    s103 hunts the player, takes gunfire and dies with the game's own death sequence. `maps.json`
    boss maps (`"boss": {class, name, hp}`) end every run: the director spawns the boss alone, the
    arena clears when it dies, the HUD's digits show its health. Runs are three arenas and the boss.
-2. More bosses as content allows.
+2. More bosses as content allows. Second boss 2026-11-02: the giant Uroboros (uEm43) in s304's capsule
+   dome; runs end on one of the two (the last NEXT ROUTE offers both). Campaign arenas start where
+   their map says (the game picks an area's entrance at random; the adapter moves the player). Open:
+   Wesker and Uroboros Wesker (alive at zero health: their deaths are scripted), uEm44 and uEm60 (need
+   their story setup), the uEm46 and uEm52 oddities.
 
 ### M7 — Between arenas and menus that look native
 1. E7: the game's Organize/Buy screen between arenas (fallback: our screens with E8 sprites).

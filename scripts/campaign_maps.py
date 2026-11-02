@@ -33,8 +33,11 @@ MERGE_DISTANCE = 150.0
 CHESTS = 8
 REGION = 7000.0        # engine units around the player start (70 m)
 CHEST_REGION = 4000.0
+VERTICAL_REGION = 5000.0  # and within 50 m above or below it (s304's upper level is 110 m up)
 MAX_PLAYER_DISTANCE = 3500
-# Player starts when the host loads the area (vetting 2026-11-02, dev setdump).
+# Player starts when the host loads the area (vetting 2026-11-02, dev setdump). The game picks one of
+# an area's entrances at random in this mode, so the map's "start" is where the adapter moves the
+# player when an arena begins (its points and chests are around it).
 STARTS = {
     100: (10492.5, 0.0, 7927.8), 104: (2123.6, -350.0, -10882.3), 105: (44.0, -99.8, -1147.4),
     113: (-92.9, 16.7, -4678.2), 114: (1266.0, 50.0, 1598.8), 202: (-3969.7, 301.2, 7726.8),
@@ -42,25 +45,24 @@ STARTS = {
     310: (342.5, -1299.5, -23565.0), 314: (-2455.7, 900.0, -22567.5), 500: (529.4, 0.0, 2613.4),
     503: (1718.5, 0.0, 19263.3), 505: (-2253.9, 703.2, -723.6), 506: (-137.7, -700.0, 821.5),
     508: (-897.9, -4.2, 798.2), 700: (0.0, 0.0, 0.0), 103: (-810.0, -1200.0, -1140.0),
+    304: (470.0, -10900.0, 524.0),
 }
 # Boss arenas (ROADMAP M6, scripts/test_boss_spawn.sh): the area the boss is fought in, the boss
 # (its class, a name for the menus, its health: the story's is far above a run's guns) and the
 # archives that come with its class. Their maps hold no roster; runs end on one.
 BOSSES = {
     103: {'class': 'uEm40', 'name': 'Uroboros', 'hp': 6000, 'preload': ['uEm40Dummy', 'uEm40Parts']},
+    304: {'class': 'uEm43', 'name': 'Giant Uroboros', 'hp': 6000, 'preload': []},
 }
 BOSS_PLAYER_DISTANCE = (1000, 2500)  # the boss appears within sight, not on top of the player
 # Kept for developer tests but out of the run rotation ("rotation": false), with the reason.
-NO_ROTATION = {
-    503: 'as the first arena of a session the player starts on the upper deck (-627, 1350, 25225), '
-         '55 m from the nearest AI waypoint; after a stage change at 845 200 18738',
-}
+NO_ROTATION = {}  # 503 was out (its random upper-deck start); the start warp (M6.2) fixed that
 # Short names from the areas' start views (vetting 2026-11-02); others get "Campaign sNNN".
 NAMES = {
     100: 'Kijuju Town', 104: 'Waterfront', 105: 'Back Alleys', 113: 'Warehouse', 114: 'Slums',
     202: 'Marsh Village', 204: 'Port', 300: 'Cave Shrine', 302: 'Ruin Passages', 310: 'Underground Facility',
     314: 'Mine Scaffolds', 500: 'Cargo Hold', 503: 'Freighter Deck', 505: 'Factory Floor', 506: 'Steel Docks',
-    508: 'Volcano', 700: 'Spencer Mansion', 103: 'Pump Rooms',
+    508: 'Volcano', 700: 'Spencer Mansion', 103: 'Pump Rooms', 304: 'Capsule Dome',
 }
 
 
@@ -125,14 +127,15 @@ for stage in args.stages:
         points.append([round(x, 1), round(y, 1), round(z, 1)])
     chest_points = points
     if stage in STARTS:
-        sx, _, sz = STARTS[stage]
-        points = [p for p in points if math.hypot(p[0] - sx, p[2] - sz) <= REGION]
+        sx, sy, sz = STARTS[stage]
+        points = [p for p in points if math.hypot(p[0] - sx, p[2] - sz) <= REGION and abs(p[1] - sy) <= VERTICAL_REGION]
         chest_points = [p for p in points if 500.0 <= math.hypot(p[0] - sx, p[2] - sz) <= CHEST_REGION]
     entry = {
         'id': f'campaign_s{stage}',
         'name': NAMES.get(stage, f'Campaign s{stage}'),
         'stage': stage,
         **({'rotation': False} if stage in NO_ROTATION else {}),
+        **({'start': [round(c, 1) for c in STARTS[stage]]} if stage in STARTS else {}),
         'max_alive': template['max_alive'],
         'min_player_distance': template['min_player_distance'],
         'max_player_distance': MAX_PLAYER_DISTANCE,

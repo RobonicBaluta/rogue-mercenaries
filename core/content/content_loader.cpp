@@ -865,7 +865,14 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
         MapDef map;
         if (!ReadId(d, e, map.id)) continue;
         d = file.Sub(": map " + Q(map.id));
-        CheckKeys(d, e, {"id", "name", "stage", "rotation", "points", "chests", "preload", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
+        CheckKeys(d, e, {"id", "name", "stage", "rotation", "start", "points", "chests", "preload", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
+        if (const auto s = e.find("start"); s != e.end()) {
+            if (!s->is_array() || s->size() != 3 || !(*s)[0].is_number() || !(*s)[1].is_number() || !(*s)[2].is_number()) {
+                d.Error("field 'start' must be [x, y, z]");
+            } else {
+                map.start = std::array<double, 3>{(*s)[0].get<double>(), (*s)[1].get<double>(), (*s)[2].get<double>()};
+            }
+        }
         GetBool(d, e, "rotation", map.rotation, false);
         GetString(d, e, "name", map.name, true);
         std::int64_t stage = -1;

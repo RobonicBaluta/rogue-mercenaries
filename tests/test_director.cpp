@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 #include <catch_amalgamated.hpp>
@@ -97,6 +98,12 @@ TEST_CASE("shipped maps load and every map can spawn at tier 1", "[director]") {
     for (const MapDef& m : r.content->maps()) {
         INFO(m.id);
         CHECK(m.points.size() >= 4);
+        if (m.start) {  // the player is moved there: it must be where the map's points are
+            const auto& s = *m.start;
+            CHECK(std::any_of(m.points.begin(), m.points.end(), [&](const std::array<double, 3>& p) {
+                return std::hypot(p[0] - s[0], p[1] - s[1], p[2] - s[2]) < 2500.0;
+            }));
+        }
         if (m.boss) continue;  // a boss arena spawns its boss alone
         CHECK(std::any_of(m.roster.begin(), m.roster.end(), [](const MapEnemy& e) { return e.min_tier <= 1 && e.weight > 0; }));
     }
@@ -321,6 +328,9 @@ TEST_CASE("maps.json is validated", "[director]") {
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "b", "name": "B", "stage": 103, "points": [[0,0,0]], "boss": {"class": "uEm40", "name": "U", "hp": 40000}}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "b", "name": "B", "stage": 103, "points": [[0,0,0]], "boss": {"class": "uEm40"}}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]]}]})").empty());  // no roster, no boss
+    // A start is a position.
+    CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "start": [1, -2, 3], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "start": [1, 2], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "chests": [[1,2,3]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 503, "rotation": false, "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 503, "preload": ["uWp6f", "uEm10Eff"], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());

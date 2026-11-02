@@ -58,6 +58,10 @@ std::optional<CharacterHp> ReadHp(std::uintptr_t character);
 bool WriteHp(std::uintptr_t character, int hp);
 /// Sets a character's health and maximum to `hp` (bosses: the game's own suits story weapons).
 bool SetHealth(std::uintptr_t character, int hp);
+/// Moves a unit: every copy of its position in the object (the first 16 KB: transform, previous
+/// and movement positions) gets `pos`; writing +0x30 alone is undone by its movement. Returns
+/// the copies written (0: not moved). Verified on the player (s304: stays, walks on the floor).
+int WarpUnit(std::uintptr_t unit, const float pos[3]);
 
 struct PlayerInfo {
     std::uintptr_t object = 0;

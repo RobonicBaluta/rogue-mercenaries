@@ -53,6 +53,9 @@ struct MapDef {
     /// which the adapter's host loads in place of a Mercenaries stage.
     int stage = -1;
     bool rotation = true;  // runs may pick it (false keeps it for tests)
+    /// Where the player starts (campaign areas: the game picks one of the area's entrances at
+    /// random, so the adapter moves the player here when an arena begins far from it).
+    std::optional<std::array<double, 3>> start;
     std::vector<std::array<double, 3>> points;  // spawn positions known to be on walkable ground
     std::vector<std::array<double, 3>> chests;  // chest positions (where the game puts its time bonuses)
     std::vector<MapEnemy> roster;

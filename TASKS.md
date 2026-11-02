@@ -235,6 +235,14 @@ ok: arena 4 chosen node 0 = stage 103, played on stage 103
 last arena is a boss arena
 RUN MAP CHECK PASS
 ```
+- [x] M6.2 Second boss and fixed starts (2026-11-02). Giant Uroboros (uEm43, s304's capsule dome, 8500 hp in the story): a pistol hit takes 139, it brings uEmc5 minions (not counted), it dies at zero health. Its arena exposed the start problem: s304 started the player either on the dome floor (470, -10900, 524) or on the upper level (336.9, 0, 5018.4) 110 m above, from the same previous stage one time and the other the next, with identical save fields (host dump of the save around its stage) - the game picks one of an area's entrances at random in this mode, as Mercenaries does with its starts. The entrances are not stored as positions in the area's archive or in s400's (searched every resource for the observed starts); the story addresses them by number (`mStartPosNo` in `cScenarioArg_CHP`, `cFSMOrder::FuncParamChapter`, `cFSMOrderPawn::FuncParamPosition`; `cScenarioArg_AreaJump` has `mJumpStagePosNo`). Writing the player's position at +0x30 alone is undone by its movement; writing all 14 copies of it in the player object (+0x30, +0x90, +0xD0, +0x110, +0x1050, +0x1060, +0x1170, +0x11D0, +0x1370..+0x13A0, +0x13D0, +0x1B10) moves the player for good (s304: up to down 118 m, walks on the floor). `maps.json` maps take a `"start"`; when an arena begins more than 10 m from it the adapter moves the player there (`engine::WarpUnit`, dev `warp x y z`, `where` lists the copies). `campaign_maps.py` writes the recorded starts and keeps points within 50 m vertically (only s304 changed); 503 is back in the rotation. Boss arena s304 in game: spawned, health 8500 -> 6000, its death cleared the arena, no fatal error. Later-arena starts with the move (`scripts/check_campaign_starts.sh`):
+
+```
+s100: later-arena start 10492 -0 7928 (0 m from the recorded start) | distance 1880 1283 
+s302: later-arena start 1697 950 14452 (0 m from the recorded start) | distance 2342 2019 
+s105: later-arena start 44 -100 -1147 (0 m from the recorded start) | distance 1928 1440 
+s503: later-arena start 1473 0 20242 (10 m from the recorded start) | distance 857 934
+```
 
 ## Phase 5 — Stabilization/release
 

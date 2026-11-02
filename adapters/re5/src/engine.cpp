@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <cmath>
+
 #include "log.h"
 #include "memory.h"
 #include "re5_layout.h"
@@ -183,6 +185,23 @@ bool WriteHp(std::uintptr_t character, int hp) {
     }
     const auto clamped = static_cast<std::int16_t>(hp < 0 ? 0 : (hp > current->max ? current->max : hp));
     return SafeStore(character + re5::off::kHp, clamped);
+}
+
+int WarpUnit(std::uintptr_t unit, const float pos[3]) {
+    if (!unit) return 0;
+    const float x = ReadOr<float>(unit + re5::off::kUnitPosition, 0.0f);
+    const float y = ReadOr<float>(unit + re5::off::kUnitPosition + 4, 0.0f);
+    const float z = ReadOr<float>(unit + re5::off::kUnitPosition + 8, 0.0f);
+    int written = 0;
+    for (std::size_t off = 0; off < 0x4000; off += 4) {
+        const float cx = ReadOr<float>(unit + off, 0.0f), cy = ReadOr<float>(unit + off + 4, 0.0f), cz = ReadOr<float>(unit + off + 8, 0.0f);
+        if (std::fabs(cx - x) < 1.0f && std::fabs(cy - y) < 1.0f && std::fabs(cz - z) < 1.0f) {
+            for (int i = 0; i < 3; ++i) SafeStore(unit + off + static_cast<std::size_t>(i) * 4, pos[i]);
+            ++written;
+            off += 8;
+        }
+    }
+    return written;
 }
 
 bool SetHealth(std::uintptr_t character, int hp) {

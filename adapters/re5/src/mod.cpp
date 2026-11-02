@@ -1491,6 +1491,8 @@ public:
 };
 InventoryBridge g_inventoryBridge;
 
+constexpr float kStartTolerance = 1000.0f;  // engine units (10 m) from the map's start
+
 // An arena began: the director's grace starts, and the HUD names the map and the route (or the
 // boss) for a few seconds (M5.3).
 void ArenaBegan(double now) {
@@ -1498,6 +1500,21 @@ void ArenaBegan(double now) {
     g->boss = {};
     const rm::RunSnapshot s = g->run->Snapshot(now);
     const rm::MapDef* map = CurrentMap();
+    // M6.2: a campaign area starts the player at one of its entrances at random; the map's start
+    // is where its points, chests and boss are, so the player goes there.
+    if (map != nullptr && map->start) {
+        const auto local = engine::LocalPlayer();
+        const float to[3] = {static_cast<float>((*map->start)[0]), static_cast<float>((*map->start)[1]),
+                             static_cast<float>((*map->start)[2])};
+        const float dx = ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) - to[0];
+        const float dy = ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f) - to[1];
+        const float dz = ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) - to[2];
+        const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (local && distance > kStartTolerance) {
+            const int copies = engine::WarpUnit(local, to);
+            RM_LOGI("arena start: player %.0f m from the map's start; moved there (%d copies)", distance / 100.0f, copies);
+        }
+    }
     std::string line = map != nullptr ? Upper(Plain(map->name)) : std::string();
     if (map != nullptr && map->boss) line += "   BOSS " + Upper(Plain(map->boss->name));
     else if (!s.route_name.empty()) line += (line.empty() ? "" : "   ") + Upper(Plain(s.route_name));
@@ -2241,6 +2258,29 @@ void PollDevCommand(double now) {
             RM_LOGW("dev spawn %s (weapon %X) at %.0f %.0f %.0f -> %08X %s", cls.c_str(), weapon, spawnAt[0], spawnAt[1], spawnAt[2],
                     static_cast<unsigned>(unit), unit ? engine::ClassName(unit).c_str() : "failed");
         }
+    } else if (command.rfind("warp ", 0) == 0) {
+        // "warp x y z": writes the local player's position (does a start position stick?).
+        float pos[3] = {};
+        const int n = std::sscanf(command.c_str() + 5, "%f %f %f", &pos[0], &pos[1], &pos[2]);
+        const int written = n == 3 ? engine::WarpUnit(engine::LocalPlayer(), pos) : 0;
+        RM_LOGW("dev warp %.0f %.0f %.0f -> %d copies written", pos[0], pos[1], pos[2], written);
+    } else if (command == "where") {
+        // The player's position and every other copy of it in the player object (the movement
+        // code keeps its own: a warp must write them all).
+        const auto local = engine::LocalPlayer();
+        const float x = ReadOr<float>(local + re5::off::kUnitPosition, 0.0f);
+        const float y = ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f);
+        const float z = ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f);
+        std::string copies;
+        for (std::size_t off = 0; local && off < 0x4000; off += 4) {
+            const float cx = ReadOr<float>(local + off, 0.0f), cy = ReadOr<float>(local + off + 4, 0.0f), cz = ReadOr<float>(local + off + 8, 0.0f);
+            if (std::fabs(cx - x) < 1.0f && std::fabs(cy - y) < 1.0f && std::fabs(cz - z) < 1.0f) {
+                char buf[16];
+                std::snprintf(buf, sizeof(buf), " +%zX", off);
+                copies += buf;
+            }
+        }
+        RM_LOGW("dev where: player at %.1f %.1f %.1f; copies at%s", x, y, z, copies.c_str());
     } else if (command.rfind("enemyhp ", 0) == 0) {
         // "enemyhp <n>": every live enemy's health down to n (a boss finished by gunfire in tests).
         const int hp = std::atoi(command.c_str() + 8);
