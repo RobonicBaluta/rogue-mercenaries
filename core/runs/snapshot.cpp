@@ -23,6 +23,12 @@ std::string JoinAffixes(const WeaponInstance& w, const Content& content) {
     return out.empty() ? std::string("no affixes") : out;
 }
 
+// The maps.json name of an arena's map key; empty when unknown.
+std::string ArenaName(const Content& content, int map_key) {
+    const MapDef* map = map_key >= 0 ? content.FindMapByStage(map_key) : nullptr;
+    return map != nullptr ? map->name : std::string();
+}
+
 std::string WeaponName(const WeaponInstance& w, const Content& content) {
     const WeaponBaseDef* def = content.FindWeapon(w.base_id);
     return def != nullptr ? def->name : w.base_id;
@@ -165,20 +171,65 @@ RunSnapshot RunController::Snapshot(double now) const {
         }
         s.shop_offers.push_back(std::move(v));
     }
+    const auto& layers = run_.run_map.layers;
+    for (std::size_t l = 0; l < layers.size(); ++l) {
+        std::vector<RunMapNodeView> views;
+        for (std::size_t n = 0; n < layers[l].size(); ++n) {
+            const RunMapNode& node = layers[l][n];
+            RunMapNodeView v;
+            v.map_key = node.map_key;
+            v.arena_name = ArenaName(c, node.map_key);
+            v.route_id = node.route_id;
+            if (const RouteDef* r = c.FindRoute(node.route_id)) {
+                v.route_name = r->name;
+                v.tier = r->difficulty_tier;
+            }
+            v.next = node.next;
+            v.current = static_cast<int>(l) == run_.map_layer && static_cast<int>(n) == run_.map_node;
+            if (v.current) s.arena_name = v.arena_name;
+            views.push_back(std::move(v));
+        }
+        s.run_map.push_back(std::move(views));
+    }
     for (const RouteChoice& rc : run_.route_choices) {
         OfferView v;
         v.kind = "route";
         v.id = rc.route_id;
-        if (const RouteDef* r = c.FindRoute(rc.route_id)) {
-            v.title = r->name;
-            char buf[160];
-            std::snprintf(buf, sizeof(buf), "Tier %d, %d enemies, rewards x%.2f, credits x%.2f", r->difficulty_tier,
-                          r->enemy_budget, r->reward_mult, r->credit_mult);
+        const RouteDef* r = c.FindRoute(rc.route_id);
+        const std::string arena = ArenaName(c, rc.map_key);
+        v.title = !arena.empty() ? arena : (r != nullptr ? r->name : rc.route_id);
+        // Two short lines for the game's help box, whose font has no ':' or apostrophe: the route
+        // and its rewards (the curse in place of the credits when it carries one), then where the
+        // choice leads.
+        if (r != nullptr) {
+            v.tier = r->difficulty_tier;
+            char buf[200];
+            std::snprintf(buf, sizeof(buf), "%s, %d enemies, rewards x%.2f",
+                          arena.empty() ? ("Tier " + std::to_string(r->difficulty_tier)).c_str() : r->name.c_str(),
+                          r->enemy_budget, r->reward_mult);
             v.detail = buf;
+            if (rc.curse_perk_id.empty()) {
+                std::snprintf(buf, sizeof(buf), ", credits x%.2f", r->credit_mult);
+                v.detail += buf;
+            }
         }
         if (!rc.curse_perk_id.empty()) {
             const PerkDef* curse = c.FindPerk(rc.curse_perk_id);
-            v.detail += "; curse: " + (curse != nullptr ? curse->name : rc.curse_perk_id);
+            v.detail += ", curse " + (curse != nullptr ? curse->name : rc.curse_perk_id);
+        }
+        // Where the choice leads: the arenas of the nodes after it.
+        const std::size_t next_layer = static_cast<std::size_t>(run_.map_layer) + 1;
+        if (rc.node >= 0 && next_layer < layers.size() && static_cast<std::size_t>(rc.node) < layers[next_layer].size()) {
+            const RunMapNode& node = layers[next_layer][static_cast<std::size_t>(rc.node)];
+            std::string then;
+            for (std::size_t i = 0; i < node.next.size() && next_layer + 1 < layers.size(); ++i) {
+                const RunMapNode& after = layers[next_layer + 1][static_cast<std::size_t>(node.next[i])];
+                const std::string name = ArenaName(c, after.map_key);
+                const RouteDef* ar = c.FindRoute(after.route_id);
+                if (!then.empty()) then += i + 1 == node.next.size() ? " or " : ", ";
+                then += !name.empty() ? name : ar != nullptr ? "tier " + std::to_string(ar->difficulty_tier) : after.route_id;
+            }
+            v.detail += then.empty() ? "\nThe last arena of the run." : "\nThen " + then + ".";
         }
         s.route_offers.push_back(std::move(v));
     }

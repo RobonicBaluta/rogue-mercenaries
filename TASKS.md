@@ -187,6 +187,26 @@ chests: 3 of 3 placed for arena 2
 phase route_selection -> arena_active
 setdump: player at 215.0 950.0 18254.9
 ```
+- [x] M5.3 Run map (2026-11-02). Core: `rm::RunMap` (`core/encounters/routes.cpp`) replaces the random route draw (`SafeTier`/`GenerateRouteChoices`, economy `routes.third_choice_chance`, now `run_map.width`). `StartRun` builds `arena_count` layers from the arenas the adapter can load (`SetArenaPool(rotation, armed stage)`): layer 0 the starting route on the armed arena, then `width` nodes per layer; the start leads to every node of layer 1, later nodes to two neighbours; tiers alternate between the layer's lower and higher tier (layer d: the d-th and (d+1)-th lowest), so every choice has a safer and a harder option; arenas differ within a layer and from the arena before. Curses are still rolled when the choice is offered. `RouteChoices()` are the current node's next nodes, `ChooseRoute` moves the map, `PlannedMapKey()` names the arena; the snapshot titles route offers with the arena, gives the tier, two lines for the game's help box (route, enemies, rewards, curse or credits; `Then A or B.`) and the whole map. Route names became place-neutral (Patrol, Sweep, Push, Assault, Gauntlet, Siege; ids kept). Tests (`tests/test_run_map.cpp`): structure, tiers, arenas, determinism, curses, a run that follows the chosen nodes, and 60 runs on the shipped content whose every offer fits the help box (two lines of 56 characters, no ':' or apostrophe, which the font lacks). Adapter: the stage change loads `PlannedMapKey()` (dev `nextmap` still overrides), the NEXT ROUTE rows read `KIJUJU TOWN   TIER 2` (tier 2 amber, tier 3 red), the HUD names the arena and route for 5 s when it begins, the log holds the run map and each choice. `rm_sim` checks choices span two tiers (its reward/perk invariants already failed before this change: 4707 bad offers and 27 never-offered perks on the previous commit, written before rewards became items and perks moved to the menu). In game (`scripts/test_run_map.sh`, `build/runs/20261102-140330-runmap`):
+
+```
+run complete
+run map: arena 1: 506 outskirts_patrol -> 0 1 2
+run map: arena 2: 6 market_sweep -> 0 1 | 100 dockside_push -> 1 2 | 700 outskirts_patrol -> 1 2
+run map: arena 3: 310 ruins_gauntlet | 202 mine_shaft | 302 deck_siege
+arena 1: STEEL DOCKS   PATROL (stage 506)
+route: choice 3 of 3, outskirts_patrol on stage 700 (layer 1 node 2)
+stage change: stage 506 -> 700 (costume slot 0, run map), ending the match
+arena 2: SPENCER MANSION   PATROL (stage 700)
+stage change: arena 2 started on stage 700
+route: choice 1 of 2, mine_shaft on stage 202 (layer 2 node 1)
+stage change: stage 700 -> 202 (costume slot 0, run map), ending the match
+arena 3: MARSH VILLAGE   PUSH (stage 202)
+stage change: arena 3 started on stage 202
+ok: arena 2 chosen node 2 = stage 700, played on stage 700
+ok: arena 3 chosen node 1 = stage 202, played on stage 202
+RUN MAP CHECK PASS
+```
 
 ## Phase 5 — Stabilization/release
 

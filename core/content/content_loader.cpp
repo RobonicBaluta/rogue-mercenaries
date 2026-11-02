@@ -1049,7 +1049,7 @@ void ParseLoadouts(const Diag& file, const json& doc, LoadoutConfig& out) {
 void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     const Diag d = file.Sub("");
     CheckKeys(d, doc, {"schema_version", "run", "rewards", "weapon_rarity", "upgrades", "supplies",
-                       "credits", "rating", "damage", "shop", "routes", "chests"});
+                       "credits", "rating", "damage", "shop", "run_map", "chests"});
     if (const json* s = Section(d, doc, "run")) {
         const Diag sd = d.Sub(": run");
         CheckKeys(sd, *s, {"arena_count", "starting_route", "starting_supplies",
@@ -1215,12 +1215,10 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
             if (eco.chests.item_chance + eco.chests.weapon_chance > 1.0) sd.Error("item_chance + weapon_chance must be <= 1");
         }
     }
-    if (const json* s = Section(d, doc, "routes")) {
-        const Diag sd = d.Sub(": routes");
-        CheckKeys(sd, *s, {"third_choice_chance"});
-        if (GetNumber(sd, *s, "third_choice_chance", eco.routes.third_choice_chance, true)) {
-            CheckRange(sd, "third_choice_chance", eco.routes.third_choice_chance, 0.0, 1.0);
-        }
+    if (const json* s = Section(d, doc, "run_map")) {
+        const Diag sd = d.Sub(": run_map");
+        CheckKeys(sd, *s, {"width"});
+        GetIntRange(sd, *s, "width", eco.run_map.width, true, 1, 5);
     }
 }
 

@@ -92,6 +92,7 @@ if(RM_BUILD_TESTS)
         tests/test_skins.cpp
         tests/test_items.cpp
         tests/test_director.cpp
+        tests/test_run_map.cpp
     )
     target_link_libraries(rm_tests PRIVATE rm_core rm_json rm_catch2)
     target_compile_definitions(rm_tests PRIVATE RM_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

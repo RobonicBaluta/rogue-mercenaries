@@ -269,8 +269,19 @@ public:
     Status LeaveShop();
 
     [[nodiscard]] const std::vector<RouteChoice>& RouteChoices() const { return run_.route_choices; }
-    /// Once per RouteSelection; grants the route's curse if it carries one.
+    /// Once per RouteSelection; grants the route's curse if it carries one and moves the run
+    /// map to the chosen node.
     Status ChooseRoute(std::size_t index);
+
+    /// The arenas (map keys) the next StartRun builds its run map from, and the one it starts
+    /// on (-1: drawn from them). Without a pool every node's map key is -1.
+    void SetArenaPool(std::vector<int> arenas, int first) {
+        arena_pool_ = std::move(arenas);
+        first_arena_ = first;
+    }
+    /// The map key of the run map node being played, or of the next one once a route is
+    /// chosen (-1: none or unknown).
+    [[nodiscard]] int PlannedMapKey() const;
 
     /// From RunComplete/RunFailed: banks credits into the profile exactly once per run id and
     /// saves. Calling again returns the same summary with already_banked = true.
@@ -360,6 +371,8 @@ private:
     Capabilities caps_;
     InventoryPort* inventory_ = nullptr;
     int map_stage_ = -1;
+    std::vector<int> arena_pool_;
+    int first_arena_ = -1;
     std::optional<Director> director_;
     std::optional<StringSet> placeable_weapons_;
     int dev_supply_grants_ = 0;

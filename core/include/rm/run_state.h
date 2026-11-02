@@ -134,6 +134,9 @@ struct RunState {
     int arena_count = 3;
     std::string route_id;
     bool route_chosen = false;
+    RunMap run_map;
+    int map_layer = 0;  // the run map node of the current arena, or of the next once chosen
+    int map_node = 0;
 
     Ledger supplies;
     std::int64_t supplies_earned = 0;
@@ -193,6 +196,17 @@ struct OfferView {
     std::string rarity;
     std::int64_t price = 0;
     bool purchased = false;
+    int tier = 0;  // routes: difficulty tier
+};
+
+struct RunMapNodeView {
+    int map_key = -1;
+    std::string arena_name;  // empty when the map is unknown
+    std::string route_id;
+    std::string route_name;
+    int tier = 0;
+    std::vector<int> next;
+    bool current = false;  // the node of the current arena (or of the next once chosen)
 };
 
 /// Plain data for UI rendering; never references internal state.
@@ -206,6 +220,8 @@ struct RunSnapshot {
     std::string loadout;  // "M92F, Hand Grenade x2, Green Herb"
     std::string route_id;
     std::string route_name;
+    std::string arena_name;  // the run map node's arena (maps.json name), empty when unknown
+    std::vector<std::vector<RunMapNodeView>> run_map;
     int arena = 0;  // current arena number (1-based), 0 before the first
     int arena_count = 0;
     int kills = 0;

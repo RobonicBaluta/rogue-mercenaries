@@ -1,11 +1,11 @@
 {
-  "_comment": "Encounter routes. The adapter decides which verified arena/variant a route id maps to. enemy_budget is the finite number of player kills that clears the arena. elite_chance is reserved and must stay 0 until an adapter supports elites.",
+  "_comment": "Encounter routes: how a run map arena is fought (tier, enemy_budget, rewards, damage). The arena itself is the run map node's map (maps.json); the route menu shows its name with the route's. enemy_budget is the finite number of player kills that clears the arena. elite_chance is reserved and must stay 0 until an adapter supports elites.",
   "schema_version": 1,
   "routes": [
     {
       "id": "outskirts_patrol",
-      "name": "Outskirts Patrol",
-      "description": "Light resistance. The safe way in.",
+      "name": "Patrol",
+      "description": "Light resistance.",
       "difficulty_tier": 1,
       "enemy_budget": 20,
       "reward_mult": 1.0,
@@ -17,8 +17,8 @@
     },
     {
       "id": "market_sweep",
-      "name": "Market Sweep",
-      "description": "A larger crowd in open streets.",
+      "name": "Sweep",
+      "description": "A larger crowd.",
       "difficulty_tier": 1,
       "enemy_budget": 24,
       "reward_mult": 1.1,
@@ -30,8 +30,8 @@
     },
     {
       "id": "mine_shaft",
-      "name": "Mine Shaft",
-      "description": "Tight tunnels, harder hits.",
+      "name": "Push",
+      "description": "More of them, and they hit harder.",
       "difficulty_tier": 2,
       "enemy_budget": 28,
       "reward_mult": 1.25,
@@ -43,8 +43,8 @@
     },
     {
       "id": "dockside_push",
-      "name": "Dockside Push",
-      "description": "Fortified positions along the water.",
+      "name": "Assault",
+      "description": "A bigger crowd that hits harder.",
       "difficulty_tier": 2,
       "enemy_budget": 30,
       "reward_mult": 1.3,
@@ -56,8 +56,8 @@
     },
     {
       "id": "ruins_gauntlet",
-      "name": "Ruins Gauntlet",
-      "description": "Relentless waves in the ruins. High risk, high reward.",
+      "name": "Gauntlet",
+      "description": "Relentless and hard-hitting. High risk, high reward.",
       "difficulty_tier": 3,
       "enemy_budget": 34,
       "reward_mult": 1.6,
@@ -69,8 +69,8 @@
     },
     {
       "id": "deck_siege",
-      "name": "Deck Siege",
-      "description": "The hardest route: armoured enemies and no cover.",
+      "name": "Siege",
+      "description": "The hardest fight: they hit hardest and shrug off some of your damage.",
       "difficulty_tier": 3,
       "enemy_budget": 38,
       "reward_mult": 1.75,

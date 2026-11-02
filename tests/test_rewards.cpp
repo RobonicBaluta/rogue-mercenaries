@@ -147,39 +147,3 @@ TEST_CASE("rarity distribution matches weights over 100k draws", "[rewards]") {
     CHECK(share(up, RarityIndex(Rarity::Common)) < share(flat, RarityIndex(Rarity::Common)));
 }
 
-TEST_CASE("route choices include a safe and a harder option", "[routes]") {
-    auto content = test::LoadFixture();
-    CHECK(SafeTier(*content, 1) == 1);
-    CHECK(SafeTier(*content, 2) == 2);
-    CHECK(SafeTier(*content, 3) == 2);
-    for (int tier = 1; tier <= 3; ++tier) {
-        const int safe = SafeTier(*content, tier);
-        int with_third = 0;
-        for (std::uint64_t seed = 0; seed < 500; ++seed) {
-            Rng rng = Rng::Derive(seed, streams::kRoute);
-            const auto choices = GenerateRouteChoices(*content, rng, tier, {});
-            REQUIRE(choices.size() >= 2);
-            REQUIRE(choices.size() <= 3);
-            if (choices.size() == 3) ++with_third;
-            bool has_safe = false;
-            bool has_hard = false;
-            std::set<std::string> ids;
-            for (const RouteChoice& c : choices) {
-                const RouteDef* r = content->FindRoute(c.route_id);
-                REQUIRE(r != nullptr);
-                CHECK(ids.insert(c.route_id).second);
-                if (r->difficulty_tier <= safe) has_safe = true;
-                if (r->difficulty_tier > safe) has_hard = true;
-                if (!c.curse_perk_id.empty()) {
-                    CHECK(content->FindPerk(c.curse_perk_id)->IsCurse());
-                    CHECK(r->curse_chance > 0.0);
-                }
-                if (c.route_id == "r2") CHECK_FALSE(c.curse_perk_id.empty());  // curse_chance 1.0
-            }
-            CHECK(has_safe);
-            CHECK(has_hard);
-        }
-        CHECK(with_third > 150);
-        CHECK(with_third < 350);
-    }
-}

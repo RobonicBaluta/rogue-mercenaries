@@ -516,11 +516,9 @@ void Simulator::Shop(RunController& rc, Rng& player, Policy policy, double& hp) 
 }
 
 void Simulator::ChooseRoute(RunController& rc, Rng& player, Policy policy) {
+    // The run map's next nodes: two or three, a safer and a harder tier among them.
     const auto& choices = rc.RouteChoices();
-    const RouteDef* current = content_->FindRoute(rc.state().route_id);
-    const int safe = SafeTier(*content_, current != nullptr ? current->difficulty_tier : 1);
-    bool has_safe = false;
-    bool has_hard = false;
+    std::set<int> tiers;
     for (const RouteChoice& c : choices) {
         const RouteDef* r = content_->FindRoute(c.route_id);
         if (r == nullptr || r->enemy_budget <= 0) {
@@ -529,10 +527,9 @@ void Simulator::ChooseRoute(RunController& rc, Rng& player, Policy policy) {
         }
         ++s_.route_offers[c.route_id];
         if (!c.curse_perk_id.empty()) ++s_.curse_offers[c.curse_perk_id];
-        if (r->difficulty_tier <= safe) has_safe = true;
-        if (r->difficulty_tier > safe) has_hard = true;
+        tiers.insert(r->difficulty_tier);
     }
-    if (choices.size() < 2 || choices.size() > 3 || !has_safe || !has_hard) ++s_.invalid_route_choice;
+    if (choices.size() < 2 || choices.size() > 3 || tiers.size() < 2) ++s_.invalid_route_choice;
     if (choices.empty()) return;
     std::size_t pick = 0;
     if (policy == Policy::Random) {

@@ -151,7 +151,11 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    stages and those areas for every arena (`"campaign_arenas": false` to keep to Mercenaries). The
    fatal error seen on campaign areas (`Failed open file ... wp6f00.mod`) was a weapon model the area
    never loaded; fixed by those preloads.
-3. Run map: branching arenas with difficulty tiers.
+3. ~~Run map: branching arenas with difficulty tiers.~~ Done 2026-11-02: a run's arenas are a map
+   generated when it starts (`rm::GenerateRunMap`): the starting arena, then three per layer, each a
+   real arena with a route; every node leads to two neighbours whose tiers differ, tiers rise with
+   depth. NEXT ROUTE offers the next nodes by arena name and tier, with the route, rewards, curse
+   and the arenas each leads to; the stage change loads the chosen node's arena.
 
 ### M6 — Bosses
 1. E11 spike on one boss; boss arena as the last step of a run.

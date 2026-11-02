@@ -130,7 +130,7 @@ constexpr const char* kEconomy = R"JSON({
            "perk_price": {"common": 10, "uncommon": 20, "rare": 30, "epic": 40, "legendary": 50},
            "weapon_price": {"common": 10, "uncommon": 20, "rare": 30, "epic": 40, "legendary": 50},
            "perk_offers": 2},
-  "routes": {"third_choice_chance": 0.5}
+  "run_map": {"width": 3}
 })JSON";
 
 constexpr const char* kLoadouts = R"JSON({

@@ -495,13 +495,15 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         Rng::Derive(seed, streams::kDirector),
     });
     run_.loadout = RollLoadout(run_.character, *content_, streams_->loadout);
+    run_.run_map = GenerateRunMap(*content_, streams_->route, arena_pool_, first_arena_);
     last_summary_.reset();
     ++profile_.next_run_number;
     ++profile_.stats.runs_started;
 
     Event e = MakeEvent(EventType::RunStarted);
     e.Add("character", ch->id).Add("seed", std::to_string(seed)).Add("rng_version", kRngVersion)
-        .Add("arena_count", run_.arena_count).Add("route", start->id).Add("capabilities", caps_.ToString())
+        .Add("arena_count", run_.arena_count).Add("route", start->id).Add("map", PlannedMapKey())
+        .Add("capabilities", caps_.ToString())
         .Add("weapon_mode", WeaponIdMode() ? std::string_view("by_weapon_id") : kSidearmSlot)
         .Add("skin", skin->id).Add("loadout_weapon", run_.loadout.weapon_id)
         .Add("loadout", FormatLoadout(run_.loadout, *content_)).Add("loadout_spent", run_.loadout.spent);
@@ -1221,13 +1223,32 @@ Status RunController::LeaveShop() {
 }
 
 void RunController::EnterRouteSelection() {
-    const RouteDef* route = Route();
-    const int tier = route != nullptr ? route->difficulty_tier : 1;
-    run_.route_choices = GenerateRouteChoices(*content_, streams_->route, tier, [this](const PerkDef& p) {
+    // The choices are the nodes the current one leads to in the run map.
+    run_.route_choices.clear();
+    const auto& layers = run_.run_map.layers;
+    const auto layer = static_cast<std::size_t>(run_.map_layer);
+    if (layer + 1 < layers.size() && static_cast<std::size_t>(run_.map_node) < layers[layer].size()) {
+        for (const int n : layers[layer][static_cast<std::size_t>(run_.map_node)].next) {
+            const RunMapNode& node = layers[layer + 1][static_cast<std::size_t>(n)];
+            RouteChoice choice;
+            choice.route_id = node.route_id;
+            choice.map_key = node.map_key;
+            choice.node = n;
+            run_.route_choices.push_back(std::move(choice));
+        }
+    }
+    RollRouteCurses(*content_, streams_->route, run_.route_choices, [this](const PerkDef& p) {
         return CheckPerk(p, MakeGateInput(CursePolicy::Only)) == PerkGate::Eligible;
     });
     run_.route_chosen = false;
     run_.phase = Phase::RouteSelection;
+}
+
+int RunController::PlannedMapKey() const {
+    const auto& layers = run_.run_map.layers;
+    if (!run_.active || static_cast<std::size_t>(run_.map_layer) >= layers.size()) return -1;
+    const auto& layer = layers[static_cast<std::size_t>(run_.map_layer)];
+    return static_cast<std::size_t>(run_.map_node) < layer.size() ? layer[static_cast<std::size_t>(run_.map_node)].map_key : -1;
 }
 
 Status RunController::ChooseRoute(std::size_t index) {
@@ -1243,12 +1264,17 @@ Status RunController::ChooseRoute(std::size_t index) {
     if (def == nullptr) return Fail(op, ErrorCode::InvalidEncounter, "unknown route '" + choice.route_id + "'");
     run_.route_id = def->id;
     run_.route_chosen = true;
+    if (choice.node >= 0) {
+        ++run_.map_layer;
+        run_.map_node = choice.node;
+    }
     if (!choice.curse_perk_id.empty()) {
         const Status s = GrantPerk(choice.curse_perk_id, "route_curse", CursePolicy::Only, true);
         if (!s.ok()) EmitError("route_curse", s);
     }
     Event e = MakeEvent(EventType::RouteSelected);
-    e.Add("index", index).Add("route", def->id).Add("tier", def->difficulty_tier).Add("budget", def->enemy_budget);
+    e.Add("index", index).Add("route", def->id).Add("tier", def->difficulty_tier).Add("budget", def->enemy_budget)
+        .Add("map", choice.map_key);
     if (!choice.curse_perk_id.empty()) e.Add("curse", choice.curse_perk_id);
     Emit(std::move(e));
     return Status::Success();

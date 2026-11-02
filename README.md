@@ -1,6 +1,6 @@
 # Rogue Mercenaries
 
-A single-player roguelite mod for **Resident Evil 5 Gold Edition (Steam, build 11465250, `re5dx9.exe` 1.0.0.129)**. Each run is three arenas on three random Mercenaries stages, with no game screens in between. Between arenas you take a reward (items, a weapon or supplies), shop with temporary Supplies and choose a route; perks are per-character traits unlocked only in the mod's menu, and a run banks permanent Credits for unlocks.
+A single-player roguelite mod for **Resident Evil 5 Gold Edition (Steam, build 11465250, `re5dx9.exe` 1.0.0.129)**. Each run is three arenas, Mercenaries stages and campaign areas picked on a branching run map, with no game screens in between. Between arenas you take a reward (items, a weapon or supplies), shop with temporary Supplies and choose the next arena; perks are per-character traits unlocked only in the mod's menu, and a run banks permanent Credits for unlocks.
 
 ## Status (2026-10-27)
 
@@ -58,7 +58,7 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
    - **ARENA N CLEARED** shows the rating, time, kills, supplies and credits; **Enter** continues;
    - **CHOOSE A REWARD** lists the offers (items go straight into your inventory; if nothing fits you get the item's value in supplies); a reroll row appears when you hold a token;
    - **SHOP** lists heal, reroll token, an upgrade for a weapon you hold, a weapon you don't have yet, and items (grenades, sprays, herbs, ammo bundles) with their prices, coloured by rarity; bought weapons and items go straight into your inventory (a purchase that does not fit is refunded). **ORGANIZE INVENTORY** shows your nine item cells: pick one, then another, to swap them; the layout is kept on the next stage. The last row leaves;
-   - **NEXT ROUTE** lists the routes; the pick ends the match, skips the game's results screen and restarts on another random arena with your inventory and health carried over (set `"stage_per_arena": false` in `adapter.json` to stay on one map).
+   - **NEXT ROUTE** lists the arenas the run map leads to next, with their tier (tier 2 in amber, tier 3 in red); the line below names the route (enemy count, rewards, a curse when it carries one) and the arenas that choice leads on to, so a pick also decides what can follow. The pick ends the match, skips the game's results screen and restarts in that arena with your inventory and health carried over; the top line names the arena and route as it begins (set `"stage_per_arena": false` in `adapter.json` to stay on one map).
    Arrow keys move, **Enter** confirms. Each arena places three **chests**: the clock statues Mercenaries uses for time bonuses, at spots where the game itself puts them (the stage's own statues stay away during a run). Shoot one or press the action key at it; it gives supplies and often an item (ammo, grenades, herbs, a spray) or, rarely, a gun; the line at the top shows what you got. (`"native_match_ui": false` brings the overlay windows back.)
 6. After arena 3 a **RUN COMPLETE** screen shows the credits you banked; leaving it ends the match through the game's own screens. Character perks (for example Chris's *Pocket Grenades*: a hand grenade every four kills) trigger during the arenas; a grant that does not fit shows "inventory full".
 

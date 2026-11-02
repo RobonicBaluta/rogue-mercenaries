@@ -102,7 +102,8 @@ and `$ctest` to `ctest.exe` in the same folder.
     (several stages: captures, own spawns, objects), `NUMBER=<n> bash scripts/dump_stage_sets.sh` (set records), `python scripts/campaign_maps.py <n>...`
     (director maps from the AI waypoints), `NUMBER=<n> bash scripts/test_campaign_arena.sh` (a director arena there); `python scripts/arc_extract.py <arc> [type...]`.
     `STAGES=".." bash scripts/vet_campaign.sh` (start views and player positions of candidate stages), `bash scripts/check_campaign_arenas.sh`
-    (a director arena on every campaign map), `bash scripts/test_rotation.sh` (a run from a campaign area to a Mercenaries stage),
+    (a director arena on every campaign map), `bash scripts/test_rotation.sh` (a run from a campaign area to a Mercenaries stage), `bash scripts/test_run_map.sh` (a whole run
+    through the run map: each stage change must load the chosen node's arena),
     `NUMBER=<n> bash scripts/test_grab_hang.sh` (enemies left to grab the player), `bash scripts/check_campaign_starts.sh` (each campaign map
     as a later arena: where the player starts, do the enemies close in), `bash scripts/survey_stage_preloads.sh` (what each
     Mercenaries stage loads for its enemies: `research/stage_preloads.json`, read by `campaign_maps.py`). `DLL=<path>` makes

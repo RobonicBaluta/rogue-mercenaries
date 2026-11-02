@@ -99,9 +99,10 @@ struct EconomyConfig {
         int item_offers = 0;  // distinct inventory items on sale (price from loadouts.json)
     } shop;
 
-    struct Routes {
-        double third_choice_chance = 0.5;
-    } routes;
+    /// The run map (rm::GenerateRunMap): nodes per layer after the starting arena.
+    struct RunMapConfig {
+        int width = 3;
+    } run_map;
 
     /// Chests (the adapter opens one for each time-bonus pickup during an arena): supplies
     /// always, plus a catalog item (item_chance) or a weapon the match can place (weapon_chance).

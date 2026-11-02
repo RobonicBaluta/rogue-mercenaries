@@ -387,6 +387,12 @@ void ArmMap(int key, int costume) {
     autopilot::Arm({campaign ? 0 : key, costume, std::max(1, g->settings.stageCount)});
 }
 
+// The director map of the stage being played. maps.json keys Mercenaries maps by their stage
+// index (0..7) and campaign areas by their stage number (100 and up), which the host loads in
+// place of the chosen Mercenaries stage (M5).
+int CurrentMapKey() { return host::StageOverride() >= 0 ? host::StageOverride() : g->currentStage; }
+const rm::MapDef* CurrentMap() { return g->content->FindMapByStage(CurrentMapKey()); }
+
 // Moves the item in cell `from` to cell `to`, swapping with whatever is there.
 bool SwapGridCells(int from, int to) {
     if (from < 0 || from >= kGridCells || to < 0 || to >= kGridCells || from == to) return false;
@@ -697,9 +703,13 @@ private:
                 const rm::RunSnapshot s = run.Snapshot(Now());
                 screen.header = "NEXT ROUTE";
                 screen.empty_help = "No route to choose.";
+                // The run map's next arenas (M5.3): the arena and its tier, warmer for harder
+                // tiers; the help names the route, its rewards and where it leads.
                 for (const auto& o : s.route_offers) {
                     Item item;
-                    item.label = Upper(Plain(o.title));
+                    item.label = Upper(Plain(o.title)) + (o.tier > 0 ? "   TIER " + std::to_string(o.tier) : "");
+                    if (o.tier == 2) item.color = 0xFFFFD27Fu;
+                    if (o.tier >= 3) item.color = 0xFFFF7A5Cu;
                     item.help = Plain(o.detail);
                     screen.items.push_back(std::move(item));
                 }
@@ -914,6 +924,11 @@ private:
                 if (index < 0) break;
                 const rm::Status st = run.ChooseRoute(static_cast<std::size_t>(index));
                 Report(st, "choose route");
+                if (st.ok()) {
+                    RM_LOGI("route: choice %d of %zu, %s on stage %d (layer %d node %d)", index + 1,
+                            run.RouteChoices().size(), run.state().route_id.c_str(), run.PlannedMapKey(),
+                            run.state().map_layer, run.state().map_node);
+                }
                 d.outcome = st.ok() ? Outcome::Close : Outcome::Denied;
                 break;
             }
@@ -956,6 +971,23 @@ MenuModel g_menuModel;
 
 // Native menu flow: the run starts with the match, using the character the
 // player picked in the game's own character select.
+// The run's map (M5.3), one line per layer: "stage route" per node, "->" its links.
+void LogRunMap() {
+    const auto& layers = g->run->state().run_map.layers;
+    for (std::size_t l = 0; l < layers.size(); ++l) {
+        std::string line;
+        for (std::size_t n = 0; n < layers[l].size(); ++n) {
+            const rm::RunMapNode& node = layers[l][n];
+            line += (n > 0 ? " | " : "") + std::to_string(node.map_key) + " " + node.route_id;
+            if (!node.next.empty()) {
+                line += " ->";
+                for (const int next : node.next) line += " " + std::to_string(next);
+            }
+        }
+        RM_LOGI("run map: arena %zu: %s", l + 1, line.c_str());
+    }
+}
+
 void HandleNativeMenu(double now) {
     nativemenu::SetModel(&g_menuModel);
     matchui::SetModel(&g_menuModel);
@@ -981,6 +1013,7 @@ void HandleNativeMenu(double now) {
     LARGE_INTEGER counter;
     QueryPerformanceCounter(&counter);
     const auto seed = static_cast<std::uint64_t>(counter.QuadPart) ^ 0x9E3779B97F4A7C15ull;
+    run.SetArenaPool(RotationMaps(), CurrentMapKey());  // the run map starts where the match is
     const rm::Status status =
         run.StartRun(g->match.localCharacter, seed, SkinForRun(run.Characters(), g->match.localCharacter));
     Report(status, ("start run (" + g->match.localCharacter + ")").c_str());
@@ -988,6 +1021,7 @@ void HandleNativeMenu(double now) {
         g->toasts.Push("Rogue Mercenaries: " + status.message);
         return;
     }
+    LogRunMap();
     for (const auto& perk : g->settings.devGrantPerks) {
         Report(run.DevGrantPerk(perk), ("dev grant " + perk).c_str());
     }
@@ -1406,11 +1440,14 @@ void StartStageTransition(double now) {
     }
     const auto gw = GameWorkPtr();
     const int costume = gw ? std::max(0, ReadOr<std::int32_t>(gw + re5::off::kGameWorkCharacter, 0)) : 0;
-    const int stage = PickMap(g->currentStage);
+    // The chosen run map node's arena (M5.3); a random one without (or with dev "nextmap").
+    const int planned = g->run->PlannedMapKey();
+    const int stage = g_forcedNextMap >= 0 || planned < 0 ? PickMap(g->currentStage) : planned;
     g->transition.pending = true;
     g->transition.generation = g->matchGeneration;
     g->transition.startedAt = now;
-    RM_LOGI("stage change: stage %d -> %d (costume slot %d), ending the match", g->currentStage, stage, costume);
+    RM_LOGI("stage change: stage %d -> %d (costume slot %d, %s), ending the match", g->currentStage, stage, costume,
+            stage == planned ? "run map" : "random pick");
     ArmMap(stage, costume);
     g->arenaEndRequested = true;
     RequestMercMatchEnd();
@@ -1436,6 +1473,20 @@ public:
     }
 };
 InventoryBridge g_inventoryBridge;
+
+// An arena began: the director's grace starts, and the HUD names the map and the route for a
+// few seconds (M5.3).
+void ArenaBegan(double now) {
+    g->arenaBeganAt = now;
+    const rm::RunSnapshot s = g->run->Snapshot(now);
+    const rm::MapDef* map = CurrentMap();
+    std::string line = map != nullptr ? Upper(Plain(map->name)) : std::string();
+    if (!s.route_name.empty()) line += (line.empty() ? "" : "   ") + Upper(Plain(s.route_name));
+    if (line.empty()) return;
+    g->notice = line;
+    g->noticeUntil = now + 5.0;
+    RM_LOGI("arena %d: %s (stage %d)", s.arena, line.c_str(), CurrentMapKey());
+}
 
 void TryBeginArena(double now) {
     rm::RunController& run = *g->run;
@@ -1478,7 +1529,7 @@ void TryBeginArena(double now) {
             Report(status, "begin arena");
             g->arenaEndRequested = false;
             if (status.ok()) {
-                g->arenaBeganAt = now;
+                ArenaBegan(now);
                 ApplyCarriedInventory();
                 RestoreCarriedHp();
                 g->transition.pending = false;
@@ -1495,7 +1546,7 @@ void TryBeginArena(double now) {
     const rm::Status status = run.BeginArena(now);
     Report(status, "begin arena");
     g->arenaEndRequested = false;
-    if (status.ok()) g->arenaBeganAt = now;
+    if (status.ok()) ArenaBegan(now);
     if (status.ok() && waitingFirst) ApplyLoadoutToInventory();
 }
 
@@ -1530,12 +1581,6 @@ void TraceDirectorArena(double now, const std::optional<std::array<double, 3>>& 
         RM_LOGI("director: %d units, mean distance to the player %.0f", counted, distance / counted);
     }
 }
-
-// The director map of the stage being played. maps.json keys Mercenaries maps by their stage
-// index (0..7) and campaign areas by their stage number (100 and up), which the host loads in
-// place of the chosen Mercenaries stage (M5).
-int CurrentMapKey() { return host::StageOverride() >= 0 ? host::StageOverride() : g->currentStage; }
-const rm::MapDef* CurrentMap() { return g->content->FindMapByStage(CurrentMapKey()); }
 
 // ROADMAP M1: on a stage listed in maps.json the run owns the arena. The game's own spawns
 // stay off for the whole match (also between arenas), and the core's director decides what
@@ -1845,6 +1890,7 @@ void DriveUiDemo(double now) {
         }
     };
     step(0, 2.0, [&] {
+        run.SetArenaPool(RotationMaps(), CurrentMapKey());
         Report(run.StartRun("chris", 42), "demo start run");
         Report(run.BeginArena(now), "demo begin arena");
         overlay::SetFocused(true);
@@ -2753,6 +2799,7 @@ void DrawIdle(const rm::RunSnapshot& s) {
             QueryPerformanceCounter(&counter);
             seed = static_cast<std::uint64_t>(counter.QuadPart) ^ 0x9E3779B97F4A7C15ull;
         }
+        run.SetArenaPool(RotationMaps(), CurrentMapKey());
         Report(run.StartRun(characters[g->selectedCharacter].id, seed), "start run");
         for (const auto& perk : g->settings.devGrantPerks) {
             Report(run.DevGrantPerk(perk), ("dev grant " + perk).c_str());
