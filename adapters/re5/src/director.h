@@ -49,5 +49,8 @@ std::uintptr_t Spawn(const char* unitClass, const float pos[3], int weapon);
 /// Kills a live enemy through the game's own damage call (its HP in one hit), so the
 /// death runs as in play. False when the unit is not a live character.
 bool Kill(std::uintptr_t unit);
+/// Takes `amount` health from a live enemy through the game's own call (as Kill does); a
+/// build's special. False when the unit is dead or the call faults.
+bool Damage(std::uintptr_t unit, int amount);
 
 }  // namespace rmre5::director

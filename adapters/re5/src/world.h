@@ -25,6 +25,10 @@ std::uintptr_t PlaceChest(const float pos[3], int seconds);
 /// a run places its chests itself.
 void BlockNativeChests(bool blocked);
 
+/// A build's drops (M8): ammo, recovery items and grenades the player picks up from the ground
+/// become this game item, one per pickup (-1: the game's own).
+void SetDropReplacement(int gameItem);
+
 /// Developer: logs every set record of the stage (enemies, objects, items: class, descriptor
 /// class and position), whether or not it was ever spawned. Returns the records logged.
 int DumpSetRecords();

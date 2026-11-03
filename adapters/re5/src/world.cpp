@@ -167,6 +167,42 @@ std::uintptr_t __fastcall CreateDetour(std::uintptr_t self, void*, std::uintptr_
     return unit;
 }
 
+// A build's drops (M8, Safari Chris: mines): every ammo, recovery item or grenade the player
+// picks up from the ground becomes one of the build's item, through the game's own pickup.
+using PickUpFn = int(__thiscall*)(std::uintptr_t self, std::uintptr_t player, int handle);
+using ItemFromHandleFn = std::uintptr_t(__thiscall*)(std::uintptr_t itemManager, int handle);
+PickUpFn g_origPickUp = nullptr;
+std::atomic<int> g_dropItem{-1};
+constexpr std::size_t kGroundItemId = 0x76;     // uint16
+constexpr std::size_t kGroundItemCount = 0x78;  // int32 (-1: the item record's pickup amount)
+
+std::uintptr_t GroundItem(int handle) {
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kItemManager, 0);
+    if (!manager) return 0;
+    __try {
+        return reinterpret_cast<ItemFromHandleFn>(re5::addr::kFnItemFromHandle)(manager, handle);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+int __fastcall PickUpDetour(std::uintptr_t self, void*, std::uintptr_t player, int handle) {
+    const int replacement = g_dropItem.load();
+    if (replacement >= 0 && player && player == engine::LocalPlayer()) {
+        if (const std::uintptr_t item = GroundItem(handle)) {
+            const std::uint16_t id = ReadOr<std::uint16_t>(item + kGroundItemId, 0xFFFF);
+            const int category = id >> 8;
+            const bool convert = id != 0xFFFF && id != replacement &&
+                                 (category == 2 || category == 3 || (id >= 0x0106 && id <= 0x0108));
+            if (convert && SafeStore<std::uint16_t>(item + kGroundItemId, static_cast<std::uint16_t>(replacement))) {
+                SafeStore<std::int32_t>(item + kGroundItemCount, 1);
+                RM_LOGI("world: picked up %04X, given as %04X (the build's drops)", id, static_cast<unsigned>(replacement));
+            }
+        }
+    }
+    return g_origPickUp(self, player, handle);
+}
+
 using CtorFn = std::uintptr_t(__thiscall*)(std::uintptr_t self);
 CtorFn g_origHourGlassCtor = nullptr;
 
@@ -223,10 +259,20 @@ bool Install() {
                           reinterpret_cast<void**>(&g_origHourGlassCtor), "uOmHourGlass constructor");
     g_available = ok;
     if (g_available) RM_LOGI("world: hooks on the set spawns and creates of sObjModel and sItem queued");
+    if (engine::Caps().pickupItem && Queue(re5::addr::kFnPickUpItem, reinterpret_cast<void*>(&PickUpDetour),
+                                           reinterpret_cast<void**>(&g_origPickUp), "item pickup")) {
+        RM_LOGI("world: hook on the item pickup queued (a build's drops)");
+    }
     return g_available;
 }
 
 bool Available() { return g_available.load(); }
+
+void SetDropReplacement(int gameItem) {
+    if (g_dropItem.exchange(gameItem) != gameItem) {
+        RM_LOGI("world: drops %s", gameItem >= 0 ? ("become item " + std::to_string(gameItem)).c_str() : "are the game's own");
+    }
+}
 
 void SetSurvey(bool on) { g_survey = on; }
 

@@ -81,36 +81,95 @@ perks += [
 # ---- Skin traits: a skin's perk (granted by the skin, never listed). Skins with a build (BUILDS below,
 # ROADMAP M8) lose their old small trait; the remaining ones go as their builds land. ----
 skin_traits = {
-    'chris_safari_trait': ('Safari Instinct', 'Safari Chris deals 8 percent more damage.', [{'kind': 'outgoing_damage_mult', 'value': 0.08}]),
     'chris_stars_trait': ('S.T.A.R.S. Restock', 'S.T.A.R.S. Chris restocks a first aid spray on every arena clear.',
                           [{'kind': 'item_on_arena_clear', 'game_item': 0x0304, 'amount': 1}]),
-    'sheva_tribal_trait': ('Hunter Eye', 'Tribal Sheva lands 5 percent more criticals.', [{'kind': 'crit', 'chance': 0.05}]),
-    'jill_battle_suit_trait': ('Battle Suit', 'The battle suit absorbs 8 percent of damage.', [{'kind': 'incoming_damage_mult', 'value': -0.08}]),
+    'sheva_tribal_trait': ('Quiver', 'Tribal Sheva starts with 20 arrows and finds 10 more on every arena clear.',
+                           [{'kind': 'item_on_start', 'game_item': 0x020B, 'amount': 20},
+                            {'kind': 'item_on_arena_clear', 'game_item': 0x020B, 'amount': 10}]),
 }
 # ---- Skin builds (characters.json skin "build", core/include/rm/characters.h SkinBuild). ----
 BUILDS = {
+    'chris_safari': {
+        'name': 'Mine Layer', 'icon': 'mine',
+        'summary': 'Every chest and every enemy drop is a proximity bomb, and they stack up to 10.',
+        'drops_as': '0x010A', 'stack_max': {'0x010A': 10},
+    },
+    'chris_stars': {
+        'name': 'Field Kit', 'icon': 'medkit',
+        'summary': 'A first aid spray on every arena clear.',
+    },
+    'chris_heavy_metal': {
+        'name': 'Heavy Gunner', 'icon': 'gatling',
+        'summary': 'Can unlock the Gatling gun in CREDITS and then find it in his runs. Ammo stacks three times as high.',
+        'extra_weapons': ['gatling'], 'ammo_stack_mult': 3,
+    },
+    'sheva_tribal': {
+        'name': 'Hunter', 'icon': 'bow',
+        'summary': 'Starts with her longbow and a quiver of arrows. Arrows hit 50 percent harder.',
+        'starting_weapon': 'longbow', 'extra_weapons': ['longbow'], 'category_damage': {'bow': 0.5},
+    },
+    'jill_bsaa': {
+        'name': 'Locksmith', 'icon': 'key',
+        'summary': 'Opens every chest without a key.',
+        'chest_keys_exempt': True,
+    },
+    'jill_battle_suit': {
+        'name': 'Twin Fury', 'icon': 'dual_smg',
+        'summary': 'The special button unloads two submachine guns on everything in front of her. 25 seconds to recover.',
+        'special': {'kind': 'dual_smg', 'name': 'Twin Fury', 'icon': 'dual_smg', 'cooldown_seconds': 25,
+                    'power': 90, 'duration_seconds': 1.5},
+    },
+    'wesker_midnight': {
+        'name': 'Uroboros Speed', 'icon': 'dash',
+        'summary': 'The special button dashes forward, untouchable while he moves. He has only half his health.',
+        'max_health_mult': 0.5,
+        'special': {'kind': 'dash', 'name': 'Dash', 'icon': 'dash', 'cooldown_seconds': 2.5, 'power': 5,
+                    'duration_seconds': 0.5},
+    },
+    'rebecca_stars': {
+        'name': 'Field Surgeon', 'icon': 'heal',
+        'summary': 'Stronger heals. A spray or mixed herb gives 4 seconds untouchable and 12 seconds of 30 percent more damage.',
+        'heal_mult': 1.5, 'heal_buff_fraction': 0.6, 'heal_invulnerable_seconds': 4, 'heal_damage_bonus': 0.3,
+        'heal_damage_seconds': 12,
+    },
+    'josh_bsaa': {
+        'name': 'Call for Backup', 'icon': 'radio',
+        'summary': 'The special button calls covering fire on the nearest enemies for the arena, once every two arenas.',
+        'special': {'kind': 'backup', 'name': 'Backup', 'icon': 'radio', 'every_arenas': 2},
+    },
+    'excella_dress': {
+        'name': 'Ambition', 'icon': 'crown',
+        'summary': 'Every melee kill raises one of her stats for the rest of the run: damage, defense, health or criticals.',
+        'melee_kill_stats': {'damage': 0.04, 'defense': 0.03, 'max_health': 0.05, 'crit': 0.02},
+    },
     'chris_warrior': {
+        'name': 'Brute Force', 'icon': 'shotgun',
         'summary': 'Only shotguns, handguns and magnums come his way, and they hit 25 percent harder.',
         'offered_weapons': {'categories': ['shotgun', 'handgun', 'magnum']},
         'category_damage': {'shotgun': 0.25, 'handgun': 0.25, 'magnum': 0.25},
     },
     'sheva_clubbin': {
+        'name': 'Night Shopper', 'icon': 'supplies',
         'summary': 'Half again as many supplies, and one free shop reroll at every shop.',
         'supplies_mult': 1.5, 'free_shop_rerolls': 1,
     },
     'sheva_business': {
+        'name': 'Expense Account', 'icon': 'credits',
         'summary': 'Better loot and shop stock. Submachine guns hit 30 percent harder and upgrade without limit.',
         'rarity_shift': 0.8, 'category_damage': {'smg': 0.3}, 'uncapped_upgrades': {'categories': ['smg']},
     },
     'sheva_fairy_tale': {
+        'name': 'Enchanted Arms', 'icon': 'star',
         'summary': 'Starts with a legendary M3 that upgrades without limit.',
         'starting_weapon': 'm3', 'starting_weapon_rarity': 'legendary', 'uncapped_upgrades': {'ids': ['m3']},
     },
     'wesker_stars': {
-        'summary': 'Only his Samurai Edge, magnums and the Hydra. Other guns show up in the shop but are not for him.',
-        'usable_weapons': {'categories': ['magnum'], 'ids': ['samurai_edge', 'hydra']},
+        'name': 'Iron Fist', 'icon': 'fist',
+        'summary': 'His melee hits three times as hard. Only his Samurai Edge, magnums and the Hydra are for him.',
+        'usable_weapons': {'categories': ['magnum'], 'ids': ['samurai_edge', 'hydra']}, 'melee_damage': 2.0,
     },
     'barry_stars': {
+        'name': 'Old Reliable', 'icon': 'magnum',
         'summary': 'Starts with an S and W M29 that upgrades without limit, and half again as much health.',
         'starting_weapon': 'm29', 'uncapped_upgrades': {'ids': ['m29']}, 'max_health_mult': 1.5,
     },
@@ -161,6 +220,22 @@ pools = {
 }
 passives = {'chris': 'chris_veteran', 'sheva': 'sheva_field_training', 'jill': 'jill_battle_instinct', 'wesker': 'wesker_firestarter',
             'josh': 'josh_squad_tactics', 'barry': 'barry_demolition_man', 'rebecca': 'rebecca_combat_medic', 'excella': 'excella_executive_bonus'}
+
+
+def help_lines(text, width=54):
+    # The native menu's help line (adapters/re5/src/native_menu.cpp Wrap): two lines of 54.
+    lines, line = [], ''
+    for word in text.split(' '):
+        if line and len(line) + 1 + len(word) > width:
+            lines.append(line)
+            line = ''
+        line = (line + ' ' if line else '') + word
+    return lines + ([line] if line else [])
+
+
+for key, build in BUILDS.items():
+    assert len(help_lines(build['summary'])) <= 2, (key, help_lines(build['summary']))
+
 for ch in c['characters']:
     ch['starting_passive'] = passives[ch['id']]
     ch['skill_pool'] = pools[ch['id']]
@@ -190,6 +265,13 @@ open('configs/characters.json', 'a').write('\n')
 # loadouts.json: no roll (pistol only); the equipment list stays the shop/reward catalog.
 l = json.load(open('configs/loadouts.json'))
 l['budget'] = 0
+CATALOG_EXTRA = [
+    {'id': 'proximity_bomb', 'name': 'Proximity Bomb', 'cost': 15, 'max': 2, 'game_item': 0x010A, 'price': 20, 'bundle': 2},
+    {'id': 'arrows', 'name': 'Arrows', 'cost': 5, 'max': 1, 'game_item': 0x020B, 'price': 0, 'bundle': 10},
+]
+for extra in CATALOG_EXTRA:
+    if not any(e['id'] == extra['id'] for e in l['equipment']):
+        l['equipment'].append(extra)
 l['_comment'] = ("Item catalog for the shop and the rewards (price in supplies, bundle = units per reward) and the starting loadout roll. "
                  "budget is 0: every run starts with the character's pistol only (supply perks add items and weapons through "
                  "item_on_start); set a budget to roll equipment from this list again (max_items caps distinct entries, the RE5 "
@@ -202,10 +284,23 @@ w = json.load(open('configs/weapons.json'))
 ids = {'m92f': 0x0102, 'vz61': 0x0103, 'ithaca_m37': 0x0104, 's75': 0x0105, 'sig556': 0x0109, 'm29': 0x010B,
        'h_and_k_p8': 0x0110, 'sig_p226': 0x0111, 'h_and_k_mp5': 0x0113, 'm3': 0x0116, 'jail_breaker': 0x0117,
        'hydra': 0x0119, 'l_hawk': 0x011A, 'm500': 0x011B, 'psg1': 0x011C, 'ak74': 0x011D, 'px4': 0x011F,
-       'dragunov': 0x0120, 'samurai_edge': 0x0129}
+       'dragunov': 0x0120, 'samurai_edge': 0x0129, 'gatling': 0x0115, 'longbow': 0x010F}
+WEAPON_EXTRA = [
+    {'id': 'gatling', 'name': 'Gatling Gun', 'category': 'machine_gun', 'base_damage_mult': 1.0, 'unlock_cost_credits': 600,
+     'build_only': True},
+    {'id': 'longbow', 'name': 'Longbow', 'category': 'bow', 'base_damage_mult': 1.0, 'build_only': True},
+]
+for extra in WEAPON_EXTRA:
+    if not any(wd['id'] == extra['id'] for wd in w['weapons']):
+        w['weapons'].append(extra)
 for wd in w['weapons']:
     if wd['id'] in ids:
         wd['game_item'] = ids[wd['id']]
 json.dump(w, open('configs/weapons.json', 'w'), indent=2)
 open('configs/weapons.json', 'a').write('\n')
-print('perks', len(perks), 'written; characters, loadouts, weapons aligned')
+# economy.json: chest keys (M8; Jill BSAA's build opens chests without them).
+e = json.load(open('configs/economy.json'))
+e['keys'] = {'enabled': True, 'drop_chance': 0.15, 'classes': ['uEm1'], 'start': 0, 'max': 9}
+json.dump(e, open('configs/economy.json', 'w'), indent=2)
+open('configs/economy.json', 'a').write('\n')
+print('perks', len(perks), 'written; characters, loadouts, weapons, economy aligned')

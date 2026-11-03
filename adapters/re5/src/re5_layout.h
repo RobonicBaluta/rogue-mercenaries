@@ -32,6 +32,14 @@ constexpr std::uintptr_t kDtiUEnemy = 0x011F4F4C;
 constexpr std::uintptr_t kFnEnemyOnHit = 0x009E0840;      // void uEnemy::OnHit(cHit*)
 constexpr std::uintptr_t kFnCharacterSubHp = 0x0084F7C0;  // void uCharacter::SubHp(short)
 constexpr std::uintptr_t kFnPlayerSubHp = 0x00B7C950;     // void uPlayer::SubHp(short)
+// void uPlayer::AddHp(short): adds, clamps to the maximum, flags +0x2D8C |= 2 (the vtable slot
+// before SubHp; uCharacter's own SetHp/AddHp/SubHp are 0x0084F740/F780/F7C0). Healing items.
+constexpr std::uintptr_t kFnPlayerAddHp = 0x00B7C8D0;
+// int X::PickUpItem(uPlayer* player, int itemHandle), thiscall, ret 8: looks the ground item up
+// with kFnItemFromHandle (this = [kItemManager]) and gives its id (word +0x76) and count
+// (dword +0x78) to the player (category 1 Create, 2 AddAmmo, others AddToStacks).
+constexpr std::uintptr_t kFnPickUpItem = 0x007E9DF0;
+constexpr std::uintptr_t kFnItemFromHandle = 0x007BEA20;
 constexpr std::uintptr_t kFnHitGetAttacker = 0x00C49530;  // cUnit* cHit::GetAttacker()
 constexpr std::uintptr_t kFnMercAddTime = 0x00718050;     // void ?::MercAddTime(int seconds)
 // void cMercs::UpdateCountdown(float dt): counts [this+0x4DC] down, sets the
@@ -252,6 +260,9 @@ namespace off {
 // uCharacter
 constexpr std::size_t kHp = 0x1364;     // int16
 constexpr std::size_t kMaxHp = 0x1366;  // int16
+// uPlayer: the current action object (cPlAction_pl_act_*: relax at rest, weapon_fire while a shot
+// lands, attack_* for the hand-to-hand moves, knife_attack).
+constexpr std::size_t kPlayerAction = 0x10F8;
 // uPlayer
 constexpr std::size_t kPlayerNumber = 0x2D9C;   // uint8, copied into enemy+0x136C on hit
 constexpr std::size_t kPlayerControl = 0x2DA8;  // int32; 0/1/2 observed in code paths (hypothesis: 2 = AI)
@@ -384,6 +395,9 @@ inline constexpr Signature kSignatures[] = {
     {"enemy_on_hit", addr::kFnEnemyOnHit, "56 57 8B 7C 24 0C 85 FF 8B F1"},
     {"character_sub_hp", addr::kFnCharacterSubHp, "66 8B 44 24 04 66 29 81 64 13 00 00"},
     {"player_sub_hp", addr::kFnPlayerSubHp, "56 8B F1 66 8B 4C 24 08 57 0F BF BE 64 13 00 00"},
+    {"player_add_hp", addr::kFnPlayerAddHp, "66 8B 44 24 04 56 8B F1 57 0F BF BE 64 13 00 00 66 01 86 64 13 00 00"},
+    {"pickup_item", addr::kFnPickUpItem, "83 EC 38 56 8B 74 24 40 57 6A 01 8B CE E8 CE 20 37 00"},
+    {"item_from_handle", addr::kFnItemFromHandle, "53 55 56 8B D9 8B 43 24 57 33 FF 85 C0 76 55 8B 6C 24 14 85"},
     {"hit_get_attacker", addr::kFnHitGetAttacker, "56 57 8B F9 8B 77 20"},
     // MercAddTime reads [kGameRoot]+kGameWork and adds to +kMercTimer.
     {"merc_add_time", addr::kFnMercAddTime, "A1 A4 40 23 01 56 8B 74 24 08 57 8B F9 8B 88 2C 04 01 00"},

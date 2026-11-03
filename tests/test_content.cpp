@@ -31,6 +31,26 @@ bool HasError(const std::vector<std::string>& errors, const std::string& needle)
     return found;
 }
 
+// Lines the native menu's help takes (adapters/re5/src/native_menu.cpp Wrap: words onto lines
+// of 54; it shows two).
+int HelpLines(const std::string& text) {
+    int lines = 0;
+    std::size_t line = 0;
+    std::size_t i = 0;
+    while (i < text.size()) {
+        std::size_t end = text.find(' ', i);
+        if (end == std::string::npos) end = text.size();
+        const std::size_t word = end - i;
+        if (line > 0 && line + 1 + word > 54) {
+            ++lines;
+            line = 0;
+        }
+        line += (line > 0 ? 1 : 0) + word;
+        i = end + 1;
+    }
+    return lines + (line > 0 ? 1 : 0);
+}
+
 json& PerkById(json& perks, const std::string& id) {
     for (json& p : perks["perks"]) {
         if (p["id"] == id) return p;
@@ -72,7 +92,20 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
         CHECK_FALSE(p.icon.empty());
         CHECK(std::filesystem::exists(test::ConfigDir() / "icons" / (p.icon + ".png")));
     }
-
+    // Every skin is a build with a name and an icon (M8); a special's icon ships too.
+    for (const CharacterDef& ch : c.characters()) {
+        for (const SkinDef& s : ch.skins) {
+            if (s.build.name.empty() && s.build.summary.empty()) continue;  // a plain default skin
+            INFO(s.id);
+            CHECK_FALSE(s.build.name.empty());
+            CHECK_FALSE(s.build.icon.empty());
+            CHECK(std::filesystem::exists(test::ConfigDir() / "icons" / (s.build.icon + ".png")));
+            CHECK(HelpLines(s.build.summary) <= 2);  // SKINS and PERKS show it whole
+            if (s.build.special.Any()) {
+                CHECK(std::filesystem::exists(test::ConfigDir() / "icons" / (s.build.special.icon + ".png")));
+            }
+        }
+    }
 
     // Character restrictions and capability flags.
     const CharacterDef* chris = c.FindCharacter("chris");

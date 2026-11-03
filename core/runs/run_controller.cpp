@@ -496,6 +496,7 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         Rng::Derive(seed, streams::kDirector),
     });
     run_.loadout = RollLoadout(run_.character, *content_, streams_->loadout);
+    run_.keys = eco.keys.enabled ? eco.keys.start : 0;
     run_.run_map = GenerateRunMap(*content_, streams_->route, arena_pool_, first_arena_);
     last_summary_.reset();
     ++profile_.next_run_number;
@@ -701,6 +702,7 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
         if (kill.by_player) {
             ++a.player_kills;
             if (kill.was_melee.value_or(false)) run_.last_melee_time = kill.now;
+            ApplyBuildKill(kill, out);
 
             // Kill-streak record (+ legendary window extensions from the killing weapon).
             double extend = 0.0;
@@ -1156,6 +1158,105 @@ void RunController::EnterShop() {
     Emit(std::move(e));
 }
 
+void RunController::ApplyBuildKill(const KillEvent& kill, KillOutcome& out) {
+    const SkinBuild& build = run_.character.build;
+    // A melee kill adds a random stat for the rest of the run (Excella).
+    if (kill.was_melee.value_or(false) && !build.melee_kill_stats.empty()) {
+        auto it = build.melee_kill_stats.begin();
+        std::advance(it, static_cast<std::ptrdiff_t>(streams_->loot.Index(build.melee_kill_stats.size())));
+        const std::string& stat = it->first;
+        if (stat == "damage") run_.stats.damage += it->second;
+        else if (stat == "defense") run_.stats.defense += it->second;
+        else if (stat == "max_health") run_.stats.max_health += it->second;
+        else if (stat == "crit") run_.stats.crit += it->second;
+        ++run_.stats.gains;
+        out.stat_gained = stat;
+        out.stat_amount = it->second;
+        Event e = MakeEvent(EventType::PerkTriggered);
+        e.Add("source", "build").Add("trigger", "melee_kill_stat").Add("stat", stat).Add("amount", it->second)
+            .Add("gains", run_.stats.gains);
+        Emit(std::move(e));
+    }
+    // Keys from the listed enemy classes.
+    const EconomyConfig::Keys& keys = content_->economy().keys;
+    if (keys.enabled && kill.enemy_class && run_.keys < keys.max && keys.drop_chance > 0.0) {
+        const bool listed = std::any_of(keys.classes.begin(), keys.classes.end(), [&kill](const std::string& prefix) {
+            return kill.enemy_class->rfind(prefix, 0) == 0;
+        });
+        if (listed && streams_->loot.NextDouble() < keys.drop_chance) {
+            ++run_.keys;
+            out.key_dropped = true;
+            Event e = MakeEvent(EventType::PerkTriggered);
+            e.Add("source", "keys").Add("trigger", "key_drop").Add("keys", run_.keys).Add("class", *kill.enemy_class);
+            Emit(std::move(e));
+        }
+    }
+}
+
+HealOutcome RunController::OnPlayerHealed(const HealContext& heal) {
+    HealOutcome out;
+    out.amount = heal.amount;
+    if (!run_.active || heal.amount <= 0.0) return out;
+    const SkinBuild& build = run_.character.build;
+    out.amount = heal.amount * build.heal_mult;
+    if (build.heal_buff_fraction > 0.0 && heal.hp_max > 0.0 && heal.amount >= build.heal_buff_fraction * heal.hp_max) {
+        out.high_tier = true;
+        out.invulnerable_seconds = build.heal_invulnerable_seconds;
+        out.damage_bonus = build.heal_damage_bonus;
+        out.damage_seconds = build.heal_damage_seconds;
+        if (out.invulnerable_seconds > 0.0) run_.invulnerable_until = std::max(run_.invulnerable_until, heal.now + out.invulnerable_seconds);
+        if (out.damage_seconds > 0.0 && out.damage_bonus > 0.0) {
+            run_.damage_buff = out.damage_bonus;
+            run_.damage_buff_until = heal.now + out.damage_seconds;
+        }
+    }
+    if (out.amount != heal.amount || out.high_tier) {
+        Event e = MakeEvent(EventType::PerkTriggered);
+        e.Add("source", "build").Add("trigger", "heal").Add("game_heal", heal.amount).Add("heal", out.amount)
+            .Add("high_tier", out.high_tier).Add("hp_max", heal.hp_max);
+        Emit(std::move(e));
+    }
+    return out;
+}
+
+SpecialState RunController::Special(double now) const {
+    SpecialState s;
+    const SkinSpecial& sp = run_.character.build.special;
+    if (!run_.active || !sp.Any()) return s;
+    s.kind = sp.kind;
+    s.name = sp.name;
+    s.icon = sp.icon;
+    s.cooldown_total = sp.cooldown_seconds;
+    s.cooldown_left = std::max(0.0, run_.special_ready_at - now);
+    if (sp.every_arenas > 0 && run_.special_used_arena > 0) {
+        s.arenas_left = std::max(0, run_.special_used_arena + sp.every_arenas - run_.arena_index);
+    }
+    s.ready = run_.phase == Phase::ArenaActive && s.cooldown_left <= 0.0 && s.arenas_left == 0;
+    return s;
+}
+
+Status RunController::UseSpecial(double now) {
+    constexpr std::string_view op = "use_special";
+    if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    const SkinSpecial& sp = run_.character.build.special;
+    if (!sp.Any()) return Fail(op, ErrorCode::NotEligible, "this build has no special");
+    if (run_.phase != Phase::ArenaActive) return Fail(op, ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
+    const SpecialState state = Special(now);
+    if (state.cooldown_left > 0.0) return Fail(op, ErrorCode::NotEligible, sp.name + " is cooling down");
+    if (state.arenas_left > 0) return Fail(op, ErrorCode::NotEligible, sp.name + " is used up for this arena");
+    run_.special_ready_at = now + sp.cooldown_seconds;
+    run_.special_used_arena = run_.arena_index;
+    ++run_.special_uses;
+    if (sp.kind == "dash" && sp.duration_seconds > 0.0) {
+        run_.invulnerable_until = std::max(run_.invulnerable_until, now + sp.duration_seconds);
+    }
+    Event e = MakeEvent(EventType::PerkTriggered);
+    e.Add("source", "build").Add("trigger", "special").Add("kind", sp.kind).Add("uses", run_.special_uses)
+        .Add("arena", run_.arena_index).Add("now", now);
+    Emit(std::move(e));
+    return Status::Success();
+}
+
 Status RunController::RerollShop() {
     constexpr std::string_view op = "reroll_shop";
     if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
@@ -1350,6 +1451,18 @@ Result<ChestReward> RunController::OpenChest(double now) {
     const EconomyConfig& eco = content_->economy();
     Rng& rng = streams_->loot;
     ChestReward out;
+    const SkinBuild& build = run_.character.build;
+    if (eco.keys.enabled && !build.chest_keys_exempt) {
+        if (run_.keys <= 0) {  // stays shut; the adapter puts the chest back
+            out.locked = true;
+            Event e = MakeEvent(EventType::ChestOpened);
+            e.Add("locked", true).Add("keys", run_.keys).Add("now", now);
+            Emit(std::move(e));
+            return out;
+        }
+        --run_.keys;
+        out.key_used = true;
+    }
     out.number = ++run_.chests_opened;
     const int arena = std::max(1, run_.arena_index);
     std::int64_t supplies = eco.chests.supplies_base + eco.chests.supplies_per_arena * (arena - 1);
@@ -1357,7 +1470,20 @@ Result<ChestReward> RunController::OpenChest(double now) {
     const OfferContext ctx = MakeOfferContext(0.0);
     const double roll = rng.NextDouble();
     bool placed = false;
-    if (roll < eco.chests.weapon_chance) {
+    // A build whose drops are one item (Safari Chris: mines) gets that item from every chest.
+    if (build.drops_as >= 0) {
+        for (const EquipmentDef& e : content_->loadouts().equipment) {
+            if (e.game_item != build.drops_as) continue;
+            if (GrantItem(e.id, e.bundle, "chest").ok()) {
+                out.item_id = e.id;
+                out.item_name = e.name;
+                out.item_count = e.bundle;
+            }
+            placed = true;
+            break;
+        }
+    }
+    if (!placed && roll < eco.chests.weapon_chance) {
         std::vector<const WeaponBaseDef*> bases = OfferableWeapons(ctx);
         std::erase_if(bases, [this, &ctx](const WeaponBaseDef* b) {
             return !UsableWeapon(ctx, *b) ||
@@ -1395,6 +1521,7 @@ Result<ChestReward> RunController::OpenChest(double now) {
     }
     Event e = MakeEvent(EventType::ChestOpened);
     e.Add("number", out.number).Add("supplies", out.supplies).Add("now", now);
+    if (out.key_used) e.Add("key_used", true).Add("keys", run_.keys);
     if (!out.item_id.empty()) e.Add("item", out.item_id).Add("count", out.item_count);
     if (!out.weapon_id.empty()) e.Add("weapon", out.weapon_id);
     Emit(std::move(e));

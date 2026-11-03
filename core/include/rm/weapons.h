@@ -14,7 +14,7 @@ namespace rm {
 
 class Content;
 
-enum class WeaponCategory { Handgun, Shotgun, Smg, Rifle, MachineGun, Magnum };
+enum class WeaponCategory { Handgun, Shotgun, Smg, Rifle, MachineGun, Magnum, Bow };
 std::string_view WeaponCategoryName(WeaponCategory c);
 std::optional<WeaponCategory> ParseWeaponCategory(std::string_view name);
 
@@ -28,6 +28,8 @@ struct WeaponBaseDef {
     bool enabled = true;
     /// RE5 inventory item id of this weapon (-1 = unknown; the adapter then only applies the damage class).
     std::int64_t game_item = -1;
+    /// Offered only to a skin build that lists it in extra_weapons (the Gatling, the longbow).
+    bool build_only = false;
 };
 
 enum class AffixKind {

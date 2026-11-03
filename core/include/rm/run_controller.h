@@ -50,6 +50,7 @@ struct KillEvent {
     std::optional<std::string> weapon_id;
     std::optional<bool> was_melee;
     std::optional<std::string> enemy_id;
+    std::optional<std::string> enemy_class;  // the unit's class ("uEm10"): key drops
 };
 
 struct KillOutcome {
@@ -61,6 +62,36 @@ struct KillOutcome {
     int remaining = 0;
     bool arena_complete = false;
     std::vector<std::string> triggered;  // perk ids / unique affix ids that fired
+    bool key_dropped = false;            // a chest key (economy keys)
+    std::string stat_gained;             // a build's melee-kill stat ("damage", ...), empty if none
+    double stat_amount = 0.0;
+};
+
+/// A healing item's heal as the game applies it (the adapter's hook on the player's health add).
+struct HealContext {
+    double now = 0.0;
+    double amount = 0.0;  // the game's heal amount
+    double hp = 0.0;      // health before
+    double hp_max = 0.0;
+};
+
+struct HealOutcome {
+    double amount = 0.0;    // the heal to apply (the build's heal_mult)
+    bool high_tier = false; // at least heal_buff_fraction of max health: the build's buffs started
+    double invulnerable_seconds = 0.0;
+    double damage_bonus = 0.0;
+    double damage_seconds = 0.0;
+};
+
+/// The build's special for the HUD.
+struct SpecialState {
+    std::string kind;   // empty: the build has none
+    std::string name;
+    std::string icon;
+    bool ready = false;          // usable now (an arena is running, cooled down, its arena allowed)
+    double cooldown_left = 0.0;  // seconds
+    double cooldown_total = 0.0;
+    int arenas_left = 0;         // every_arenas: arenas until it can be used again
 };
 
 struct DamageEvent {
@@ -180,6 +211,8 @@ struct InventoryPort {
 
 /// What a chest held (all already applied: supplies credited, items in the inventory).
 struct ChestReward {
+    bool locked = false;       // keys: no key held, nothing granted (the chest stays shut)
+    bool key_used = false;
     std::int64_t supplies = 0;
     std::string item_id;       // catalog item placed, if any
     std::string item_name;
@@ -243,6 +276,16 @@ public:
     Status OnPlayerDied(double now);
     OutgoingResult ComputeOutgoingMultiplier(const HitContext& hit);
     IncomingResult ComputeIncoming(const IncomingContext& incoming);
+    /// A healing item's heal: scaled by the build's heal_mult; one of at least heal_buff_fraction
+    /// of max health starts the build's invulnerability and damage buff. Needs an active run.
+    HealOutcome OnPlayerHealed(const HealContext& heal);
+    /// The build's special (cooldown, arena limit) for the HUD.
+    [[nodiscard]] SpecialState Special(double now) const;
+    /// Uses the build's special during an arena: NotEligible without one, while it cools down or
+    /// before its arena limit allows it; a dash also starts its invulnerability. The adapter
+    /// performs the move itself.
+    Status UseSpecial(double now);
+    [[nodiscard]] bool Invulnerable(double now) const { return run_.active && now < run_.invulnerable_until; }
     /// Sum of queued heal fractions (capped at 1.0).
     [[nodiscard]] double PendingHeal() const;
     /// Items earned by perks since the last call (item_on_kill / item_on_arena_clear).
@@ -360,6 +403,8 @@ private:
     /// build_mult: scale by the skin build's supplies_mult (supplies earned in an arena; rewards
     /// are scaled when they are rolled, external changes never).
     bool CreditSupplies(const std::string& tx, std::int64_t amount, std::string_view reason, bool build_mult = true);
+    /// A player kill's build effects: a melee-kill stat, a key drop.
+    void ApplyBuildKill(const KillEvent& kill, KillOutcome& out);
     TxResult DebitSupplies(const std::string& tx, std::int64_t amount, std::string_view reason);
     Status GrantPerk(std::string_view perk_id, std::string_view source, CursePolicy curses,
                      bool ignore_unlock);

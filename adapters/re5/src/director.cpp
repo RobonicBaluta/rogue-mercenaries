@@ -285,6 +285,19 @@ bool Kill(std::uintptr_t unit) {
     return true;
 }
 
+bool Damage(std::uintptr_t unit, int amount) {
+    const auto hp = engine::ReadHp(unit);
+    if (!hp || hp->hp <= 0 || amount <= 0) return false;
+    using SubHpFn = void(__thiscall*)(std::uintptr_t self, std::int16_t amount);
+    const auto take = static_cast<std::int16_t>(amount < hp->hp ? amount : hp->hp);
+    __try {
+        reinterpret_cast<SubHpFn>(re5::addr::kFnCharacterSubHp)(unit, take);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
 std::uintptr_t Spawn(const SpawnSpec& spec) {
     if (!engine::Caps().enemySpawn || spec.unitClass.size() < 2 || spec.unitClass[0] != 'u') return 0;
     const ResolvedInfo& info = ResolveInfo(spec.unitClass);

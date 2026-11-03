@@ -56,6 +56,13 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
         settings.nativeMenu = json.value("native_menu", settings.nativeMenu);
         settings.directStart = json.value("direct_start", settings.directStart);
         settings.stageCount = json.value("stage_count", settings.stageCount);
+        settings.specialKey = json.value("special_key_scancode", settings.specialKey);
+        if (json.contains("special_pad") && json["special_pad"].is_array()) {
+            settings.specialPad.clear();
+            for (const auto& b : json["special_pad"]) {
+                if (b.is_string()) settings.specialPad.push_back(b.get<std::string>());
+            }
+        }
         if (json.contains("dev")) {
             const auto& dev = json["dev"];
             settings.probeIntervalMs = dev.value("probe_interval_ms", settings.probeIntervalMs);

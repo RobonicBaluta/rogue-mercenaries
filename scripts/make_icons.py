@@ -306,6 +306,118 @@ def person():
     return s
 
 
+def mine():
+    s = Shape()
+    s.ellipse(50, 66, 40, 16)                                                        # base disc
+    s.rect(10, 56, 90, 66, 0)
+    s.ellipse(50, 56, 40, 14)
+    s.ellipse(50, 56, 30, 9, cut=True)
+    s.ellipse(50, 52, 22, 14)                                                        # dome
+    s.rect(47, 22, 53, 42, 1)                                                        # sensor
+    s.ellipse(50, 20, 7, 7)
+    s.ellipse(50, 20, 3, 3, cut=True)
+    for x in (22, 78):
+        s.line([(x, 70), (x, 76)], 2.6, cut=True)
+    return s
+
+
+def gatling():
+    s = Shape()
+    a = -24
+    for dy in (-6, 0, 6):                                                            # barrels
+        s.line(rotate([(46, 46 + dy), (96, 46 + dy)], a), 4.0)
+    s.poly(rotate([(84, 36), (90, 36), (90, 56), (84, 56)], a))                      # muzzle ring
+    s.poly(rotate(spline([(14, 34), (48, 34), (52, 46), (48, 58), (14, 58), (8, 46)], 6), a))  # body
+    s.poly(rotate([(22, 58), (32, 58), (30, 80), (20, 80)], a))                      # grip
+    s.poly(rotate([(32, 26), (44, 26), (44, 34), (32, 34)], a))                      # carry handle
+    s.line(rotate([(20, 46), (40, 46)], a), 2.4, cut=True)
+    return s
+
+
+def bow():
+    s = Shape()
+    arc = spline([(30, 8), (52, 22), (60, 50), (52, 78), (30, 92)], 8, closed=False)
+    s.line(arc, 6.0)
+    s.line([(30, 8), (30, 92)], 1.8)                                                 # string
+    s.line([(12, 50), (86, 50)], 3.0)                                                # arrow
+    s.poly([(96, 50), (84, 43), (84, 57)])                                           # head
+    s.poly([(8, 44), (18, 50), (8, 56), (14, 50)])                                   # fletching
+    return s
+
+
+def key():
+    s = Shape()
+    s.ring(28, 50, 17, 7.0)                                                          # bow of the key
+    s.rect(42, 45, 92, 55, 2)                                                        # shaft
+    s.rect(70, 55, 78, 70, 1)                                                        # bit
+    s.rect(82, 55, 90, 66, 1)
+    return s
+
+
+def dash():
+    s = Shape()
+    s.poly([(44, 18), (88, 50), (44, 82), (56, 50)])                                 # chevron
+    s.poly([(20, 26), (54, 50), (20, 74), (30, 50)])
+    for y, x0 in ((30, 4), (50, 0), (70, 4)):                                        # speed lines
+        s.line([(x0, y), (x0 + 12, y)], 3.0)
+    return s
+
+
+def dual_smg():
+    gun = smg().mask.resize((int(CANVAS * 0.82), int(CANVAS * 0.82)), Image.LANCZOS)
+    s = Shape()
+    back = Image.new('L', (CANVAS, CANVAS), 0)
+    back.paste(gun, (int(-6 * UNIT), int(-4 * UNIT)))
+    front = Image.new('L', (CANVAS, CANVAS), 0)
+    front.paste(gun, (int(22 * UNIT), int(26 * UNIT)))
+    # The front gun cuts a gap into the back one so the two read apart.
+    gap = front.filter(ImageFilter.MaxFilter(int(4 * UNIT) | 1))
+    s.mask = ImageChops.lighter(ImageChops.subtract(back, gap), front)
+    s.d = ImageDraw.Draw(s.mask)
+    return s
+
+
+def radio():
+    s = Shape()
+    s.rect(30, 30, 72, 92, 6)                                                        # body
+    s.rect(58, 6, 64, 32, 2)                                                         # antenna
+    s.rect(38, 40, 64, 60, 3, cut=True)                                              # screen
+    for y in (68, 76, 84):                                                           # speaker grille
+        s.line([(40, y), (62, y)], 2.4, cut=True)
+    s.rect(24, 50, 30, 64, 1)                                                        # side button
+    return s
+
+
+def fist():
+    s = Shape()
+    s.rect(22, 34, 80, 80, 10)                                                       # back of the hand
+    for x in (30, 44, 58, 72):                                                       # knuckles
+        s.ellipse(x, 34, 8, 9)
+    for x in (37, 51, 65):                                                           # finger gaps
+        s.line([(x, 30), (x, 52)], 2.4, cut=True)
+    s.poly(spline([(16, 52), (30, 50), (44, 58), (36, 70), (18, 66)], 6))           # thumb
+    s.rect(34, 80, 70, 94, 3)                                                        # wrist
+    return s
+
+
+def crown():
+    s = Shape()
+    s.poly([(10, 34), (30, 56), (50, 18), (70, 56), (90, 34), (82, 78), (18, 78)])
+    s.rect(16, 80, 84, 90, 2)
+    for x, y in ((10, 32), (50, 16), (90, 32)):                                      # jewels on the points
+        s.ellipse(x, y, 6, 6)
+    s.ellipse(50, 62, 6, 6, cut=True)
+    return s
+
+
+def big_star():
+    s = Shape()
+    s.poly(star(50, 54, 44, 18))
+    s.poly(star(50, 54, 26, 11), cut=True)
+    s.poly(star(50, 54, 14, 6))
+    return s
+
+
 def crosshair():
     s = Shape()
     s.ring(50, 50, 30, 5.5)
@@ -397,6 +509,8 @@ ICONS = {
     'ammo': ammo, 'shotgun': shotgun, 'smg': smg, 'magnum': magnum, 'rifle': rifle, 'crosshair': crosshair,
     'supplies': supplies, 'last_stand': last_stand, 'shield': shield, 'medal': medal, 'explosion': explosion,
     'handgun': handgun, 'credits': credits, 'clock': clock, 'flag': flag, 'trophy': trophy, 'person': person,
+    'mine': mine, 'gatling': gatling, 'bow': bow, 'key': key, 'dash': dash, 'dual_smg': dual_smg, 'radio': radio,
+    'fist': fist, 'crown': crown, 'star': big_star,
 }
 
 

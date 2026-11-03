@@ -151,6 +151,17 @@ void __fastcall PlayerSubHpDetour(std::uintptr_t self, void*, std::int16_t amoun
     g_sink->PlayerHitDone(result);
 }
 
+SubHpFn g_origPlayerAddHp = nullptr;
+
+// A healing item on the local player: the sink may change the amount (a build's heals).
+void __fastcall PlayerAddHpDetour(std::uintptr_t self, void*, std::int16_t amount) {
+    if (amount > 0 && g_sink && self == engine::LocalPlayer()) {
+        const int wanted = g_sink->HealAmount(self, amount);
+        amount = static_cast<std::int16_t>(wanted < 0 ? 0 : (wanted > 32767 ? 32767 : wanted));
+    }
+    g_origPlayerAddHp(self, amount);
+}
+
 bool Hook(std::uintptr_t target, void* detour, void** original, const char* name) {
     auto* fn = reinterpret_cast<void*>(target);
     MH_STATUS status = MH_CreateHook(fn, detour, original);
@@ -179,6 +190,10 @@ bool InstallCombatHooks() {
                     reinterpret_cast<void**>(&g_origCharacterSubHp), "uCharacter::SubHp");
     ok = ok && Hook(re5::addr::kFnPlayerSubHp, reinterpret_cast<void*>(&PlayerSubHpDetour),
                     reinterpret_cast<void**>(&g_origPlayerSubHp), "uPlayer::SubHp");
+    if (ok && caps.playerAddHp) {
+        Hook(re5::addr::kFnPlayerAddHp, reinterpret_cast<void*>(&PlayerAddHpDetour),
+             reinterpret_cast<void**>(&g_origPlayerAddHp), "uPlayer::AddHp");
+    }
     g_status.combat = ok;
     return ok;
 }

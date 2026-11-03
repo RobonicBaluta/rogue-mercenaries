@@ -46,8 +46,8 @@ Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*
 1. Launch RE5 from Steam. Top right shows *Rogue Mercenaries – Play menu or F7*.
 2. In the game's **Play** menu choose **ROGUE MERCENARIES**, the last row (Up from the first row gets there). It opens the mod's own menu, drawn by the game itself:
    - **START RUN**: Solo, a random arena (one of the eight Mercenaries stages or one of the campaign areas in `configs/maps.json`) and your character and skin are handed to the game's own menu script, so no setup screen appears; the screen fades to black and the match loads about 1.5 s later. The run starts with it.
-   - **CHARACTERS**: pick who you play. All eight characters and every skin are available for now (the challenge unlocks come back once the roster is settled), whatever the game's own Mercenaries unlocks: the run starts the match with the costume directly. The character under the cursor is shown on the left, with the bust portrait the game's own character select uses (read from your game's files at runtime). Choosing a character opens its **SKINS**, each skin with its own portrait: a skin changes the archetype a little (the weapons a run can start with, the starting perk, extra character skills), and most skins have their own challenge.
-   - **PERKS**: three slots for the selected character, one per kind. *Style* defines how the character plays (Chris restocks a spray per arena, Sheva heals on kills); *Supply* is what a run starts with (grenade pouch, medkit, a shotgun for Chris); *Support* helps in bad situations (Second Wind, Last Stand below 30% health). Each slot opens its list, every perk with its icon: pick one (it shows SELECTED), press it again to clear the slot, and buy locked ones with Credits. The style slot falls back to the character's own trait. Skins carry the small percentage tweaks.
+   - **CHARACTERS**: pick who you play. All eight characters and every skin are available for now (the challenge unlocks come back once the roster is settled), whatever the game's own Mercenaries unlocks: the run starts the match with the costume directly. The character under the cursor is shown on the left, with the bust portrait the game's own character select uses (read from your game's files at runtime). Choosing a character opens its **SKINS**, each skin with its own portrait: most skins are a *build*, a strong rule with a cost (see **Skin builds** below), named in the row with its icon; the line below says what it does.
+   - **PERKS**: three slots for the selected character, one per kind. *Style* defines how the character plays (Chris restocks a spray per arena, Sheva heals on kills); *Supply* is what a run starts with (grenade pouch, medkit, a shotgun for Chris); *Support* helps in bad situations (Second Wind, Last Stand below 30% health). Each slot opens its list, every perk with its icon: pick one (it shows SELECTED), press it again to clear the slot, and buy locked ones with Credits. The style slot falls back to the character's own trait. The fourth row, **SKIN**, names the selected skin's build and opens SKINS.
    - **CREDITS**: your balance, lifetime records, the last run's results and weapon unlocks.
    Every row of the main screen, CREDITS and the run's results has its icon next to it.
    Esc goes back one screen; locked entries are red, like the game's own disabled rows.
@@ -70,6 +70,43 @@ About the Play menu row:
 - it appears only with Latin-alphabet game languages; with Japanese, Chinese or Russian text use F7;
 - reach it with the keyboard or a gamepad, because mouse hover does not select it;
 - set `"native_menu": false` in `adapter.json` to turn it off.
+
+### Skin builds
+
+Every skin except Chris's and Sheva's BSAA outfits plays by its own rule. The first seven were checked in game;
+the others are written and wait for a playtest (2026-11-03).
+
+| Character | Skin | Build | What it does |
+|---|---|---|---|
+| Chris | Safari | Mine Layer | Chests and enemy drops are proximity bombs (an ammo, herb or grenade pickup becomes one); they stack to 10. |
+| Chris | S.T.A.R.S. | Field Kit | A first aid spray on every arena clear. |
+| Chris | Warrior | Brute Force | Only shotguns, handguns and magnums are offered; they hit 25 percent harder. |
+| Chris | Heavy Metal | Heavy Gunner | The Gatling gun can be unlocked in CREDITS and then turns up in his runs; ammo stacks three times as high. |
+| Sheva | Clubbin' | Night Shopper | Supplies x1.5; one free NEW STOCK at every shop. |
+| Sheva | Tribal | Hunter | Starts with her longbow and 20 arrows (10 more per arena clear); arrows hit 50 percent harder. |
+| Sheva | Business | Expense Account | Better rarities in rewards, shop and chests; SMGs hit 30 percent harder and upgrade without limit. |
+| Sheva | Fairy Tale | Enchanted Arms | A legendary M3 that upgrades without limit. |
+| Jill | BSAA | Locksmith | Opens every chest without a key. |
+| Jill | Battle Suit | Twin Fury | Special: 1.5 s of fire from two SMGs on everything in a 40 degree cone up to 14 m ahead; 25 s to recover. |
+| Josh | BSAA | Call for Backup | Special: covering fire on the nearest enemy (within 18 m) every 1.2 s for the rest of the arena, once every two arenas. A stand-in until a real computer partner can be spawned. |
+| Barry | S.T.A.R.S. | Old Reliable | An S and W M29 that upgrades without limit; health x1.5. |
+| Rebecca | S.T.A.R.S. | Field Surgeon | Heals x1.5. A big heal (at least 60 percent of her health: a spray, a mixed herb) makes her untouchable for 4 s and 30 percent stronger for 12 s. |
+| Excella | Dress | Ambition | Every melee kill raises damage (+4 percent), defence (+3), health (+5) or critical chance (+2) for the rest of the run. |
+| Wesker | Midnight | Uroboros Speed | Special: a 5 m dash forward, untouchable for half a second, every 2.5 s. Half his health. |
+| Wesker | S.T.A.R.S. | Iron Fist | Melee hits three times as hard. Only his Samurai Edge, magnums and the Hydra can be bought or used. |
+
+**Keys.** Chests need a key (Jill's BSAA outfit excepted). A kill of a Majini drops one 15 percent of the time; you
+hold up to 9 and the HUD's right side shows how many. A chest opened without a key says *LOCKED* and stands again at
+the same spot a moment later.
+
+**Specials** (Twin Fury, Call for Backup, Uroboros Speed): press **Q** on the keyboard, or **LB and RB together** on a
+controller. A ring at the bottom left shows the special's icon and name with the binding under it: a dark sweep and
+the seconds left while it recovers (or *NEXT ARENA* for Josh), gold and pulsing when it is ready, green while it acts.
+Change the bindings in `RogueMercenaries\adapter.json`: `"special_key_scancode": 16` (a DirectInput scan code; 16 is Q)
+and `"special_pad": ["LB", "RB"]` (buttons held together: A, B, X, Y, LB, RB, BACK, START, LS, RS; XInput pads and,
+through the names in the game's own `config.ini` `[JOYPAD]`, DirectInput pads, where LT and RT work too). The moves
+borrow no animation: the dash moves Wesker without a step (and can pass through a wall), Twin Fury and the backup deal
+damage without shots on screen. Their kills count as yours.
 
 ## What still needs a human
 

@@ -66,6 +66,13 @@ RunSnapshot RunController::Snapshot(double now) const {
     s.credits_pending = run_.credits_pending;
     s.reroll_tokens = run_.reroll_tokens;
     s.free_shop_rerolls = run_.phase == Phase::Shop ? run_.free_shop_rerolls : 0;
+    s.keys_enabled = c.economy().keys.enabled;
+    s.keys_needed = s.keys_enabled && !run_.character.build.chest_keys_exempt;
+    s.keys = run_.keys;
+    s.stats = run_.stats;
+    s.invulnerable_left = std::max(0.0, run_.invulnerable_until - now);
+    s.damage_buff_left = std::max(0.0, run_.damage_buff_until - now);
+    s.damage_buff = s.damage_buff_left > 0.0 ? run_.damage_buff : 0.0;
     const int charges = CheatDeathCharges();
     const ArenaMetrics* current = CurrentArena();
     const int used = (run_.phase == Phase::ArenaActive && current != nullptr) ? current->cheat_death_used : 0;

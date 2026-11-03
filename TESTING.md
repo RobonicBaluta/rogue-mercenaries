@@ -50,6 +50,22 @@ JSONL should record UTC time, mod version, adapter version, executable build/has
 
 When visual/gameplay evidence cannot be automated, prepare a build and give the user one focused test with exact installation, launch, reproduction, expected result, telemetry check, rollback and diagnostic-export commands. The first expected request should be a few-minute loader or combat test, not an open-ended play session.
 
+### M8 playtest log lines
+
+From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\RogueMercenaries\logs\adapter.log`
+(and the JSONL telemetry next to it). What each build writes there:
+
+| Build | Lines |
+|---|---|
+| any special | `special: N controller buttons named by the game's config.ini` at start; `special: <kind> used at x y z facing fx fz`; `special: <kind> over (done / arena over): N pulses, N hits` |
+| Mine Layer | `world: picked up XXXX, given as 010A (the build's drops)`; `build: item 010A stacks to 10` |
+| Heavy Gunner | `build: item 02xx stacks to N (was M)` for the ammo |
+| Field Surgeon | `build heal: A -> B` and `(big heal: buffs)` |
+| Ambition, Iron Fist | `kill counted: ... (melee)`; `build: melee kill, <stat> +0.0N (N gains)`; with a debug log, `outgoing ... (<weapon>, melee)` |
+| keys | `keys: a key dropped, N held`; `keys: chest locked (no key), it comes back`; `keys: locked chest back at x y z` |
+| Twin Fury, Backup | `enemy XXXXXXXX died (health reached zero): counted, N remain (by the special)` |
+| health | `build: maximum health A -> B (xM)` |
+
 ## Commands
 
 Run from the repository root in PowerShell. CMake/CTest are not on PATH; the scripts locate the

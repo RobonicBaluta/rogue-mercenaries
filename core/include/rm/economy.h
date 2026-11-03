@@ -114,6 +114,17 @@ struct EconomyConfig {
         double item_chance = 0.6;
         double weapon_chance = 0.1;
     } chests;
+
+    /// Keys (M8): a chest opens only with a key (one used per chest), except for a build with
+    /// chest_keys_exempt. Kills of the listed enemy classes (prefixes, e.g. "uEm1" = the Majini)
+    /// drop one with drop_chance. Disabled: chests open freely.
+    struct Keys {
+        bool enabled = false;
+        double drop_chance = 0.0;
+        std::vector<std::string> classes;
+        int start = 0;
+        int max = 9;
+    } keys;
 };
 
 /// Grades an arena: time points (2/1/0 vs par) + damage points (2 no damage, 1 low, 0).

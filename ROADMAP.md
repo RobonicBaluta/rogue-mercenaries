@@ -241,6 +241,18 @@ Progress 2026-11-03: B1 to B7 and E20 done; Warrior, S.T.A.R.S. Chris, Clubbin',
 Tale, S.T.A.R.S. Wesker (weapons; his melee waits for E19) and Barry play their builds (`TASKS.md`).
 E13's stack sizes are coded, not yet used.
 
+Second batch 2026-11-03, coded and not yet run in game (from here on the user playtests and the
+fixes come from the logs and their reports): B8 to B10 and every remaining build. E13 used by
+Safari (mines to 10) and Heavy Metal (ammo x3). E14 done at the pickup instead of at creation
+(`uPlayer` pick-up: an ammo, recovery or grenade item becomes the build's item). E15: a chest opened
+without a key is placed again where it stood. E16: the combo read from the hooked keyboard, XInput
+and DirectInput (the game's `[JOYPAD]` names). E17 emulated (damage pulses in a cone through
+`uCharacter::SubHp`), E18 emulated (the player warp over 0.18 s with core invulnerability). E19:
+the action at `uPlayer+0x10F8` at the hit. E21 by the amount `uPlayer::AddHp` gets (60 percent of
+the maximum or more is a big heal), not by the item. E22 not attempted: Josh's backup is a stand-in
+(covering fire on the nearest enemy for the arena) until a real ally can be spawned. The special's
+cooldown HUD is an overlay ring at the bottom left.
+
 Order: B1 to B7 with the builds that need no engine work (Warrior, Clubbin', Business, Fairy Tale,
 S.T.A.R.S. Chris, Barry), then E19/E20/E21 (Wesker S.T.A.R.S., Excella, Rebecca), E13/E14 and item
 ids (Safari, Heavy Metal, Tribal), B8/E15 (keys, Jill BSAA), then E16 with E17/E18/E22 (Battle

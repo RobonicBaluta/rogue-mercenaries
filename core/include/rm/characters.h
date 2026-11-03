@@ -44,9 +44,24 @@ struct WeaponFilter {
     [[nodiscard]] bool Allows(std::string_view base_id, std::string_view category) const;
 };
 
+/// A build's special move, used with a button combo during an arena (the adapter reads the
+/// input and performs it; the core keeps its cooldown and availability).
+struct SkinSpecial {
+    std::string kind;              // "dash", "dual_smg", "backup"; empty = none
+    std::string name;              // HUD label
+    std::string icon;              // icons/<icon>.png
+    double cooldown_seconds = 0.0;
+    int every_arenas = 0;          // > 0: once per this many arenas (Josh: 2)
+    double power = 0.0;            // dash: metres; dual_smg: damage per enemy per pulse
+    double duration_seconds = 0.0; // dash: invulnerability; dual_smg: burst length
+    [[nodiscard]] bool Any() const { return !kind.empty(); }
+};
+
 /// A skin's build (configs/characters.json skin "build", ROADMAP M8): rules a run of that skin
 /// plays by. Defaults change nothing.
 struct SkinBuild {
+    std::string name;              // the build's name in the menus
+    std::string icon;              // icons/<icon>.png next to it
     std::string summary;           // one line for the SKINS screen
     WeaponFilter offered_weapons;  // rewards, the shop and chests offer only these
     WeaponFilter usable_weapons;   // others: the shop shows them but cannot sell them, rewards skip them
@@ -61,6 +76,22 @@ struct SkinBuild {
     /// Game item id -> the stack size the adapter allows for it during the run (JSON keys may be
     /// hex, "0x010A").
     std::vector<std::pair<std::int64_t, int>> stack_max;
+    double ammo_stack_mult = 1.0;    // the adapter multiplies every ammo stack's size
+    std::vector<std::string> extra_weapons;  // build-only weapons (weapons.json build_only) this build is offered
+    double melee_damage = 0.0;       // additive damage fraction on melee hits (needs melee_detect)
+    /// Each melee kill adds one stat for the rest of the run, picked at random: "damage",
+    /// "defense", "max_health", "crit" -> the amount it adds (fractions).
+    StringMap<double> melee_kill_stats;
+    double heal_mult = 1.0;          // healing items heal this much
+    /// A heal of at least this fraction of max health (spray, mixed herbs; 0 = never) also makes
+    /// the player invulnerable and stronger for a while.
+    double heal_buff_fraction = 0.0;
+    double heal_invulnerable_seconds = 0.0;
+    double heal_damage_bonus = 0.0;
+    double heal_damage_seconds = 0.0;
+    std::int64_t drops_as = -1;      // enemy drops and chest items become this game item (-1 = no)
+    bool chest_keys_exempt = false;  // opens chests without keys
+    SkinSpecial special;
     [[nodiscard]] bool Uncapped(std::string_view base_id, std::string_view category) const {
         return !uncapped_upgrades.Empty() && uncapped_upgrades.Allows(base_id, category);
     }

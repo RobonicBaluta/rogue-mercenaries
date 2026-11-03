@@ -72,6 +72,11 @@ struct Settings {
     // Arenas on stages listed in maps.json are run by the mod's director: the game's own
     // spawns stay off for the whole match and the run spawns exactly the enemies it counts.
     bool director = true;
+    // A build's special move (M8): the keyboard key (DirectInput scancode, default Q) and the
+    // controller buttons pressed together (names: A B X Y LB RB BACK START LS RS; XInput pads,
+    // and DirectInput pads through the game's config.ini [JOYPAD] numbers).
+    int specialKey = 0x10;
+    std::vector<std::string> specialPad = {"LB", "RB"};
 };
 
 Paths ResolvePaths(void* module);

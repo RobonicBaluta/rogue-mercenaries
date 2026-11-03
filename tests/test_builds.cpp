@@ -2,6 +2,7 @@
 // uncapped upgrades and a build's starting weapon.
 
 #include <algorithm>
+#include <functional>
 #include <string_view>
 
 #include <catch_amalgamated.hpp>
@@ -35,6 +36,20 @@ std::vector<std::string> LoadErrors(const json& build) {
 
 bool HasError(const std::vector<std::string>& errors, std::string_view needle) {
     return std::any_of(errors.begin(), errors.end(), [&](const std::string& e) { return e.find(needle) != std::string::npos; });
+}
+
+// Alpha's build skin, with more edits to the weapons and the economy.
+ContentSources BuildSourcesWith(const json& build, const std::function<void(json& weapons, json& economy)>& more) {
+    return test::EditFixture([&build, &more](json&, json& weapons, json& characters, json&, json& economy) {
+        for (json& w : weapons["weapons"]) {
+            if (w["id"] == "shotgun") w["game_item"] = 0x0104;
+        }
+        characters["characters"][0]["skins"] = json::array({
+            json{{"id", "alpha_base"}, {"name", "Base"}, {"costume_index", 0}},
+            json{{"id", "alpha_build"}, {"name", "Build"}, {"costume_index", 1}, {"build", build}},
+        });
+        more(weapons, economy);
+    });
 }
 
 // Plays arena `arena` (1-based) to its shop.
@@ -228,4 +243,187 @@ TEST_CASE("a build's starting weapon is rolled at its rarity", "[builds]") {
                                    [](const WeaponInstance& w) { return w.base_id == "shotgun"; });
     REQUIRE(kept != h.rc.state().weapons.end());
     CHECK(kept->rarity == Rarity::Legendary);
+}
+
+TEST_CASE("the second batch of build fields is validated", "[builds]") {
+    CHECK(LoadErrors(json{{"name", "Brawler"}, {"icon", "fist"}, {"melee_damage", 2.0}}).empty());
+    CHECK(HasError(LoadErrors(json{{"icon", "Fist!"}}), "not a valid name"));
+    CHECK(HasError(LoadErrors(json{{"melee_kill_stats", {{"luck", 0.1}}}}), "unknown stat"));
+    CHECK(HasError(LoadErrors(json{{"special", {{"kind", "fly"}, {"name", "Fly"}, {"cooldown_seconds", 5}}}}), "unknown special kind"));
+    CHECK(HasError(LoadErrors(json{{"special", {{"kind", "dash"}, {"name", "Dash"}}}}), "neither a cooldown"));
+    CHECK(HasError(LoadErrors(json{{"extra_weapons", {"shotgun"}}}), "not build_only"));
+    CHECK(HasError(LoadErrors(json{{"drops_as", "0x0999"}}), "no loadouts.json equipment"));
+    CHECK(LoadErrors(json{{"drops_as", 262}}).empty());  // the fixture's grenade
+}
+
+TEST_CASE("melee damage applies to melee hits, melee kills add run stats", "[builds]") {
+    test::Harness h(test::Load(BuildSources(json{{"melee_damage", 2.0}, {"melee_kill_stats", {{"damage", 0.1}}}})));
+    REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    HitContext melee;
+    melee.now = 1.0;
+    melee.is_melee = true;
+    CHECK(h.rc.ComputeOutgoingMultiplier(melee).breakdown.build_bonus == Catch::Approx(2.0));
+    HitContext shot;
+    shot.now = 1.0;
+    shot.weapon_id = "pistol";
+    CHECK(h.rc.ComputeOutgoingMultiplier(shot).breakdown.build_bonus == 0.0);
+
+    KillEvent bullet;
+    bullet.now = 2.0;
+    bullet.by_player = true;
+    bullet.enemy_id = "e1";
+    CHECK(h.rc.OnEnemyKilled(bullet).stat_gained.empty());
+    KillEvent punch = bullet;
+    punch.enemy_id = "e2";
+    punch.was_melee = true;
+    const KillOutcome out = h.rc.OnEnemyKilled(punch);
+    CHECK(out.stat_gained == "damage");
+    CHECK(h.rc.state().stats.damage == Catch::Approx(0.1));
+    CHECK(h.rc.state().stats.gains == 1);
+    CHECK(h.rc.ComputeOutgoingMultiplier(shot).breakdown.build_bonus == Catch::Approx(0.1));
+    CHECK(h.rc.Snapshot(3.0).stats.damage == Catch::Approx(0.1));
+}
+
+TEST_CASE("a build's heals are stronger and a big heal starts its buffs", "[builds]") {
+    test::Harness h(test::Load(BuildSources(json{{"heal_mult", 1.5},
+                                                 {"heal_buff_fraction", 0.6},
+                                                 {"heal_invulnerable_seconds", 5.0},
+                                                 {"heal_damage_bonus", 0.3},
+                                                 {"heal_damage_seconds", 10.0}})));
+    REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    const HealOutcome herb = h.rc.OnPlayerHealed(HealContext{1.0, 200.0, 500.0, 1000.0});
+    CHECK(herb.amount == Catch::Approx(300.0));
+    CHECK_FALSE(herb.high_tier);
+    CHECK_FALSE(h.rc.Invulnerable(1.5));
+
+    const HealOutcome spray = h.rc.OnPlayerHealed(HealContext{2.0, 1000.0, 100.0, 1000.0});
+    CHECK(spray.high_tier);
+    CHECK(h.rc.Invulnerable(6.9));
+    CHECK_FALSE(h.rc.Invulnerable(7.1));
+    CHECK(h.rc.ComputeIncoming(IncomingContext{3.0, 200.0, 500.0, 1000.0}).multiplier == 0.0);
+    CHECK(h.rc.ComputeIncoming(IncomingContext{8.0, 200.0, 500.0, 1000.0}).multiplier > 0.0);
+    HitContext shot;
+    shot.now = 5.0;
+    CHECK(h.rc.ComputeOutgoingMultiplier(shot).breakdown.build_bonus == Catch::Approx(0.3));
+    shot.now = 13.0;
+    CHECK(h.rc.ComputeOutgoingMultiplier(shot).breakdown.build_bonus == 0.0);
+    CHECK(h.rc.Snapshot(3.0).invulnerable_left == Catch::Approx(4.0));
+}
+
+TEST_CASE("keys drop from listed enemies and open chests; a key-exempt build needs none", "[builds]") {
+    auto keys = [](json&, json& eco) {
+        eco["keys"] = {{"enabled", true}, {"drop_chance", 1.0}, {"classes", {"uEm1"}}, {"max", 3}};
+        eco["chests"] = {{"item_chance", 0.0}, {"weapon_chance", 0.0}};
+    };
+    test::Harness h(test::Load(BuildSourcesWith(json{{"summary", "none"}}, keys)));
+    REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    const auto locked = h.rc.OpenChest(1.0);
+    REQUIRE(locked.ok());
+    CHECK(locked->locked);
+    CHECK(locked->supplies == 0);
+    CHECK(h.rc.Snapshot(1.0).keys_needed);
+
+    KillEvent dog;
+    dog.now = 2.0;
+    dog.by_player = true;
+    dog.enemy_id = "d";
+    dog.enemy_class = "uEm20";
+    CHECK_FALSE(h.rc.OnEnemyKilled(dog).key_dropped);
+    KillEvent majini = dog;
+    majini.enemy_id = "m";
+    majini.enemy_class = "uEm10";
+    CHECK(h.rc.OnEnemyKilled(majini).key_dropped);
+    CHECK(h.rc.state().keys == 1);
+    const auto opened = h.rc.OpenChest(3.0);
+    REQUIRE(opened.ok());
+    CHECK_FALSE(opened->locked);
+    CHECK(opened->key_used);
+    CHECK(h.rc.state().keys == 0);
+
+    test::Harness jill(test::Load(BuildSourcesWith(json{{"chest_keys_exempt", true}}, keys)));
+    REQUIRE(jill.rc.StartRun("alpha", 3, "alpha_build").ok());
+    REQUIRE(jill.rc.BeginArena(0.0).ok());
+    const auto free = jill.rc.OpenChest(1.0);
+    REQUIRE(free.ok());
+    CHECK_FALSE(free->locked);
+    CHECK_FALSE(free->key_used);
+    CHECK_FALSE(jill.rc.Snapshot(1.0).keys_needed);
+}
+
+TEST_CASE("a build's drops_as item comes out of every chest", "[builds]") {
+    test::Harness h(test::Load(BuildSources(json{{"drops_as", 262}})));
+    REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    for (int i = 0; i < 5; ++i) {
+        const auto chest = h.rc.OpenChest(1.0 + i);
+        REQUIRE(chest.ok());
+        CHECK(chest->item_id == "grenade");
+        CHECK(chest->weapon_id.empty());
+    }
+}
+
+TEST_CASE("build-only weapons are offered only to the builds that list them", "[builds]") {
+    auto gun = [](json& weapons, json&) {
+        for (json& w : weapons["weapons"]) {
+            if (w["id"] == "shotgun") w["build_only"] = true;
+        }
+    };
+    const auto content = test::Load(BuildSourcesWith(json{{"extra_weapons", {"shotgun"}}}, gun));
+    const CharacterDef* alpha = content->FindCharacter("alpha");
+    REQUIRE(alpha != nullptr);
+    const CharacterDef with = ApplySkin(*alpha, *FindSkin(*alpha, "alpha_build"));
+    const CharacterDef without = ApplySkin(*alpha, *FindSkin(*alpha, "alpha_base"));
+    auto offered = [&content](const CharacterDef& character) {
+        OfferContext ctx;
+        ctx.content = content.get();
+        ctx.character = &character;
+        std::vector<std::string> ids;
+        for (const WeaponBaseDef* w : OfferableWeapons(ctx)) ids.push_back(w->id);
+        return ids;
+    };
+    const auto a = offered(with);
+    const auto b = offered(without);
+    CHECK(std::count(a.begin(), a.end(), "shotgun") == 1);
+    CHECK(std::count(b.begin(), b.end(), "shotgun") == 0);
+}
+
+TEST_CASE("a special keeps its cooldown, its arena limit and a dash's invulnerability", "[builds]") {
+    const json dash = {{"special", {{"kind", "dash"}, {"name", "Dash"}, {"cooldown_seconds", 3.0}, {"duration_seconds", 0.5}}}};
+    test::Harness h(test::Load(BuildSources(dash)));
+    REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+    CHECK(h.rc.UseSpecial(0.0).code == ErrorCode::WrongPhase);
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    CHECK(h.rc.Special(1.0).ready);
+    REQUIRE(h.rc.UseSpecial(1.0).ok());
+    CHECK(h.rc.Invulnerable(1.4));
+    CHECK_FALSE(h.rc.Invulnerable(1.6));
+    CHECK(h.rc.UseSpecial(2.0).code == ErrorCode::NotEligible);
+    CHECK(h.rc.Special(2.0).cooldown_left == Catch::Approx(2.0));
+    CHECK_FALSE(h.rc.Special(2.0).ready);
+    CHECK(h.rc.UseSpecial(4.1).ok());
+
+    const json backup = {{"special", {{"kind", "backup"}, {"name", "Backup"}, {"every_arenas", 2}}}};
+    test::Harness josh(test::Load(BuildSources(backup)));
+    REQUIRE(josh.rc.StartRun("alpha", 5, "alpha_build").ok());
+    REQUIRE(josh.rc.BeginArena(0.0).ok());
+    REQUIRE(josh.rc.UseSpecial(1.0).ok());
+    CHECK(josh.rc.UseSpecial(2.0).code == ErrorCode::NotEligible);
+    CHECK(josh.rc.Special(2.0).arenas_left == 2);
+    double t = 0.0;
+    for (int arena = 2; arena <= 3; ++arena) {
+        test::KillN(josh.rc, josh.rc.RemainingEnemies(), t + 1.0);
+        REQUIRE(josh.rc.CompleteArena(t + 30.0).ok());
+        REQUIRE(josh.rc.ContinueToRewards().ok());
+        REQUIRE(josh.rc.ChooseReward(0).ok());
+        REQUIRE(josh.rc.LeaveShop().ok());
+        REQUIRE(josh.rc.ChooseRoute(0).ok());
+        t += 100.0;
+        REQUIRE(josh.rc.BeginArena(t).ok());
+        if (arena == 2) CHECK(josh.rc.UseSpecial(t + 1.0).code == ErrorCode::NotEligible);
+    }
+    CHECK(josh.rc.Special(t + 1.0).ready);  // arena 3: two arenas after its use
+    CHECK(josh.rc.UseSpecial(t + 1.0).ok());
 }

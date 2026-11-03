@@ -617,11 +617,13 @@ void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>&
             WeaponBaseDef w;
             if (!ReadId(d, e, w.id)) continue;
             d = file.Sub(": weapon " + Q(w.id));
-            CheckKeys(d, e, {"id", "name", "category", "base_damage_mult", "unlock_cost_credits", "enabled", "game_item"});
+            CheckKeys(d, e, {"id", "name", "category", "base_damage_mult", "unlock_cost_credits", "enabled", "game_item",
+                             "build_only"});
+            GetBool(d, e, "build_only", w.build_only, false);
             if (GetInt(d, e, "game_item", w.game_item, false) && w.game_item < 0) d.Error("field 'game_item' must be >= 0");
             GetString(d, e, "name", w.name, true);
             ReadEnum(d, e, "category", w.category, ParseWeaponCategory,
-                     "handgun, shotgun, smg, rifle, machine_gun, magnum");
+                     "handgun, shotgun, smg, rifle, machine_gun, magnum, bow");
             if (GetNumber(d, e, "base_damage_mult", w.base_damage_mult, false)) {
                 CheckRange(d, "base_damage_mult", w.base_damage_mult, 0.1, 10.0);
             }
@@ -738,10 +740,88 @@ void ParseWeaponFilter(const Diag& d, const json& b, std::string_view key, Weapo
     if (out.Empty()) fd.Error("must list at least one category or id");
 }
 
+// A game item id given as an integer or a string ("0x010A"); -1 when it is neither.
+std::int64_t ItemIdValue(const json& v) {
+    if (v.is_number_integer()) return v.get<std::int64_t>();
+    if (!v.is_string()) return -1;
+    try {
+        std::size_t used = 0;
+        const std::string text = v.get<std::string>();
+        const std::int64_t id = std::stoll(text, &used, 0);
+        return used == text.size() ? id : -1;
+    } catch (...) {
+        return -1;
+    }
+}
+
+void ParseSpecial(const Diag& d, const json& sp, SkinSpecial& out) {
+    CheckKeys(d, sp, {"kind", "name", "icon", "cooldown_seconds", "every_arenas", "power", "duration_seconds"});
+    GetString(d, sp, "kind", out.kind, true);
+    if (!out.kind.empty() && out.kind != "dash" && out.kind != "dual_smg" && out.kind != "backup") {
+        d.Error("unknown special kind " + Q(out.kind) + " (dash, dual_smg, backup)");
+    }
+    GetString(d, sp, "name", out.name, true);
+    if (GetString(d, sp, "icon", out.icon, false) && !IsValidId(out.icon)) d.Error("special icon " + Q(out.icon) + " is not a valid name");
+    if (GetNumber(d, sp, "cooldown_seconds", out.cooldown_seconds, false)) CheckRange(d, "cooldown_seconds", out.cooldown_seconds, 0.0, 600.0);
+    std::int64_t every = 0;
+    if (GetInt(d, sp, "every_arenas", every, false)) {
+        CheckRange(d, "every_arenas", static_cast<double>(every), 0, 10);
+        out.every_arenas = static_cast<int>(every);
+    }
+    if (GetNumber(d, sp, "power", out.power, false)) CheckRange(d, "power", out.power, 0.0, 100000.0);
+    if (GetNumber(d, sp, "duration_seconds", out.duration_seconds, false)) CheckRange(d, "duration_seconds", out.duration_seconds, 0.0, 60.0);
+}
+
 void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
-    CheckKeys(d, b, {"summary", "offered_weapons", "usable_weapons", "category_damage", "supplies_mult",
+    CheckKeys(d, b, {"name", "icon", "summary", "offered_weapons", "usable_weapons", "category_damage", "supplies_mult",
                      "free_shop_rerolls", "rarity_shift", "uncapped_upgrades", "starting_weapon",
-                     "starting_weapon_rarity", "max_health_mult", "stack_max"});
+                     "starting_weapon_rarity", "max_health_mult", "stack_max", "ammo_stack_mult", "extra_weapons",
+                     "melee_damage", "melee_kill_stats", "heal_mult", "heal_buff_fraction", "heal_invulnerable_seconds",
+                     "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "special"});
+    GetString(d, b, "name", out.name, false);
+    if (GetString(d, b, "icon", out.icon, false) && !IsValidId(out.icon)) d.Error("icon " + Q(out.icon) + " is not a valid name");
+    if (GetNumber(d, b, "ammo_stack_mult", out.ammo_stack_mult, false)) CheckRange(d, "ammo_stack_mult", out.ammo_stack_mult, 1.0, 20.0);
+    GetStringList(d, b, "extra_weapons", out.extra_weapons, false);
+    if (GetNumber(d, b, "melee_damage", out.melee_damage, false)) CheckRange(d, "melee_damage", out.melee_damage, -0.9, 20.0);
+    if (const json* ms = Get(b, "melee_kill_stats")) {
+        if (!ms->is_object()) {
+            d.Error("field 'melee_kill_stats' must be an object");
+        } else {
+            for (const auto& [stat, v] : ms->items()) {
+                if (stat != "damage" && stat != "defense" && stat != "max_health" && stat != "crit") {
+                    d.Error("melee_kill_stats: unknown stat " + Q(stat) + " (damage, defense, max_health, crit)");
+                    continue;
+                }
+                if (!v.is_number()) {
+                    d.Error("melee_kill_stats " + Q(stat) + " must be a number");
+                    continue;
+                }
+                CheckRange(d, "melee_kill_stats " + stat, v.get<double>(), 0.0, 1.0, true);
+                out.melee_kill_stats[stat] = v.get<double>();
+            }
+        }
+    }
+    if (GetNumber(d, b, "heal_mult", out.heal_mult, false)) CheckRange(d, "heal_mult", out.heal_mult, 0.1, 10.0);
+    if (GetNumber(d, b, "heal_buff_fraction", out.heal_buff_fraction, false)) CheckRange(d, "heal_buff_fraction", out.heal_buff_fraction, 0.0, 1.0);
+    if (GetNumber(d, b, "heal_invulnerable_seconds", out.heal_invulnerable_seconds, false)) {
+        CheckRange(d, "heal_invulnerable_seconds", out.heal_invulnerable_seconds, 0.0, 60.0);
+    }
+    if (GetNumber(d, b, "heal_damage_bonus", out.heal_damage_bonus, false)) CheckRange(d, "heal_damage_bonus", out.heal_damage_bonus, 0.0, 5.0);
+    if (GetNumber(d, b, "heal_damage_seconds", out.heal_damage_seconds, false)) {
+        CheckRange(d, "heal_damage_seconds", out.heal_damage_seconds, 0.0, 120.0);
+    }
+    if (const json* da = Get(b, "drops_as")) {
+        out.drops_as = ItemIdValue(*da);
+        if (out.drops_as < 0 || out.drops_as > 0xFFFF) d.Error("drops_as is not a game item id");
+    }
+    GetBool(d, b, "chest_keys_exempt", out.chest_keys_exempt, false);
+    if (const json* sp = Get(b, "special")) {
+        if (sp->is_object()) {
+            ParseSpecial(d.Sub(" special"), *sp, out.special);
+        } else {
+            d.Error("field 'special' must be an object");
+        }
+    }
     if (const json* sm = Get(b, "stack_max")) {
         if (!sm->is_object()) {
             d.Error("field 'stack_max' must be an object");
@@ -1169,7 +1249,7 @@ void ParseLoadouts(const Diag& file, const json& doc, LoadoutConfig& out) {
 void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     const Diag d = file.Sub("");
     CheckKeys(d, doc, {"schema_version", "run", "rewards", "weapon_rarity", "upgrades", "supplies",
-                       "credits", "rating", "damage", "shop", "run_map", "chests"});
+                       "credits", "rating", "damage", "shop", "run_map", "chests", "keys"});
     if (const json* s = Section(d, doc, "run")) {
         const Diag sd = d.Sub(": run");
         CheckKeys(sd, *s, {"arena_count", "starting_route", "starting_supplies",
@@ -1316,6 +1396,21 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
         ReadRarityPrices(sd, *s, "perk_price", eco.shop.perk_price);
         ReadRarityPrices(sd, *s, "weapon_price", eco.shop.weapon_price);
         GetIntRange(sd, *s, "perk_offers", eco.shop.perk_offers, true, 0, 6);
+    }
+    if (Get(doc, "keys") != nullptr) {
+        if (const json* s = Section(d, doc, "keys")) {
+            const Diag kd = d.Sub(": keys");
+            CheckKeys(kd, *s, {"enabled", "drop_chance", "classes", "start", "max"});
+            GetBool(kd, *s, "enabled", eco.keys.enabled, false);
+            if (GetNumber(kd, *s, "drop_chance", eco.keys.drop_chance, false)) CheckRange(kd, "drop_chance", eco.keys.drop_chance, 0.0, 1.0);
+            GetStringList(kd, *s, "classes", eco.keys.classes, false);
+            std::int64_t start = eco.keys.start, max = eco.keys.max;
+            if (GetInt(kd, *s, "start", start, false)) CheckRange(kd, "start", static_cast<double>(start), 0, 99);
+            if (GetInt(kd, *s, "max", max, false)) CheckRange(kd, "max", static_cast<double>(max), 1, 99);
+            eco.keys.start = static_cast<int>(start);
+            eco.keys.max = static_cast<int>(max);
+            if (eco.keys.enabled && eco.keys.classes.empty()) kd.Error("enabled keys need at least one enemy class prefix");
+        }
     }
     if (Get(doc, "chests") != nullptr) {
         if (const json* s = Section(d, doc, "chests")) {
@@ -1481,6 +1576,23 @@ private:
                 for (const std::string& id : f->ids) {
                     if (c.FindWeapon(id) == nullptr) d.Error("references unknown weapon " + Q(id));
                 }
+            }
+            for (const std::string& id : b.extra_weapons) {
+                const WeaponBaseDef* w = c.FindWeapon(id);
+                if (w == nullptr) {
+                    d.Error("extra_weapons references unknown weapon " + Q(id));
+                } else if (!w->build_only) {
+                    d.Error("extra_weapons lists " + Q(id) + ", which is not build_only (every build is offered it)");
+                }
+            }
+            if (b.drops_as >= 0) {
+                const auto& eq = c.loadouts().equipment;
+                if (std::none_of(eq.begin(), eq.end(), [&b](const EquipmentDef& e) { return e.game_item == b.drops_as; })) {
+                    d.Error("drops_as names a game item no loadouts.json equipment hands out");
+                }
+            }
+            if (!b.special.kind.empty() && b.special.cooldown_seconds <= 0.0 && b.special.every_arenas <= 0) {
+                d.Error("special has neither a cooldown nor every_arenas (it could be used without limit)");
             }
             if (!b.starting_weapon.empty()) {
                 const WeaponBaseDef* w = c.FindWeapon(b.starting_weapon);

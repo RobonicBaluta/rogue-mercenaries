@@ -76,6 +76,11 @@ std::vector<const WeaponBaseDef*> OfferableWeapons(const OfferContext& ctx) {
         if (ctx.character != nullptr && !ctx.character->build.offered_weapons.Allows(w.id, WeaponCategoryName(w.category))) {
             continue;
         }
+        if (w.build_only &&
+            (ctx.character == nullptr || std::find(ctx.character->build.extra_weapons.begin(),
+                                                   ctx.character->build.extra_weapons.end(), w.id) == ctx.character->build.extra_weapons.end())) {
+            continue;
+        }
         out.push_back(&w);
     }
     return out;

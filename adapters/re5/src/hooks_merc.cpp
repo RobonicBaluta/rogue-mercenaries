@@ -12,7 +12,9 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 #include <utility>
+#include <vector>
 
 #include "engine.h"
 #include "hooks.h"
@@ -158,12 +160,22 @@ void __fastcall AddTimeDetour(std::uintptr_t self, void*, int seconds) {
     g_origAddTime(self, seconds);
 }
 
+std::mutex g_pickupMutex;
+std::vector<std::array<float, 3>> g_pickupPositions;  // where each opened statue stood
+
 void __fastcall TimeBonusActionDetour(std::uintptr_t self, void*) {
     const auto before = ReadOr<std::uint8_t>(self + 0x14, 0xFF);
     const auto object = ReadOr<std::uintptr_t>(self + 0x18, 0);
     g_origTimeBonus(self);
     if (before == 1 && object && ReadOr<std::uint8_t>(self + 0x14, 0) == 2) {
         g_pickups.fetch_add(1);
+        {
+            std::lock_guard lock(g_pickupMutex);
+            g_pickupPositions.push_back({ReadOr<float>(object + re5::off::kUnitPosition, 0.0f),
+                                         ReadOr<float>(object + re5::off::kUnitPosition + 4, 0.0f),
+                                         ReadOr<float>(object + re5::off::kUnitPosition + 8, 0.0f)});
+            if (g_pickupPositions.size() > 16) g_pickupPositions.erase(g_pickupPositions.begin());
+        }
         RM_LOGI("time bonus picked up: object %08X (%s, %d s)", static_cast<unsigned>(object),
                 engine::ClassName(object).c_str(), ReadOr<std::int16_t>(object + 0x1364, 0));
     }
@@ -176,6 +188,14 @@ void SetMercHudHidden(bool hidden) { g_hideHud = hidden; }
 void SetMercHudCounter(int value) { g_counter = value; }
 void SuppressMercAddTime(bool suppress) { g_suppressAddTime = suppress; }
 int TakeTimeBonusPickups() { return g_pickups.exchange(0); }
+
+bool TakeTimeBonusPosition(float pos[3]) {
+    std::lock_guard lock(g_pickupMutex);
+    if (g_pickupPositions.empty()) return false;
+    for (int k = 0; k < 3; ++k) pos[k] = g_pickupPositions.front()[static_cast<std::size_t>(k)];
+    g_pickupPositions.erase(g_pickupPositions.begin());
+    return true;
+}
 void SimulateTimeBonusPickup() { g_pickups.fetch_add(1); }
 
 void RequestMercMatchEnd() { g_endRequested = true; }

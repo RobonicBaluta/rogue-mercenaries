@@ -3,6 +3,9 @@
 #include <windows.h>
 
 #include <cmath>
+#include <map>
+#include <mutex>
+#include <string>
 
 #include "log.h"
 #include "memory.h"
@@ -91,6 +94,8 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.enemyOnHit = SignatureOk("enemy_on_hit") && SignatureOk("enemy_apply_damage_subhp");
     g_caps.characterSubHp = SignatureOk("character_sub_hp") && SignatureOk("ucharacter_get_dti");
     g_caps.playerSubHp = SignatureOk("player_sub_hp");
+    g_caps.playerAddHp = SignatureOk("player_add_hp");
+    g_caps.pickupItem = SignatureOk("pickup_item") && SignatureOk("item_from_handle");
     g_caps.hitAttacker = SignatureOk("hit_get_attacker");
     g_caps.gameWork = SignatureOk("merc_add_time") && SignatureOk("merc_timer_store");
     g_caps.mercCountdown = g_caps.gameWork && SignatureOk("merc_update_countdown");
@@ -171,6 +176,22 @@ std::string DtiName(std::uintptr_t dti) {
 }
 
 std::string ClassName(std::uintptr_t object) { return DtiName(DtiOf(object)); }
+
+bool InMeleeAction(std::uintptr_t player) {
+    const auto action = player ? ReadOr<std::uintptr_t>(player + re5::off::kPlayerAction, 0) : 0;
+    const std::uintptr_t dti = action ? DtiOf(action) : 0;
+    if (!dti) return false;
+    // One name read per action class.
+    static std::mutex mutex;
+    static std::map<std::uintptr_t, bool> melee;
+    std::lock_guard lock(mutex);
+    const auto it = melee.find(dti);
+    if (it != melee.end()) return it->second;
+    const std::string name = DtiName(dti);
+    const bool hit = name.rfind("cPlAction_pl_act_attack", 0) == 0 || name == "cPlAction_pl_act_knife_attack";
+    melee.emplace(dti, hit);
+    return hit;
+}
 
 std::optional<CharacterHp> ReadHp(std::uintptr_t character) {
     std::int16_t hp = 0;

@@ -137,6 +137,23 @@
       "category": "rifle",
       "base_damage_mult": 1.0,
       "game_item": 288
+    },
+    {
+      "id": "gatling",
+      "name": "Gatling Gun",
+      "category": "machine_gun",
+      "base_damage_mult": 1.0,
+      "unlock_cost_credits": 600,
+      "build_only": true,
+      "game_item": 277
+    },
+    {
+      "id": "longbow",
+      "name": "Longbow",
+      "category": "bow",
+      "base_damage_mult": 1.0,
+      "build_only": true,
+      "game_item": 271
     }
   ],
   "affixes": [

@@ -64,7 +64,16 @@ public:
     virtual void GameTick() = 0;
     // True while the overlay owns input; the game sees neutral input.
     virtual bool BlockGameInput() = 0;
+    // Game thread: the local player's health is about to rise by `amount` (a healing item);
+    // returns the amount to apply.
+    virtual int HealAmount(std::uintptr_t player, int amount) { (void)player; return amount; }
 };
+
+// The last raw input the game polled (before the overlay hides anything): DirectInput keyboard
+// scancodes, DirectInput joystick buttons and the XInput gamepad's button bits.
+bool RawKeyDown(int scancode);
+bool RawJoyButton(int index);
+unsigned short RawXInputButtons();
 
 void SetHookSink(HookSink* sink);
 
@@ -95,6 +104,7 @@ void RequestMercMatchEnd();
 void ClearMercMatchEnd();  // drop a pending request (a new match must not inherit it)
 void SuppressMercAddTime(bool suppress);  // countdown bonuses ignored (a run holds the countdown)
 int TakeTimeBonusPickups();               // time-bonus pickups collected since the last call
+bool TakeTimeBonusPosition(float pos[3]);  // where an opened statue stood, oldest first (false: none left)
 void SimulateTimeBonusPickup();           // developer: count one pickup
 MercTimerView ReadMercTimer();
 bool InstallMercHooks();

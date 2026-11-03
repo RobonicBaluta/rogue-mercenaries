@@ -28,19 +28,34 @@
           "id": "chris_safari",
           "name": "Safari",
           "costume_index": 1,
-          "starting_passive": "chris_safari_trait"
+          "build": {
+            "name": "Mine Layer",
+            "icon": "mine",
+            "summary": "Every chest and every enemy drop is a proximity bomb, and they stack up to 10.",
+            "drops_as": "0x010A",
+            "stack_max": {
+              "0x010A": 10
+            }
+          }
         },
         {
           "id": "chris_stars",
           "name": "STARS",
           "costume_index": 2,
-          "starting_passive": "chris_stars_trait"
+          "starting_passive": "chris_stars_trait",
+          "build": {
+            "name": "Field Kit",
+            "icon": "medkit",
+            "summary": "A first aid spray on every arena clear."
+          }
         },
         {
           "id": "chris_warrior",
           "name": "Warrior",
           "costume_index": 14,
           "build": {
+            "name": "Brute Force",
+            "icon": "shotgun",
             "summary": "Only shotguns, handguns and magnums come his way, and they hit 25 percent harder.",
             "offered_weapons": {
               "categories": [
@@ -59,7 +74,16 @@
         {
           "id": "chris_heavy_metal",
           "name": "Heavy Metal",
-          "costume_index": 10
+          "costume_index": 10,
+          "build": {
+            "name": "Heavy Gunner",
+            "icon": "gatling",
+            "summary": "Can unlock the Gatling gun in CREDITS and then find it in his runs. Ammo stacks three times as high.",
+            "extra_weapons": [
+              "gatling"
+            ],
+            "ammo_stack_mult": 3
+          }
         }
       ]
     },
@@ -90,6 +114,8 @@
           "name": "Clubbin",
           "costume_index": 4,
           "build": {
+            "name": "Night Shopper",
+            "icon": "supplies",
             "summary": "Half again as many supplies, and one free shop reroll at every shop.",
             "supplies_mult": 1.5,
             "free_shop_rerolls": 1
@@ -99,13 +125,27 @@
           "id": "sheva_tribal",
           "name": "Tribal",
           "costume_index": 5,
-          "starting_passive": "sheva_tribal_trait"
+          "starting_passive": "sheva_tribal_trait",
+          "build": {
+            "name": "Hunter",
+            "icon": "bow",
+            "summary": "Starts with her longbow and a quiver of arrows. Arrows hit 50 percent harder.",
+            "starting_weapon": "longbow",
+            "extra_weapons": [
+              "longbow"
+            ],
+            "category_damage": {
+              "bow": 0.5
+            }
+          }
         },
         {
           "id": "sheva_business",
           "name": "Business",
           "costume_index": 15,
           "build": {
+            "name": "Expense Account",
+            "icon": "credits",
             "summary": "Better loot and shop stock. Submachine guns hit 30 percent harder and upgrade without limit.",
             "rarity_shift": 0.8,
             "category_damage": {
@@ -123,6 +163,8 @@
           "name": "Fairy Tale",
           "costume_index": 11,
           "build": {
+            "name": "Enchanted Arms",
+            "icon": "star",
             "summary": "Starts with a legendary M3 that upgrades without limit.",
             "starting_weapon": "m3",
             "starting_weapon_rarity": "legendary",
@@ -154,13 +196,31 @@
         {
           "id": "jill_bsaa",
           "name": "BSAA",
-          "costume_index": 6
+          "costume_index": 6,
+          "build": {
+            "name": "Locksmith",
+            "icon": "key",
+            "summary": "Opens every chest without a key.",
+            "chest_keys_exempt": true
+          }
         },
         {
           "id": "jill_battle_suit",
           "name": "Battle Suit",
           "costume_index": 7,
-          "starting_passive": "jill_battle_suit_trait"
+          "build": {
+            "name": "Twin Fury",
+            "icon": "dual_smg",
+            "summary": "The special button unloads two submachine guns on everything in front of her. 25 seconds to recover.",
+            "special": {
+              "kind": "dual_smg",
+              "name": "Twin Fury",
+              "icon": "dual_smg",
+              "cooldown_seconds": 25,
+              "power": 90,
+              "duration_seconds": 1.5
+            }
+          }
         }
       ]
     },
@@ -183,7 +243,18 @@
         {
           "id": "josh_bsaa",
           "name": "BSAA",
-          "costume_index": 12
+          "costume_index": 12,
+          "build": {
+            "name": "Call for Backup",
+            "icon": "radio",
+            "summary": "The special button calls covering fire on the nearest enemies for the arena, once every two arenas.",
+            "special": {
+              "kind": "backup",
+              "name": "Backup",
+              "icon": "radio",
+              "every_arenas": 2
+            }
+          }
         }
       ]
     },
@@ -208,6 +279,8 @@
           "name": "STARS",
           "costume_index": 16,
           "build": {
+            "name": "Old Reliable",
+            "icon": "magnum",
             "summary": "Starts with an S and W M29 that upgrades without limit, and half again as much health.",
             "starting_weapon": "m29",
             "uncapped_upgrades": {
@@ -239,7 +312,17 @@
         {
           "id": "rebecca_stars",
           "name": "STARS",
-          "costume_index": 17
+          "costume_index": 17,
+          "build": {
+            "name": "Field Surgeon",
+            "icon": "heal",
+            "summary": "Stronger heals. A spray or mixed herb gives 4 seconds untouchable and 12 seconds of 30 percent more damage.",
+            "heal_mult": 1.5,
+            "heal_buff_fraction": 0.6,
+            "heal_invulnerable_seconds": 4,
+            "heal_damage_bonus": 0.3,
+            "heal_damage_seconds": 12
+          }
         }
       ]
     },
@@ -262,7 +345,18 @@
         {
           "id": "excella_dress",
           "name": "Dress",
-          "costume_index": 13
+          "costume_index": 13,
+          "build": {
+            "name": "Ambition",
+            "icon": "crown",
+            "summary": "Every melee kill raises one of her stats for the rest of the run: damage, defense, health or criticals.",
+            "melee_kill_stats": {
+              "damage": 0.04,
+              "defense": 0.03,
+              "max_health": 0.05,
+              "crit": 0.02
+            }
+          }
         }
       ]
     },
@@ -285,14 +379,30 @@
         {
           "id": "wesker_midnight",
           "name": "Midnight",
-          "costume_index": 8
+          "costume_index": 8,
+          "build": {
+            "name": "Uroboros Speed",
+            "icon": "dash",
+            "summary": "The special button dashes forward, untouchable while he moves. He has only half his health.",
+            "max_health_mult": 0.5,
+            "special": {
+              "kind": "dash",
+              "name": "Dash",
+              "icon": "dash",
+              "cooldown_seconds": 2.5,
+              "power": 5,
+              "duration_seconds": 0.5
+            }
+          }
         },
         {
           "id": "wesker_stars",
           "name": "STARS",
           "costume_index": 9,
           "build": {
-            "summary": "Only his Samurai Edge, magnums and the Hydra. Other guns show up in the shop but are not for him.",
+            "name": "Iron Fist",
+            "icon": "fist",
+            "summary": "His melee hits three times as hard. Only his Samurai Edge, magnums and the Hydra are for him.",
             "usable_weapons": {
               "categories": [
                 "magnum"
@@ -301,7 +411,8 @@
                 "samurai_edge",
                 "hydra"
               ]
-            }
+            },
+            "melee_damage": 2.0
           }
         }
       ]

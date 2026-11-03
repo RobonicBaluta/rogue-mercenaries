@@ -38,6 +38,10 @@ struct DeviceHook {
 // distinct target gets its own trampoline.
 DeviceHook g_stateHooks[2];
 DeviceHook g_dataHooks[2];
+// The raw input of the last polls (RawKeyDown and friends); written on the game thread.
+unsigned char g_rawKeys[256] = {};
+unsigned char g_rawJoy[32] = {};
+unsigned short g_rawXButtons = 0;
 XInputGetStateFn g_origXInputGetState = nullptr;
 
 bool Blocking() { return g_sink && g_sink->BlockGameInput(); }
@@ -135,7 +139,11 @@ HRESULT STDMETHODCALLTYPE GetDeviceStateDetour(void* self, DWORD size, LPVOID da
     }
     const Kind kind = KindOf(self, "GetDeviceState", size);
     const bool blocking = Blocking();
+    if (size == sizeof(DIJOYSTATE) || size == sizeof(DIJOYSTATE2)) {
+        std::memcpy(g_rawJoy, reinterpret_cast<const DIJOYSTATE*>(data)->rgbButtons, sizeof(g_rawJoy));
+    }
     if (size == 256) {  // keyboard state array: the once-per-frame poll
+        std::memcpy(g_rawKeys, data, sizeof(g_rawKeys));
         overlay::FeedKeyboard(static_cast<const unsigned char*>(data));
         Tick();
         FilterKeyboard(static_cast<unsigned char*>(data), Blocking());
@@ -216,6 +224,10 @@ HRESULT STDMETHODCALLTYPE GetDeviceDataDetour(void* self, DWORD objectSize, LPDI
 
 DWORD WINAPI XInputGetStateDetour(DWORD user, void* state) {
     const DWORD result = g_origXInputGetState(user, state);
+    if (result == ERROR_SUCCESS && state && user == 0) {
+        // XINPUT_STATE: DWORD packet number, then XINPUT_GAMEPAD whose first WORD is the buttons.
+        std::memcpy(&g_rawXButtons, static_cast<const char*>(state) + sizeof(DWORD), sizeof(g_rawXButtons));
+    }
     if (Blocking() && result == ERROR_SUCCESS && state) {
         // XINPUT_STATE: DWORD packet number followed by the gamepad block.
         std::memset(static_cast<char*>(state) + sizeof(DWORD), 0, 12);
@@ -252,6 +264,10 @@ void CollectTargets(Device* device, std::vector<void*>& state, std::vector<void*
 }
 
 }  // namespace
+
+bool RawKeyDown(int scancode) { return scancode >= 0 && scancode < 256 && (g_rawKeys[scancode] & 0x80) != 0; }
+bool RawJoyButton(int index) { return index >= 0 && index < 32 && (g_rawJoy[index] & 0x80) != 0; }
+unsigned short RawXInputButtons() { return g_rawXButtons; }
 
 void TickGame(const char* source) {
     // The main thread both polls input and presents (observed on build

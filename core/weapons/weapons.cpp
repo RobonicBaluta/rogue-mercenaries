@@ -33,6 +33,7 @@ std::string_view WeaponCategoryName(WeaponCategory c) {
         case WeaponCategory::Rifle: return "rifle";
         case WeaponCategory::MachineGun: return "machine_gun";
         case WeaponCategory::Magnum: return "magnum";
+        case WeaponCategory::Bow: return "bow";
     }
     return "handgun";
 }
@@ -40,7 +41,7 @@ std::string_view WeaponCategoryName(WeaponCategory c) {
 std::optional<WeaponCategory> ParseWeaponCategory(std::string_view name) {
     for (WeaponCategory c : {WeaponCategory::Handgun, WeaponCategory::Shotgun, WeaponCategory::Smg,
                              WeaponCategory::Rifle, WeaponCategory::MachineGun,
-                             WeaponCategory::Magnum}) {
+                             WeaponCategory::Magnum, WeaponCategory::Bow}) {
         if (WeaponCategoryName(c) == name) return c;
     }
     return std::nullopt;

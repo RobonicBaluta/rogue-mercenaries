@@ -122,8 +122,14 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
         }
     }
 
-    // The skin's build: damage by the category of the gun that fired (any gun of that kind,
-    // instance or not; never melee).
+    // The skin's build: melee damage, the stats a run gained, a heal's damage buff.
+    const SkinBuild& build = run_.character.build;
+    if (hit.is_melee.value_or(false)) b.build_bonus += build.melee_damage;
+    b.build_bonus += run_.stats.damage;
+    if (hit.now < run_.damage_buff_until) b.build_bonus += run_.damage_buff;
+    crit_chance += run_.stats.crit;
+    // Damage by the category of the gun that fired (any gun of that kind, instance or not;
+    // never melee).
     if (hit.weapon_id && !hit.is_melee.value_or(false) && !run_.character.build.category_damage.empty()) {
         if (const WeaponBaseDef* base = content_->FindWeapon(*hit.weapon_id)) {
             const auto it = run_.character.build.category_damage.find(std::string(WeaponCategoryName(base->category)));
@@ -190,10 +196,16 @@ IncomingResult RunController::ComputeIncoming(const IncomingContext& incoming) {
         run_.player_hp_max = incoming.hp_max;
     }
     if (!run_.active || run_.phase != Phase::ArenaActive) return out;
+    // A build's heal or dash: no damage at all for a while.
+    if (incoming.now < run_.invulnerable_until) {
+        out.multiplier = 0.0;
+        out.raw_multiplier = 0.0;
+        return out;
+    }
 
     const EconomyConfig& eco = content_->economy();
     const RouteDef* route = Route();
-    double bonus = 0.0;
+    double bonus = -run_.stats.defense;  // a build's gained defense
     double leave_fraction = 0.0;
     std::string cheat_source;
     for (const auto& [id, stacks] : run_.perks) {

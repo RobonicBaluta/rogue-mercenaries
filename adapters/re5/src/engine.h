@@ -19,6 +19,8 @@ struct Verified {
     bool enemyOnHit = false;
     bool characterSubHp = false;
     bool playerSubHp = false;
+    bool playerAddHp = false;   // healing items (M8: a build's heals)
+    bool pickupItem = false;    // ground item pickups (M8: a build's drops)
     bool hitAttacker = false;
     bool gameWork = false;   // mode/stage/merc timer layout
     bool mercCountdown = false;
@@ -51,6 +53,9 @@ std::uintptr_t DtiOf(std::uintptr_t object);
 bool IsKindOf(std::uintptr_t object, std::uintptr_t dti);
 std::string DtiName(std::uintptr_t dti);
 std::string ClassName(std::uintptr_t object);
+/// True while the player's current action (re5::off::kPlayerAction) is a hand-to-hand move
+/// (cPlAction_pl_act_attack_*) or the knife attack: a hit then is a melee hit.
+bool InMeleeAction(std::uintptr_t player);
 
 struct CharacterHp {
     int hp = 0;

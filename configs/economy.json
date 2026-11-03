@@ -126,5 +126,14 @@
     "supplies_per_arena": 5,
     "item_chance": 0.6,
     "weapon_chance": 0.12
+  },
+  "keys": {
+    "enabled": true,
+    "drop_chance": 0.15,
+    "classes": [
+      "uEm1"
+    ],
+    "start": 0,
+    "max": 9
   }
 }

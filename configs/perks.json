@@ -667,23 +667,6 @@
       "icon": "supplies"
     },
     {
-      "id": "chris_safari_trait",
-      "name": "Safari Instinct",
-      "description": "Safari Chris deals 8 percent more damage.",
-      "category": "skin",
-      "rarity": "common",
-      "tags": [
-        "skin"
-      ],
-      "max_stacks": 1,
-      "effects": [
-        {
-          "kind": "outgoing_damage_mult",
-          "value": 0.08
-        }
-      ]
-    },
-    {
       "id": "chris_stars_trait",
       "name": "S.T.A.R.S. Restock",
       "description": "S.T.A.R.S. Chris restocks a first aid spray on every arena clear.",
@@ -703,8 +686,8 @@
     },
     {
       "id": "sheva_tribal_trait",
-      "name": "Hunter Eye",
-      "description": "Tribal Sheva lands 5 percent more criticals.",
+      "name": "Quiver",
+      "description": "Tribal Sheva starts with 20 arrows and finds 10 more on every arena clear.",
       "category": "skin",
       "rarity": "common",
       "tags": [
@@ -713,25 +696,14 @@
       "max_stacks": 1,
       "effects": [
         {
-          "kind": "crit",
-          "chance": 0.05
-        }
-      ]
-    },
-    {
-      "id": "jill_battle_suit_trait",
-      "name": "Battle Suit",
-      "description": "The battle suit absorbs 8 percent of damage.",
-      "category": "skin",
-      "rarity": "common",
-      "tags": [
-        "skin"
-      ],
-      "max_stacks": 1,
-      "effects": [
+          "kind": "item_on_start",
+          "game_item": 523,
+          "amount": 20
+        },
         {
-          "kind": "incoming_damage_mult",
-          "value": -0.08
+          "kind": "item_on_arena_clear",
+          "game_item": 523,
+          "amount": 10
         }
       ]
     },

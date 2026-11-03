@@ -125,6 +125,15 @@ struct RunSummary {
     std::string final_arena;  // the map the run ended on (where the player died), empty when unknown
 };
 
+/// Stats a run gains as it goes (a build's melee_kill_stats): additive fractions.
+struct RunStats {
+    double damage = 0.0;      // outgoing damage
+    double defense = 0.0;     // less incoming damage
+    double max_health = 0.0;  // maximum health (the adapter scales it)
+    double crit = 0.0;        // crit chance
+    int gains = 0;
+};
+
 /// Complete temporary state of one run. Rebuilt from scratch by StartRun.
 struct RunState {
     bool active = false;
@@ -137,6 +146,14 @@ struct RunState {
     std::vector<ItemGrant> item_grants;  // earned, not yet handed to the adapter
     StringMap<int> perk_kill_counts;     // counted kills per perk, for every_kills
     int chests_opened = 0;
+    int keys = 0;               // chest keys held (economy keys)
+    RunStats stats;
+    double invulnerable_until = -1.0;  // a build's heal or dash: no damage taken until then
+    double damage_buff = 0.0;          // a build's heal: extra outgoing damage until damage_buff_until
+    double damage_buff_until = -1.0;
+    double special_ready_at = 0.0;     // the build's special: usable again from this time
+    int special_used_arena = 0;        // arena of its last use (0 = never)
+    int special_uses = 0;
     Phase phase = Phase::Idle;
     int arena_index = 0;  // arenas begun so far; the current arena number while active
     int arena_count = 3;
@@ -256,6 +273,14 @@ struct RunSnapshot {
     std::vector<OfferView> shop_offers;
     int free_shop_rerolls = 0;  // the skin build's, left in this shop visit
     std::vector<OfferView> route_offers;
+    // Builds (M8): keys, gained stats, buffs (seconds left).
+    bool keys_enabled = false;
+    bool keys_needed = false;  // this run's chests need a key (not a key-exempt build)
+    int keys = 0;
+    RunStats stats;
+    double invulnerable_left = 0.0;
+    double damage_buff_left = 0.0;
+    double damage_buff = 0.0;
 };
 
 }  // namespace rm
