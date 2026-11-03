@@ -425,6 +425,7 @@ constexpr unsigned kLookupOnly = 0x80;    // the get's flags: never load
 constexpr unsigned kPlayOnce = 4;         // the motion call's flags
 constexpr std::size_t kListMotions = 0x60;  // rMotionList: its motion data (u16 count at +6, pointers from +8)
 constexpr std::size_t kTrackSize = 0x20;    // a motion's track: +1 type (0..2 a bone's, 3..4 the root's), +3 bone id
+constexpr std::uint8_t kBodyBones = 64;     // bone ids 0..63: every player rig's body (the rest: clothing, hair)
 
 bool CallResourceGet(std::uintptr_t manager, const char* path, std::uintptr_t& out) {
     __try {
@@ -536,9 +537,15 @@ std::optional<MotionFit> CheckMotion(std::uintptr_t unit, int slot, int index) {
     for (int t = 0; t < count; ++t) {
         const std::uintptr_t track = tracks + static_cast<std::size_t>(t) * kTrackSize;
         if (ReadOr<std::uint8_t>(track + 1, 0xFF) > 2) continue;  // the root's, or unreadable
+        const std::uint8_t bone = ReadOr<std::uint8_t>(track + 3, 0xFF);
+        const std::uint8_t joint = ReadOr<std::uint8_t>(remap + bone, 0xFF);
+        const bool reaches = joint != 0xFF && joint < joints;
         ++fit.tracks;
-        const std::uint8_t joint = ReadOr<std::uint8_t>(remap + ReadOr<std::uint8_t>(track + 3, 0), 0xFF);
-        if (joint != 0xFF && joint < joints) ++fit.mapped;
+        fit.mapped += reaches ? 1 : 0;
+        if (bone < kBodyBones) {
+            ++fit.bodyTracks;
+            fit.bodyMapped += reaches ? 1 : 0;
+        }
     }
     return fit;
 }

@@ -2134,6 +2134,7 @@ struct StuckTrack {
     float anchor[3] = {};
     double anchorAt = 0.0;
     double lastRescue = -1.0e9;
+    float bestAway = 1.0e9f;  // a boss: the closest it has come to the player since anchorAt
 };
 std::unordered_map<std::uintptr_t, StuckTrack> g_stuckTracks;
 double g_stuckCheckAt = 0.0;
@@ -2142,6 +2143,8 @@ double g_stuckRemainingSince = 0.0;
 constexpr double kStuckCheckEvery = 0.5;
 constexpr double kStuckSeconds = 12.0;
 constexpr double kBossStuckSeconds = 8.0;
+constexpr float kBossCloser = 150.0f;          // a boss closing in by this much is coming for the player
+constexpr double kBossLogEvery = 5.0;
 constexpr float kStuckMove = 150.0f;           // moved less than this ...
 constexpr float kStuckFar = 900.0f;            // ... while farther than this from the player
 constexpr int kLastEnemies = 3;
@@ -2170,13 +2173,29 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
         StuckTrack& t = it->second;
         const float moved = std::sqrt(std::pow(pos[0] - t.anchor[0], 2.0f) + std::pow(pos[1] - t.anchor[1], 2.0f) +
                                       std::pow(pos[2] - t.anchor[2], 2.0f));
-        if (fresh || moved > kStuckMove) {
+        const float away = static_cast<float>(std::sqrt(std::pow(pos[0] - (*player)[0], 2.0) + std::pow(pos[2] - (*player)[2], 2.0)));
+        const bool boss = unit == g->boss.unit;
+        if (boss) {
+            // A boss walking anywhere but at the player is as lost as one standing still: only
+            // closing in counts as progress.
+            static double loggedAt = -1.0e9;
+            if (now - loggedAt >= kBossLogEvery) {
+                loggedAt = now;
+                RM_LOGI("director: boss %s at %.0f %.0f %.0f, %.1f m from the player (%.1f m above), %s", engine::ClassName(unit).c_str(),
+                        pos[0], pos[1], pos[2], away / 100.0f, (pos[1] - static_cast<float>((*player)[1])) / 100.0f,
+                        engine::CurrentActionName(unit).c_str());
+            }
+            if (fresh || away < t.bestAway - kBossCloser) {
+                for (int k = 0; k < 3; ++k) t.anchor[k] = pos[k];
+                t.anchorAt = now;
+                t.bestAway = away;
+                if (!lastFew) continue;
+            }
+        } else if (fresh || moved > kStuckMove) {
             for (int k = 0; k < 3; ++k) t.anchor[k] = pos[k];
             t.anchorAt = now;
             if (!lastFew) continue;
         }
-        const float away = static_cast<float>(std::sqrt(std::pow(pos[0] - (*player)[0], 2.0) + std::pow(pos[2] - (*player)[2], 2.0)));
-        const bool boss = unit == g->boss.unit;
         const bool stuck = away > kStuckFar && now - t.anchorAt > (boss ? kBossStuckSeconds : kStuckSeconds);
         const bool straggler = lastFew && away > kLastEnemiesFar;
         if ((!stuck && !straggler) || now - t.lastRescue < 15.0) continue;
@@ -2190,6 +2209,7 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
         for (int k = 0; k < 3; ++k) t.anchor[k] = dest[k];
         t.anchorAt = now;
         t.lastRescue = now;
+        t.bestAway = static_cast<float>(std::sqrt(std::pow(dest[0] - (*player)[0], 2.0) + std::pow(dest[2] - (*player)[2], 2.0)));
     }
 }
 
@@ -2246,6 +2266,14 @@ void DriveDirector(double now) {
         if (player) spec.facing = static_cast<float>(std::atan2((*player)[0] - r.pos[0], (*player)[2] - r.pos[2]));
         spec.weapon = static_cast<int>(r.arm);
         spec.fields = r.fields;
+        // A boss senses the player across its arena: the widest search the game's own spawns use
+        // (search type 1 and a circle of 8000 units, seen once in the survey; most use 1000). It
+        // walked off into a wall with its descriptor's own (user playtest 2026-11-03, the Uroboros).
+        if (r.boss) {
+            spec.fields.emplace_back("search_type", 1.0);
+            spec.fields.emplace_back("search_forward", 0.0);
+            spec.fields.emplace_back("search_circle", 8000.0);
+        }
         const float* pos = spec.pos;
         // A class whose archive is not loaded would hang the game when created; the director
         // stops picking it for this arena.
@@ -2685,6 +2713,9 @@ std::string SpecialBlocked(std::uintptr_t local) {
     if (ItemScreenOpen()) return "the item screen";
     const auto hp = engine::ReadHp(local);
     if (!hp || hp->hp <= 0) return "down";
+    // Bleeding out: the game holds a dying player at 1 HP (its dying camera, uEfCamDying, turns on
+    // at exactly 1: 0x00852B00), and the specials worked there (user playtest 2026-11-03).
+    if (hp->hp == 1) return "dying";
     const std::string action = engine::CurrentActionName(local);
     if (!action.empty() && !ActionAllowsSpecial(action)) return action;
     return "";
@@ -2721,6 +2752,7 @@ struct SpecialMove {
     int hits = 0;
     int pulses = 0;
     bool borrowed = false;  // a boss's own moves play it (dual_smg: the shots land during the sweep)
+    double seconds = 0.0;   // dual_smg: how long it fires without them
 };
 SpecialMove g_move;
 bool g_comboHeld[2] = {false, false};
@@ -3006,11 +3038,12 @@ void WatchDodge(double now) {
 // skeleton and these lists' tracks name its bones (checked offline: em84atk uses exactly the bone
 // ids of Jill's own pl02action, em80 all of Wesker's pl03action but two). Their archive loads with
 // the run's stages (UpdatePreloads); a move looks its list up (never loads it), binds it to a free
-// motion list slot of the player's model through the game's own setter, puts the player in the
-// scripted scenes' hold (event wait: it sets no motion of its own) and plays the steps on the body
-// layer; after the last one the player is back to relax. Anything missing, a list that does not
-// fit the model, or a hold the game refuses leaves the move as it was before (the dodge, or no
-// animation), with a log line saying why.
+// motion list slot of the player's model through the game's own setter, puts the player in a
+// hold (the player's test action: no motion of its own, never done by itself) and plays the
+// steps on the body layer; after the last one the player is back to relax. While it holds, the
+// action's "done" bit stays clear, so the stick does not end it. Anything missing, a list whose
+// body tracks do not reach the model's joints, or a hold the game refuses leaves the move as it
+// was before (the dodge, or no animation), with a log line saying why.
 struct BossMotionSource {
     const char* character;  // the run's character id
     const char* archive;    // loaded with the run's stages
@@ -3020,9 +3053,12 @@ constexpr BossMotionSource kBossMotions[] = {
     {"jill", "uEm84", "pawn\\em\\em84\\motion\\em84atk"},
     {"wesker", "uEm80", "pawn\\em\\em80\\motion\\em80"},
 };
-const char* const kEventWaitClass = "cPlAction_pl_act_setEventAct_wait";
+const char* const kHoldClass = "cPlAction_pl_act_test";
 constexpr float kBossMotionBlend = 10.0f;    // frames, the bosses' own blend
-constexpr float kBossMotionMinFit = 0.9f;    // share of a motion's bone tracks that must reach a joint
+// The body's tracks (bone ids under 64: spine, limbs, head) must reach the model's joints; the
+// rest are clothing a costume may not have (Midnight Wesker: 141 of the dash's 200 tracks map,
+// user playtest 2026-11-03), which the game skips for his own motions too.
+constexpr float kBossMotionMinFit = 0.95f;
 constexpr double kBossHoldWait = 0.4;        // seconds for the hold to start
 constexpr double kBossMoveLimit = 8.0;       // seconds: a sequence never holds the player longer
 
@@ -3088,8 +3124,11 @@ bool BossMoveActive() { return !g_boss.move.empty(); }
 void EndBossMove(std::uintptr_t local, const char* why) {
     if (g_boss.move.empty()) return;
     std::string back = "left to the game";
-    if (local && engine::CurrentActionName(local) == kEventWaitClass) {
-        back = engine::StartAction(local, re5::off::kPlActRelax, "cPlAction_pl_act_relax") ? "back to relax" : "relax refused";
+    if (local && engine::CurrentActionName(local) == kHoldClass) {
+        // The hold never ends by itself: relax, else wait, so the player is never left in it.
+        if (engine::StartAction(local, re5::off::kPlActRelax, "cPlAction_pl_act_relax")) back = "back to relax";
+        else if (engine::StartAction(local, 0, "cPlAction_pl_act_wait")) back = "relax refused, back to wait";
+        else back = "relax and wait refused";
     }
     float drift = 0.0f;
     if (local) {
@@ -3121,16 +3160,17 @@ bool StartBossMove(std::uintptr_t local, const std::string& move, double now) {
     if (slot < 0) return refuse("no free motion list slot");
     for (const BossStep& s : *steps) {
         const auto fit = engine::CheckMotion(local, slot, s.index);
-        if (!fit || fit->tracks == 0) return refuse("motion " + std::to_string(s.index) + " missing");
-        const float share = static_cast<float>(fit->mapped) / static_cast<float>(fit->tracks);
+        if (!fit || fit->bodyTracks == 0) return refuse("motion " + std::to_string(s.index) + " missing");
+        const float share = static_cast<float>(fit->bodyMapped) / static_cast<float>(fit->bodyTracks);
         static std::set<std::string> logged;
         if (logged.insert(move + std::to_string(s.index)).second) {
-            RM_LOGI("special: boss motion %s %02X: %d of %d bone tracks reach %s's joints, %.0f frames (slot %d)", source->list,
-                    s.index, fit->mapped, fit->tracks, engine::ClassName(local).c_str(), fit->frames, slot);
+            RM_LOGI("special: boss motion %s %02X: %d of %d body tracks and %d of %d in all reach %s's joints, %.0f frames (slot %d)",
+                    source->list, s.index, fit->bodyMapped, fit->bodyTracks, fit->mapped, fit->tracks,
+                    engine::ClassName(local).c_str(), fit->frames, slot);
         }
         if (share < kBossMotionMinFit) return refuse("motion " + std::to_string(s.index) + " does not fit the model");
     }
-    if (!engine::StartAction(local, re5::off::kPlActEventWait, kEventWaitClass)) {
+    if (!engine::StartAction(local, re5::off::kPlActHold, kHoldClass)) {
         return refuse("the hold was refused (current action " + engine::CurrentActionName(local) + ")");
     }
     EndBossMove(0, "replaced");
@@ -3154,7 +3194,7 @@ void StepBossMove(double now) {
         return;
     }
     const std::string action = engine::CurrentActionName(local);
-    if (action != kEventWaitClass) {
+    if (action != kHoldClass) {
         if (g_boss.playing || now - g_boss.start > kBossHoldWait) {
             EndBossMove(local, g_boss.playing ? ("interrupted: " + action).c_str() : ("the hold never started: " + action).c_str());
         }
@@ -3164,6 +3204,10 @@ void StepBossMove(double now) {
         EndBossMove(local, "time limit");
         return;
     }
+    // The hold is never done by itself; a "done" bit left from the action before would let the
+    // stick end it.
+    const auto flags = ReadOr<std::uint32_t>(local + re5::off::kPlayerActionFlags, 0);
+    if (flags & re5::off::kActionDone) SafeStore<std::uint32_t>(local + re5::off::kPlayerActionFlags, flags & ~re5::off::kActionDone);
     const BossStep& s = g_boss.steps[g_boss.step];
     const unsigned id = static_cast<unsigned>(g_boss.slot) << 8 | static_cast<unsigned>(s.index);
     if (ReadOr<std::uintptr_t>(local + re5::off::kMotionLists + static_cast<std::size_t>(g_boss.slot) * 4, 0) != g_boss.list) {
@@ -3322,7 +3366,8 @@ void StartSpecial(double now, int slot, const char* source) {
     PlayerFacing(local, g_move.dirX, g_move.dirZ);
     if (sp.kind == "dual_smg") {
         g_move.damage = static_cast<int>(sp.power > 0.0 ? sp.power : 90.0);
-        g_move.until = now + (sp.duration_seconds > 0.0 ? sp.duration_seconds : 1.5);
+        g_move.seconds = sp.duration_seconds > 0.0 ? sp.duration_seconds : 1.5;
+        g_move.until = now + g_move.seconds;
         g_move.nextPulse = now;
         // The boss Jill's WideFire: she readies, then sweeps; the shots land while she sweeps, for
         // as long as it plays (the move ends with it).
@@ -3397,13 +3442,21 @@ void StepSpecial(double now) {
         EndSpecialMove("done");
         return;
     }
-    // Her borrowed sweep: no shots while she readies, and the move ends with the sweep.
+    // Her borrowed sweep: no shots while she readies, and the move ends with the sweep. A sweep
+    // cut short before it fired (a hit, the hold refused) still fires, without the animation.
     if (g_move.kind == "dual_smg" && g_move.borrowed) {
         if (!BossMoveActive()) {
-            EndSpecialMove("the sweep is over");
+            if (g_move.pulses > 0) {
+                EndSpecialMove("the sweep is over");
+                return;
+            }
+            g_move.borrowed = false;
+            g_move.until = now + g_move.seconds;
+            g_move.nextPulse = now;
+            RM_LOGI("special: dual_smg fires without the boss move (it ended before the sweep)");
+        } else if (!BossMoveFiring()) {
             return;
         }
-        if (!BossMoveFiring()) return;
     }
     if (now >= g_move.until) {
         EndSpecialMove("done");
@@ -3479,7 +3532,7 @@ void DriveSpecial(double now) {
     }
     // A move in progress stops when he is grabbed, hit or down (not while it plays its own dodge
     // or a boss move's hold).
-    if (!g_move.kind.empty() && !blocked.empty() && blocked.rfind("cPlAction_pl_act_avoid", 0) != 0 && blocked != kEventWaitClass) {
+    if (!g_move.kind.empty() && !blocked.empty() && blocked.rfind("cPlAction_pl_act_avoid", 0) != 0 && blocked != kHoldClass) {
         EndSpecialMove(("interrupted: " + blocked).c_str());
     }
     StepSpecial(now);

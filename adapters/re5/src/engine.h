@@ -106,10 +106,13 @@ void ReleaseResource(std::uintptr_t resource);
 /// counted) setter: the slot holding it already, else the highest free one. The slot, or -1.
 int BindMotionList(std::uintptr_t unit, std::uintptr_t list);
 /// Of motion `index` in the unit's slot: its bone tracks, how many of them reach a joint of the
-/// unit's model, and its length in frames (empty: no such motion).
+/// unit's model, the same for the body's bones (ids under 64: spine, limbs, head; the rest are
+/// clothing, which a costume may not have), and its length in frames (empty: no such motion).
 struct MotionFit {
     int tracks = 0;
     int mapped = 0;
+    int bodyTracks = 0;
+    int bodyMapped = 0;
     float frames = 0.0f;
 };
 std::optional<MotionFit> CheckMotion(std::uintptr_t unit, int slot, int index);

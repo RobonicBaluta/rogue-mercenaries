@@ -353,9 +353,16 @@ constexpr std::size_t kPlayerDodgeOwner = 0x2D64;   // the dodge prep's object (
 constexpr std::size_t kDodgePrepOffset = 0x220;
 constexpr int kPlActRelax = 0x01;       // cPlAction_pl_act_relax
 constexpr int kPlActAvoidFront = 0x51;  // cPlAction_pl_act_avoid_front (toward the threat point)
-// cPlAction_pl_act_setEventAct_wait: the scripted scenes' hold; it sets no motion of its own
-// (start 0x00C906C0, update 0x00C75DA0), so a motion played over it keeps playing.
-constexpr int kPlActEventWait = 0x84;
+// cPlAction_pl_act_test: a hold. Its start is only the common one (0x00C8B1E0: the action's step
+// bytes) and its update is empty (0x00C76EA0): no motion of its own and it never marks itself
+// done, so a motion played over it plays out. (setEventAct_wait, 0x84, marks itself done on its
+// second update and the player drops back to wait: user playtest 2026-11-03.)
+constexpr int kPlActHold = 0xA8;
+// uPlayer: the current action's flag word. Bit 28 = the action may be left for the next one (set
+// when an action is done; hundreds of input checks test it, the action's step loop 0x00C71490
+// runs until it is set).
+constexpr std::size_t kPlayerActionFlags = 0x2D7C;
+constexpr std::uint32_t kActionDone = 0x10000000;
 // Motions (addr::kFnCharSetMotion): the model's motion list slots and layer count, and layer 0's
 // motion id (u16), current frame and length.
 constexpr std::size_t kMotionLists = 0xA88;
