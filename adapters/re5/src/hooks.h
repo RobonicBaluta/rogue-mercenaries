@@ -3,6 +3,7 @@
 // Engine hooks. Detours translate raw engine calls into the plain structs
 // below and forward them to a single HookSink owned by the mod layer.
 
+#include <vector>
 #include <cstdint>
 
 namespace rmre5 {
@@ -71,6 +72,17 @@ public:
 
 // The last raw input the game polled (before the overlay hides anything): DirectInput keyboard
 // scancodes, DirectInput joystick buttons and the XInput gamepad's button bits.
+/// Inputs the mod owns during a run (M8 specials): hidden from the game while held, so the
+/// game's own action on them (the knife) does not happen too. A binding of several buttons held
+/// together holds its first ones back for a moment: completed in time it is the mod's, else they
+/// reach the game late. `joy` holds DirectInput joystick buttons, one bit per button number.
+struct OwnedInput {
+    int key = -1;                 // DirectInput keyboard scancode, -1 none
+    unsigned short xinput = 0;    // XInput buttons held together
+    unsigned joy = 0;             // DirectInput joystick buttons held together
+};
+/// The bindings owned now (none: an empty list); set from the game thread.
+void SetOwnedInputs(const std::vector<OwnedInput>& inputs);
 bool RawKeyDown(int scancode);
 bool RawJoyButton(int index);
 unsigned short RawXInputButtons();

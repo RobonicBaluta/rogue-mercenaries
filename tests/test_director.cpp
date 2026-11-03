@@ -194,6 +194,43 @@ TEST_CASE("several special types share the map's special limit, which grows with
     CHECK(specialsAtStart(3) == 2);  // each type is still one at a time
 }
 
+TEST_CASE("a stuck unit moves to another point and its point is not used again", "[director]") {
+    MapDef map = TestMap(1);
+    map.points = {{0, 0, 0}, {1000, 0, 0}, {0, 0, 1000}};
+    Director d(map, 10, 1, 3);
+    const auto first = d.Tick(0.0, std::nullopt);
+    REQUIRE(first.size() == 1);
+    d.Spawned(first[0].ticket, "a");
+    const auto to = d.Relocate("a", std::nullopt);
+    REQUIRE(to.has_value());
+    CHECK(*to != first[0].pos);
+    CHECK(d.relocations() == 1);
+    CHECK_FALSE(d.Relocate("nobody", std::nullopt).has_value());
+    // The point it was stuck at never comes back this arena.
+    REQUIRE(d.Died("a"));
+    for (double t = 1.0; t < 40.0; t += 1.0) {
+        for (const SpawnRequest& r : d.Tick(t, std::nullopt)) {
+            CHECK(r.pos != first[0].pos);
+            d.Spawned(r.ticket, "u" + std::to_string(r.ticket));
+            d.Died("u" + std::to_string(r.ticket));
+        }
+    }
+}
+
+TEST_CASE("a boss comes from a point on the player's level", "[director]") {
+    MapDef map = TestMap(1);
+    map.min_player_distance = 500.0;
+    map.max_player_distance = 3000.0;
+    map.points = {{1000, 0, 0}, {0, -1000, 1000}, {0, 600, 1200}, {1200, 30, 400}};
+    map.boss = MapBoss{"uEm40", "Beast", 5000};
+    for (std::uint64_t seed = 0; seed < 40; ++seed) {
+        Director d(map, 1, 1, seed);
+        const auto r = d.Tick(0.0, std::array<double, 3>{0, 0, 0});
+        REQUIRE(r.size() == 1);
+        CHECK(std::fabs(r[0].pos[1]) <= 150.0);
+    }
+}
+
 TEST_CASE("an arena places a few of the map's chest positions, distinct and repeatable", "[director]") {
     MapDef map = TestMap(3);
     map.chests = {{0, 0, 0}, {100, 0, 0}, {200, 0, 0}, {300, 0, 0}, {400, 0, 0}};

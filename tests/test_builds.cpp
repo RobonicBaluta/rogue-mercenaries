@@ -187,6 +187,37 @@ TEST_CASE("free shop rerolls renew the stock and reset per shop visit", "[builds
     REQUIRE(plain.rc.StartRun("alpha", 4, "alpha_build").ok());
     ToShop(plain.rc, 0.0);
     CHECK(plain.rc.RerollShop().code == ErrorCode::NotEligible);
+    CHECK(plain.rc.ShopRestockPrice() == -1);
+}
+
+TEST_CASE("the shop's paid new stock comes after the free ones and costs more each time", "[builds]") {
+    auto sources = test::EditFixture([](auto&, auto&, auto&, auto&, json& economy) {
+        economy["shop"]["restock_price"] = 15;
+        economy["shop"]["restock_price_step"] = 10;
+    });
+    test::Harness h(test::Load(sources));
+    REQUIRE(h.rc.StartRun("alpha", 4).ok());
+    CHECK(h.rc.ShopRestockPrice() == -1);  // not in the shop
+    ToShop(h.rc, 0.0);
+    REQUIRE(h.rc.AdjustSupplies(100, "test").ok());
+    const std::int64_t before = h.rc.Snapshot(0.0).supplies;
+    CHECK(h.rc.ShopRestockPrice() == 15);
+    REQUIRE(h.rc.Purchase(0).ok());
+    const std::int64_t afterBuy = h.rc.Snapshot(0.0).supplies;
+    REQUIRE(h.rc.RerollShop().ok());
+    CHECK_FALSE(h.rc.ShopOffers().front().purchased);  // a fresh stock
+    CHECK(h.rc.Snapshot(0.0).supplies == afterBuy - 15);
+    CHECK(h.rc.Snapshot(0.0).restock_price == 25);
+    REQUIRE(h.rc.RerollShop().ok());
+    CHECK(h.rc.Snapshot(0.0).supplies == afterBuy - 40);
+    REQUIRE(h.rc.AdjustSupplies(-(h.rc.Snapshot(0.0).supplies), "test").ok());
+    CHECK(h.rc.RerollShop().code == ErrorCode::InsufficientFunds);
+    CHECK(before > afterBuy);
+    // A new shop visit starts at the first price again.
+    REQUIRE(h.rc.LeaveShop().ok());
+    REQUIRE(h.rc.ChooseRoute(0).ok());
+    ToShop(h.rc, 100.0);
+    CHECK(h.rc.ShopRestockPrice() == 15);
 }
 
 TEST_CASE("uncapped weapons keep upgrading past the maximum level", "[builds]") {
@@ -412,6 +443,23 @@ TEST_CASE("a special keeps its cooldown, its arena limit and a dash's invulnerab
     CHECK(h.rc.UseSpecial(13.3).ok());
     CHECK(h.rc.Special(13.3).cooldown_total == Catch::Approx(3.0));
     CHECK(h.rc.UseSpecial(20.0, 0.0).code == ErrorCode::InvalidArgument);
+
+    // A second special has its own button and cooldown.
+    const json two = {{"special", {{"kind", "dash"}, {"name", "Dash"}, {"cooldown_seconds", 3.0}}},
+                      {"special_2", {{"kind", "burst"}, {"name", "Burst"}, {"cooldown_seconds", 6.0}, {"duration_seconds", 0.4}}}};
+    test::Harness w(test::Load(BuildSources(two)));
+    REQUIRE(w.rc.StartRun("alpha", 3, "alpha_build").ok());
+    REQUIRE(w.rc.BeginArena(0.0).ok());
+    CHECK(w.rc.Special(1.0, 1).kind == "burst");
+    REQUIRE(w.rc.UseSpecial(1.0).ok());
+    CHECK(w.rc.Special(1.5, 1).ready);  // the dash's cooldown leaves the burst alone
+    REQUIRE(w.rc.UseSpecial(1.5, 1.0, 1).ok());
+    CHECK(w.rc.Invulnerable(1.8));
+    CHECK(w.rc.Special(4.5).ready);
+    CHECK_FALSE(w.rc.Special(4.5, 1).ready);
+    CHECK(w.rc.Special(4.5, 1).cooldown_left == Catch::Approx(3.0));
+    CHECK(w.rc.UseSpecial(4.5, 1.0, 2).code == ErrorCode::InvalidArgument);
+    CHECK(w.rc.Special(4.5, 2).kind.empty());
 
     const json backup = {{"special", {{"kind", "backup"}, {"name", "Backup"}, {"every_arenas", 2}}}};
     test::Harness josh(test::Load(BuildSources(backup)));

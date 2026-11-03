@@ -1153,6 +1153,7 @@ void RunController::EnterShop() {
     run_.shop_offers = GenerateShopOffers(streams_->shop, MakeOfferContext(route != nullptr ? route->rarity_bonus : 0.0),
                                           run_.weapons, run_.reroll_tokens, [this] { return NextInstanceId(); });
     run_.free_shop_rerolls = run_.character.build.free_shop_rerolls;
+    run_.shop_restocks = 0;
     run_.shop_generation = 0;
     run_.phase = Phase::Shop;
     Event e = MakeEvent(EventType::ShopEntered);
@@ -1221,59 +1222,83 @@ HealOutcome RunController::OnPlayerHealed(const HealContext& heal) {
     return out;
 }
 
-SpecialState RunController::Special(double now) const {
+SpecialState RunController::Special(double now, int slot) const {
     SpecialState s;
-    const SkinSpecial& sp = run_.character.build.special;
+    if (slot < 0 || slot > 1) return s;
+    const SkinSpecial& sp = run_.character.build.Special(slot);
+    const RunState::SpecialUse& use = run_.specials[static_cast<std::size_t>(slot)];
     if (!run_.active || !sp.Any()) return s;
     s.kind = sp.kind;
     s.name = sp.name;
     s.icon = sp.icon;
-    s.cooldown_total = run_.special_cooldown > 0.0 ? run_.special_cooldown : sp.cooldown_seconds;
-    s.cooldown_left = std::max(0.0, run_.special_ready_at - now);
-    if (sp.every_arenas > 0 && run_.special_used_arena > 0) {
-        s.arenas_left = std::max(0, run_.special_used_arena + sp.every_arenas - run_.arena_index);
+    s.cooldown_total = use.cooldown > 0.0 ? use.cooldown : sp.cooldown_seconds;
+    s.cooldown_left = std::max(0.0, use.ready_at - now);
+    if (sp.every_arenas > 0 && use.used_arena > 0) {
+        s.arenas_left = std::max(0, use.used_arena + sp.every_arenas - run_.arena_index);
     }
     s.ready = run_.phase == Phase::ArenaActive && s.cooldown_left <= 0.0 && s.arenas_left == 0;
     return s;
 }
 
-Status RunController::UseSpecial(double now, double cooldown_scale) {
+Status RunController::UseSpecial(double now, double cooldown_scale, int slot) {
     constexpr std::string_view op = "use_special";
     if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
-    const SkinSpecial& sp = run_.character.build.special;
+    if (slot < 0 || slot > 1) return Fail(op, ErrorCode::InvalidArgument, "no special slot " + std::to_string(slot));
+    const SkinSpecial& sp = run_.character.build.Special(slot);
+    RunState::SpecialUse& use = run_.specials[static_cast<std::size_t>(slot)];
     if (!sp.Any()) return Fail(op, ErrorCode::NotEligible, "this build has no special");
     if (run_.phase != Phase::ArenaActive) return Fail(op, ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
-    const SpecialState state = Special(now);
+    const SpecialState state = Special(now, slot);
     if (state.cooldown_left > 0.0) return Fail(op, ErrorCode::NotEligible, sp.name + " is cooling down");
     if (state.arenas_left > 0) return Fail(op, ErrorCode::NotEligible, sp.name + " is used up for this arena");
     if (!(cooldown_scale > 0.0) || cooldown_scale > 100.0) return Fail(op, ErrorCode::InvalidArgument, "cooldown scale out of range");
-    run_.special_cooldown = sp.cooldown_seconds * cooldown_scale;
-    run_.special_ready_at = now + run_.special_cooldown;
-    run_.special_used_arena = run_.arena_index;
-    ++run_.special_uses;
-    if (sp.kind == "dash" && sp.duration_seconds > 0.0) {
+    use.cooldown = sp.cooldown_seconds * cooldown_scale;
+    use.ready_at = now + use.cooldown;
+    use.used_arena = run_.arena_index;
+    ++use.uses;
+    if ((sp.kind == "dash" || sp.kind == "burst") && sp.duration_seconds > 0.0) {
         run_.invulnerable_until = std::max(run_.invulnerable_until, now + sp.duration_seconds);
     }
     Event e = MakeEvent(EventType::PerkTriggered);
-    e.Add("source", "build").Add("trigger", "special").Add("kind", sp.kind).Add("uses", run_.special_uses)
-        .Add("arena", run_.arena_index).Add("cooldown", run_.special_cooldown).Add("now", now);
+    e.Add("source", "build").Add("trigger", "special").Add("kind", sp.kind).Add("slot", slot).Add("uses", use.uses)
+        .Add("arena", run_.arena_index).Add("cooldown", use.cooldown).Add("now", now);
     Emit(std::move(e));
     return Status::Success();
+}
+
+std::int64_t RunController::ShopRestockPrice() const {
+    if (!run_.active || run_.phase != Phase::Shop) return -1;
+    if (run_.free_shop_rerolls > 0) return 0;
+    const auto& shop = content_->economy().shop;
+    if (shop.restock_price <= 0) return -1;
+    return shop.restock_price + shop.restock_price_step * run_.shop_restocks;
 }
 
 Status RunController::RerollShop() {
     constexpr std::string_view op = "reroll_shop";
     if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
     if (run_.phase != Phase::Shop) return Fail(op, ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
-    if (run_.free_shop_rerolls <= 0) return Fail(op, ErrorCode::NotEligible, "no free shop reroll left");
+    const std::int64_t price = ShopRestockPrice();
+    if (price < 0) return Fail(op, ErrorCode::NotEligible, "no new stock at this shop");
+    if (price > 0) {
+        if (run_.supplies.balance() < price) {
+            return Fail(op, ErrorCode::InsufficientFunds,
+                        "price " + std::to_string(price) + ", balance " + std::to_string(run_.supplies.balance()));
+        }
+        const TxResult debit = DebitSupplies(ArenaTx(run_.arena_index, "restock" + std::to_string(run_.shop_restocks + 1)), price,
+                                             "restock");
+        if (debit != TxResult::Applied) return Fail(op, ErrorCode::InsufficientFunds, std::string(TxResultName(debit)));
+        ++run_.shop_restocks;
+    } else {
+        --run_.free_shop_rerolls;
+    }
     const RouteDef* route = Route();
     run_.shop_offers = GenerateShopOffers(streams_->shop, MakeOfferContext(route != nullptr ? route->rarity_bonus : 0.0),
                                           run_.weapons, run_.reroll_tokens, [this] { return NextInstanceId(); });
-    --run_.free_shop_rerolls;
     ++run_.shop_generation;
     Event e = MakeEvent(EventType::ShopEntered);
     e.Add("offers", run_.shop_offers.size()).Add("supplies", run_.supplies.balance()).Add("reroll", run_.shop_generation)
-        .Add("free_rerolls_left", run_.free_shop_rerolls);
+        .Add("free_rerolls_left", run_.free_shop_rerolls).Add("price", price);
     Emit(std::move(e));
     return Status::Success();
 }
@@ -1446,6 +1471,12 @@ void RunController::DirectorSpawned(std::uint64_t ticket, const std::string& uni
 
 void RunController::DirectorSpawnFailed(std::uint64_t ticket) {
     if (director_) director_->SpawnFailed(ticket);
+}
+
+std::optional<std::array<double, 3>> RunController::DirectorRelocate(const std::string& unit_id,
+                                                                     const std::optional<std::array<double, 3>>& player) {
+    if (!director_ || run_.phase != Phase::ArenaActive) return std::nullopt;
+    return director_->Relocate(unit_id, player);
 }
 
 Result<ChestReward> RunController::OpenChest(double now) {

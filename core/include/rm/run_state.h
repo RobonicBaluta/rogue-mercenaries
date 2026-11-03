@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -151,10 +152,15 @@ struct RunState {
     double invulnerable_until = -1.0;  // a build's heal or dash: no damage taken until then
     double damage_buff = 0.0;          // a build's heal: extra outgoing damage until damage_buff_until
     double damage_buff_until = -1.0;
-    double special_ready_at = 0.0;     // the build's special: usable again from this time
-    double special_cooldown = 0.0;     // the cooldown its last use started (scaled per move)
-    int special_used_arena = 0;        // arena of its last use (0 = never)
-    int special_uses = 0;
+    /// The build's specials (slot 0 the special, 1 special_2): when each is usable again, the
+    /// cooldown its last use started (scaled per move), the arena of its last use (0 = never).
+    struct SpecialUse {
+        double ready_at = 0.0;
+        double cooldown = 0.0;
+        int used_arena = 0;
+        int uses = 0;
+    };
+    std::array<SpecialUse, 2> specials{};
     Phase phase = Phase::Idle;
     int arena_index = 0;  // arenas begun so far; the current arena number while active
     int arena_count = 3;
@@ -183,6 +189,7 @@ struct RunState {
     bool reward_chosen = false;
     std::vector<ShopOffer> shop_offers;
     int free_shop_rerolls = 0;  // left in this shop visit (the skin build's)
+    int shop_restocks = 0;      // NEW STOCK bought in this shop visit
     int shop_generation = 0;    // stock rerolled this visit (keeps purchase transaction ids unique)
     std::vector<RouteChoice> route_choices;
 
@@ -214,6 +221,8 @@ struct WeaponView {
     std::string rarity;
     int level = 1;
     std::vector<std::string> affixes;  // DescribeAffix lines
+    double level_bonus = 0.0;          // damage its level adds (0.3 = +30 percent)
+    double base_mult = 1.0;            // the gun's own damage factor (weapons.json base_damage_mult)
 };
 
 struct OfferView {
@@ -273,6 +282,7 @@ struct RunSnapshot {
     std::vector<OfferView> reward_offers;
     std::vector<OfferView> shop_offers;
     int free_shop_rerolls = 0;  // the skin build's, left in this shop visit
+    std::int64_t restock_price = 0;  // the next NEW STOCK (0 free, -1 none; in the shop)
     std::vector<OfferView> route_offers;
     // Builds (M8): keys, gained stats, buffs (seconds left).
     bool keys_enabled = false;

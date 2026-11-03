@@ -121,10 +121,12 @@ BUILDS = {
     },
     'wesker_midnight': {
         'name': 'Uroboros Speed', 'icon': 'dash',
-        'summary': 'Special: a dash, a lunge at the enemy ahead or a burst when surrounded, untouchable. Half health.',
+        'summary': 'Dash, or lunge at an enemy ahead to finish it in melee; a second button bursts. Half health.',
         'max_health_mult': 0.5,
         'special': {'kind': 'dash', 'name': 'Dash', 'icon': 'dash', 'cooldown_seconds': 2.5, 'power': 5,
                     'duration_seconds': 0.5},
+        'special_2': {'kind': 'burst', 'name': 'Burst', 'icon': 'shockwave', 'cooldown_seconds': 6, 'power': 350,
+                      'duration_seconds': 0.4},
     },
     'rebecca_stars': {
         'name': 'Field Surgeon', 'icon': 'heal',

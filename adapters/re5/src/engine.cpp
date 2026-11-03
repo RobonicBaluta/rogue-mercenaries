@@ -97,7 +97,9 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.playerAddHp = SignatureOk("player_add_hp");
     g_caps.pickupItem = SignatureOk("pickup_item") && SignatureOk("item_from_handle");
     g_caps.collision = SignatureOk("segment_hit");
+    g_caps.dodge = SignatureOk("player_dodge_prep");
     g_caps.matchQuit = g_caps.gameWork && SignatureOk("match_quit_state");
+    g_caps.itemBoxGuard = g_caps.itemBox && SignatureOk("itembox_panel_update") && SignatureOk("itembox_panel_tab");
     g_caps.actions = g_caps.characterSubHp && SignatureOk("change_action") && SignatureOk("player_change_action") &&
                      SignatureOk("enemy_change_action") && SignatureOk("player_action_table") &&
                      SignatureOk("em10_action_table");
@@ -220,12 +222,15 @@ bool SegmentResult::Blocked() const { return (flags & re5::off::kSegmentBlocked)
 
 namespace {
 
-using SegmentHitFn = unsigned(__stdcall*)(const float* seg, float* hit, float* out2, void* out3, int a5,
-                                          std::uint32_t mask, int a7);
+// The query runs on the collision singleton the caller leaves in ECX (the game's callers load
+// [kCollision] just before; the inner query 0x004B95A0 stores ECX as its world): a thiscall.
+using SegmentHitFn = unsigned(__thiscall*)(std::uintptr_t collision, const float* seg, float* hit, float* out2, void* out3,
+                                           int a5, std::uint32_t mask, int a7);
 
-bool CallSegmentHit(const float* seg, float* hit, float* out2, void* out3, unsigned& flags) {
+bool CallSegmentHit(std::uintptr_t collision, const float* seg, float* hit, float* out2, void* out3, unsigned& flags) {
     __try {
-        flags = reinterpret_cast<SegmentHitFn>(re5::addr::kFnSegmentHit)(seg, hit, out2, out3, 1, re5::off::kCollisionMask, 1);
+        flags = reinterpret_cast<SegmentHitFn>(re5::addr::kFnSegmentHit)(collision, seg, hit, out2, out3, 1,
+                                                                        re5::off::kCollisionMask, 1);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
@@ -256,8 +261,10 @@ std::optional<SegmentResult> CastSegment(const float from[3], const float to[3])
     alignas(16) float hit[4] = {};
     alignas(16) float out2[4] = {};
     alignas(16) unsigned char out3[32] = {};
+    const auto collision = ReadOr<std::uintptr_t>(re5::addr::kCollision, 0);
+    if (!collision) return std::nullopt;  // no world loaded
     SegmentResult r;
-    if (!CallSegmentHit(seg, hit, out2, out3, r.flags)) {
+    if (!CallSegmentHit(collision, seg, hit, out2, out3, r.flags)) {
         RM_LOGW("collision: segment query faulted; casts off");
         g_caps.collision = false;
         return std::nullopt;
@@ -293,6 +300,41 @@ bool StartAction(std::uintptr_t character, int id, const char* expectedClass) {
         return false;
     }
     return started;
+}
+
+namespace {
+
+using DodgePrepFn = void(__thiscall*)(std::uintptr_t self, std::uintptr_t player);
+
+bool CallDodgePrep(std::uintptr_t self, std::uintptr_t player) {
+    __try {
+        reinterpret_cast<DodgePrepFn>(re5::addr::kFnPlayerDodgePrep)(self, player);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+bool StartDodge(std::uintptr_t player, const float toward[3]) {
+    if (!g_caps.dodge || !g_caps.actions || !player) return false;
+    for (int k = 0; k < 3; ++k) {
+        if (!Finite(toward[k])) return false;
+    }
+    for (int k = 0; k < 3; ++k) SafeStore<float>(player + re5::off::kPlayerThreatPoint + static_cast<std::size_t>(k) * 4, toward[k]);
+    const auto owner = ReadOr<std::uintptr_t>(player + re5::off::kPlayerDodgeOwner, 0);
+    if (owner && !CallDodgePrep(owner + re5::off::kDodgePrepOffset, player)) {
+        RM_LOGW("dodge: prep faulted; dodges off");
+        g_caps.dodge = false;
+        return false;
+    }
+    return StartAction(player, re5::off::kPlActAvoidFront, "cPlAction_pl_act_avoid_front");
+}
+
+std::string CurrentActionName(std::uintptr_t character) {
+    const auto action = character ? ReadOr<std::uintptr_t>(character + re5::off::kPlayerAction, 0) : 0;
+    return action ? ClassName(action) : std::string();
 }
 
 std::optional<float> ReadYaw(std::uintptr_t character) {

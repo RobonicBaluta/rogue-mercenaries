@@ -23,7 +23,9 @@ struct Verified {
     bool pickupItem = false;    // ground item pickups (M8: a build's drops)
     bool collision = false;     // segment casts against the world (M8: Wesker's moves)
     bool matchQuit = false;     // the match's quit state (a run's quit writes no save)
+    bool itemBoxGuard = false;  // the Organize screen's panels (no Buy or Upgrade with a run in it)
     bool actions = false;       // character actions by id (M8: staggers)
+    bool dodge = false;         // the player's dodge, started the game's way (M8: Wesker's moves)
     bool hitAttacker = false;
     bool gameWork = false;   // mode/stage/merc timer layout
     bool mercCountdown = false;
@@ -81,6 +83,11 @@ std::optional<SegmentResult> CastSegment(const float from[3], const float to[3])
 /// known implementations), with the arguments the game's dodges and co-op sync use. Only when
 /// the action instance at that id is of class `expectedClass`. False when refused or unsafe.
 bool StartAction(std::uintptr_t character, int id, const char* expectedClass);
+/// The player's own forward dodge toward `toward`, started the way the game's dodge picker
+/// starts one (threat point, prep, avoid_front). False when refused (another action holds).
+bool StartDodge(std::uintptr_t player, const float toward[3]);
+/// The class of the character's current action (re5::off::kPlayerAction; "" without one).
+std::string CurrentActionName(std::uintptr_t character);
 /// The character's yaw (re5::off::kCharYaw, radians), and a write of it.
 std::optional<float> ReadYaw(std::uintptr_t character);
 bool WriteYaw(std::uintptr_t character, float yaw);

@@ -55,11 +55,12 @@ STARTS = {
 BELOW = {204: 90.0}
 
 # Boss arenas (ROADMAP M6, scripts/test_boss_spawn.sh): the area the boss is fought in, the boss
-# (its class, a name for the menus, its health: the story's is far above a run's guns) and the
+# (its class, a name for the menus, its health: the Uroboros's own 15000; 6000 fell in under a
+# minute, user playtest 2026-11-03) and the
 # archives that come with its class. Their maps hold no roster; runs end on one.
 BOSSES = {
-    103: {'class': 'uEm40', 'name': 'Uroboros', 'hp': 6000, 'preload': ['uEm40Dummy', 'uEm40Parts']},
-    304: {'class': 'uEm43', 'name': 'Giant Uroboros', 'hp': 6000, 'preload': []},
+    103: {'class': 'uEm40', 'name': 'Uroboros', 'hp': 15000, 'preload': ['uEm40Dummy', 'uEm40Parts']},
+    304: {'class': 'uEm43', 'name': 'Giant Uroboros', 'hp': 15000, 'preload': []},
 }
 BOSS_PLAYER_DISTANCE = (1000, 2500)  # the boss appears within sight, not on top of the player
 # Kept for developer tests but out of the run rotation ("rotation": false), with the reason.

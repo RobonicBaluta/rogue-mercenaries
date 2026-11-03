@@ -8,6 +8,7 @@ namespace {
 
 constexpr double kSpawnInterval = 0.6;   // seconds between two spawns of a refill
 constexpr int kMaxPointFailures = 3;     // a point that failed this often is skipped
+constexpr double kSameLevel = 150.0;     // engine units of height: the player's level
 
 double DistanceSq(const std::array<double, 3>& a, const std::array<double, 3>& b) {
     const double dx = a[0] - b[0];
@@ -176,6 +177,17 @@ int Director::PickPoint(const std::optional<std::array<double, 3>>& player) {
         std::fill(point_failures_.begin(), point_failures_.end(), 0);
         return PickPoint(player);
     }
+    // A boss comes from the player's own level (the same room on the boss maps: it got stuck
+    // behind a door from a point a floor away, user playtest 2026-11-03).
+    if (map_.boss && player) {
+        for (std::vector<int>* list : {&far, &inReach}) {
+            std::vector<int> level;
+            for (const int i : *list) {
+                if (std::fabs(map_.points[static_cast<std::size_t>(i)][1] - (*player)[1]) <= kSameLevel) level.push_back(i);
+            }
+            if (!level.empty()) *list = std::move(level);
+        }
+    }
     const std::vector<int>& from = !far.empty() ? far : !inReach.empty() ? inReach : !apart.empty() ? apart : usable;
     if (from.empty()) return -1;
     return from[rng_.Index(from.size())];
@@ -242,8 +254,26 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::ar
 void Director::Spawned(std::uint64_t ticket, const std::string& unit_id) {
     const auto it = std::find_if(pending_.begin(), pending_.end(), [ticket](const auto& p) { return p.first == ticket; });
     if (it == pending_.end()) return;
+    ticket_point_[ticket] = it->second;
     pending_.erase(it);
     alive_[unit_id] = ticket;
+}
+
+std::optional<std::array<double, 3>> Director::Relocate(const std::string& unit_id,
+                                                        const std::optional<std::array<double, 3>>& player) {
+    const auto it = alive_.find(unit_id);
+    if (it == alive_.end()) return std::nullopt;
+    const auto at = ticket_point_.find(it->second);
+    const int from = at != ticket_point_.end() ? at->second : -1;
+    if (from >= 0 && from < static_cast<int>(point_failures_.size())) {
+        point_failures_[static_cast<std::size_t>(from)] = kMaxPointFailures;  // not this arena again
+    }
+    last_point_ = from;
+    const int to = PickPoint(player);
+    if (to < 0 || to == from) return std::nullopt;
+    ticket_point_[it->second] = to;
+    ++relocations_;
+    return map_.points[static_cast<std::size_t>(to)];
 }
 
 void Director::SpawnFailed(std::uint64_t ticket) {
@@ -261,6 +291,7 @@ bool Director::Died(const std::string& unit_id) {
     const auto it = alive_.find(unit_id);
     if (it == alive_.end()) return false;
     ticket_enemy_.erase(it->second);
+    ticket_point_.erase(it->second);
     alive_.erase(it);
     ++dead_;
     return true;

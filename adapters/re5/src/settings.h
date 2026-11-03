@@ -77,6 +77,9 @@ struct Settings {
     // and DirectInput pads through the game's config.ini [JOYPAD] numbers).
     int specialKey = 0x10;
     std::vector<std::string> specialPad = {"LB", "RB"};
+    // A build's second special (Wesker's burst): X, and both sticks pressed together.
+    int special2Key = 0x2D;
+    std::vector<std::string> special2Pad = {"LS", "RS"};
 };
 
 Paths ResolvePaths(void* module);

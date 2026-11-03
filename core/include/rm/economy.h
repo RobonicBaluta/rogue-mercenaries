@@ -95,6 +95,11 @@ struct EconomyConfig {
         double heal_fraction = 0.5;
         std::int64_t heal_price = 25;
         std::int64_t reroll_price = 20;
+        /// NEW STOCK: replaces every offer (a fresh weapon upgrade among them) for this many
+        /// supplies, `restock_price_step` more for each one already bought in the visit (a build's
+        /// free ones come first). 0: no paid restock.
+        std::int64_t restock_price = 0;
+        std::int64_t restock_price_step = 0;
         std::array<std::int64_t, kRarityCount> perk_price{};
         std::array<std::int64_t, kRarityCount> weapon_price{};
         int perk_offers = 2;

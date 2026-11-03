@@ -65,6 +65,12 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | keys | `keys: a key dropped, N held`; `keys: chest locked (no key), it comes back`; `keys: locked chest back at x y z` |
 | Twin Fury, Backup | `enemy XXXXXXXX died (health reached zero): counted, N remain (by the special)` |
 | health | `build: maximum health A -> B (xM)` |
+| specials input | `special: lunge ... [XInput pad]` / `[keyboard]` / `[DirectInput pad]`: the device that triggered it |
+| Wesker's dodge | `special: dodge running as cPlAction_pl_act_avoid_front`; `special: the dodge never started (...)`; `special: dodge still running after 1.5 s (...); back to relax` |
+| burst | `special: burst: reacts killed ... [device]` |
+| stuck enemies | `director: uEm10 stuck 12 s at x y z, N m from the player; moved to x y z (copies)`; `one of the last, quiet` |
+| Organize guard | `itembox guard: on (no Buy, no Upgrade)`; `itembox guard: Buy refused` / `Upgrade refused` |
+| shop | `shop: new stock (N supplies)` |
 | Wesker's moves | `special: dash X of 5.0 m (clear (flags F) / wall at Y m (flags F)[, floor at N percent])[, hits: killed reacts ...]`; `special: lunge X m (uEm10 at N m, ...)` then `special: lunge strikes uEm10: reacts`; `special: burst (N enemies on him): reacts ...`; `special: yaw ... does not match his facing` if the facing write is skipped |
 | quitting a run | `autopilot: a run's match quits; Mercenaries phase N cleared (no save screen, no save)` |
 | enemy threat | `arena N: <MAP>   <ROUTE> (stage S, enemy threat L)`; the director's spawn lines show each class and weapon (`arm 70150`: the weapon class uWp50, graded in `economy.json` `enemy_threat` `weapons`) |

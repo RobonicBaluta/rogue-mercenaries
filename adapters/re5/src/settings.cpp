@@ -63,6 +63,13 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
                 if (b.is_string()) settings.specialPad.push_back(b.get<std::string>());
             }
         }
+        settings.special2Key = json.value("special2_key_scancode", settings.special2Key);
+        if (json.contains("special2_pad") && json["special2_pad"].is_array()) {
+            settings.special2Pad.clear();
+            for (const auto& b : json["special2_pad"]) {
+                if (b.is_string()) settings.special2Pad.push_back(b.get<std::string>());
+            }
+        }
         if (json.contains("dev")) {
             const auto& dev = json["dev"];
             settings.probeIntervalMs = dev.value("probe_interval_ms", settings.probeIntervalMs);

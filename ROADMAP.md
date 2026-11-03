@@ -272,6 +272,8 @@ actions (attack_*, avoid_*) the same way, once a playtest shows the enemy reacti
 player on the story's boat, whose climb to the ledge is a two-person move: the start is now the ledge. A run quit
 from the pause menu wrote the game's save: the match's quit state now finds the Mercenaries phase cleared.
 
+Second playtest (2026-11-03, TASKS.md "round 2"): the collision query needs its world in ECX (a thiscall); the special's buttons are the mod's while a build with specials fights; Wesker's burst has its own button (a build's special_2); his dash and lunge play the game's forward dodge (E18 partly: an animation over the emulated move); stuck enemies are moved to reachable points; the boss waits 8 s with its own health; the Organize screen keeps Buy and Upgrade out of a run; the SHOP sells NEW STOCK.
+
 Order: B1 to B7 with the builds that need no engine work (Warrior, Clubbin', Business, Fairy Tale,
 S.T.A.R.S. Chris, Barry), then E19/E20/E21 (Wesker S.T.A.R.S., Excella, Rebecca), E13/E14 and item
 ids (Safari, Heavy Metal, Tribal), B8/E15 (keys, Jill BSAA), then E16 with E17/E18/E22 (Battle

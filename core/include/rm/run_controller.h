@@ -280,12 +280,13 @@ public:
     /// of max health starts the build's invulnerability and damage buff. Needs an active run.
     HealOutcome OnPlayerHealed(const HealContext& heal);
     /// The build's special (cooldown, arena limit) for the HUD.
-    [[nodiscard]] SpecialState Special(double now) const;
+    [[nodiscard]] SpecialState Special(double now, int slot = 0) const;
     /// Uses the build's special during an arena: NotEligible without one, while it cools down or
     /// before its arena limit allows it; a dash also starts its invulnerability. The adapter
     /// performs the move itself; `cooldown_scale` (> 0) lengthens or shortens this use's cooldown
-    /// (a dash build's stronger moves recover longer).
-    Status UseSpecial(double now, double cooldown_scale = 1.0);
+    /// (a dash build's stronger moves recover longer). `slot` 1 is the build's special_2, with
+    /// its own cooldown and arena limit.
+    Status UseSpecial(double now, double cooldown_scale = 1.0, int slot = 0);
     [[nodiscard]] bool Invulnerable(double now) const { return run_.active && now < run_.invulnerable_until; }
     /// The current arena's enemy threat level (economy enemy_threat; 0 without a director or levels).
     [[nodiscard]] int ArenaThreatLevel() const { return director_ ? director_->threat_level() : 0; }
@@ -317,6 +318,9 @@ public:
     /// New shop stock for free while the skin's build has free rerolls left this visit
     /// (SkinBuild::free_shop_rerolls, reset on entering the shop); NotEligible otherwise.
     Status RerollShop();
+    /// What the shop's next NEW STOCK costs: 0 while the build's free ones last, -1 when there is
+    /// none (outside the shop, or no paid restock configured).
+    [[nodiscard]] std::int64_t ShopRestockPrice() const;
     /// Shop -> RouteSelection (route choices are generated here).
     Status LeaveShop();
 
@@ -367,6 +371,9 @@ public:
     std::vector<SpawnRequest> DirectorTick(double now, const std::optional<std::array<double, 3>>& player);
     void DirectorSpawned(std::uint64_t ticket, const std::string& unit_id);
     void DirectorSpawnFailed(std::uint64_t ticket);
+    /// A director unit cannot reach the player: where to move it (Director::Relocate).
+    std::optional<std::array<double, 3>> DirectorRelocate(const std::string& unit_id,
+                                                          const std::optional<std::array<double, 3>>& player);
     [[nodiscard]] const Director* director() const { return director_ ? &*director_ : nullptr; }
 
     [[nodiscard]] RunSnapshot Snapshot(double now) const;

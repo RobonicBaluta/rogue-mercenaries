@@ -36,6 +36,7 @@
 #include "autopilot.h"
 #include "native_menu.h"
 #include "match_ui.h"
+#include "itembox_guard.h"
 #include "director.h"
 #include "resources.h"
 #include "world.h"
@@ -946,16 +947,25 @@ private:
                     }
                     screen.items.push_back(std::move(item));
                 }
-                if (s.free_shop_rerolls > 0) {
+                if (s.restock_price >= 0) {
+                    // NEW STOCK: every offer drawn again (a weapon upgrade among them); the skin
+                    // build's free ones first, then for supplies, dearer each time.
                     Item reroll;
-                    reroll.label = "NEW STOCK   FREE";
-                    reroll.help = "Replaces the offers above. " + Plural(s.free_shop_rerolls, "free reroll") + " left at this shop.";
+                    if (s.restock_price == 0) {
+                        reroll.label = "NEW STOCK   FREE";
+                        reroll.help = "Replaces the offers above, a weapon upgrade among them.\n" +
+                                      Plural(s.free_shop_rerolls, "free restock") + " left at this shop.";
+                    } else {
+                        reroll.label = "NEW STOCK   " + std::to_string(s.restock_price) + " SUPPLIES";
+                        reroll.help = "Replaces the offers above, a weapon upgrade among them.\nDearer each time at this shop.";
+                        reroll.locked = s.restock_price > s.supplies;
+                    }
                     reroll.icon = "supplies";
                     screen.items.push_back(std::move(reroll));
                 }
                 Item organize;
                 organize.label = "ORGANIZE INVENTORY";
-                organize.help = NativeItemBoxReady() ? "Arrange, sell, buy and upgrade guns in the\ngame screen. Prices are paid in supplies."
+                organize.help = NativeItemBoxReady() ? "Arrange, combine and sell items in the game screen.\nBuying and upgrades stay in this SHOP."
                                                      : "Rearrange the nine cells of your item grid.";
                 screen.items.push_back(std::move(organize));
                 Item leave;
@@ -1206,10 +1216,11 @@ private:
                     d.outcome = st.ok() ? Outcome::Refresh : Outcome::Denied;
                     break;
                 }
-                const int rerollRow = s.free_shop_rerolls > 0 ? 1 : 0;
-                if (rerollRow && index == offers) {  // NEW STOCK (the skin build's free reroll)
+                const int rerollRow = s.restock_price >= 0 ? 1 : 0;
+                if (rerollRow && index == offers) {  // NEW STOCK
                     const rm::Status st = run.RerollShop();
                     Report(st, "reroll shop");
+                    if (st.ok()) RM_LOGI("shop: new stock (%lld supplies)", static_cast<long long>(s.restock_price));
                     d.outcome = st.ok() ? Outcome::Refresh : Outcome::Denied;
                     break;
                 }
@@ -1910,6 +1921,29 @@ void BuildKillNotice(const rm::KillOutcome& outcome, double now) {
     }
 }
 
+// M6.2: a campaign area starts the player at one of its entrances at random; the map's start is
+// where its points, chests and boss are, so the player goes there. Tried on the match's first
+// tick (under the loading fade, so it does not show as a teleport) and again when the arena
+// begins. True when there is nothing more to do.
+bool MoveToMapStart(const char* when) {
+    const rm::MapDef* map = CurrentMap();
+    if (map == nullptr || !map->start) return true;
+    const auto local = engine::LocalPlayer();
+    if (!local) return false;
+    const float to[3] = {static_cast<float>((*map->start)[0]), static_cast<float>((*map->start)[1]),
+                         static_cast<float>((*map->start)[2])};
+    const float dx = ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) - to[0];
+    const float dy = ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f) - to[1];
+    const float dz = ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) - to[2];
+    const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (distance <= kStartTolerance && std::fabs(dy) <= kStartLevel) return true;
+    const int copies = engine::WarpUnit(local, to);
+    RM_LOGI("%s: player %.1f m from the map's start (%.1f m %s); moved there (%d copies)", when, distance / 100.0f,
+            std::fabs(dy) / 100.0f, dy < 0.0f ? "below" : "above", copies);
+    return copies > 0;
+}
+int g_startMovedGeneration = -1;
+
 // An arena began: the director's grace starts, and the HUD names the map and the route (or the
 // boss) for a few seconds (M5.3).
 void ArenaBegan(double now) {
@@ -1920,22 +1954,7 @@ void ArenaBegan(double now) {
     world::SetDropReplacement(static_cast<int>(g->run->state().character.build.drops_as));
     const rm::RunSnapshot s = g->run->Snapshot(now);
     const rm::MapDef* map = CurrentMap();
-    // M6.2: a campaign area starts the player at one of its entrances at random; the map's start
-    // is where its points, chests and boss are, so the player goes there.
-    if (map != nullptr && map->start) {
-        const auto local = engine::LocalPlayer();
-        const float to[3] = {static_cast<float>((*map->start)[0]), static_cast<float>((*map->start)[1]),
-                             static_cast<float>((*map->start)[2])};
-        const float dx = ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) - to[0];
-        const float dy = ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f) - to[1];
-        const float dz = ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) - to[2];
-        const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-        if (local && (distance > kStartTolerance || std::fabs(dy) > kStartLevel)) {
-            const int copies = engine::WarpUnit(local, to);
-            RM_LOGI("arena start: player %.1f m from the map's start (%.1f m %s); moved there (%d copies)", distance / 100.0f,
-                    std::fabs(dy) / 100.0f, dy < 0.0f ? "below" : "above", copies);
-        }
-    }
+    MoveToMapStart("arena start");
     std::string line = map != nullptr ? Upper(Plain(map->name)) : std::string();
     if (map != nullptr && map->boss) line += "   BOSS " + Upper(Plain(map->boss->name));
     else if (!s.route_name.empty()) line += (line.empty() ? "" : "   ") + Upper(Plain(s.route_name));
@@ -2039,6 +2058,74 @@ void TraceDirectorArena(double now, const std::optional<std::array<double, 3>>& 
     }
 }
 
+// Enemies that cannot reach the player (behind a door the story opens, on a ledge, a boss at a
+// door) are moved: one far from the player that has not moved 1.5 m in 12 s (8 s for a boss), and
+// the last few when nothing has died for a while and they are far. The director gives each one
+// another point within the player's reach and drops the point it was stuck at (user playtest
+// 2026-11-03: Spencer's mansion, the Uroboros at a door).
+struct StuckTrack {
+    float anchor[3] = {};
+    double anchorAt = 0.0;
+    double lastRescue = -1.0e9;
+};
+std::unordered_map<std::uintptr_t, StuckTrack> g_stuckTracks;
+double g_stuckCheckAt = 0.0;
+int g_stuckRemaining = -1;
+double g_stuckRemainingSince = 0.0;
+constexpr double kStuckCheckEvery = 0.5;
+constexpr double kStuckSeconds = 12.0;
+constexpr double kBossStuckSeconds = 8.0;
+constexpr float kStuckMove = 150.0f;           // moved less than this ...
+constexpr float kStuckFar = 900.0f;            // ... while farther than this from the player
+constexpr int kLastEnemies = 3;
+constexpr double kLastEnemiesQuiet = 25.0;     // no kill for this long ...
+constexpr float kLastEnemiesFar = 1500.0f;     // ... and this far: pulled in
+
+void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& player) {
+    rm::RunController& run = *g->run;
+    if (!player || now < g_stuckCheckAt) return;
+    g_stuckCheckAt = now + kStuckCheckEvery;
+    const int remaining = run.RemainingEnemies();
+    if (remaining != g_stuckRemaining) {
+        g_stuckRemaining = remaining;
+        g_stuckRemainingSince = now;
+    }
+    const bool lastFew = remaining <= kLastEnemies && now - g_stuckRemainingSince > kLastEnemiesQuiet;
+    for (auto it = g_stuckTracks.begin(); it != g_stuckTracks.end();) {
+        it = g->directorUnits.count(it->first) ? std::next(it) : g_stuckTracks.erase(it);
+    }
+    for (const auto& [unit, id] : g->directorUnits) {
+        const auto hp = engine::ReadHp(unit);
+        if (!hp || hp->hp <= 0) continue;
+        float pos[3];
+        for (int k = 0; k < 3; ++k) pos[k] = ReadOr<float>(unit + re5::off::kUnitPosition + k * 4, 0.0f);
+        auto [it, fresh] = g_stuckTracks.try_emplace(unit);
+        StuckTrack& t = it->second;
+        const float moved = std::sqrt(std::pow(pos[0] - t.anchor[0], 2.0f) + std::pow(pos[1] - t.anchor[1], 2.0f) +
+                                      std::pow(pos[2] - t.anchor[2], 2.0f));
+        if (fresh || moved > kStuckMove) {
+            for (int k = 0; k < 3; ++k) t.anchor[k] = pos[k];
+            t.anchorAt = now;
+            if (!lastFew) continue;
+        }
+        const float away = static_cast<float>(std::sqrt(std::pow(pos[0] - (*player)[0], 2.0) + std::pow(pos[2] - (*player)[2], 2.0)));
+        const bool boss = unit == g->boss.unit;
+        const bool stuck = away > kStuckFar && now - t.anchorAt > (boss ? kBossStuckSeconds : kStuckSeconds);
+        const bool straggler = lastFew && away > kLastEnemiesFar;
+        if ((!stuck && !straggler) || now - t.lastRescue < 15.0) continue;
+        const auto to = run.DirectorRelocate(id, player);
+        if (!to) continue;
+        const float dest[3] = {static_cast<float>((*to)[0]), static_cast<float>((*to)[1]), static_cast<float>((*to)[2])};
+        const int copies = engine::WarpUnit(unit, dest);
+        RM_LOGI("director: %s %s %.0f s at %.0f %.0f %.0f, %.0f m from the player; moved to %.0f %.0f %.0f (%d copies)",
+                engine::ClassName(unit).c_str(), straggler && !stuck ? "one of the last, quiet" : "stuck", now - t.anchorAt,
+                pos[0], pos[1], pos[2], away / 100.0f, dest[0], dest[1], dest[2], copies);
+        for (int k = 0; k < 3; ++k) t.anchor[k] = dest[k];
+        t.anchorAt = now;
+        t.lastRescue = now;
+    }
+}
+
 // ROADMAP M1: on a stage listed in maps.json the run owns the arena. The game's own spawns
 // stay off for the whole match (also between arenas), and the core's director decides what
 // to spawn where; the adapter spawns it and reports which unit became which ticket.
@@ -2051,6 +2138,8 @@ void DriveDirector(double now) {
     if (!g->match.inMatch) {
         g->directorUnits.clear();
         g->boss = {};
+        g_stuckTracks.clear();
+        g_stuckRemaining = -1;
     }
     if (!run.DirectorActive() || run.phase() != rm::Phase::ArenaActive || g->devQuiet) return;
     // M6: a boss's health is the arena's, not the story's. Set while it settles (its first
@@ -2063,8 +2152,20 @@ void DriveDirector(double now) {
     }
     // A moment before the first enemies: the arena's inventory, chests and carried state are
     // set up first, and the player gets their bearings.
+    // A boss waits longer, counted down on screen (it came too soon, user playtest 2026-11-03).
     constexpr double kDirectorGraceSeconds = 3.0;
-    if (g->arenaBeganAt >= 0.0 && now - g->arenaBeganAt < kDirectorGraceSeconds) return;
+    constexpr double kBossGraceSeconds = 8.0;
+    const rm::MapDef* arenaMap = CurrentMap();
+    const bool bossArena = arenaMap != nullptr && arenaMap->boss.has_value();
+    const double grace = bossArena ? kBossGraceSeconds : kDirectorGraceSeconds;
+    if (g->arenaBeganAt >= 0.0 && now - g->arenaBeganAt < grace) {
+        if (bossArena && run.director() != nullptr && run.director()->alive() + run.director()->pending() == 0) {
+            const int left = static_cast<int>(std::ceil(grace - (now - g->arenaBeganAt)));
+            g->notice = Upper(Plain(arenaMap->boss->name)) + " IS COMING   " + std::to_string(left);
+            g->noticeUntil = now + 0.3;
+        }
+        return;
+    }
     std::optional<std::array<double, 3>> player;
     if (const auto local = engine::LocalPlayer()) {
         player = std::array<double, 3>{ReadOr<float>(local + re5::off::kUnitPosition, 0.0f),
@@ -2105,6 +2206,7 @@ void DriveDirector(double now) {
                 d ? d->alive() : 0, d ? d->dead() : 0, d ? d->budget() : 0);
     }
     TraceDirectorArena(now, player);
+    RescueStuckEnemies(now, player);
 }
 
 void DriveArena(double now) {
@@ -2364,9 +2466,17 @@ std::uint16_t XInputBit(const std::string& name) {
     return it != bits.end() ? static_cast<std::uint16_t>(it->second) : std::uint16_t{0};
 }
 
-bool SpecialComboDown() {
-    if (RawKeyDown(g->settings.specialKey)) return true;
-    const auto& names = g->settings.specialPad;
+// The combos: slot 0 the build's special, slot 1 its special_2 (Wesker's burst).
+int SpecialKey(int slot) { return slot == 1 ? g->settings.special2Key : g->settings.specialKey; }
+const std::vector<std::string>& SpecialPad(int slot) { return slot == 1 ? g->settings.special2Pad : g->settings.specialPad; }
+
+// Held now, and on which device (for the log).
+bool SpecialComboDown(int slot, const char** source = nullptr) {
+    if (RawKeyDown(SpecialKey(slot))) {
+        if (source) *source = "keyboard";
+        return true;
+    }
+    const auto& names = SpecialPad(slot);
     if (names.empty()) return false;
     const unsigned short xbuttons = RawXInputButtons();
     bool xinput = true, dinput = true;
@@ -2376,14 +2486,34 @@ bool SpecialComboDown() {
         const auto it = g_joypadButtons.find(name);
         dinput = dinput && it != g_joypadButtons.end() && RawJoyButton(it->second);
     }
+    if (source) *source = xinput ? "XInput pad" : "DirectInput pad";
     return xinput || dinput;
 }
 
-std::string SpecialBindingText() {
+// The binding as the input hooks hide it from the game (all of a pad combo's buttons, or none
+// of them on a device that cannot name one).
+OwnedInput OwnedFor(int slot) {
+    OwnedInput o;
+    o.key = SpecialKey(slot);
+    bool xinput = true, joy = true;
+    for (const std::string& name : SpecialPad(slot)) {
+        const std::uint16_t bit = XInputBit(name);
+        xinput = xinput && bit != 0;
+        o.xinput = static_cast<unsigned short>(o.xinput | bit);
+        const auto it = g_joypadButtons.find(name);
+        joy = joy && it != g_joypadButtons.end() && it->second >= 0 && it->second < 32;
+        if (joy) o.joy |= 1u << it->second;
+    }
+    if (!xinput) o.xinput = 0;
+    if (!joy) o.joy = 0;
+    return o;
+}
+
+std::string SpecialBindingText(int slot) {
     char key[32] = {};
-    if (GetKeyNameTextA(g->settings.specialKey << 16, key, sizeof(key)) <= 0) std::snprintf(key, sizeof(key), "KEY %02X", g->settings.specialKey);
+    if (GetKeyNameTextA(SpecialKey(slot) << 16, key, sizeof(key)) <= 0) std::snprintf(key, sizeof(key), "KEY %02X", SpecialKey(slot));
     std::string pad;
-    for (const std::string& name : g->settings.specialPad) pad += (pad.empty() ? "" : "+") + name;
+    for (const std::string& name : SpecialPad(slot)) pad += (pad.empty() ? "" : "+") + name;
     return Upper(key) + (pad.empty() ? "" : " / " + pad);
 }
 
@@ -2405,21 +2535,23 @@ bool PlayerFacing(std::uintptr_t player, float& fx, float& fz) {
 // The move in progress.
 struct SpecialMove {
     std::string kind;  // empty: none
-    std::string move;  // a dash special's move: "dash", "lunge" or "burst"
+    std::string move;  // a dash special's move: "dash" or "lunge"
     double start = 0.0;
     double until = 0.0;
     double nextPulse = 0.0;
     float origin[3] = {};
     float end[3] = {};           // dash and lunge: where he stops, on the floor
     std::uintptr_t victim = 0;   // lunge: the enemy struck on arrival
+    bool victimStaggered = false;
     float dirX = 0.0f, dirZ = 1.0f;
     int damage = 0;
     int hits = 0;
     int pulses = 0;
 };
 SpecialMove g_move;
-bool g_comboHeld = false;
+bool g_comboHeld[2] = {false, false};
 double g_specialDeniedUntil = 0.0;
+double g_burstUntil = -1.0;  // the burst's ring shows it acting until then
 
 constexpr double kSmgPulse = 0.15;
 constexpr float kSmgRange = 1400.0f;     // 14 m
@@ -2451,13 +2583,14 @@ std::vector<std::pair<std::uintptr_t, float>> EnemiesAround(std::uintptr_t playe
     return out;
 }
 
-// ---- Wesker's moves (Uroboros Speed, the "dash" special) ----------------------------------------
-// The button's move depends on what is around him: a burst when enemies are on him, a lunge (his
-// long-range melee) at an enemy lined up ahead, else a dash. Each is checked against the world
-// with the game's own segment query, the one its dodges use (engine::CastSegment): he stops short
-// of walls and lands on a floor within a step of his own, else he does not move. A Majini he hits
-// takes the game's own reaction (engine::StartAction): the dash staggers it, the lunge leaves it
-// reeling from a head hit (the state the game's melee prompt follows), the burst blows it away.
+// ---- Wesker's moves (Uroboros Speed) -------------------------------------------------------------
+// The special (slot 0) dashes, or lunges (his long-range melee) at an enemy ahead: a staggered one
+// first, the state the game's melee prompt follows, so his own melee finishes it. The second
+// special (slot 1) is the burst. Every move is checked against the level with the game's own
+// segment query, the one its dodges use (engine::CastSegment): he stops short of walls and lands
+// on a floor within a step of his own, else he does not move. The dash and the lunge play his
+// own forward dodge (engine::StartDodge), started the way the game starts one. A Majini he hits
+// takes the game's own reaction (engine::StartAction).
 constexpr double kDashSeconds = 0.15;
 constexpr double kLungeSeconds = 0.2;
 constexpr double kBurstSeconds = 0.3;
@@ -2466,19 +2599,21 @@ constexpr float kWallMargin = 60.0f;      // he stops this far before a wall
 constexpr float kMaxStep = 150.0f;        // a floor further above or below is not taken
 constexpr float kDashHitRadius = 120.0f;  // enemies this close to the dash's line are hit
 constexpr int kDashDamage = 200;
-constexpr float kLungeRange = 1200.0f;    // 12 m
-constexpr float kLungeCone = 0.906f;      // cos 25 degrees
-constexpr float kLungeStop = 110.0f;      // he ends this far in front of the enemy
+constexpr float kLungeRange = 1200.0f;       // 12 m: an enemy lined up ahead
+constexpr float kLungeCone = 0.906f;         // cos 25 degrees
+constexpr float kStaggeredRange = 1000.0f;   // 10 m: a staggered enemy anywhere ahead
+constexpr float kStaggeredCone = 0.643f;     // cos 50 degrees
+constexpr float kLungeStop = 110.0f;         // he ends this far in front of the enemy
 constexpr int kLungeDamage = 300;
-constexpr float kBurstTrigger = 250.0f;   // two enemies this close: a burst
+constexpr int kLungeDamageStaggered = 120;   // a staggered one keeps its stagger for the melee
 constexpr float kBurstRadius = 350.0f;
 constexpr int kBurstDamage = 350;
-constexpr double kLungeCooldown = 1.2;    // times the special's cooldown
-constexpr double kBurstCooldown = 2.4;
+constexpr double kLungeCooldown = 1.2;       // times the special's cooldown
 
 struct DashPlan {
-    std::string move;  // "dash", "lunge", "burst"
+    std::string move;  // "dash", "lunge"
     std::uintptr_t target = 0;
+    bool staggered = false;
     float end[3] = {};
     float distance = 0.0f;  // engine units travelled
     std::string why;        // for the log: what shaped it
@@ -2489,6 +2624,16 @@ double g_armedAt = -1.0;
 float Horizontal(const float a[3], const float b[3]) {
     const float dx = b[0] - a[0], dz = b[2] - a[2];
     return std::sqrt(dx * dx + dz * dz);
+}
+
+// A character reeling in a state the game's melee prompt follows (a head, knee or leg hit, a stagger).
+bool Staggered(std::uintptr_t enemy) {
+    const std::string action = engine::CurrentActionName(enemy);
+    if (action.rfind("cEm", 0) != 0) return false;
+    for (const char* state : {"ActDmgHead", "ActDmgKnee", "ActDmgLeg", "ActDmgYoro", "ActDmgArm"}) {
+        if (action.find(state) != std::string::npos) return true;
+    }
+    return false;
 }
 
 // The floor under (x, z) near height y: a cast from a step above down past a step below.
@@ -2538,48 +2683,54 @@ float ClearDistance(const float from[3], float dx, float dz, float want, float e
     return 0.0f;
 }
 
-// What the button does now, with the world checked.
+// What the special's button does now, with the world checked.
 DashPlan PlanDash(std::uintptr_t local, float dashDistance) {
     DashPlan plan;
     float origin[3];
     for (int k = 0; k < 3; ++k) origin[k] = ReadOr<float>(local + re5::off::kUnitPosition + k * 4, 0.0f);
     float fx = 0.0f, fz = 1.0f;
     PlayerFacing(local, fx, fz);
-    // Burst: two enemies on him.
-    int close = 0;
-    for (const auto& [enemy, d] : EnemiesAround(local, kBurstTrigger, -1.0f, 0.0f, 1.0f)) {
-        if (std::fabs(ReadOr<float>(enemy + re5::off::kUnitPosition + 4, 0.0f) - origin[1]) < kMaxStep) ++close;
+    // Lunge: staggered enemies ahead first (a wider cone), then the nearest lined up.
+    struct Candidate {
+        std::uintptr_t enemy;
+        float d;
+        bool staggered;
+    };
+    std::vector<Candidate> ahead;
+    for (const auto& [enemy, d] : EnemiesAround(local, kLungeRange, kStaggeredCone, fx, fz)) {
+        const bool staggered = d <= kStaggeredRange && Staggered(enemy);
+        if (!staggered) {
+            const float ex = ReadOr<float>(enemy + re5::off::kUnitPosition, 0.0f) - origin[0];
+            const float ez = ReadOr<float>(enemy + re5::off::kUnitPosition + 8, 0.0f) - origin[2];
+            if (d > 1.0f && (ex * fx + ez * fz) / d < kLungeCone) continue;
+        }
+        ahead.push_back({enemy, d, staggered});
     }
-    if (close >= 2) {
-        plan.move = "burst";
-        for (int k = 0; k < 3; ++k) plan.end[k] = origin[k];
-        plan.why = std::to_string(close) + " enemies on him";
-        return plan;
-    }
-    // Lunge: the nearest enemies lined up ahead, first one he can reach.
-    auto ahead = EnemiesAround(local, kLungeRange, kLungeCone, fx, fz);
-    std::sort(ahead.begin(), ahead.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+    std::sort(ahead.begin(), ahead.end(), [](const Candidate& a, const Candidate& b) {
+        return a.staggered != b.staggered ? a.staggered : a.d < b.d;
+    });
     int tried = 0;
-    for (const auto& [enemy, d] : ahead) {
+    for (const Candidate& c : ahead) {
         if (tried++ >= 3) break;
         float at[3];
-        for (int k = 0; k < 3; ++k) at[k] = ReadOr<float>(enemy + re5::off::kUnitPosition + k * 4, 0.0f);
-        if (std::fabs(at[1] - origin[1]) > 2.0f * kMaxStep || d < kLungeStop + 50.0f) continue;
-        const float dx = (at[0] - origin[0]) / d, dz = (at[2] - origin[2]) / d;
-        const float want = d - kLungeStop;
+        for (int k = 0; k < 3; ++k) at[k] = ReadOr<float>(c.enemy + re5::off::kUnitPosition + k * 4, 0.0f);
+        if (std::fabs(at[1] - origin[1]) > 2.0f * kMaxStep || c.d < kLungeStop + 50.0f) continue;
+        const float dx = (at[0] - origin[0]) / c.d, dz = (at[2] - origin[2]) / c.d;
+        const float want = c.d - kLungeStop;
         std::string why;
         float end[3];
         const float reach = ClearDistance(origin, dx, dz, want, end, why);
         if (reach >= want * 0.85f) {
             plan.move = "lunge";
-            plan.target = enemy;
+            plan.target = c.enemy;
+            plan.staggered = c.staggered;
             plan.distance = reach;
             for (int k = 0; k < 3; ++k) plan.end[k] = end[k];
-            plan.why = engine::ClassName(enemy) + " at " + std::to_string(static_cast<int>(d / 100.0f)) + " m, " + why;
+            plan.why = engine::ClassName(c.enemy) + (c.staggered ? " staggered" : "") + " at " +
+                       std::to_string(static_cast<int>(c.d / 100.0f)) + " m, " + why;
             return plan;
         }
     }
-    // Dash.
     plan.move = "dash";
     plan.distance = ClearDistance(origin, fx, fz, dashDistance, plan.end, plan.why);
     return plan;
@@ -2596,13 +2747,14 @@ const char* ReactionClass(int id) {
     }
 }
 
-// One of his hits: damage, then (if it lives) the game's reaction. Returns a word for the log.
+// One of his hits: damage, then (if it lives, and `reaction` >= 0) the game's reaction.
 std::string StrikeEnemy(std::uintptr_t enemy, int damage, int reaction, double now) {
     if (!director::Damage(enemy, damage)) return "missed";
     ++g_move.hits;
     g_specialVictims[enemy] = now;
     const auto hp = engine::ReadHp(enemy);
     if (!hp || hp->hp <= 0) return "killed";
+    if (reaction < 0) return "hit";
     return engine::StartAction(enemy, reaction, ReactionClass(reaction)) ? "reacts" : "hit (no reaction)";
 }
 
@@ -2625,18 +2777,62 @@ void FacePoint(std::uintptr_t local, const float at[3]) {
     if (engine::WriteYaw(local, want)) RM_LOGD("special: turned %.2f -> %.2f", *yaw, want);
 }
 
-void StartDashMove(double now, const rm::SkinSpecial& sp, std::uintptr_t local) {
+// His own dodge plays over the move. A dodge still running after 1.5 s is ended (relax), so a
+// dodge without its motion never holds him.
+double g_dodgeAt = -1.0;
+bool g_dodgeSeen = false;
+
+void StartDodgeAnimation(std::uintptr_t local, const float toward[3]) {
+    if (engine::StartDodge(local, toward)) {
+        g_dodgeAt = Now();
+        g_dodgeSeen = false;
+    } else {
+        static int refused = 0;
+        if (refused++ < 3) RM_LOGI("special: no dodge animation (refused; current action %s)", engine::CurrentActionName(local).c_str());
+    }
+}
+
+void WatchDodge(double now) {
+    if (g_dodgeAt < 0.0) return;
+    const auto local = engine::LocalPlayer();
+    if (!local) {
+        g_dodgeAt = -1.0;
+        return;
+    }
+    const std::string action = engine::CurrentActionName(local);
+    const bool dodging = action.rfind("cPlAction_pl_act_avoid", 0) == 0;
+    if (dodging && !g_dodgeSeen) {
+        g_dodgeSeen = true;
+        RM_LOGI("special: dodge running as %s", action.c_str());
+    }
+    if (!dodging) {
+        if (g_dodgeSeen || now - g_dodgeAt > 0.5) {
+            if (!g_dodgeSeen) RM_LOGI("special: the dodge never started (current action %s)", action.c_str());
+            g_dodgeAt = -1.0;
+        }
+        return;
+    }
+    if (now - g_dodgeAt > 1.5) {
+        const bool back = engine::StartAction(local, re5::off::kPlActRelax, "cPlAction_pl_act_relax");
+        RM_LOGW("special: dodge still running after 1.5 s (%s); back to relax: %s", action.c_str(), back ? "ok" : "refused");
+        g_dodgeAt = -1.0;
+    }
+}
+
+void DeniedNotice(double now, const std::string& what, const rm::SpecialState& state) {
+    if (now < g_specialDeniedUntil) return;
+    g->notice = what + (state.arenas_left > 0 ? "   NOT THIS ARENA" : "   NOT READY");
+    g->noticeUntil = now + 1.5;
+    g_specialDeniedUntil = now + 1.0;
+}
+
+void StartDashMove(double now, const rm::SkinSpecial& sp, std::uintptr_t local, const char* source) {
     rm::RunController& run = *g->run;
     const float dashDistance = static_cast<float>(sp.power > 0.0 ? sp.power : 5.0) * 100.0f;
     const DashPlan plan = PlanDash(local, dashDistance);
-    const double scale = plan.move == "burst" ? kBurstCooldown : plan.move == "lunge" ? kLungeCooldown : 1.0;
-    const rm::Status used = run.UseSpecial(now, scale);
+    const rm::Status used = run.UseSpecial(now, plan.move == "lunge" ? kLungeCooldown : 1.0, 0);
     if (!used.ok()) {
-        if (now >= g_specialDeniedUntil) {
-            g->notice = Upper(plan.move) + "   NOT READY";
-            g->noticeUntil = now + 1.5;
-            g_specialDeniedUntil = now + 1.0;
-        }
+        DeniedNotice(now, Upper(plan.move), run.Special(now, 0));
         return;
     }
     EndSpecialMove("replaced");
@@ -2647,18 +2843,13 @@ void StartDashMove(double now, const rm::SkinSpecial& sp, std::uintptr_t local) 
         g_move.origin[k] = ReadOr<float>(local + re5::off::kUnitPosition + k * 4, 0.0f);
         g_move.end[k] = plan.end[k];
     }
-    if (plan.move == "burst") {
-        g_move.until = now + kBurstSeconds;
-        std::string results;
-        for (const auto& [enemy, d] : EnemiesAround(local, kBurstRadius, -1.0f, 0.0f, 1.0f)) {
-            (void)d;
-            results += " " + StrikeEnemy(enemy, kBurstDamage, re5::off::kEm10DmgFlyoff, now);
-        }
-        RM_LOGI("special: burst (%s):%s", plan.why.c_str(), results.empty() ? " nobody in reach" : results.c_str());
-    } else if (plan.move == "lunge") {
+    float toward[3] = {plan.end[0], plan.end[1], plan.end[2]};
+    if (plan.move == "lunge") {
         g_move.until = now + kLungeSeconds;
         g_move.victim = plan.target;
-        RM_LOGI("special: lunge %.1f m (%s)", plan.distance / 100.0f, plan.why.c_str());
+        g_move.victimStaggered = plan.staggered;
+        for (int k = 0; k < 3; ++k) toward[k] = ReadOr<float>(plan.target + re5::off::kUnitPosition + k * 4, toward[k]);
+        RM_LOGI("special: lunge %.1f m (%s) [%s]", plan.distance / 100.0f, plan.why.c_str(), source);
     } else {
         g_move.until = now + kDashSeconds;
         // Everyone on the line he runs through is hit as he passes.
@@ -2676,31 +2867,59 @@ void StartDashMove(double now, const rm::SkinSpecial& sp, std::uintptr_t local) 
                 if (along < 0.0f || along > len + kDashHitRadius || off > kDashHitRadius || std::fabs(ey) > kMaxStep) continue;
                 results += " " + StrikeEnemy(e.object, kDashDamage, re5::off::kEm10DmgYoroke, now);
             }
+        } else {
+            float fx = 0.0f, fz = 1.0f;
+            PlayerFacing(local, fx, fz);
+            toward[0] = g_move.origin[0] + fx * 300.0f;
+            toward[2] = g_move.origin[2] + fz * 300.0f;
         }
-        RM_LOGI("special: dash %.1f of %.1f m (%s)%s%s", plan.distance / 100.0f, dashDistance / 100.0f, plan.why.c_str(),
-                results.empty() ? "" : ", hits:", results.c_str());
+        RM_LOGI("special: dash %.1f of %.1f m (%s)%s%s [%s]", plan.distance / 100.0f, dashDistance / 100.0f, plan.why.c_str(),
+                results.empty() ? "" : ", hits:", results.c_str(), source);
     }
+    StartDodgeAnimation(local, toward);
     g->notice = Upper(plan.move);
     g->noticeUntil = now + 1.2;
 }
 
-void StartSpecial(double now) {
+void StartBurst(double now, const rm::SkinSpecial& sp, std::uintptr_t local, int slot, const char* source) {
     rm::RunController& run = *g->run;
-    const rm::SpecialState state = run.Special(now);
-    if (state.kind.empty()) return;
-    const auto local = engine::LocalPlayer();
-    const rm::SkinSpecial& sp = run.state().character.build.special;
-    if (sp.kind == "dash") {
-        if (local) StartDashMove(now, sp, local);
+    const rm::Status used = run.UseSpecial(now, 1.0, slot);
+    if (!used.ok()) {
+        DeniedNotice(now, Upper(Plain(sp.name)), run.Special(now, slot));
         return;
     }
-    const rm::Status used = run.UseSpecial(now);
+    g_burstUntil = now + kBurstSeconds;
+    const int damage = static_cast<int>(sp.power > 0.0 ? sp.power : kBurstDamage);
+    const float py = ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f);
+    std::string results;
+    for (const auto& [enemy, d] : EnemiesAround(local, kBurstRadius, -1.0f, 0.0f, 1.0f)) {
+        (void)d;
+        if (std::fabs(ReadOr<float>(enemy + re5::off::kUnitPosition + 4, 0.0f) - py) > kMaxStep) continue;
+        results += " " + StrikeEnemy(enemy, damage, re5::off::kEm10DmgFlyoff, now);
+    }
+    RM_LOGI("special: burst:%s [%s]", results.empty() ? " nobody in reach" : results.c_str(), source);
+    g->notice = Upper(Plain(sp.name));
+    g->noticeUntil = now + 1.2;
+}
+
+void StartSpecial(double now, int slot, const char* source) {
+    rm::RunController& run = *g->run;
+    const rm::SpecialState state = run.Special(now, slot);
+    if (state.kind.empty()) return;
+    const auto local = engine::LocalPlayer();
+    if (!local) return;
+    const rm::SkinSpecial& sp = run.state().character.build.Special(slot);
+    if (sp.kind == "dash") {
+        StartDashMove(now, sp, local, source);
+        return;
+    }
+    if (sp.kind == "burst") {
+        StartBurst(now, sp, local, slot, source);
+        return;
+    }
+    const rm::Status used = run.UseSpecial(now, 1.0, slot);
     if (!used.ok()) {
-        if (now >= g_specialDeniedUntil) {
-            g->notice = Upper(Plain(state.name)) + (state.arenas_left > 0 ? "   NOT THIS ARENA" : "   NOT READY");
-            g->noticeUntil = now + 1.5;
-            g_specialDeniedUntil = now + 1.0;
-        }
+        DeniedNotice(now, Upper(Plain(state.name)), state);
         return;
     }
     EndSpecialMove("replaced");
@@ -2721,8 +2940,8 @@ void StartSpecial(double now) {
     }
     g->notice = Upper(Plain(sp.name));
     g->noticeUntil = now + 2.0;
-    RM_LOGI("special: %s used at %.0f %.0f %.0f facing %.2f %.2f", sp.kind.c_str(), g_move.origin[0], g_move.origin[1],
-            g_move.origin[2], g_move.dirX, g_move.dirZ);
+    RM_LOGI("special: %s used at %.0f %.0f %.0f facing %.2f %.2f [%s]", sp.kind.c_str(), g_move.origin[0], g_move.origin[1],
+            g_move.origin[2], g_move.dirX, g_move.dirZ, source);
 }
 
 void StepSpecial(double now) {
@@ -2733,10 +2952,6 @@ void StepSpecial(double now) {
         return;
     }
     if (g_move.kind == "dash") {
-        if (g_move.move == "burst") {
-            if (now >= g_move.until) EndSpecialMove("done");
-            return;
-        }
         const double seconds = g_move.move == "lunge" ? kLungeSeconds : kDashSeconds;
         const float t = static_cast<float>(std::min(1.0, (now - g_move.start) / seconds));
         if (Horizontal(g_move.origin, g_move.end) > 1.0f) {
@@ -2749,8 +2964,16 @@ void StepSpecial(double now) {
             float at[3];
             for (int k = 0; k < 3; ++k) at[k] = ReadOr<float>(g_move.victim + re5::off::kUnitPosition + k * 4, 0.0f);
             FacePoint(local, at);
-            RM_LOGI("special: lunge strikes %s: %s", engine::ClassName(g_move.victim).c_str(),
-                    StrikeEnemy(g_move.victim, kLungeDamage, re5::off::kEm10DmgHead, now).c_str());
+            // A staggered one keeps its stagger (the melee prompt's state); another is left reeling.
+            const bool staggered = g_move.victimStaggered && Staggered(g_move.victim);
+            const std::string result = StrikeEnemy(g_move.victim, staggered ? kLungeDamageStaggered : kLungeDamage,
+                                                   staggered ? -1 : re5::off::kEm10DmgHead, now);
+            RM_LOGI("special: lunge strikes %s%s: %s", engine::ClassName(g_move.victim).c_str(), staggered ? " (staggered)" : "",
+                    result.c_str());
+            if (result != "killed" && result != "missed") {
+                g->notice = "MELEE";
+                g->noticeUntil = now + 1.5;
+            }
         }
         EndSpecialMove("done");
         return;
@@ -2786,22 +3009,36 @@ void StepSpecial(double now) {
     }
 }
 
-// Game tick: the combo starts the build's special during an arena; the move runs its course.
+// Game tick: each special's combo starts it during an arena; the move runs its course. While a
+// build with specials fights, their bindings are the mod's (hidden from the game).
 void DriveSpecial(double now) {
     rm::RunController& run = *g->run;
     const bool arena = run.HasActiveRun() && run.phase() == rm::Phase::ArenaActive && g->match.inMatch;
+    const rm::SkinBuild& build = run.state().character.build;
+    std::vector<OwnedInput> owned;
+    if (arena) {
+        for (int slot = 0; slot < 2; ++slot) {
+            if (build.Special(slot).Any()) owned.push_back(OwnedFor(slot));
+        }
+    }
+    SetOwnedInputs(owned);
+    WatchDodge(now);
     if (!arena) {
         EndSpecialMove("arena over");
         g_specialVictims.clear();
-        g_comboHeld = SpecialComboDown();
+        for (int slot = 0; slot < 2; ++slot) g_comboHeld[slot] = SpecialComboDown(slot);
         return;
     }
-    const bool down = SpecialComboDown() && !matchui::IsOpen() && !overlay::IsFocused();
-    if (down && !g_comboHeld) StartSpecial(now);
-    g_comboHeld = down;
+    for (int slot = 0; slot < 2; ++slot) {
+        if (!build.Special(slot).Any()) continue;
+        const char* source = "?";
+        const bool down = SpecialComboDown(slot, &source) && !matchui::IsOpen() && !overlay::IsFocused();
+        if (down && !g_comboHeld[slot]) StartSpecial(now, slot, source);
+        g_comboHeld[slot] = down;
+    }
     StepSpecial(now);
     // A dash special's ring shows the move the button would make (checked 10 times a second).
-    const rm::SkinSpecial& sp = run.state().character.build.special;
+    const rm::SkinSpecial& sp = build.special;
     if (sp.kind == "dash" && g_move.kind.empty() && now - g_armedAt >= 0.1) {
         g_armedAt = now;
         if (const auto local = engine::LocalPlayer()) {
@@ -2810,29 +3047,28 @@ void DriveSpecial(double now) {
     }
 }
 
-// The special's HUD (bottom left, the 1280x720 canvas mapped like the menu icons): its icon in a
-// ring, a dark sweep over it while it recovers with the seconds left, gold when ready, green
-// while it acts; its name and binding under it.
-void DrawSpecialWidget() {
+// A special's HUD ring (bottom left, the 1280x720 canvas mapped like the menu icons; the second
+// special to the right of the first): its icon in a ring, a dark sweep over it while it recovers
+// with the seconds left, gold when ready, green while it acts; its name and binding under it.
+void DrawSpecialWidget(int slot) {
     rm::RunController& run = *g->run;
-    if (!run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || !g->match.inMatch || matchui::IsOpen()) return;
     const double now = Now();
-    const rm::SpecialState st = run.Special(now);
+    const rm::SpecialState st = run.Special(now, slot);
     if (st.kind.empty()) return;
     IDirect3DDevice9* device = overlay::FrameDevice();
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     const float k = std::min(display.x / 1280.0f, display.y / 720.0f);
     const float ox = (display.x - 1280.0f * k) * 0.5f;
     const float oy = (display.y - 720.0f * k) * 0.5f;
-    const ImVec2 c(ox + 96.0f * k, oy + 596.0f * k);
+    const ImVec2 c(ox + (96.0f + 104.0f * static_cast<float>(slot)) * k, oy + 596.0f * k);
     const float r = 38.0f * k;
     ImDrawList* list = ImGui::GetBackgroundDrawList();
-    const bool acting = !g_move.kind.empty() && (g_move.kind != "dash" || g_move.move == "burst");
+    const bool acting = slot == 1 ? now < g_burstUntil : !g_move.kind.empty() && g_move.kind != "dash";
     const bool ready = st.ready;
-    // Wesker: the move the button would make now.
+    // Wesker's dash shows the move the button would make now.
     std::string icon = st.icon, name = Upper(Plain(st.name));
     if (st.kind == "dash" && !g_armedMove.empty()) {
-        icon = g_armedMove == "burst" ? "shockwave" : g_armedMove == "lunge" ? "lunge" : "dash";
+        icon = g_armedMove == "lunge" ? "lunge" : "dash";
         name = Upper(g_armedMove);
     }
     list->AddCircleFilled(c, r, IM_COL32(0, 0, 0, 150), 48);
@@ -2869,7 +3105,77 @@ void DrawSpecialWidget() {
     else if (st.cooldown_left > 0.0) middle = std::to_string(static_cast<int>(std::ceil(st.cooldown_left)));
     if (!middle.empty()) centred(middle, (middle.size() > 3 ? 13.0f : 26.0f) * k, c.y - (middle.size() > 3 ? 7.0f : 14.0f) * k, IM_COL32(255, 255, 255, 255));
     centred(name, 15.0f * k, c.y + r + 4.0f * k, ready ? IM_COL32(255, 210, 127, 255) : IM_COL32(220, 220, 220, 230));
-    centred(SpecialBindingText(), 12.0f * k, c.y + r + 20.0f * k, IM_COL32(200, 200, 200, 200));
+    centred(SpecialBindingText(slot), 12.0f * k, c.y + r + 20.0f * k, IM_COL32(200, 200, 200, 200));
+}
+
+// The equipped gun's card (M8, user playtest 2026-11-03: no way to tell a weapon's stats): its
+// name, rarity, level and what they add, for a few seconds after a switch (bottom right, above
+// the game's own weapon panel).
+std::string g_cardWeapon;
+double g_cardUntil = -1.0;
+
+void WatchEquippedWeapon(double now) {
+    rm::RunController& run = *g->run;
+    if (!run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || !g->match.inMatch) {
+        g_cardWeapon.clear();
+        return;
+    }
+    const auto id = EquippedWeaponBaseId();
+    const std::string base = id ? *id : std::string();
+    if (base != g_cardWeapon) {
+        g_cardWeapon = base;
+        g_cardUntil = base.empty() ? -1.0 : now + 4.0;
+    }
+}
+
+void DrawWeaponCard() {
+    rm::RunController& run = *g->run;
+    const double now = Now();
+    if (g_cardWeapon.empty() || now > g_cardUntil || !run.HasActiveRun() || !g->match.inMatch || matchui::IsOpen()) return;
+    const rm::RunSnapshot s = run.Snapshot(now);
+    const rm::WeaponView* w = nullptr;
+    for (const rm::WeaponView& v : s.weapons) {
+        if (v.base_id == g_cardWeapon) w = &v;
+    }
+    if (w == nullptr) return;
+    std::vector<std::pair<std::string, ImU32>> lines;
+    const std::uint32_t rarity = RarityColour(w->rarity);
+    const ImU32 head = rarity ? IM_COL32((rarity >> 16) & 0xFF, (rarity >> 8) & 0xFF, rarity & 0xFF, 255) : IM_COL32(240, 240, 240, 255);
+    lines.emplace_back(Upper(Plain(w->name)) + "   LV " + std::to_string(w->level), head);
+    char text[96];
+    std::snprintf(text, sizeof(text), "%s   DAMAGE x%.2f, LEVEL +%d PERCENT", Upper(w->rarity).c_str(), w->base_mult,
+                  static_cast<int>(std::lround(w->level_bonus * 100.0)));
+    lines.emplace_back(text, IM_COL32(220, 220, 220, 235));
+    for (std::size_t i = 0; i < w->affixes.size() && i < 4; ++i) lines.emplace_back(Upper(Plain(w->affixes[i])), IM_COL32(200, 230, 200, 235));
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const float k = std::min(display.x / 1280.0f, display.y / 720.0f);
+    const float ox = (display.x - 1280.0f * k) * 0.5f;
+    const float oy = (display.y - 720.0f * k) * 0.5f;
+    ImDrawList* list = ImGui::GetBackgroundDrawList();
+    ImFont* font = ImGui::GetFont();
+    const float size = 15.0f * k, gap = 18.0f * k;
+    float width = 0.0f;
+    for (const auto& [line, color] : lines) width = std::max(width, font->CalcTextSizeA(size, FLT_MAX, 0.0f, line.c_str()).x);
+    const float right = ox + 1250.0f * k, bottom = oy + 548.0f * k;
+    const float top = bottom - gap * static_cast<float>(lines.size()) - 12.0f * k;
+    const float fade = static_cast<float>(std::min(1.0, (g_cardUntil - now) / 0.5));
+    list->AddRectFilled(ImVec2(right - width - 20.0f * k, top), ImVec2(right, bottom), IM_COL32(0, 0, 0, static_cast<int>(150 * fade)), 6.0f * k);
+    float y = top + 6.0f * k;
+    for (const auto& [line, color] : lines) {
+        const float w2 = font->CalcTextSizeA(size, FLT_MAX, 0.0f, line.c_str()).x;
+        const ImVec2 at(right - 10.0f * k - w2, y);
+        const int alpha = static_cast<int>(((color >> IM_COL32_A_SHIFT) & 0xFF) * fade);
+        list->AddText(font, size, ImVec2(at.x + 1.0f, at.y + 1.0f), IM_COL32(0, 0, 0, alpha), line.c_str());
+        list->AddText(font, size, at, (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT), line.c_str());
+        y += gap;
+    }
+}
+
+void DrawSpecialWidgets() {
+    rm::RunController& run = *g->run;
+    if (!run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || !g->match.inMatch || matchui::IsOpen()) return;
+    DrawSpecialWidget(0);
+    DrawSpecialWidget(1);
 }
 
 // One line in the game's font during a match; the native screens close when nothing is
@@ -3350,6 +3656,8 @@ bool NativeItemBoxReady() {
 void PollItemBox() {
     static double openedAt = 0.0;
     static bool paused = false;
+    // With the run in the screen, Buy and Upgrade are the SHOP's (user playtest 2026-11-03).
+    itemboxguard::SetGuard(g_itemBox != 0 && g_runInBox.active);
     if (g->itemBoxRequested && !matchui::IsOpen()) {
         g->itemBoxRequested = false;
         OpenItemBox({}, true);
@@ -4234,6 +4542,10 @@ private:
         std::lock_guard lock(g->mutex);
         const double now = Now();
         ObserveMatch(now);
+        if (g->match.inMatch && g->run->HasActiveRun() && g_startMovedGeneration != g->matchGeneration &&
+            MoveToMapStart("match start")) {
+            g_startMovedGeneration = g->matchGeneration;
+        }
         nativemenu::OnGameTick();
         autopilot::OnGameTick();
         if (g->settings.uiDemo) {
@@ -4248,6 +4560,7 @@ private:
         OpenChests(now);
         ApplyHeals();
         DriveSpecial(now);
+        WatchEquippedWeapon(now);
         // A match a run played in stays a run's match until it is gone, so quitting it writes no
         // save even if the run is settled first.
         static bool runMatch = false;
@@ -4786,7 +5099,8 @@ void DrawUnguarded() {
     DrawMenuPortrait();
     DrawMenuIcons();
     std::lock_guard lock(g->mutex);
-    DrawSpecialWidget();
+    DrawSpecialWidgets();
+    DrawWeaponCard();
     const rm::RunSnapshot snapshot = g->run->Snapshot(Now());
     if (!(g->settings.nativeMatchUi && g->match.inMatch && g->run->HasActiveRun())) DrawHud(snapshot);
     if (!overlay::IsFocused()) return;

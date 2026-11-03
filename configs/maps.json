@@ -7811,7 +7811,7 @@
       "boss": {
         "class": "uEm40",
         "name": "Uroboros",
-        "hp": 6000
+        "hp": 15000
       }
     },
     {
@@ -7980,7 +7980,7 @@
       "boss": {
         "class": "uEm43",
         "name": "Giant Uroboros",
-        "hp": 6000
+        "hp": 15000
       }
     }
   ]

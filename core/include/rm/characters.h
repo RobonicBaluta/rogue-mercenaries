@@ -47,13 +47,13 @@ struct WeaponFilter {
 /// A build's special move, used with a button combo during an arena (the adapter reads the
 /// input and performs it; the core keeps its cooldown and availability).
 struct SkinSpecial {
-    std::string kind;              // "dash", "dual_smg", "backup"; empty = none
+    std::string kind;              // "dash", "dual_smg", "backup", "burst"; empty = none
     std::string name;              // HUD label
     std::string icon;              // icons/<icon>.png
     double cooldown_seconds = 0.0;
     int every_arenas = 0;          // > 0: once per this many arenas (Josh: 2)
-    double power = 0.0;            // dash: metres; dual_smg: damage per enemy per pulse
-    double duration_seconds = 0.0; // dash: invulnerability; dual_smg: burst length
+    double power = 0.0;            // dash: metres; dual_smg, burst: damage per enemy (per pulse)
+    double duration_seconds = 0.0; // dash, burst: invulnerability; dual_smg: burst length
     [[nodiscard]] bool Any() const { return !kind.empty(); }
 };
 
@@ -92,6 +92,8 @@ struct SkinBuild {
     std::int64_t drops_as = -1;      // enemy drops and chest items become this game item (-1 = no)
     bool chest_keys_exempt = false;  // opens chests without keys
     SkinSpecial special;
+    SkinSpecial special_2;  // a second special on its own button (Wesker's burst)
+    [[nodiscard]] const SkinSpecial& Special(int slot) const { return slot == 1 ? special_2 : special; }
     [[nodiscard]] bool Uncapped(std::string_view base_id, std::string_view category) const {
         return !uncapped_upgrades.Empty() && uncapped_upgrades.Allows(base_id, category);
     }

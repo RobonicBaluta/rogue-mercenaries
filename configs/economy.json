@@ -116,7 +116,9 @@
       "legendary": 150
     },
     "perk_offers": 0,
-    "item_offers": 3
+    "item_offers": 3,
+    "restock_price": 15,
+    "restock_price_step": 10
   },
   "run_map": {
     "width": 3

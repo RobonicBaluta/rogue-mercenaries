@@ -53,7 +53,7 @@
       "name": "Green Herb",
       "cost": 5,
       "max": 3,
-      "game_item": 769,
+      "game_item": 773,
       "price": 10,
       "bundle": 1
     },
@@ -62,8 +62,17 @@
       "name": "Red Herb",
       "cost": 6,
       "max": 1,
-      "game_item": 770,
+      "game_item": 774,
       "price": 14,
+      "bundle": 1
+    },
+    {
+      "id": "mixed_herb",
+      "name": "Mixed Herb",
+      "cost": 12,
+      "max": 1,
+      "game_item": 777,
+      "price": 28,
       "bundle": 1
     },
     {

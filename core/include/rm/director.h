@@ -132,6 +132,12 @@ public:
     void SpawnFailed(std::uint64_t ticket);
     /// A unit died or vanished. True (once) when it was one of ours.
     bool Died(const std::string& unit_id);
+    /// One of our units cannot reach the player (behind a door, on a ledge): its spawn point is
+    /// not used again this arena and it gets another one, within reach of the player when one
+    /// is known (empty: no other point, or not our unit). The adapter moves it there.
+    std::optional<std::array<double, 3>> Relocate(const std::string& unit_id,
+                                                  const std::optional<std::array<double, 3>>& player);
+    [[nodiscard]] int relocations() const { return relocations_; }
     /// Picks `count` distinct chest positions of the map for this arena (all of them when the
     /// map has fewer); they stay available as chests().
     const std::vector<std::array<double, 3>>& PickChests(int count);
@@ -173,6 +179,8 @@ private:
     std::vector<std::pair<std::uint64_t, int>> pending_;  // ticket -> point index
     std::vector<int> point_failures_;
     std::unordered_map<std::uint64_t, const MapEnemy*> ticket_enemy_;  // pending and alive tickets
+    std::unordered_map<std::uint64_t, int> ticket_point_;               // alive tickets: their point
+    int relocations_ = 0;
     std::vector<std::array<double, 3>> chests_;
 };
 

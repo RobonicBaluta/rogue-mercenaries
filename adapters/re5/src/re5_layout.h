@@ -45,8 +45,11 @@ constexpr std::uintptr_t kFnItemFromHandle = 0x007BEA20;
 // singleton [0x01249C64] itself. The player's dodge picker (0x00B6CEF0) casts its dodge lines with
 // it (through the yaw wrapper 0x0076E6A0) and treats `result & 4` as blocked; the ground snap
 // (0x00B590F0) casts down from 1 m above a unit and takes hit[1] as the floor when the result is
-// non-zero. Static analysis 2026-11-03, not yet called by the mod in game.
+// non-zero. Both load ECX = [kCollision] first: the inner query (0x004B95A0) keeps ECX as its
+// world, so the mod calls it as a thiscall on that object (a call without it faulted in game,
+// 2026-11-03).
 constexpr std::uintptr_t kFnSegmentHit = 0x0076E520;
+constexpr std::uintptr_t kCollision = 0x01249C64;  // the collision singleton the query runs on (ECX)
 // Character actions (uCharacter, players and enemies alike): bool ChangeAction(int id, int,
 // void* requester, int priority, int) is vtable slot 0xDC; the base 0x00B59030 refuses an id past
 // the list or while a stronger action holds (+0x10E8 > priority), then requests it (+0x10E0).
@@ -58,6 +61,10 @@ constexpr std::uintptr_t kFnEnemyChangeAction = 0x009D9DC0;
 // Action tables ({DTI, 0} per id; vtable slots 0xE8 table, 0xEC count): uPlayer 0x0113AF80 (177),
 // uEm10 0x01115950 (157).
 constexpr std::uintptr_t kFnPlayerActionTable = 0x00B7F090;
+// The player's dodge picker (0x00B6CEF0) before a dodge: the threat point at player+0x2E10, then
+// this prep (thiscall on [player+0x2D64]+0x220, the player as its argument; it resets a motion
+// state unless the player is reacting to damage), then ChangeAction(avoid_*, 0, 0, -1, 0).
+constexpr std::uintptr_t kFnPlayerDodgePrep = 0x00B82F10;
 constexpr std::uintptr_t kFnEm10ActionTable = 0x00868590;
 constexpr std::uintptr_t kFnHitGetAttacker = 0x00C49530;  // cUnit* cHit::GetAttacker()
 constexpr std::uintptr_t kFnMercAddTime = 0x00718050;     // void ?::MercAddTime(int seconds)
@@ -255,6 +262,13 @@ constexpr std::uintptr_t kFnFlowToMercMenu = 0x00794F30;
 // title flow re-enters the Mercenaries menu. Offline, the game-flow requests of these screens
 // (kFnFlowToMercMenu, FUN_00794EC0) only record a result: [kGameFlow]+0x38 is null.
 constexpr std::uintptr_t kFnGameoverMove = 0x00A00B40;
+// The Organize/Buy screen's per-player panel update (thiscall: the screen, the panel; the panel
+// at screen+0x1B0 + player*0xA64): mode byte +0 (0 top menu: Organize, Buy, Exit with the cursor
+// at +0x19; 1 the organize grid; 7 Buy; 8 Sell; 10 Upgrade), step +1, player +2. Its tab setter
+// (thiscall: the screen, the panel, the tab; 0 the grid's layout) goes with a mode change.
+// Static analysis 2026-11-03 (mes_system 0x168 + the help ids name the modes).
+constexpr std::uintptr_t kFnItemBoxPanelUpdate = 0x00A0EF00;
+constexpr std::uintptr_t kFnItemBoxPanelTab = 0x00A09A40;
 // The match's quit state (fastcall this = the match): its step byte at +5; step 0, in
 // Mercenaries (game mode 2), opens the save screen and writes the game's save when the
 // Mercenaries phase (game work +0x67C) is set. The game over's "No" and the pause menu's quit
@@ -294,6 +308,11 @@ constexpr std::size_t kCharActionCount = 0x10D0;
 constexpr std::size_t kCharActionData = 0x10DC;
 constexpr std::size_t kCharActionRequest = 0x10E0;
 constexpr std::size_t kCharYaw = 0x1904;
+constexpr std::size_t kPlayerThreatPoint = 0x2E10;  // float x, y, z: what a dodge is relative to
+constexpr std::size_t kPlayerDodgeOwner = 0x2D64;   // the dodge prep's object (+0x220)
+constexpr std::size_t kDodgePrepOffset = 0x220;
+constexpr int kPlActRelax = 0x01;       // cPlAction_pl_act_relax
+constexpr int kPlActAvoidFront = 0x51;  // cPlAction_pl_act_avoid_front (toward the threat point)
 constexpr std::size_t kVtableChangeAction = 0xDC;
 constexpr std::uint32_t kCollisionMask = 0x3FFFFF00;  // the dodge picker's and the ground snap's
 constexpr std::uint32_t kSegmentBlocked = 4;          // the dodge picker's "blocked" bit
@@ -437,6 +456,7 @@ inline constexpr Signature kSignatures[] = {
     {"player_add_hp", addr::kFnPlayerAddHp, "66 8B 44 24 04 56 8B F1 57 0F BF BE 64 13 00 00 66 01 86 64 13 00 00"},
     {"pickup_item", addr::kFnPickUpItem, "83 EC 38 56 8B 74 24 40 57 6A 01 8B CE E8 CE 20 37 00"},
     {"item_from_handle", addr::kFnItemFromHandle, "53 55 56 8B D9 8B 43 24 57 33 FF 85 C0 76 55 8B 6C 24 14 85"},
+    {"player_dodge_prep", addr::kFnPlayerDodgePrep, "8B 44 24 04 8B 80 8C 2D 00 00 8B D0 C1 EA 08 F6"},
     {"segment_hit", addr::kFnSegmentHit, "55 8B EC 83 E4 F0 8B 55 08 F3 0F 10 52 08 F3 0F 5C 52 18"},
     {"change_action", addr::kFnChangeAction, "56 57 8B 7C 24 0C 81 FF 00 00 00 80 8B F1 74 5C"},
     {"player_change_action", addr::kFnPlayerChangeAction, "56 8B F1 80 BE 6C 2D 00 00 00 75 6C 8B 86 74 2A"},
@@ -490,6 +510,8 @@ inline constexpr Signature kSignatures[] = {
     // The move's decide: `movss xmm0, [delay]; mov ecx, esi; mov [esi+0x196], bl;
     // movss [esi+0x198], xmm0; call Decide`.
     {"gameover_decide_block", 0x00A00D66, "F3 0F 10 05 FC 02 FF 00 8B CE 88 9E 96 01 00 00 F3 0F 11 86 98 01 00 00 E8 CD F7 FF FF"},
+    {"itembox_panel_update", addr::kFnItemBoxPanelUpdate, "57 8B F9 E8 68 40 FF FF 85 C0 0F 85 99 01 00 00"},
+    {"itembox_panel_tab", addr::kFnItemBoxPanelTab, "8A 44 24 08 56 8B 74 24 08 88 46 18"},
     {"match_quit_state", addr::kFnMatchQuitState, "57 8B F9 8A 47 05 0F B6 C8 83 F9 0C 0F 87 A1 00 00 00"},
     {"pause_move", addr::kFnPauseMove, "A1 A4 40 23 01 F7 80 34 04 01 00 00 05 00 00 56"},
     {"inventory_slot_clear", addr::kFnInventorySlotClear, "8B 44 24 04 53 56 57 50 8B F1 E8 B1 EE FF FF 6A 2C 33 DB 8D"},

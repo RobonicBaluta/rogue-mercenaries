@@ -4,7 +4,9 @@
 #include <dinput.h>
 #include <MinHook.h>
 
+#include <algorithm>
 #include <cstring>
+#include <mutex>
 #include <vector>
 
 #include "hooks.h"
@@ -45,6 +47,75 @@ unsigned short g_rawXButtons = 0;
 XInputGetStateFn g_origXInputGetState = nullptr;
 
 bool Blocking() { return g_sink && g_sink->BlockGameInput(); }
+
+// The mod's own bindings (SetOwnedInputs) and, per binding, how its buttons are being held.
+constexpr ULONGLONG kComboWindowMs = 100;
+struct ComboHold {
+    ULONGLONG pressedAt = 0;
+    bool owned = false;   // completed: the mod's until every button is up
+    bool passed = false;  // not completed in time: the game's until every button is up
+};
+std::mutex g_ownedMutex;
+std::vector<OwnedInput> g_owned;
+std::vector<ComboHold> g_xHolds;
+std::vector<ComboHold> g_joyHolds;
+
+int Bits(unsigned v) {
+    int n = 0;
+    for (; v; v &= v - 1) ++n;
+    return n;
+}
+
+// Which of a binding's held buttons the game must not see now.
+unsigned HideFor(unsigned held, unsigned all, ComboHold& h, ULONGLONG now) {
+    if (held == 0) {
+        h = {};
+        return 0;
+    }
+    if (h.passed) return 0;
+    if (held == all || h.owned || Bits(all) == 1) {
+        h.owned = h.owned || held == all;
+        return held;
+    }
+    if (h.pressedAt == 0) h.pressedAt = now;
+    if (now - h.pressedAt < kComboWindowMs) return held;  // waiting for the rest of the combo
+    h.passed = true;
+    return 0;
+}
+
+unsigned short HideXInput(unsigned short buttons) {
+    std::lock_guard lock(g_ownedMutex);
+    const ULONGLONG now = GetTickCount64();
+    unsigned short hide = 0;
+    for (std::size_t i = 0; i < g_owned.size() && i < g_xHolds.size(); ++i) {
+        if (g_owned[i].xinput == 0) continue;
+        hide |= static_cast<unsigned short>(HideFor(buttons & g_owned[i].xinput, g_owned[i].xinput, g_xHolds[i], now));
+    }
+    return hide;
+}
+
+unsigned HideJoy(const BYTE* rgb, int count) {
+    std::lock_guard lock(g_ownedMutex);
+    const ULONGLONG now = GetTickCount64();
+    unsigned down = 0;
+    for (int i = 0; i < count && i < 32; ++i) {
+        if (rgb[i] & 0x80) down |= 1u << i;
+    }
+    unsigned hide = 0;
+    for (std::size_t i = 0; i < g_owned.size() && i < g_joyHolds.size(); ++i) {
+        if (g_owned[i].joy == 0) continue;
+        hide |= HideFor(down & g_owned[i].joy, g_owned[i].joy, g_joyHolds[i], now);
+    }
+    return hide;
+}
+
+bool KeyOwned(int scancode) {
+    std::lock_guard lock(g_ownedMutex);
+    for (const OwnedInput& o : g_owned) {
+        if (o.key == scancode) return true;
+    }
+    return false;
+}
 
 void Tick() { TickGame("dinput"); }
 
@@ -97,6 +168,10 @@ bool g_bufferedButtons[8]{};
 
 void FilterKeyboard(unsigned char* keys, bool blocking) {
     for (int i = 0; i < 256; ++i) {
+        if (!blocking && (keys[i] & 0x80) && KeyOwned(i)) {
+            keys[i] = 0;  // the mod's key
+            continue;
+        }
         const bool down = (keys[i] & 0x80) != 0;
         if (blocking) {
             g_heldKeys[i] = g_heldKeys[i] || down;
@@ -140,7 +215,14 @@ HRESULT STDMETHODCALLTYPE GetDeviceStateDetour(void* self, DWORD size, LPVOID da
     const Kind kind = KindOf(self, "GetDeviceState", size);
     const bool blocking = Blocking();
     if (size == sizeof(DIJOYSTATE) || size == sizeof(DIJOYSTATE2)) {
-        std::memcpy(g_rawJoy, reinterpret_cast<const DIJOYSTATE*>(data)->rgbButtons, sizeof(g_rawJoy));
+        auto* joy = reinterpret_cast<DIJOYSTATE*>(data);
+        std::memcpy(g_rawJoy, joy->rgbButtons, sizeof(g_rawJoy));
+        if (!blocking) {
+            const unsigned hide = HideJoy(joy->rgbButtons, 32);
+            for (int i = 0; i < 32; ++i) {
+                if (hide & (1u << i)) joy->rgbButtons[i] = 0;
+            }
+        }
     }
     if (size == 256) {  // keyboard state array: the once-per-frame poll
         std::memcpy(g_rawKeys, data, sizeof(g_rawKeys));
@@ -191,6 +273,7 @@ void FilterBuffered(Kind kind, DWORD objectSize, LPDIDEVICEOBJECTDATA data, LPDW
                 }
             }
         } else if (kind == Kind::Keyboard && ofs < 256) {
+            if (KeyOwned(static_cast<int>(ofs))) drop = true;
             if (blocking && pressed) g_heldKeys[ofs] = true;
             if (!blocking && g_heldKeys[ofs]) {
                 drop = true;
@@ -231,6 +314,10 @@ DWORD WINAPI XInputGetStateDetour(DWORD user, void* state) {
     if (Blocking() && result == ERROR_SUCCESS && state) {
         // XINPUT_STATE: DWORD packet number followed by the gamepad block.
         std::memset(static_cast<char*>(state) + sizeof(DWORD), 0, 12);
+    } else if (result == ERROR_SUCCESS && state && user == 0) {
+        auto* buttons = reinterpret_cast<unsigned short*>(static_cast<char*>(state) + sizeof(DWORD));
+        const unsigned short hide = HideXInput(*buttons);
+        if (hide) *buttons = static_cast<unsigned short>(*buttons & ~hide);
     }
     return result;
 }
@@ -264,6 +351,18 @@ void CollectTargets(Device* device, std::vector<void*>& state, std::vector<void*
 }
 
 }  // namespace
+
+void SetOwnedInputs(const std::vector<OwnedInput>& inputs) {
+    std::lock_guard lock(g_ownedMutex);
+    const bool same = inputs.size() == g_owned.size() &&
+                      std::equal(inputs.begin(), inputs.end(), g_owned.begin(), [](const OwnedInput& a, const OwnedInput& b) {
+                          return a.key == b.key && a.xinput == b.xinput && a.joy == b.joy;
+                      });
+    if (same) return;
+    g_owned = inputs;
+    g_xHolds.assign(inputs.size(), ComboHold{});
+    g_joyHolds.assign(inputs.size(), ComboHold{});
+}
 
 bool RawKeyDown(int scancode) { return scancode >= 0 && scancode < 256 && (g_rawKeys[scancode] & 0x80) != 0; }
 bool RawJoyButton(int index) { return index >= 0 && index < 32 && (g_rawJoy[index] & 0x80) != 0; }

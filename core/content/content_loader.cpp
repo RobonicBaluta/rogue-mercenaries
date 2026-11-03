@@ -757,8 +757,8 @@ std::int64_t ItemIdValue(const json& v) {
 void ParseSpecial(const Diag& d, const json& sp, SkinSpecial& out) {
     CheckKeys(d, sp, {"kind", "name", "icon", "cooldown_seconds", "every_arenas", "power", "duration_seconds"});
     GetString(d, sp, "kind", out.kind, true);
-    if (!out.kind.empty() && out.kind != "dash" && out.kind != "dual_smg" && out.kind != "backup") {
-        d.Error("unknown special kind " + Q(out.kind) + " (dash, dual_smg, backup)");
+    if (!out.kind.empty() && out.kind != "dash" && out.kind != "dual_smg" && out.kind != "backup" && out.kind != "burst") {
+        d.Error("unknown special kind " + Q(out.kind) + " (dash, dual_smg, backup, burst)");
     }
     GetString(d, sp, "name", out.name, true);
     if (GetString(d, sp, "icon", out.icon, false) && !IsValidId(out.icon)) d.Error("special icon " + Q(out.icon) + " is not a valid name");
@@ -777,7 +777,7 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                      "free_shop_rerolls", "rarity_shift", "uncapped_upgrades", "starting_weapon",
                      "starting_weapon_rarity", "max_health_mult", "stack_max", "ammo_stack_mult", "extra_weapons",
                      "melee_damage", "melee_kill_stats", "heal_mult", "heal_buff_fraction", "heal_invulnerable_seconds",
-                     "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "special"});
+                     "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "special", "special_2"});
     GetString(d, b, "name", out.name, false);
     if (GetString(d, b, "icon", out.icon, false) && !IsValidId(out.icon)) d.Error("icon " + Q(out.icon) + " is not a valid name");
     if (GetNumber(d, b, "ammo_stack_mult", out.ammo_stack_mult, false)) CheckRange(d, "ammo_stack_mult", out.ammo_stack_mult, 1.0, 20.0);
@@ -820,6 +820,13 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
             ParseSpecial(d.Sub(" special"), *sp, out.special);
         } else {
             d.Error("field 'special' must be an object");
+        }
+    }
+    if (const json* sp = Get(b, "special_2")) {
+        if (sp->is_object()) {
+            ParseSpecial(d.Sub(" special_2"), *sp, out.special_2);
+        } else {
+            d.Error("field 'special_2' must be an object");
         }
     }
     if (const json* sm = Get(b, "stack_max")) {
@@ -1386,7 +1393,13 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     if (const json* s = Section(d, doc, "shop")) {
         const Diag sd = d.Sub(": shop");
         CheckKeys(sd, *s, {"heal_fraction", "heal_price", "reroll_price", "perk_price", "weapon_price", "perk_offers",
-                           "item_offers"});
+                           "item_offers", "restock_price", "restock_price_step"});
+        if (GetInt(sd, *s, "restock_price", eco.shop.restock_price, false) && eco.shop.restock_price < 0) {
+            sd.Error("restock_price must be >= 0");
+        }
+        if (GetInt(sd, *s, "restock_price_step", eco.shop.restock_price_step, false) && eco.shop.restock_price_step < 0) {
+            sd.Error("restock_price_step must be >= 0");
+        }
         GetIntRange(sd, *s, "item_offers", eco.shop.item_offers, false, 0, 6);
         if (GetNumber(sd, *s, "heal_fraction", eco.shop.heal_fraction, true)) {
             CheckRange(sd, "heal_fraction", eco.shop.heal_fraction, 0.0, 1.0, true);
@@ -1656,7 +1669,8 @@ private:
                     d.Error("drops_as names a game item no loadouts.json equipment hands out");
                 }
             }
-            if (!b.special.kind.empty() && b.special.cooldown_seconds <= 0.0 && b.special.every_arenas <= 0) {
+            if ((!b.special.kind.empty() && b.special.cooldown_seconds <= 0.0 && b.special.every_arenas <= 0) ||
+                (!b.special_2.kind.empty() && b.special_2.cooldown_seconds <= 0.0 && b.special_2.every_arenas <= 0)) {
                 d.Error("special has neither a cooldown nor every_arenas (it could be used without limit)");
             }
             if (!b.starting_weapon.empty()) {

@@ -52,6 +52,7 @@ set(RM_RE5_SOURCES
     src/native_menu.cpp
     src/autopilot.cpp
     src/match_ui.cpp
+    src/itembox_guard.cpp
     src/director.cpp
     src/resources.cpp
     src/world.cpp

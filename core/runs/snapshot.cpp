@@ -66,6 +66,7 @@ RunSnapshot RunController::Snapshot(double now) const {
     s.credits_pending = run_.credits_pending;
     s.reroll_tokens = run_.reroll_tokens;
     s.free_shop_rerolls = run_.phase == Phase::Shop ? run_.free_shop_rerolls : 0;
+    s.restock_price = ShopRestockPrice();
     s.keys_enabled = c.economy().keys.enabled;
     s.keys_needed = s.keys_enabled && !run_.character.build.chest_keys_exempt;
     s.keys = run_.keys;
@@ -101,6 +102,8 @@ RunSnapshot RunController::Snapshot(double now) const {
         v.rarity = std::string(RarityName(w.rarity));
         v.level = w.level;
         for (const Affix& a : w.affixes) v.affixes.push_back(DescribeAffix(a, &c));
+        v.level_bonus = LevelDamageBonus(c.economy(), w.level);
+        if (const WeaponBaseDef* base = c.FindWeapon(w.base_id)) v.base_mult = base->base_damage_mult;
         s.weapons.push_back(std::move(v));
     }
     for (const RewardChoice& r : run_.reward_offer) {
@@ -150,8 +153,8 @@ RunSnapshot RunController::Snapshot(double now) const {
                 break;
             case ShopOfferKind::RerollToken:
                 v.id = "reroll";
-                v.title = "Reroll token";
-                v.detail = "Reroll the next reward offer once";
+                v.title = "Reward reroll";
+                v.detail = "A token to draw three other rewards after an arena (not this shop: NEW STOCK does that)";
                 break;
             case ShopOfferKind::WeaponUpgrade: {
                 v.id = o.target_instance_id;
@@ -160,6 +163,9 @@ RunSnapshot RunController::Snapshot(double now) const {
                     if (w.instance_id == o.target_instance_id) name = WeaponName(w, c);
                 }
                 v.title = "Upgrade " + name + " to Lv " + std::to_string(o.target_level + 1);
+                const double atLevel = LevelDamageBonus(c.economy(), o.target_level);
+                const double afterUpgrade = LevelDamageBonus(c.economy(), o.target_level + 1);
+                v.detail = "Damage from its level " + Percent(atLevel) + " now, " + Percent(afterUpgrade) + " after";
                 break;
             }
             case ShopOfferKind::Weapon:
