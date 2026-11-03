@@ -71,7 +71,8 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | carried items | `carried: item XXXX was used up, removed` before `carried: item XXXX xN -> ...`; `inventory: XXXX xN did not fit after the stage change; kept in the run's storage (ORGANIZE)` |
 | Organize pictures | `itembox pictures: 011F gets item_13e and its model`; `... the run's guns in the screen's item table: ok`; `... the screen's item table restored: ok` after it closes |
 | Wesker's turn | `special: turn to A done; facing B now (on target)`; `special: lunge reached uEm10 (cEm10ActDmg...), facing it: the game's melee finishes it` |
-| computer partner | `partner: slot 2 uPl04JoshCos1 control 1, N m from the player, action ..., hp ...` (any second player, every 5 s) |
+| computer partner | `partner: slot 2 uPl04JoshCos1 control 1, N m from the player, action ..., hp ..., items: 0101 x1 ...` (any second player, every 5 s) |
+| missing model | `game fatal error (the game shows it and exits): Failed open file. ...\pawn\wp\wpNN\model\wpNN00.mod`: an archive no list loaded; add its item to the run's preloads |
 | specials input | `special: lunge ... [XInput pad]` / `[keyboard]` / `[DirectInput pad]`: the device that triggered it |
 | Wesker's dodge | `special: dodge running as cPlAction_pl_act_avoid_front`; `special: the dodge never started (...)`; `special: dodge still running after 1.5 s (...); back to relax` |
 | burst | `special: burst: reacts killed ... [device]` |

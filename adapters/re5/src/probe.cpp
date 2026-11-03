@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <cmath>
+#include <cstdio>
 #include <map>
 #include <mutex>
 #include <string>
@@ -66,9 +67,20 @@ void LogOtherPlayers(const engine::PlayersSnapshot& players, DWORD now) {
         const float dx = ReadOr<float>(p.object + re5::off::kUnitPosition, 0.0f) - lx;
         const float dy = ReadOr<float>(p.object + re5::off::kUnitPosition + 4, 0.0f) - ly;
         const float dz = ReadOr<float>(p.object + re5::off::kUnitPosition + 8, 0.0f) - lz;
-        RM_LOGI("partner: slot %d %s control %d, %.1f m from the player (%+.1f m up), action %s, hp %d/%d", p.slot,
+        // What it carries (the archives its gear needs must be loaded, or the game ends).
+        std::string items;
+        const auto inventory = p.object + re5::off::kPlayerInventory;
+        for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+            const auto slot = inventory + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+            if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+            char buf[24];
+            std::snprintf(buf, sizeof(buf), " %04X x%d", ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0),
+                          ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0));
+            items += buf;
+        }
+        RM_LOGI("partner: slot %d %s control %d, %.1f m from the player (%+.1f m up), action %s, hp %d/%d, items:%s", p.slot,
                 p.className.c_str(), p.control, std::sqrt(dx * dx + dz * dz) / 100.0f, dy / 100.0f,
-                engine::CurrentActionName(p.object).c_str(), p.hp.hp, p.hp.max);
+                engine::CurrentActionName(p.object).c_str(), p.hp.hp, p.hp.max, items.empty() ? " none" : items.c_str());
     }
 }
 

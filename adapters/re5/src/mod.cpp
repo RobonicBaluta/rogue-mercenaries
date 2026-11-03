@@ -2302,6 +2302,12 @@ void UpdatePreloads() {
             if ((w.game_item >> 8) == 1) addItem(w.game_item);
         }
         for (const rm::EquipmentDef& e : g->content->loadouts().equipment) addItem(e.game_item);
+        // A stage's own computer partner (the Port's Josh) comes with his own gear, which only the
+        // player's own loadout may happen to load: his knife's model missing ended the game as
+        // Wesker ("Failed open file ... wp0100.mod", user playtest 2026-11-03; as Sheva it was
+        // there). Every player knife and the rocket launcher (Sheva's, the rest of what that
+        // stage loaded then) go too, about 3 MB.
+        for (const std::int64_t item : {0x0101, 0x010E, 0x0123, 0x0124, 0x010D}) addItem(item);
         for (const rm::PerkDef& perk : g->content->perks()) {
             for (const rm::EffectDef& e : perk.effects) addItem(static_cast<std::int64_t>(e.params.game_item));
         }
