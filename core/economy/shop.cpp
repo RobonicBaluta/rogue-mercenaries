@@ -44,13 +44,13 @@ std::vector<ShopOffer> GenerateShopOffers(Rng& rng, const OfferContext& ctx,
     if (caps.Has(cap::kOutgoingDamage)) {
         std::vector<const WeaponInstance*> upgradeable;
         for (const WeaponInstance& w : owned_weapons) {
-            if (UpgradeCost(eco, w.level).has_value()) upgradeable.push_back(&w);
+            if (WeaponUpgradeCost(ctx, w).has_value()) upgradeable.push_back(&w);
         }
         if (!upgradeable.empty()) {
             const WeaponInstance* w = upgradeable[rng.Index(upgradeable.size())];
             ShopOffer o;
             o.kind = ShopOfferKind::WeaponUpgrade;
-            o.price = *UpgradeCost(eco, w->level);
+            o.price = *WeaponUpgradeCost(ctx, *w);
             o.target_instance_id = w->instance_id;
             o.target_level = w->level;
             o.rarity = w->rarity;
@@ -74,6 +74,7 @@ std::vector<ShopOffer> GenerateShopOffers(Rng& rng, const OfferContext& ctx,
         o.price = eco.shop.weapon_price[RarityIndex(rarity)];
         o.weapon = GenerateWeapon(rng, *ctx.content, caps, base->id, rarity,
                                   next_instance_id ? next_instance_id() : std::string("w"));
+        o.restricted = !UsableWeapon(ctx, *base);  // shown, not for sale to this build
         out.push_back(std::move(o));
     }
 

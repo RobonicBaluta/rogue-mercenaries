@@ -44,6 +44,18 @@ std::vector<const PerkDef*> OfferablePerks(const OfferContext& ctx) {
     return out;
 }
 
+bool UsableWeapon(const OfferContext& ctx, const WeaponBaseDef& w) {
+    return ctx.character == nullptr || ctx.character->build.usable_weapons.Allows(w.id, WeaponCategoryName(w.category));
+}
+
+std::optional<std::int64_t> WeaponUpgradeCost(const OfferContext& ctx, const WeaponInstance& w) {
+    if (ctx.content == nullptr) return std::nullopt;
+    const WeaponBaseDef* base = ctx.content->FindWeapon(w.base_id);
+    const bool uncapped = base != nullptr && ctx.character != nullptr &&
+                          ctx.character->build.Uncapped(base->id, WeaponCategoryName(base->category));
+    return UpgradeCost(ctx.content->economy(), w.level, uncapped);
+}
+
 std::vector<const WeaponBaseDef*> OfferableWeapons(const OfferContext& ctx) {
     std::vector<const WeaponBaseDef*> out;
     if (ctx.content == nullptr) return out;
@@ -59,6 +71,9 @@ std::vector<const WeaponBaseDef*> OfferableWeapons(const OfferContext& ctx) {
         if (w.unlock_cost_credits > 0 &&
             (ctx.unlocked_weapons == nullptr ||
              ctx.unlocked_weapons->find(w.id) == ctx.unlocked_weapons->end())) {
+            continue;
+        }
+        if (ctx.character != nullptr && !ctx.character->build.offered_weapons.Allows(w.id, WeaponCategoryName(w.category))) {
             continue;
         }
         out.push_back(&w);
@@ -112,7 +127,8 @@ std::vector<RewardChoice> GenerateRewardOffer(Rng& rng, const OfferContext& ctx,
     const Capabilities& caps = ctx.capabilities != nullptr ? *ctx.capabilities : all;
     const RarityWeights weights = ShiftRarityWeights(eco.rewards.rarity_weights, ctx.rarity_shift);
     const std::vector<const PerkDef*> perks = OfferablePerks(ctx);
-    const std::vector<const WeaponBaseDef*> weapons = OfferableWeapons(ctx);
+    std::vector<const WeaponBaseDef*> weapons = OfferableWeapons(ctx);
+    std::erase_if(weapons, [&ctx](const WeaponBaseDef* w) { return !UsableWeapon(ctx, *w); });  // rewards never offer a gun the build cannot use
     const std::vector<const EquipmentDef*> items = OfferableItems(ctx);
 
     StringSet taken;

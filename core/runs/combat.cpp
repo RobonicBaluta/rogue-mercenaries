@@ -122,6 +122,15 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
         }
     }
 
+    // The skin's build: damage by the category of the gun that fired (any gun of that kind,
+    // instance or not; never melee).
+    if (hit.weapon_id && !hit.is_melee.value_or(false) && !run_.character.build.category_damage.empty()) {
+        if (const WeaponBaseDef* base = content_->FindWeapon(*hit.weapon_id)) {
+            const auto it = run_.character.build.category_damage.find(std::string(WeaponCategoryName(base->category)));
+            if (it != run_.character.build.category_damage.end()) b.build_bonus += it->second;
+        }
+    }
+
     if (const WeaponInstance* weapon = ApplicableWeapon(hit.weapon_id, hit.is_melee)) {
         const WeaponBaseDef* base = content_->FindWeapon(weapon->base_id);
         b.weapon_base_mult = base != nullptr ? base->base_damage_mult : 1.0;
@@ -149,7 +158,7 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
     if (b.crit_chance > 0.0) b.crit = streams_->combat.NextDouble() < b.crit_chance;
     b.crit_multiplier = (best_crit_mult > 0.0 ? best_crit_mult : eco.damage.default_crit_multiplier) + crit_extra;
 
-    b.raw = b.route_mult * std::max(0.0, 1.0 + b.perk_bonus + b.kill_streak_bonus) * b.weapon_base_mult *
+    b.raw = b.route_mult * std::max(0.0, 1.0 + b.perk_bonus + b.kill_streak_bonus + b.build_bonus) * b.weapon_base_mult *
             std::max(0.0, 1.0 + b.weapon_bonus) * (b.crit ? b.crit_multiplier : 1.0);
     b.clamped = std::clamp(b.raw, eco.damage.outgoing_min, eco.damage.outgoing_max);
     out.multiplier = b.clamped;

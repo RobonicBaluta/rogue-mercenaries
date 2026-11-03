@@ -35,7 +35,10 @@ CONFIG=configs/adapter.mortal.json
 bash build/restart_to_play_menu.sh "$CONFIG" >/dev/null
 sleep 3
 before=$(grep -c "" "$LOG")
-keys "up+900,enter+2500,enter+2500"
+# The mod menu opens by itself (dev rogue): no key ever lands on the Play menu's own rows.
+printf '%s' rogue > "$D/dev.command"
+wait_for "opened on screen 0 by itself" 1 30 || echo "the mod menu did not open"
+sleep 1; keys "enter+2500"
 wait_for "phase .* -> arena_active" 1 90 || echo "arena 1 did not start"
 if [ "$MODE" = die ]; then
     wait_for "director: uEm" 1 30

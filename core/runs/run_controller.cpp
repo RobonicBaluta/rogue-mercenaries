@@ -124,9 +124,9 @@ OfferContext RunController::MakeOfferContext(double rarity_shift) const {
     ctx.placeable_weapons = placeable_weapons_ ? &*placeable_weapons_ : nullptr;
     ctx.owned_weapons = &run_.weapons;
     ctx.owned_perks = &run_.perks;
-    ctx.rarity_shift = rarity_shift;
+    ctx.rarity_shift = rarity_shift + run_.character.build.rarity_shift;
     const RouteDef* route = Route();
-    ctx.reward_mult = route != nullptr ? route->reward_mult : 1.0;
+    ctx.reward_mult = (route != nullptr ? route->reward_mult : 1.0) * run_.character.build.supplies_mult;
     return ctx;
 }
 
@@ -140,7 +140,8 @@ PerkGateInput RunController::MakeGateInput(CursePolicy curses) const {
     return in;
 }
 
-bool RunController::CreditSupplies(const std::string& tx, std::int64_t amount, std::string_view reason) {
+bool RunController::CreditSupplies(const std::string& tx, std::int64_t amount, std::string_view reason, bool build_mult) {
+    if (build_mult) amount = RoundAmount(static_cast<double>(amount) * run_.character.build.supplies_mult);
     if (amount <= 0) return false;
     const TxResult r = run_.supplies.Credit(tx, amount);
     if (r != TxResult::Applied) {
@@ -522,6 +523,21 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     // the shop, so the run's weapon list matches what is really in the player's hands.
     if (!run_.loadout.weapon_id.empty()) {
         GrantWeapon(MakeStartingWeapon(run_.loadout.weapon_id, NextInstanceId()), "starting_weapon");
+    }
+    // The skin's build may hand over a weapon of its own (a rolled rarity, e.g. a legendary).
+    const SkinBuild& build = run_.character.build;
+    if (!build.starting_weapon.empty() && build.starting_weapon != run_.loadout.weapon_id) {
+        const Rarity rarity = ParseRarity(build.starting_weapon_rarity).value_or(Rarity::Common);
+        WeaponInstance w = rarity == Rarity::Common
+                               ? MakeStartingWeapon(build.starting_weapon, NextInstanceId())
+                               : GenerateWeapon(streams_->loot, *content_, caps_, build.starting_weapon, rarity, NextInstanceId());
+        // Queued, not placed at once: the adapter first cuts the game's loadout down to the gun in
+        // hand (which may be this very gun) and then hands the queue over.
+        const WeaponBaseDef* base = content_->FindWeapon(w.base_id);
+        if (base != nullptr && base->game_item >= 0 && caps_.Has(cap::kInventory)) {
+            run_.item_grants.push_back(ItemGrant{base->game_item, 1, "build"});
+        }
+        GrantWeapon(std::move(w), "build");
     }
     // The menu's choice, one perk per category (the style slot falls back to the character's
     // own trait); the skin's trait is granted separately below.
@@ -1079,7 +1095,7 @@ Status RunController::ChooseReward(std::size_t index) {
             if (!placed.ok()) {
                 // No room for the gun: its shop value in supplies instead.
                 converted_supplies = content_->economy().shop.weapon_price[RarityIndex(choice.rarity)];
-                if (!CreditSupplies(ArenaTx(run_.arena_index, "reward"), converted_supplies, "reward")) {
+                if (!CreditSupplies(ArenaTx(run_.arena_index, "reward"), converted_supplies, "reward", false)) {
                     return Fail(op, ErrorCode::GrantFailed, placed.message);
                 }
             } else {
@@ -1088,7 +1104,7 @@ Status RunController::ChooseReward(std::size_t index) {
             break;
         }
         case RewardKind::Supplies:
-            if (!CreditSupplies(ArenaTx(run_.arena_index, "reward"), choice.supplies, "reward")) {
+            if (!CreditSupplies(ArenaTx(run_.arena_index, "reward"), choice.supplies, "reward", false)) {
                 return Fail(op, ErrorCode::GrantFailed, "supplies reward could not be credited");
             }
             break;
@@ -1100,7 +1116,7 @@ Status RunController::ChooseReward(std::size_t index) {
                 const EquipmentDef* def = content_->loadouts().FindEquipment(choice.item_id);
                 if (s.code != ErrorCode::GrantFailed || def == nullptr) return Fail(op, ErrorCode::GrantFailed, s.message);
                 converted_supplies = def->price * std::max(1, choice.item_count);
-                if (!CreditSupplies(ArenaTx(run_.arena_index, "reward"), converted_supplies, "reward")) {
+                if (!CreditSupplies(ArenaTx(run_.arena_index, "reward"), converted_supplies, "reward", false)) {
                     return Fail(op, ErrorCode::GrantFailed, s.message);
                 }
             }
@@ -1132,10 +1148,29 @@ void RunController::EnterShop() {
     const RouteDef* route = Route();
     run_.shop_offers = GenerateShopOffers(streams_->shop, MakeOfferContext(route != nullptr ? route->rarity_bonus : 0.0),
                                           run_.weapons, run_.reroll_tokens, [this] { return NextInstanceId(); });
+    run_.free_shop_rerolls = run_.character.build.free_shop_rerolls;
+    run_.shop_generation = 0;
     run_.phase = Phase::Shop;
     Event e = MakeEvent(EventType::ShopEntered);
     e.Add("offers", run_.shop_offers.size()).Add("supplies", run_.supplies.balance());
     Emit(std::move(e));
+}
+
+Status RunController::RerollShop() {
+    constexpr std::string_view op = "reroll_shop";
+    if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    if (run_.phase != Phase::Shop) return Fail(op, ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
+    if (run_.free_shop_rerolls <= 0) return Fail(op, ErrorCode::NotEligible, "no free shop reroll left");
+    const RouteDef* route = Route();
+    run_.shop_offers = GenerateShopOffers(streams_->shop, MakeOfferContext(route != nullptr ? route->rarity_bonus : 0.0),
+                                          run_.weapons, run_.reroll_tokens, [this] { return NextInstanceId(); });
+    --run_.free_shop_rerolls;
+    ++run_.shop_generation;
+    Event e = MakeEvent(EventType::ShopEntered);
+    e.Add("offers", run_.shop_offers.size()).Add("supplies", run_.supplies.balance()).Add("reroll", run_.shop_generation)
+        .Add("free_rerolls_left", run_.free_shop_rerolls);
+    Emit(std::move(e));
+    return Status::Success();
 }
 
 Status RunController::Purchase(std::size_t index) {
@@ -1145,11 +1180,13 @@ Status RunController::Purchase(std::size_t index) {
     if (index >= run_.shop_offers.size()) return Fail(op, ErrorCode::InvalidIndex, "no offer at index " + std::to_string(index));
     ShopOffer& offer = run_.shop_offers[index];
     if (offer.purchased) return Fail(op, ErrorCode::AlreadyBought, "offer already bought");
+    if (offer.restricted) return Fail(op, ErrorCode::NotEligible, run_.character.name + " cannot use this weapon");
     if (run_.supplies.balance() < offer.price) {
         return Fail(op, ErrorCode::InsufficientFunds,
                     "price " + std::to_string(offer.price) + ", balance " + std::to_string(run_.supplies.balance()));
     }
-    const std::string tx = ArenaTx(run_.arena_index, "shop:" + std::to_string(index));
+    const std::string tx = ArenaTx(run_.arena_index, (run_.shop_generation > 0 ? "shop" + std::to_string(run_.shop_generation) : std::string("shop")) +
+                                                         ":" + std::to_string(index));
     const TxResult debit = DebitSupplies(tx, offer.price, "shop");
     if (debit != TxResult::Applied) {
         return Fail(op, debit == TxResult::InsufficientFunds ? ErrorCode::InsufficientFunds : ErrorCode::AlreadyBought,
@@ -1179,7 +1216,7 @@ Status RunController::Purchase(std::size_t index) {
             });
             if (it == run_.weapons.end()) {
                 grant = Status::Error(ErrorCode::GrantFailed, "weapon " + offer.target_instance_id + " is no longer held");
-            } else if (it->level != offer.target_level || !UpgradeCost(eco, it->level)) {
+            } else if (it->level != offer.target_level || !WeaponUpgradeCost(MakeOfferContext(0.0), *it)) {
                 grant = Status::Error(ErrorCode::GrantFailed, "weapon level changed since the offer was made");
             } else {
                 ++it->level;
@@ -1322,12 +1359,14 @@ Result<ChestReward> RunController::OpenChest(double now) {
     bool placed = false;
     if (roll < eco.chests.weapon_chance) {
         std::vector<const WeaponBaseDef*> bases = OfferableWeapons(ctx);
-        std::erase_if(bases, [this](const WeaponBaseDef* b) {
-            return std::any_of(run_.weapons.begin(), run_.weapons.end(), [b](const WeaponInstance& w) { return w.base_id == b->id; });
+        std::erase_if(bases, [this, &ctx](const WeaponBaseDef* b) {
+            return !UsableWeapon(ctx, *b) ||
+                   std::any_of(run_.weapons.begin(), run_.weapons.end(), [b](const WeaponInstance& w) { return w.base_id == b->id; });
         });
         if (!bases.empty()) {
             const WeaponBaseDef* base = bases[rng.Index(bases.size())];
-            WeaponInstance w = GenerateWeapon(rng, *content_, caps_, base->id, RollRarity(rng, eco.rewards.rarity_weights),
+            WeaponInstance w = GenerateWeapon(rng, *content_, caps_, base->id,
+                                              RollRarity(rng, ShiftRarityWeights(eco.rewards.rarity_weights, ctx.rarity_shift)),
                                               NextInstanceId());
             if (PlaceWeaponItem(w, "chest").ok()) {
                 GrantWeapon(w, "chest");
@@ -1370,7 +1409,10 @@ Status RunController::SwapStartingWeapon(std::string_view base_id) {
     const std::string previous = run_.loadout.weapon_id;
     std::erase_if(run_.weapons, [&previous](const WeaponInstance& w) { return w.base_id == previous; });
     run_.loadout.weapon_id = base->id;
-    GrantWeapon(MakeStartingWeapon(base->id, NextInstanceId()), "starting_weapon");
+    // A gun the run already holds (a skin build's rolled starting gun) keeps its instance.
+    const bool held = std::any_of(run_.weapons.begin(), run_.weapons.end(),
+                                  [base](const WeaponInstance& w) { return w.base_id == base->id; });
+    if (!held) GrantWeapon(MakeStartingWeapon(base->id, NextInstanceId()), "starting_weapon");
     Event e = MakeEvent(EventType::PerkAcquired, EventLevel::Debug);
     e.Add("starting_weapon", base->id).Add("replaced", previous);
     Emit(std::move(e));
@@ -1390,7 +1432,7 @@ Status RunController::DevGrantWeapon(WeaponInstance weapon) {
 Status RunController::DevGrantSupplies(std::int64_t amount) {
     if (!run_.active) return Fail("dev_grant_supplies", ErrorCode::NoActiveRun, "no active run");
     if (amount <= 0) return Fail("dev_grant_supplies", ErrorCode::InvalidAmount, "amount must be positive");
-    if (!CreditSupplies("dev:supplies:" + std::to_string(++dev_supply_grants_), amount, "dev")) {
+    if (!CreditSupplies("dev:supplies:" + std::to_string(++dev_supply_grants_), amount, "dev", false)) {
         return Fail("dev_grant_supplies", ErrorCode::AlreadyApplied, "credit refused");
     }
     return Status::Success();
@@ -1406,7 +1448,7 @@ Status RunController::AdjustSupplies(std::int64_t delta, std::string_view reason
     if (delta == 0) return Status::Success();
     const std::string tx = std::string(reason) + ":" + std::to_string(++external_supply_changes_);
     if (delta > 0) {
-        if (!CreditSupplies(tx, delta, reason)) return Fail(op, ErrorCode::AlreadyApplied, "credit refused");
+        if (!CreditSupplies(tx, delta, reason, false)) return Fail(op, ErrorCode::AlreadyApplied, "credit refused");
     } else if (DebitSupplies(tx, -delta, reason) != TxResult::Applied) {
         return Fail(op, ErrorCode::InsufficientFunds, "debit of " + std::to_string(-delta) + " refused");
     }

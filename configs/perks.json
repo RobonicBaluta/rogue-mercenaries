@@ -1,5 +1,5 @@
 {
-  "_comment": "Perks are per character and come only from the mod menu. category: style = the character's way of playing (no plain stat perks), supply = what you start with (item_on_start puts game_item into the inventory at the first arena; generic ones plus one per character), support = bad situations (low health, lethal hits), skin = the small percentage tweaks a skin grants through its starting_passive (never listed), curse = route modifiers. Not yet possible (engine work pending): grab immunity, move speed, damage by weapon type. Item ids: 0x0106 hand grenade, 0x0107 incendiary, 0x0108 flash, 0x0304 first aid spray, 0x0201 handgun ammo, 0x0102 M92F, 0x0104 Ithaca M37, 0x0113 MP5, 0x011A L.Hawk.",
+  "_comment": "Perks are per character and come only from the mod menu. category: style = the character's way of playing (no plain stat perks), supply = what you start with (item_on_start puts game_item into the inventory at the first arena; generic ones plus one per character), support = bad situations (low health, lethal hits), skin = a perk a skin grants through its starting_passive (never listed; most skins are builds, see characters.json), curse = route modifiers. Not yet possible (engine work pending): grab immunity, move speed (damage by weapon type is a skin build rule). Item ids: 0x0106 hand grenade, 0x0107 incendiary, 0x0108 flash, 0x0304 first aid spray, 0x0201 handgun ammo, 0x0102 M92F, 0x0104 Ithaca M37, 0x0113 MP5, 0x011A L.Hawk.",
   "schema_version": 1,
   "perks": [
     {
@@ -685,8 +685,8 @@
     },
     {
       "id": "chris_stars_trait",
-      "name": "S.T.A.R.S. Training",
-      "description": "S.T.A.R.S. Chris lands 5 percent more criticals.",
+      "name": "S.T.A.R.S. Restock",
+      "description": "S.T.A.R.S. Chris restocks a first aid spray on every arena clear.",
       "category": "skin",
       "rarity": "common",
       "tags": [
@@ -695,25 +695,9 @@
       "max_stacks": 1,
       "effects": [
         {
-          "kind": "crit",
-          "chance": 0.05
-        }
-      ]
-    },
-    {
-      "id": "sheva_clubbin_trait",
-      "name": "Night Out",
-      "description": "Clubbin Sheva deals 6 percent more damage.",
-      "category": "skin",
-      "rarity": "common",
-      "tags": [
-        "skin"
-      ],
-      "max_stacks": 1,
-      "effects": [
-        {
-          "kind": "outgoing_damage_mult",
-          "value": 0.06
+          "kind": "item_on_arena_clear",
+          "game_item": 772,
+          "amount": 1
         }
       ]
     },
@@ -735,24 +719,6 @@
       ]
     },
     {
-      "id": "sheva_business_trait",
-      "name": "Expense Account",
-      "description": "Business Sheva gets 10 extra supplies per arena.",
-      "category": "skin",
-      "rarity": "common",
-      "tags": [
-        "skin"
-      ],
-      "max_stacks": 1,
-      "effects": [
-        {
-          "kind": "supplies_on_arena_clear",
-          "amount": 10,
-          "require_no_damage": false
-        }
-      ]
-    },
-    {
       "id": "jill_battle_suit_trait",
       "name": "Battle Suit",
       "description": "The battle suit absorbs 8 percent of damage.",
@@ -766,23 +732,6 @@
         {
           "kind": "incoming_damage_mult",
           "value": -0.08
-        }
-      ]
-    },
-    {
-      "id": "wesker_stars_trait",
-      "name": "Old Habits",
-      "description": "S.T.A.R.S. Wesker deals 8 percent more damage.",
-      "category": "skin",
-      "rarity": "common",
-      "tags": [
-        "skin"
-      ],
-      "max_stacks": 1,
-      "effects": [
-        {
-          "kind": "outgoing_damage_mult",
-          "value": 0.08
         }
       ]
     },

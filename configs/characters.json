@@ -1,5 +1,5 @@
 {
-  "_comment": "Playable characters. Every character and skin is available from the start (the challenge fields unlock_kind/unlock_count/unlock_text/unlock_character, see core/include/rm/characters.h, are kept for later). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin only adds its small trait (a 'skin' perk) and its costume_index (the class and the model each slot loads, checked in game: 0..2 and 10 Heavy Metal, 14 Warrior Chris; 3 and 11 Fairy Tale, 15 Business Sheva; 9 Wesker S.T.A.R.S.; 12 Josh, 13 Excella, 16 Barry, 17 Rebecca). Text shown by the game font: letters, digits, space, comma and period only.",
+  "_comment": "Playable characters. Every character and skin is available from the start (the challenge fields unlock_kind/unlock_count/unlock_text/unlock_character, see core/include/rm/characters.h, are kept for later). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin is a build (ROADMAP M8, written by scripts/write_perks.py): 'build' holds its rules (weapon filters, damage by weapon category, supplies, free shop rerolls, rarity, uncapped upgrades, a starting weapon, max health), and a skin without one yet keeps a small trait (a 'skin' perk). costume_index is the class and the model each slot loads, checked in game: 0..2 and 10 Heavy Metal, 14 Warrior Chris; 3 and 11 Fairy Tale, 15 Business Sheva; 9 Wesker S.T.A.R.S.; 12 Josh, 13 Excella, 16 Barry, 17 Rebecca. Text shown by the game font: letters, digits, space, comma and period only.",
   "schema_version": 1,
   "characters": [
     {
@@ -39,7 +39,22 @@
         {
           "id": "chris_warrior",
           "name": "Warrior",
-          "costume_index": 14
+          "costume_index": 14,
+          "build": {
+            "summary": "Only shotguns, handguns and magnums come his way, and they hit 25 percent harder.",
+            "offered_weapons": {
+              "categories": [
+                "shotgun",
+                "handgun",
+                "magnum"
+              ]
+            },
+            "category_damage": {
+              "shotgun": 0.25,
+              "handgun": 0.25,
+              "magnum": 0.25
+            }
+          }
         },
         {
           "id": "chris_heavy_metal",
@@ -74,7 +89,11 @@
           "id": "sheva_clubbin",
           "name": "Clubbin",
           "costume_index": 4,
-          "starting_passive": "sheva_clubbin_trait"
+          "build": {
+            "summary": "Half again as many supplies, and one free shop reroll at every shop.",
+            "supplies_mult": 1.5,
+            "free_shop_rerolls": 1
+          }
         },
         {
           "id": "sheva_tribal",
@@ -86,12 +105,33 @@
           "id": "sheva_business",
           "name": "Business",
           "costume_index": 15,
-          "starting_passive": "sheva_business_trait"
+          "build": {
+            "summary": "Better loot and shop stock. Submachine guns hit 30 percent harder and upgrade without limit.",
+            "rarity_shift": 0.8,
+            "category_damage": {
+              "smg": 0.3
+            },
+            "uncapped_upgrades": {
+              "categories": [
+                "smg"
+              ]
+            }
+          }
         },
         {
           "id": "sheva_fairy_tale",
           "name": "Fairy Tale",
-          "costume_index": 11
+          "costume_index": 11,
+          "build": {
+            "summary": "Starts with a legendary M3 that upgrades without limit.",
+            "starting_weapon": "m3",
+            "starting_weapon_rarity": "legendary",
+            "uncapped_upgrades": {
+              "ids": [
+                "m3"
+              ]
+            }
+          }
         }
       ]
     },
@@ -166,7 +206,17 @@
         {
           "id": "barry_stars",
           "name": "STARS",
-          "costume_index": 16
+          "costume_index": 16,
+          "build": {
+            "summary": "Starts with an S and W M29 that upgrades without limit, and half again as much health.",
+            "starting_weapon": "m29",
+            "uncapped_upgrades": {
+              "ids": [
+                "m29"
+              ]
+            },
+            "max_health_mult": 1.5
+          }
         }
       ]
     },
@@ -241,7 +291,18 @@
           "id": "wesker_stars",
           "name": "STARS",
           "costume_index": 9,
-          "starting_passive": "wesker_stars_trait"
+          "build": {
+            "summary": "Only his Samurai Edge, magnums and the Hydra. Other guns show up in the shop but are not for him.",
+            "usable_weapons": {
+              "categories": [
+                "magnum"
+              ],
+              "ids": [
+                "samurai_edge",
+                "hydra"
+              ]
+            }
+          }
         }
       ]
     }

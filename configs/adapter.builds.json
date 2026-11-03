@@ -1,0 +1,10 @@
+{
+  "log_level": "debug",
+  "developer_mode": true,
+  "dev": {
+    "probe_interval_ms": 0,
+    "probe_hits": true,
+    "mute_audio": true,
+    "invulnerable": true
+  }
+}

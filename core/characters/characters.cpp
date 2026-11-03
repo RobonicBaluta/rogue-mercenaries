@@ -109,7 +109,14 @@ CharacterDef ApplySkin(const CharacterDef& def, const SkinDef& skin) {
         }
     }
     if (skin.costume_index >= 0) out.costume_index = skin.costume_index;
+    out.build = skin.build;
     return out;
+}
+
+bool WeaponFilter::Allows(std::string_view base_id, std::string_view category) const {
+    if (Empty()) return true;
+    return std::find(categories.begin(), categories.end(), category) != categories.end() ||
+           std::find(ids.begin(), ids.end(), base_id) != ids.end();
 }
 
 }  // namespace rm

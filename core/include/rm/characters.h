@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "rm/common.h"
@@ -34,6 +35,37 @@ struct Challenge {
     std::string text;        // shown to the player while locked
 };
 
+/// Weapons named by category ("shotgun", see weapons.h) or base id. Empty = every weapon.
+struct WeaponFilter {
+    std::vector<std::string> categories;
+    std::vector<std::string> ids;
+    [[nodiscard]] bool Empty() const { return categories.empty() && ids.empty(); }
+    /// True for a weapon of a listed category or id; true for every weapon when empty.
+    [[nodiscard]] bool Allows(std::string_view base_id, std::string_view category) const;
+};
+
+/// A skin's build (configs/characters.json skin "build", ROADMAP M8): rules a run of that skin
+/// plays by. Defaults change nothing.
+struct SkinBuild {
+    std::string summary;           // one line for the SKINS screen
+    WeaponFilter offered_weapons;  // rewards, the shop and chests offer only these
+    WeaponFilter usable_weapons;   // others: the shop shows them but cannot sell them, rewards skip them
+    StringMap<double> category_damage;  // additive damage fraction per weapon category
+    double supplies_mult = 1.0;    // supplies earned in arenas and from rewards
+    int free_shop_rerolls = 0;     // shop rerolls without cost, per shop visit
+    double rarity_shift = 0.0;     // added to the rarity of rewards and shop offers
+    WeaponFilter uncapped_upgrades;  // weapons that level past economy upgrades.max_level (empty = none)
+    std::string starting_weapon;     // base id handed over when the run starts
+    std::string starting_weapon_rarity;  // its rarity name (empty = common)
+    double max_health_mult = 1.0;    // the adapter scales the player's maximum health
+    /// Game item id -> the stack size the adapter allows for it during the run (JSON keys may be
+    /// hex, "0x010A").
+    std::vector<std::pair<std::int64_t, int>> stack_max;
+    [[nodiscard]] bool Uncapped(std::string_view base_id, std::string_view category) const {
+        return !uncapped_upgrades.Empty() && uncapped_upgrades.Allows(base_id, category);
+    }
+};
+
 /// A character skin (costume). Overrides change the archetype a little: the weapons a run
 /// can start with, the starting perk and extra character skills. Empty fields keep the
 /// character's own values.
@@ -46,6 +78,7 @@ struct SkinDef {
     std::string starting_passive;
     std::vector<std::string> skill_pool;
     Challenge unlock;
+    SkinBuild build;
 };
 
 /// Playable character definition (configs/characters.json).
@@ -72,6 +105,8 @@ struct CharacterDef {
     std::int64_t costume_index = -1;
     /// Skins; the loader guarantees at least one (the first is the default).
     std::vector<SkinDef> skins;
+    /// The build of the skin a run plays (set by ApplySkin; a character has none of its own).
+    SkinBuild build;
 };
 
 enum class CharacterGate { Selectable, Unknown, Disabled, Locked };

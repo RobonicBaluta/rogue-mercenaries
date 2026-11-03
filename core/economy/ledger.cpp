@@ -81,11 +81,16 @@ Rating ComputeRating(const EconomyConfig::RatingRules& rules, double time_second
     return Rating::C;
 }
 
-std::optional<std::int64_t> UpgradeCost(const EconomyConfig& economy, int current_level) {
-    if (current_level < 1 || current_level >= economy.upgrades.max_level) return std::nullopt;
+std::optional<std::int64_t> UpgradeCost(const EconomyConfig& economy, int current_level, bool uncapped) {
+    if (current_level < 1) return std::nullopt;
+    const auto& table = economy.upgrades.cost_to_next;
     const auto index = static_cast<std::size_t>(current_level - 1);
-    if (index >= economy.upgrades.cost_to_next.size()) return std::nullopt;
-    return economy.upgrades.cost_to_next[index];
+    if (current_level < economy.upgrades.max_level && index < table.size()) return table[index];
+    if (!uncapped || table.empty()) return std::nullopt;
+    // Past the table: the last step plus half of it for every level beyond.
+    const std::int64_t last = table.back();
+    const auto beyond = static_cast<std::int64_t>(current_level) - static_cast<std::int64_t>(table.size());
+    return last + last / 2 * beyond;
 }
 
 double LevelDamageBonus(const EconomyConfig& economy, int level) {

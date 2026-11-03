@@ -78,15 +78,42 @@ perks += [
     perk('clean_sweep', 'Clean Sweep', '40 extra supplies for clearing an arena without taking damage.', 'support',
          [{'kind': 'supplies_on_arena_clear', 'amount': 40, 'require_no_damage': True}], cost=90, rarity='uncommon', tags=['supplies']),
 ]
-# ---- Skin traits: the small changes a skin brings (granted by the skin, never listed). ----
+# ---- Skin traits: a skin's perk (granted by the skin, never listed). Skins with a build (BUILDS below,
+# ROADMAP M8) lose their old small trait; the remaining ones go as their builds land. ----
 skin_traits = {
     'chris_safari_trait': ('Safari Instinct', 'Safari Chris deals 8 percent more damage.', [{'kind': 'outgoing_damage_mult', 'value': 0.08}]),
-    'chris_stars_trait': ('S.T.A.R.S. Training', 'S.T.A.R.S. Chris lands 5 percent more criticals.', [{'kind': 'crit', 'chance': 0.05}]),
-    'sheva_clubbin_trait': ('Night Out', 'Clubbin Sheva deals 6 percent more damage.', [{'kind': 'outgoing_damage_mult', 'value': 0.06}]),
+    'chris_stars_trait': ('S.T.A.R.S. Restock', 'S.T.A.R.S. Chris restocks a first aid spray on every arena clear.',
+                          [{'kind': 'item_on_arena_clear', 'game_item': 0x0304, 'amount': 1}]),
     'sheva_tribal_trait': ('Hunter Eye', 'Tribal Sheva lands 5 percent more criticals.', [{'kind': 'crit', 'chance': 0.05}]),
-    'sheva_business_trait': ('Expense Account', 'Business Sheva gets 10 extra supplies per arena.', [{'kind': 'supplies_on_arena_clear', 'amount': 10, 'require_no_damage': False}]),
     'jill_battle_suit_trait': ('Battle Suit', 'The battle suit absorbs 8 percent of damage.', [{'kind': 'incoming_damage_mult', 'value': -0.08}]),
-    'wesker_stars_trait': ('Old Habits', 'S.T.A.R.S. Wesker deals 8 percent more damage.', [{'kind': 'outgoing_damage_mult', 'value': 0.08}]),
+}
+# ---- Skin builds (characters.json skin "build", core/include/rm/characters.h SkinBuild). ----
+BUILDS = {
+    'chris_warrior': {
+        'summary': 'Only shotguns, handguns and magnums come his way, and they hit 25 percent harder.',
+        'offered_weapons': {'categories': ['shotgun', 'handgun', 'magnum']},
+        'category_damage': {'shotgun': 0.25, 'handgun': 0.25, 'magnum': 0.25},
+    },
+    'sheva_clubbin': {
+        'summary': 'Half again as many supplies, and one free shop reroll at every shop.',
+        'supplies_mult': 1.5, 'free_shop_rerolls': 1,
+    },
+    'sheva_business': {
+        'summary': 'Better loot and shop stock. Submachine guns hit 30 percent harder and upgrade without limit.',
+        'rarity_shift': 0.8, 'category_damage': {'smg': 0.3}, 'uncapped_upgrades': {'categories': ['smg']},
+    },
+    'sheva_fairy_tale': {
+        'summary': 'Starts with a legendary M3 that upgrades without limit.',
+        'starting_weapon': 'm3', 'starting_weapon_rarity': 'legendary', 'uncapped_upgrades': {'ids': ['m3']},
+    },
+    'wesker_stars': {
+        'summary': 'Only his Samurai Edge, magnums and the Hydra. Other guns show up in the shop but are not for him.',
+        'usable_weapons': {'categories': ['magnum'], 'ids': ['samurai_edge', 'hydra']},
+    },
+    'barry_stars': {
+        'summary': 'Starts with an S and W M29 that upgrades without limit, and half again as much health.',
+        'starting_weapon': 'm29', 'uncapped_upgrades': {'ids': ['m29']}, 'max_health_mult': 1.5,
+    },
 }
 for pid, (name, desc, effects) in skin_traits.items():
     perks.append(perk(pid, name, desc, 'skin', effects, tags=['skin']))
@@ -114,9 +141,9 @@ for p in perks:
 doc = {
     '_comment': ("Perks are per character and come only from the mod menu. category: style = the character's way of playing "
                  "(no plain stat perks), supply = what you start with (item_on_start puts game_item into the inventory at the first "
-                 "arena; generic ones plus one per character), support = bad situations (low health, lethal hits), skin = the small "
-                 "percentage tweaks a skin grants through its starting_passive (never listed), curse = route modifiers. Not yet "
-                 "possible (engine work pending): grab immunity, move speed, damage by weapon type. Item ids: 0x0106 hand grenade, "
+                 "arena; generic ones plus one per character), support = bad situations (low health, lethal hits), skin = a perk a "
+                 "skin grants through its starting_passive (never listed; most skins are builds, see characters.json), curse = route modifiers. Not yet "
+                 "possible (engine work pending): grab immunity, move speed (damage by weapon type is a skin build rule). Item ids: 0x0106 hand grenade, "
                  "0x0107 incendiary, 0x0108 flash, 0x0304 first aid spray, 0x0201 handgun ammo, 0x0102 M92F, 0x0104 Ithaca M37, "
                  "0x0113 MP5, 0x011A L.Hawk."),
     'schema_version': 1,
@@ -141,12 +168,22 @@ for ch in c['characters']:
         trait = s['id'] + '_trait'
         if trait in skin_traits:
             s['starting_passive'] = trait
-c['_comment'] = ("Playable characters. Only Chris and Sheva start unlocked; the others unlock by themed challenges (unlock_kind/unlock_count, "
-                 "see core/include/rm/characters.h). starting_weapons: the first entry is the pistol every run starts with (the adapter "
-                 "strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. "
-                 "starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin "
-                 "only adds its small trait (a 'skin' perk) and its costume_index (verified: chris 0, 1, 2, sheva 3). Text shown by the "
-                 "game font: letters, digits, space, comma and period only.")
+        else:
+            s.pop('starting_passive', None)
+        if s['id'] in BUILDS:
+            s['build'] = BUILDS[s['id']]
+        else:
+            s.pop('build', None)
+c['_comment'] = ("Playable characters. Every character and skin is available from the start (the challenge fields unlock_kind/unlock_count/"
+                 "unlock_text/unlock_character, see core/include/rm/characters.h, are kept for later). starting_weapons: the first entry is "
+                 "the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come "
+                 "from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks "
+                 "the character can unlock. A skin is a build (ROADMAP M8, written by scripts/write_perks.py): 'build' holds its rules "
+                 "(weapon filters, damage by weapon category, supplies, free shop rerolls, rarity, uncapped upgrades, a starting weapon, "
+                 "max health), and a skin without one yet keeps a small trait (a 'skin' perk). costume_index is the class and the model each "
+                 "slot loads, checked in game: 0..2 and 10 Heavy Metal, 14 Warrior Chris; 3 and 11 Fairy Tale, 15 Business Sheva; 9 Wesker "
+                 "S.T.A.R.S.; 12 Josh, 13 Excella, 16 Barry, 17 Rebecca. Text shown by the game font: letters, digits, space, comma and "
+                 "period only.")
 json.dump(c, open('configs/characters.json', 'w'), indent=2)
 open('configs/characters.json', 'a').write('\n')
 

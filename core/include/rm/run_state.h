@@ -164,6 +164,8 @@ struct RunState {
     double reward_rarity_shift = 0.0;
     bool reward_chosen = false;
     std::vector<ShopOffer> shop_offers;
+    int free_shop_rerolls = 0;  // left in this shop visit (the skin build's)
+    int shop_generation = 0;    // stock rerolled this visit (keeps purchase transaction ids unique)
     std::vector<RouteChoice> route_choices;
 
     // Combat bookkeeping (reset per arena).
@@ -206,6 +208,7 @@ struct OfferView {
     bool purchased = false;
     int tier = 0;       // routes: difficulty tier
     bool boss = false;  // routes: a boss arena (titled with the boss)
+    bool restricted = false;  // shop weapon the skin's build cannot use (not for sale)
 };
 
 struct RunMapNodeView {
@@ -251,6 +254,7 @@ struct RunSnapshot {
     bool reward_chosen = false;
     std::vector<OfferView> reward_offers;
     std::vector<OfferView> shop_offers;
+    int free_shop_rerolls = 0;  // the skin build's, left in this shop visit
     std::vector<OfferView> route_offers;
 };
 

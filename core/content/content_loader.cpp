@@ -720,6 +720,92 @@ void CheckChallengeTarget(const Diag& d, const Challenge& c, const std::set<std:
     }
 }
 
+// {"categories": [...], "ids": [...]}; categories are checked here, ids by CrossCheck.
+void ParseWeaponFilter(const Diag& d, const json& b, std::string_view key, WeaponFilter& out) {
+    const json* f = Get(b, key);
+    if (f == nullptr) return;
+    if (!f->is_object()) {
+        d.Error("field " + Q(key) + " must be an object");
+        return;
+    }
+    const Diag fd = d.Sub(" " + std::string(key));
+    CheckKeys(fd, *f, {"categories", "ids"});
+    GetStringList(fd, *f, "categories", out.categories, false);
+    GetStringList(fd, *f, "ids", out.ids, false);
+    for (const std::string& cat : out.categories) {
+        if (!ParseWeaponCategory(cat)) fd.Error("unknown weapon category " + Q(cat));
+    }
+    if (out.Empty()) fd.Error("must list at least one category or id");
+}
+
+void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
+    CheckKeys(d, b, {"summary", "offered_weapons", "usable_weapons", "category_damage", "supplies_mult",
+                     "free_shop_rerolls", "rarity_shift", "uncapped_upgrades", "starting_weapon",
+                     "starting_weapon_rarity", "max_health_mult", "stack_max"});
+    if (const json* sm = Get(b, "stack_max")) {
+        if (!sm->is_object()) {
+            d.Error("field 'stack_max' must be an object");
+        } else {
+            for (const auto& [key, v] : sm->items()) {
+                std::int64_t item = -1;
+                try {
+                    std::size_t used = 0;
+                    item = std::stoll(key, &used, 0);
+                    if (used != key.size()) item = -1;
+                } catch (...) {
+                    item = -1;
+                }
+                if (item < 0 || item > 0xFFFF) {
+                    d.Error("stack_max key " + Q(key) + " is not a game item id");
+                    continue;
+                }
+                if (!v.is_number_integer() || v.get<std::int64_t>() < 1 || v.get<std::int64_t>() > 999) {
+                    d.Error("stack_max " + Q(key) + " must be an integer in [1, 999]");
+                    continue;
+                }
+                out.stack_max.emplace_back(item, static_cast<int>(v.get<std::int64_t>()));
+            }
+        }
+    }
+    GetString(d, b, "summary", out.summary, false);
+    ParseWeaponFilter(d, b, "offered_weapons", out.offered_weapons);
+    ParseWeaponFilter(d, b, "usable_weapons", out.usable_weapons);
+    ParseWeaponFilter(d, b, "uncapped_upgrades", out.uncapped_upgrades);
+    if (const json* cd = Get(b, "category_damage")) {
+        if (!cd->is_object()) {
+            d.Error("field 'category_damage' must be an object");
+        } else {
+            for (const auto& [cat, v] : cd->items()) {
+                if (!ParseWeaponCategory(cat)) d.Error("category_damage: unknown weapon category " + Q(cat));
+                if (!v.is_number()) {
+                    d.Error("category_damage " + Q(cat) + " must be a number");
+                    continue;
+                }
+                CheckRange(d, "category_damage " + cat, v.get<double>(), -0.9, 5.0);
+                out.category_damage[cat] = v.get<double>();
+            }
+        }
+    }
+    if (GetNumber(d, b, "supplies_mult", out.supplies_mult, false)) CheckRange(d, "supplies_mult", out.supplies_mult, 0.0, 10.0, true);
+    std::int64_t rerolls = 0;
+    if (GetInt(d, b, "free_shop_rerolls", rerolls, false)) {
+        CheckRange(d, "free_shop_rerolls", static_cast<double>(rerolls), 0, 10);
+        out.free_shop_rerolls = static_cast<int>(rerolls);
+    }
+    if (GetNumber(d, b, "rarity_shift", out.rarity_shift, false)) CheckRange(d, "rarity_shift", out.rarity_shift, -4.0, 4.0);
+    GetString(d, b, "starting_weapon", out.starting_weapon, false);
+    if (GetString(d, b, "starting_weapon_rarity", out.starting_weapon_rarity, false) &&
+        !ParseRarity(out.starting_weapon_rarity)) {
+        d.Error("unknown starting_weapon_rarity " + Q(out.starting_weapon_rarity));
+    }
+    if (!out.starting_weapon_rarity.empty() && out.starting_weapon.empty()) {
+        d.Error("starting_weapon_rarity without a starting_weapon");
+    }
+    if (GetNumber(d, b, "max_health_mult", out.max_health_mult, false)) {
+        CheckRange(d, "max_health_mult", out.max_health_mult, 0.1, 5.0);
+    }
+}
+
 void ParseSkins(const Diag& file, const json& e, CharacterDef& c) {
     const auto it = e.find("skins");
     if (it == e.end()) return;
@@ -738,7 +824,14 @@ void ParseSkins(const Diag& file, const json& e, CharacterDef& c) {
         if (!ReadId(d, s, skin.id)) continue;
         d = file.Sub(" skin " + Q(skin.id));
         CheckKeys(d, s, {"id", "name", "costume_index", "starting_weapons", "starting_passive", "skill_pool",
-                         "unlock_kind", "unlock_count", "unlock_character", "unlock_text"});
+                         "unlock_kind", "unlock_count", "unlock_character", "unlock_text", "build"});
+        if (const json* b = Get(s, "build")) {
+            if (b->is_object()) {
+                ParseBuild(d.Sub(": build"), *b, skin.build);
+            } else {
+                d.Error("field 'build' must be an object");
+            }
+        }
         GetString(d, s, "name", skin.name, true);
         if (GetInt(d, s, "costume_index", skin.costume_index, false) && skin.costume_index < 0) {
             d.Error("field 'costume_index' must be >= 0");
@@ -1378,6 +1471,23 @@ private:
                                passive->exclusive_with.end()) {
                     d.Error("skill_pool perk " + Q(s) + " is excluded by the starting passive " +
                             Q(passive->id) + ", so it can never be picked");
+                }
+            }
+          }
+          for (const SkinDef& s : base.skins) {
+            const Diag d = chars_d.Sub(": character " + Q(base.id) + " skin " + Q(s.id) + ": build");
+            const SkinBuild& b = s.build;
+            for (const WeaponFilter* f : {&b.offered_weapons, &b.usable_weapons, &b.uncapped_upgrades}) {
+                for (const std::string& id : f->ids) {
+                    if (c.FindWeapon(id) == nullptr) d.Error("references unknown weapon " + Q(id));
+                }
+            }
+            if (!b.starting_weapon.empty()) {
+                const WeaponBaseDef* w = c.FindWeapon(b.starting_weapon);
+                if (w == nullptr) {
+                    d.Error("starting_weapon references unknown weapon " + Q(b.starting_weapon));
+                } else if (!b.usable_weapons.Allows(w->id, WeaponCategoryName(w->category))) {
+                    d.Error("starting_weapon " + Q(w->id) + " is not one of the build's usable weapons");
                 }
             }
           }

@@ -122,7 +122,9 @@ Rating ComputeRating(const EconomyConfig::RatingRules& rules, double time_second
                      double par_seconds, double damage_taken, double hp_max, int deaths);
 
 /// Supplies to raise a weapon from current_level to current_level+1 (nullopt at max level).
-std::optional<std::int64_t> UpgradeCost(const EconomyConfig& economy, int current_level);
+/// An uncapped weapon (a skin build's) keeps levelling: past the cost table each level costs
+/// the table's last step plus half of it per level beyond.
+std::optional<std::int64_t> UpgradeCost(const EconomyConfig& economy, int current_level, bool uncapped = false);
 
 /// Damage bonus (fraction) contributed by weapon level: (level-1) * damage_pct_per_level / 100.
 double LevelDamageBonus(const EconomyConfig& economy, int level);

@@ -83,12 +83,14 @@ struct HitContext {
 };
 
 /// Telemetry breakdown: final = clamp(raw, outgoing_min, outgoing_max) where
-/// raw = route_mult * max(0, 1 + perk_bonus + kill_streak_bonus) * weapon_base_mult
+/// raw = route_mult * max(0, 1 + perk_bonus + kill_streak_bonus + build_bonus) * weapon_base_mult
 ///       * max(0, 1 + weapon_bonus) * (crit ? crit_multiplier : 1).
 struct OutgoingBreakdown {
     double route_mult = 1.0;
     double perk_bonus = 0.0;
     double kill_streak_bonus = 0.0;
+    double build_bonus = 0.0;  // the skin's build: damage by weapon category
+    // (the build's uncapped levels count in weapon_bonus like any level)
     double weapon_base_mult = 1.0;
     double weapon_bonus = 0.0;
     double crit_chance = 0.0;
@@ -264,7 +266,11 @@ public:
 
     [[nodiscard]] const std::vector<ShopOffer>& ShopOffers() const { return run_.shop_offers; }
     /// Validates phase, index, not-yet-bought and balance; debit and grant are all-or-nothing.
+    /// A weapon the skin's build cannot use is refused (NotEligible).
     Status Purchase(std::size_t index);
+    /// New shop stock for free while the skin's build has free rerolls left this visit
+    /// (SkinBuild::free_shop_rerolls, reset on entering the shop); NotEligible otherwise.
+    Status RerollShop();
     /// Shop -> RouteSelection (route choices are generated here).
     Status LeaveShop();
 
@@ -351,7 +357,9 @@ private:
     OfferContext MakeOfferContext(double rarity_shift) const;
     PerkGateInput MakeGateInput(CursePolicy curses) const;
 
-    bool CreditSupplies(const std::string& tx, std::int64_t amount, std::string_view reason);
+    /// build_mult: scale by the skin build's supplies_mult (supplies earned in an arena; rewards
+    /// are scaled when they are rolled, external changes never).
+    bool CreditSupplies(const std::string& tx, std::int64_t amount, std::string_view reason, bool build_mult = true);
     TxResult DebitSupplies(const std::string& tx, std::int64_t amount, std::string_view reason);
     Status GrantPerk(std::string_view perk_id, std::string_view source, CursePolicy curses,
                      bool ignore_unlock);

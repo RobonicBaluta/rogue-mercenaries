@@ -338,11 +338,49 @@ std::array<GridCell, kGridCells> ReadGrid() {
     return grid;
 }
 
-int ItemStackMax(std::uint32_t id) {
+std::uintptr_t ItemRecord(std::uint32_t id) {
     const auto table = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + ((id >> 8) & 0xFF) * 4, 0);
-    const auto record = table ? table + (id & 0xFF) * 0x48 : 0;
+    return table ? table + (id & 0xFF) * 0x48 : 0;
+}
+
+int ItemStackMax(std::uint32_t id) {
+    const auto record = ItemRecord(id);
     if (!record || ReadOr<std::int32_t>(record + 0x30, 0) == 3) return 0;  // weapons do not stack
     return std::max(1, ReadOr<std::int32_t>(record + 0x20, 1));
+}
+
+// The skin build's stack sizes (M8, E13): the item records' maximum (dword 8) for the build's
+// items while its run lasts; slots created from then on stack that far. Put back when the run ends.
+std::map<std::uint32_t, std::int32_t> g_stackOriginal;
+
+bool WriteRecordInt(std::uintptr_t address, std::int32_t value) {
+    if (SafeStore(address, value)) return true;
+    DWORD old = 0;  // the table may sit in read-only data
+    if (!VirtualProtect(reinterpret_cast<void*>(address), sizeof(value), PAGE_READWRITE, &old)) return false;
+    const bool ok = SafeStore(address, value);
+    VirtualProtect(reinterpret_cast<void*>(address), sizeof(value), old, &old);
+    RM_LOGI("item table: %08X written after lifting its page protection (%s)", static_cast<unsigned>(address), ok ? "ok" : "failed");
+    return ok;
+}
+
+void ApplyBuildStacks() {
+    for (const auto& [item, max] : g->run->state().character.build.stack_max) {
+        const auto id = static_cast<std::uint32_t>(item);
+        const auto record = ItemRecord(id);
+        if (!record || ReadOr<std::int32_t>(record + 0x30, 0) == 3) continue;
+        const auto current = ReadOr<std::int32_t>(record + 0x20, 0);
+        if (!g_stackOriginal.count(id)) g_stackOriginal[id] = current;
+        if (current == max) continue;
+        RM_LOGI("build: item %04X stacks to %d (was %d) -> %s", id, max, current, WriteRecordInt(record + 0x20, max) ? "ok" : "failed");
+    }
+}
+
+void RestoreBuildStacks() {
+    for (const auto& [id, original] : g_stackOriginal) {
+        if (const auto record = ItemRecord(id)) WriteRecordInt(record + 0x20, original);
+        RM_LOGI("build: item %04X stacks to %d again", id, original);
+    }
+    g_stackOriginal.clear();
 }
 
 // A run's guns keep their upgrade levels (re5_layout.h kSlotUpgrades) for the whole run. The match
@@ -544,9 +582,11 @@ std::string Plain(const std::string& s) {
     for (std::size_t i = 0; i < s.size(); ++i) {
         const char c = s[i];
         const bool digitNext = i + 1 < s.size() && std::isdigit(static_cast<unsigned char>(s[i + 1]));
+        // A sign starts a number; inside a name ("AK-74", "PSG-1") the hyphen stays (the font has it).
+        const bool wordBefore = i > 0 && std::isalnum(static_cast<unsigned char>(s[i - 1]));
         if (c == '%') out += " percent";
         else if (c == '+' && digitNext) out += "plus ";
-        else if (c == '-' && digitNext) out += "minus ";
+        else if (c == '-' && digitNext && !wordBefore) out += "minus ";
         else if (c == ':') out += ",";
         else if (c == '/') out += " or ";
         else if (c == '\'') continue;
@@ -858,7 +898,18 @@ private:
                     item.help = OfferDetail(o) + "\nPrice " + std::to_string(o.price) + " supplies.";
                     item.color = RarityColour(o.rarity);
                     if (!o.purchased && o.price > s.supplies) item.locked = true;
+                    if (o.restricted) {  // M8: the skin's build cannot use this gun
+                        item.locked = true;
+                        item.help = OfferDetail(o) + "\n" + Plain(run.state().character.name) + " cannot use this weapon.";
+                    }
                     screen.items.push_back(std::move(item));
+                }
+                if (s.free_shop_rerolls > 0) {
+                    Item reroll;
+                    reroll.label = "NEW STOCK   FREE";
+                    reroll.help = "Replaces the offers above. " + Plural(s.free_shop_rerolls, "free reroll") + " left at this shop.";
+                    reroll.icon = "supplies";
+                    screen.items.push_back(std::move(reroll));
                 }
                 Item organize;
                 organize.label = "ORGANIZE INVENTORY";
@@ -929,14 +980,23 @@ private:
                 const auto& c = characters[g->selectedCharacter];
                 const rm::SkinAvailability* current = SelectedSkin(c);
                 screen.header = "SKINS   " + Upper(c.name);
+                const rm::CharacterDef* def = run.content().FindCharacter(c.id);
                 for (const auto& s : c.skins) {
                     Item item;
                     item.label = Upper(s.name);
                     item.portrait = static_cast<int>(s.costume_index);
+                    // M8: a skin with a build says what it does; the others what their trait does.
+                    const rm::SkinDef* skinDef = def != nullptr ? rm::FindSkin(*def, s.id) : nullptr;
+                    std::string summary = skinDef != nullptr ? skinDef->build.summary : std::string();
+                    if (summary.empty() && skinDef != nullptr && !skinDef->starting_passive.empty()) {
+                        if (const rm::PerkDef* trait = run.content().FindPerk(skinDef->starting_passive)) summary = trait->description;
+                    }
                     if (s.gate == rm::CharacterGate::Selectable) {
                         const bool selected = current != nullptr && current->id == s.id;
                         if (selected) item.label += "   SELECTED";
-                        item.help = selected ? "Your skin for the next run." : "Press to wear this skin.";
+                        item.help = !summary.empty() ? Plain(summary)
+                                    : selected       ? "Your skin for the next run."
+                                                     : "Press to wear this skin.";
                     } else {
                         item.locked = true;
                         item.help = s.unlock_text.empty() ? "Locked." : s.unlock_text + ".";
@@ -1095,7 +1155,14 @@ private:
                     d.outcome = st.ok() ? Outcome::Refresh : Outcome::Denied;
                     break;
                 }
-                if (index == offers) {  // ORGANIZE INVENTORY
+                const int rerollRow = s.free_shop_rerolls > 0 ? 1 : 0;
+                if (rerollRow && index == offers) {  // NEW STOCK (the skin build's free reroll)
+                    const rm::Status st = run.RerollShop();
+                    Report(st, "reroll shop");
+                    d.outcome = st.ok() ? Outcome::Refresh : Outcome::Denied;
+                    break;
+                }
+                if (index == offers + rerollRow) {  // ORGANIZE INVENTORY
                     // The game's own Organize/Buy screen when it can open here (M7.1); the mod's
                     // grid screen otherwise.
                     if (NativeItemBoxReady()) {
@@ -1397,6 +1464,11 @@ int GiveItem(const char* source, std::int64_t gameItem, int count) {
     const auto table = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + ((id >> 8) & 0xFF) * 4, 0);
     const auto record = table ? table + (id & 0xFF) * 0x48 : 0;
     if (record && ReadOr<std::int32_t>(record + 0x30, 0) == 3) {
+        if (stack) {
+            // Already held (e.g. a build's starting gun the costume carries too): never a second one.
+            RM_LOGI("%s: weapon %04X is already held, not created again", source, id);
+            return 1;
+        }
         if (!WeaponModelLoaded(static_cast<std::uint32_t>(id))) {
             // Its model is not loaded in this match; creating it hangs the game.
             RM_LOGW("%s: weapon %04X is not loaded for this character, not created", source, id);
@@ -1717,11 +1789,29 @@ InventoryBridge g_inventoryBridge;
 
 constexpr float kStartTolerance = 1000.0f;  // engine units (10 m) from the map's start
 
+// The skin build's maximum health (M8, Barry): once per match, scaled from the maximum the match
+// started with; health is then full (a stage change restores the carried health after this).
+void ApplyBuildHealth() {
+    static int appliedGeneration = -1;
+    const double mult = g->run->state().character.build.max_health_mult;
+    if (mult == 1.0 || appliedGeneration == g->matchGeneration) return;
+    const auto local = engine::LocalPlayer();
+    const auto hp = local ? engine::ReadHp(local) : std::nullopt;
+    if (!hp) return;
+    const int max = static_cast<int>(std::lround(hp->max * mult));
+    if (engine::SetHealth(local, max)) {
+        appliedGeneration = g->matchGeneration;
+        RM_LOGI("build: maximum health %d -> %d", hp->max, max);
+    }
+}
+
 // An arena began: the director's grace starts, and the HUD names the map and the route (or the
 // boss) for a few seconds (M5.3).
 void ArenaBegan(double now) {
     g->arenaBeganAt = now;
     g->boss = {};
+    ApplyBuildHealth();
+    ApplyBuildStacks();
     const rm::RunSnapshot s = g->run->Snapshot(now);
     const rm::MapDef* map = CurrentMap();
     // M6.2: a campaign area starts the player at one of its entrances at random; the map's start
@@ -2166,6 +2256,7 @@ void SettleFinishedRun() {
             g->matchUiOpenRequested = false;
             g_enemyTracks.clear();
             autopilot::Disarm("run over");
+            RestoreBuildStacks();
             // M7.3: the last match's Mercenaries results are skipped (they would write a record
             // into the game's save) and the game goes back to its Play menu, where the mod menu
             // opens on the run's results.
@@ -2894,6 +2985,12 @@ void PollDevCommand(double now) {
         float distance = 150.0f;
         words >> cls >> weaponText >> count >> distance;
         const int weapon = weaponText.empty() ? -1 : static_cast<int>(std::strtoul(weaponText.c_str(), nullptr, 16));
+        // A class whose archive this stage never loaded makes the game look for its model on disk
+        // and stop with "Failed open file ... emXXXX_low.mod" (as the director, never spawn it).
+        if (resources::Available() && !resources::ArchiveLoaded(cls)) {
+            RM_LOGW("dev spawn %s refused: its archive is not loaded on this stage (dev preload, then a new stage)", cls.c_str());
+            return;
+        }
         const auto player = engine::LocalPlayer();
         const float pos[3] = {ReadOr<float>(player + re5::off::kUnitPosition, 0.0f), ReadOr<float>(player + re5::off::kUnitPosition + 4, 0.0f),
                               ReadOr<float>(player + re5::off::kUnitPosition + 8, 0.0f)};
@@ -2930,6 +3027,20 @@ void PollDevCommand(double now) {
         const int n = std::sscanf(command.c_str() + 5, "%f %f %f", &pos[0], &pos[1], &pos[2]);
         const int written = n == 3 ? engine::WarpUnit(engine::LocalPlayer(), pos) : 0;
         RM_LOGW("dev warp %.0f %.0f %.0f -> %d copies written", pos[0], pos[1], pos[2], written);
+    } else if (command == "plactions") {
+        // Research (M8, E19): every pointer in the local player object (0x4000 bytes) to an
+        // object whose class is a player action (cPlAction...), to find the current action.
+        const auto local = engine::LocalPlayer();
+        int found = 0;
+        for (std::size_t off = 0; local && off < 0x4000; off += 4) {
+            const auto p = ReadOr<std::uintptr_t>(local + off, 0);
+            if (p < 0x00400000 || p > 0x7FFF0000 || (p & 3)) continue;
+            const std::string name = engine::ClassName(p);
+            if (name.rfind("cPl", 0) != 0 && name.rfind("cWp", 0) != 0) continue;
+            RM_LOGW("dev plactions +%04zX -> %08X %s", off, static_cast<unsigned>(p), name.c_str());
+            if (++found >= 64) break;
+        }
+        RM_LOGW("dev plactions: %d pointers", found);
     } else if (command == "where") {
         // The player's position and every other copy of it in the player object (the movement
         // code keeps its own: a warp must write them all).
@@ -3137,6 +3248,28 @@ void PollDevCommand(double now) {
         } else {
             RM_LOGW("dev gomenu: no game-flow object");
         }
+    } else if (command == "rogue") {
+        // Opens the mod menu by itself as soon as the Play menu waits for input, so test scripts
+        // never press keys on the Play menu's own rows (a stray Enter on row 0 starts the campaign,
+        // and leaving it saves the game).
+        nativemenu::OpenOnPlayMenu(nativemenu::ScreenId::Main);
+        RM_LOGW("dev rogue: the mod menu opens at the next Play menu");
+    } else if (command.rfind("select ", 0) == 0 && !run.HasActiveRun()) {
+        // "select <skin id>": the character and skin the next START RUN plays, as the CHARACTERS
+        // and SKINS screens choose them.
+        const std::string skinId = command.substr(7);
+        const auto characters = run.Characters();
+        bool found = false;
+        for (std::size_t i = 0; i < characters.size() && !found; ++i) {
+            for (const auto& s : characters[i].skins) {
+                if (s.id != skinId) continue;
+                g->selectedCharacter = static_cast<int>(i);
+                g->selectedSkin = s.id;
+                found = true;
+                break;
+            }
+        }
+        RM_LOGW("dev select %s -> %s", skinId.c_str(), found ? "ok" : "unknown skin");
     } else if (command.rfind("arm ", 0) == 0) {
         // "arm <stage> <costume slot>": the next START RUN uses this plan.
         std::istringstream words(command.substr(4));
@@ -3293,9 +3426,10 @@ private:
         }
         const auto result = g->run->ComputeOutgoingMultiplier(ctx);
         if (g->settings.probeHits && g->run->phase() == rm::Phase::ArenaActive) {
-            RM_LOGD("outgoing core=%.4f crit=%d perk=%+.3f streak=%+.3f weapon=%+.3f target %d/%d dev=%.2f",
+            RM_LOGD("outgoing core=%.4f crit=%d perk=%+.3f streak=%+.3f build=%+.3f weapon=%+.3f (%s) target %d/%d dev=%.2f",
                     result.multiplier, result.crit, result.breakdown.perk_bonus, result.breakdown.kill_streak_bonus,
-                    result.breakdown.weapon_bonus, hit.targetHp, hit.targetMaxHp, g->settings.devOutgoingMultiplier);
+                    result.breakdown.build_bonus, result.breakdown.weapon_bonus, ctx.weapon_id ? ctx.weapon_id->c_str() : "-",
+                    hit.targetHp, hit.targetMaxHp, g->settings.devOutgoingMultiplier);
         }
         return static_cast<float>(result.multiplier) * g->settings.devOutgoingMultiplier;
     }

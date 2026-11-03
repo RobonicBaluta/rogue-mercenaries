@@ -128,6 +128,16 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    roster with its weapons go with every load of a run; rewards, the shop and chests offer any loaded
    gun, purchases carry over and fire on the next stage; the director never spawns a class whose
    archive is not loaded.
+3. Run-planned rosters (user, 2026-11-03): enemies of every kind across a run, not only the
+   zone's own, but planned so a stage never loads every type. Today an arena's classes are its
+   map's fixed roster (`maps.json`; campaign areas borrow a similar Mercenaries stage's), preloaded
+   with that stage. Plan: when the run map is generated, each node gets its roster drawn from a
+   run-wide pool (variety across the run, harder classes at higher tiers, a cap on classes per
+   arena); every stage load preloads exactly its node's classes and their weapons (E3, proven for
+   uEm11 in the Village). Each pool class is vetted on foreign stages first: classes that need their
+   own stage's setup (special plaga types, the big special enemies, dogs and birds that need open
+   ground) stay with their stage or are left out. Done when a run's arenas each show their planned,
+   partly foreign classes, with no fatal error and no class spawned that the stage did not load.
 
 ### M4 — World objects
 1. ~~E10: chests placed by the arena data (no more reliance on time bonuses).~~ Done 2026-11-02: the
@@ -188,9 +198,54 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    on RUN RESULTS (also CREDITS → LAST RUN).
 
 ### M8 — Builds
-1. E12 mechanics: grab immunity with a cost, move speed, weapon-category damage.
-2. Rewrite style perks to use them; skin bonuses that enable builds; balance pass with the
-   simulator (`rm_sim`).
+Direction (user, 2026-11-03): every skin is its own build, a strong rule with a cost, replacing the
+small percentage traits. Requested builds:
+
+| Skin | Build | Needs |
+|---|---|---|
+| Chris Safari | every drop is a mine (proximity bomb), mines stack to 10 | E13 stack size, E14 drops, item id |
+| Chris S.T.A.R.S. | a first aid spray on every arena clear | done in content (`item_on_arena_clear`) |
+| Chris Warrior | rewards only shotguns, pistols and magnums; more damage with them | B1 offer filter, B2 category damage |
+| Chris Heavy Metal | can unlock the Gatling gun; ammo stacks far past the normal size | E13, item and model of the Gatling |
+| Sheva Clubbin' | extra supplies; one free shop reroll per stage | B3 supplies, B4 shop reroll |
+| Sheva Tribal | her bow | the costume's longbow kept at the run's start, arrows in the loot |
+| Sheva Business | better loot rarity and shop offers; SMGs stronger, past the normal maximum | B5 rarity, B2, B6 uncapped levels |
+| Sheva Fairy Tale | starts with a legendary weapon that upgrades without limit | B6, B7 starting weapon |
+| Jill BSAA | opens chests without keys; everyone else needs a key from a Majini kill | B8 keys, E15 chest lock |
+| Jill Battle Suit | a button combo fires a dual SMG attack, with a cooldown | E16 input combo, E17 attack |
+| Wesker Midnight | his special movement (the boss dash), with a big drawback | E16, E18 dash |
+| Wesker S.T.A.R.S. | very strong melee; can only use his pistol, magnums and the Hydra (others offered but cannot be bought) | E19 melee detection, B1 |
+| Barry | starts with a magnum that upgrades past the maximum; more health | B6, B7, E20 max health |
+| Rebecca | heals work better; sprays and mixed herbs add invulnerability and short buffs | E21 heal detection, B9 timed buffs |
+| Josh | a button combo calls a computer ally for the stage, once every two stages | E16, E22 AI partner |
+| Excella | every melee kill adds a random stat for the rest of the run | E19, B10 run stats |
+
+Core work (B, unit-tested): B1 weapon filters per skin (offered at all, or offered but not
+buyable), B2 damage by weapon category and by melee, B3 supplies multiplier, B4 free shop rerolls
+per stage, B5 rarity shift, B6 weapon instances without a level cap, B7 a skin's starting weapon
+(rarity, cap), B8 keys (drop chance per kill of a Majini class, a key per chest, an exempt skin),
+B9 timed buffs (invulnerability, damage), B10 run stats (damage, defence, health, speed, crit).
+
+Engine work (E, each closed in game): E12 the original M8 mechanics (grab immunity with a cost,
+move speed); E13 a stack's maximum per item; E14 the items enemies drop, replaced at creation;
+E15 a chest that stays shut without a key; E16 button combos from the game's input; E17 the dual
+SMG attack (the boss Jill's gun actions `cEm80ActAtkGun*` are not player actions: emulated with
+the game's damage call and the SMG's fire unless a player action can be borrowed); E18 the dash
+(the boss classes' `cEm84ActDash` likewise; emulated with the player warp, a short invulnerability
+and the cost); E19 melee hits (the player's current `cPlAction_pl_act_attack_*` action at the hit);
+E20 max health (`engine::SetHealth` writes it); E21 which healing item was used (the inventory count
+that dropped with the health rise); E22 a computer ally (`cPlIntelNpcThink` is the campaign
+partner's brain: research spike, may not be possible in a Mercenaries match).
+
+Progress 2026-11-03: B1 to B7 and E20 done; Warrior, S.T.A.R.S. Chris, Clubbin', Business, Fairy
+Tale, S.T.A.R.S. Wesker (weapons; his melee waits for E19) and Barry play their builds (`TASKS.md`).
+E13's stack sizes are coded, not yet used.
+
+Order: B1 to B7 with the builds that need no engine work (Warrior, Clubbin', Business, Fairy Tale,
+S.T.A.R.S. Chris, Barry), then E19/E20/E21 (Wesker S.T.A.R.S., Excella, Rebecca), E13/E14 and item
+ids (Safari, Heavy Metal, Tribal), B8/E15 (keys, Jill BSAA), then E16 with E17/E18/E22 (Battle
+Suit, Midnight, Josh). E12 joins where a build uses it (speed for Excella's stats). Balance pass
+with `rm_sim` at the end.
 
 ### M9 — Ship
 1. Install/uninstall and settings checked on a clean copy; crash report export.

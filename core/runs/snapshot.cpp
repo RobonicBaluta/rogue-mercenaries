@@ -65,6 +65,7 @@ RunSnapshot RunController::Snapshot(double now) const {
     s.credits = profile_.credits.balance();
     s.credits_pending = run_.credits_pending;
     s.reroll_tokens = run_.reroll_tokens;
+    s.free_shop_rerolls = run_.phase == Phase::Shop ? run_.free_shop_rerolls : 0;
     const int charges = CheatDeathCharges();
     const ArenaMetrics* current = CurrentArena();
     const int used = (run_.phase == Phase::ArenaActive && current != nullptr) ? current->cheat_death_used : 0;
@@ -134,6 +135,7 @@ RunSnapshot RunController::Snapshot(double now) const {
         v.rarity = std::string(RarityName(o.rarity));
         v.price = o.price;
         v.purchased = o.purchased;
+        v.restricted = o.restricted;
         switch (o.kind) {
             case ShopOfferKind::Heal:
                 v.id = "heal";

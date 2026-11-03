@@ -26,6 +26,7 @@ struct ShopOffer {
     std::string target_instance_id;  // WeaponUpgrade
     int target_level = 0;            // WeaponUpgrade: level before the upgrade
     WeaponInstance weapon;           // Weapon
+    bool restricted = false;         // Weapon: the skin's build cannot use it (not for sale)
 };
 
 /// Shop stock drawn from the "shop" stream: heal (only with the "heal" capability), a reroll

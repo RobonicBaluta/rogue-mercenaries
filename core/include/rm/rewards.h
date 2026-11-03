@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -55,8 +56,16 @@ using InstanceIdSource = std::function<std::string()>;
 /// capabilities present, unlocked, below max stacks and not excluded by an owned perk.
 std::vector<const PerkDef*> OfferablePerks(const OfferContext& ctx);
 
-/// Enabled weapon bases that are free or unlocked in the profile.
+/// Enabled weapon bases that are free or unlocked in the profile and among the skin build's
+/// offered weapons.
 std::vector<const WeaponBaseDef*> OfferableWeapons(const OfferContext& ctx);
+
+/// False for a gun the skin's build cannot use (the shop shows it, rewards and chests skip it).
+bool UsableWeapon(const OfferContext& ctx, const WeaponBaseDef& w);
+
+/// The next upgrade's price for a held weapon (nullopt at its maximum; a build's uncapped
+/// weapons have none).
+std::optional<std::int64_t> WeaponUpgradeCost(const OfferContext& ctx, const WeaponInstance& w);
 
 /// Equipment the shop and the rewards may hand out: priced, backed by a game item, and only
 /// when the adapter can write the inventory.
