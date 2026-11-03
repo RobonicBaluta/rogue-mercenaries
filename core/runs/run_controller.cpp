@@ -141,7 +141,7 @@ PerkGateInput RunController::MakeGateInput(CursePolicy curses) const {
 }
 
 bool RunController::CreditSupplies(const std::string& tx, std::int64_t amount, std::string_view reason, bool build_mult) {
-    if (build_mult) amount = RoundAmount(static_cast<double>(amount) * run_.character.build.supplies_mult);
+    if (build_mult) amount = RoundAmount(static_cast<double>(amount) * run_.character.build.supplies_mult * (1.0 + run_.stats.supplies));
     if (amount <= 0) return false;
     const TxResult r = run_.supplies.Credit(tx, amount);
     if (r != TxResult::Applied) {
@@ -1161,24 +1161,48 @@ void RunController::EnterShop() {
     Emit(std::move(e));
 }
 
+double* RunStats::Field(std::string_view stat) {
+    if (stat == "damage") return &damage;
+    if (stat == "defense") return &defense;
+    if (stat == "max_health") return &max_health;
+    if (stat == "crit") return &crit;
+    if (stat == "move_speed") return &move_speed;
+    if (stat == "heal") return &heal;
+    if (stat == "supplies") return &supplies;
+    return nullptr;
+}
+
+double RunStats::Get(std::string_view stat) const {
+    RunStats copy = *this;
+    const double* field = copy.Field(stat);
+    return field != nullptr ? *field : 0.0;
+}
+
 void RunController::ApplyBuildKill(const KillEvent& kill, KillOutcome& out) {
     const SkinBuild& build = run_.character.build;
-    // A melee kill adds a random stat for the rest of the run (Excella).
+    // A melee kill adds a random stat for the rest of the run (Excella): one below its cap (in a
+    // stable order, so a seed rolls the same), up to the cap.
     if (kill.was_melee.value_or(false) && !build.melee_kill_stats.empty()) {
-        auto it = build.melee_kill_stats.begin();
-        std::advance(it, static_cast<std::ptrdiff_t>(streams_->loot.Index(build.melee_kill_stats.size())));
-        const std::string& stat = it->first;
-        if (stat == "damage") run_.stats.damage += it->second;
-        else if (stat == "defense") run_.stats.defense += it->second;
-        else if (stat == "max_health") run_.stats.max_health += it->second;
-        else if (stat == "crit") run_.stats.crit += it->second;
-        ++run_.stats.gains;
-        out.stat_gained = stat;
-        out.stat_amount = it->second;
-        Event e = MakeEvent(EventType::PerkTriggered);
-        e.Add("source", "build").Add("trigger", "melee_kill_stat").Add("stat", stat).Add("amount", it->second)
-            .Add("gains", run_.stats.gains);
-        Emit(std::move(e));
+        std::vector<std::pair<std::string, double>> open;
+        for (const auto& [stat, amount] : build.melee_kill_stats) {
+            const auto cap = build.melee_kill_caps.find(stat);
+            if (cap == build.melee_kill_caps.end() || run_.stats.Get(stat) < cap->second) open.emplace_back(stat, amount);
+        }
+        std::sort(open.begin(), open.end());
+        if (!open.empty()) {
+            const auto& [stat, amount] = open[streams_->loot.Index(open.size())];
+            double* field = run_.stats.Field(stat);
+            const auto cap = build.melee_kill_caps.find(stat);
+            const double before = field != nullptr ? *field : 0.0;
+            if (field != nullptr) *field = cap != build.melee_kill_caps.end() ? std::min(cap->second, before + amount) : before + amount;
+            ++run_.stats.gains;
+            out.stat_gained = stat;
+            out.stat_amount = field != nullptr ? *field - before : 0.0;
+            Event e = MakeEvent(EventType::PerkTriggered);
+            e.Add("source", "build").Add("trigger", "melee_kill_stat").Add("stat", stat).Add("amount", out.stat_amount)
+                .Add("total", field != nullptr ? *field : 0.0).Add("gains", run_.stats.gains);
+            Emit(std::move(e));
+        }
     }
     // Keys from the listed enemy classes.
     const EconomyConfig::Keys& keys = content_->economy().keys;
@@ -1201,7 +1225,7 @@ HealOutcome RunController::OnPlayerHealed(const HealContext& heal) {
     out.amount = heal.amount;
     if (!run_.active || heal.amount <= 0.0) return out;
     const SkinBuild& build = run_.character.build;
-    out.amount = heal.amount * build.heal_mult;
+    out.amount = heal.amount * build.heal_mult * (1.0 + run_.stats.heal);
     if (build.heal_buff_fraction > 0.0 && heal.hp_max > 0.0 && heal.amount >= build.heal_buff_fraction * heal.hp_max) {
         out.high_tier = true;
         out.invulnerable_seconds = build.heal_invulnerable_seconds;

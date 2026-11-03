@@ -123,9 +123,9 @@ BUILDS = {
         'name': 'Uroboros Speed', 'icon': 'dash',
         'summary': 'Dash, or lunge at an enemy ahead to finish it in melee; a second button bursts. Half health.',
         'max_health_mult': 0.5,
-        'special': {'kind': 'dash', 'name': 'Dash', 'icon': 'dash', 'cooldown_seconds': 2.5, 'power': 5,
+        'special': {'kind': 'dash', 'name': 'Dash', 'icon': 'dash', 'cooldown_seconds': 3.5, 'power': 5,
                     'duration_seconds': 0.5},
-        'special_2': {'kind': 'burst', 'name': 'Burst', 'icon': 'shockwave', 'cooldown_seconds': 6, 'power': 350,
+        'special_2': {'kind': 'burst', 'name': 'Burst', 'icon': 'shockwave', 'cooldown_seconds': 7, 'power': 350,
                       'duration_seconds': 0.4},
     },
     'rebecca_stars': {
@@ -141,8 +141,11 @@ BUILDS = {
     },
     'excella_dress': {
         'name': 'Ambition', 'icon': 'crown',
-        'summary': 'Every melee kill raises one of her stats for the rest of the run: damage, defense, health or criticals.',
-        'melee_kill_stats': {'damage': 0.04, 'defense': 0.03, 'max_health': 0.05, 'crit': 0.02},
+        'summary': 'Every melee kill raises one of seven stats for the run, each to a cap: damage, speed, healing and more.',
+        'melee_kill_stats': {'damage': 0.04, 'defense': 0.03, 'max_health': 0.05, 'crit': 0.02, 'move_speed': 0.03,
+                             'heal': 0.05, 'supplies': 0.04},
+        'melee_kill_caps': {'damage': 1.0, 'defense': 0.5, 'max_health': 1.0, 'crit': 0.3, 'move_speed': 0.3,
+                            'heal': 0.5, 'supplies': 0.5},
     },
     'chris_warrior': {
         'name': 'Brute Force', 'icon': 'shotgun',

@@ -280,6 +280,7 @@ TEST_CASE("the second batch of build fields is validated", "[builds]") {
     CHECK(LoadErrors(json{{"name", "Brawler"}, {"icon", "fist"}, {"melee_damage", 2.0}}).empty());
     CHECK(HasError(LoadErrors(json{{"icon", "Fist!"}}), "not a valid name"));
     CHECK(HasError(LoadErrors(json{{"melee_kill_stats", {{"luck", 0.1}}}}), "unknown stat"));
+    CHECK(HasError(LoadErrors(json{{"melee_kill_caps", {{"luck", 0.1}}}}), "unknown stat"));
     CHECK(HasError(LoadErrors(json{{"special", {{"kind", "fly"}, {"name", "Fly"}, {"cooldown_seconds", 5}}}}), "unknown special kind"));
     CHECK(HasError(LoadErrors(json{{"special", {{"kind", "dash"}, {"name", "Dash"}}}}), "neither a cooldown"));
     CHECK(HasError(LoadErrors(json{{"extra_weapons", {"shotgun"}}}), "not build_only"));
@@ -482,4 +483,41 @@ TEST_CASE("a special keeps its cooldown, its arena limit and a dash's invulnerab
     }
     CHECK(josh.rc.Special(t + 1.0).ready);  // arena 3: two arenas after its use
     CHECK(josh.rc.UseSpecial(t + 1.0).ok());
+}
+
+TEST_CASE("melee kills raise run stats up to their caps, and the new stats work", "[builds]") {
+    // Five melee kills (the fixture arena's budget) for each build.
+    auto meleeKills = [](test::Harness& h) {
+        REQUIRE(h.rc.StartRun("alpha", 4, "alpha_build").ok());
+        REQUIRE(h.rc.BeginArena(0.0).ok());
+        for (int i = 0; h.rc.RemainingEnemies() > 0 && i < 20; ++i) {
+            KillEvent k;
+            k.now = 1.0 + i;
+            k.by_player = true;
+            k.was_melee = true;
+            k.enemy_id = "melee" + std::to_string(i);
+            h.rc.OnEnemyKilled(k);
+        }
+    };
+    // Speed alone: 0.1, 0.2, then 0.25 (its cap), then no more gains.
+    test::Harness speed(test::Load(BuildSources(json{{"melee_kill_stats", {{"move_speed", 0.1}}},
+                                                     {"melee_kill_caps", {{"move_speed", 0.25}}}})));
+    meleeKills(speed);
+    CHECK(speed.rc.state().stats.move_speed == Catch::Approx(0.25));
+    CHECK(speed.rc.state().stats.gains == 3);
+    // Healing: +20 percent on every heal.
+    test::Harness heal(test::Load(BuildSources(json{{"melee_kill_stats", {{"heal", 0.2}}}, {"melee_kill_caps", {{"heal", 0.2}}}})));
+    meleeKills(heal);
+    CHECK(heal.rc.state().stats.heal == Catch::Approx(0.2));
+    HealContext ctx;
+    ctx.now = 50.0;
+    ctx.amount = 100.0;
+    ctx.hp = 100.0;
+    ctx.hp_max = 1000.0;
+    CHECK(heal.rc.OnPlayerHealed(ctx).amount == Catch::Approx(120.0));
+    // Supplies: every gain stays within its cap.
+    test::Harness supplies(test::Load(BuildSources(json{{"melee_kill_stats", {{"supplies", 0.25}}},
+                                                        {"melee_kill_caps", {{"supplies", 0.5}}}})));
+    meleeKills(supplies);
+    CHECK(supplies.rc.state().stats.supplies == Catch::Approx(0.5));
 }

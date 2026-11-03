@@ -365,6 +365,11 @@ constexpr std::size_t kSetInfoAreaKeepType = 0xC0;  // u32; +0xC4 mAreaKeepDist 
 constexpr std::size_t kAppLock = 0x4;
 constexpr std::size_t kAppThreadedFlag = 0x1C;
 constexpr std::size_t kAppFlags = 0x10438;
+constexpr std::size_t kAppScreenFlags = 0x10434;     // & kAppScreensPaused: screens' moves skip a frame
+constexpr std::uint32_t kAppScreensPaused = 0x500;
+// aGame: +0x348 points at a byte per player; the cockpit HUD draws its other mode (the item
+// screen, hypothesis 2026-11-03) while that byte is 1 (FUN_007162D0).
+constexpr std::size_t kGameItemScreen = 0x348;
 constexpr std::uint32_t kAppPauseRequest = 0x800;
 constexpr std::uint32_t kAppPaused = 0x1000;
 // uEnemy

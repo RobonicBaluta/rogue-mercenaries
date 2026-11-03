@@ -13,6 +13,8 @@ namespace rmre5::matchui {
 
 bool Install();
 void SetModel(nativemenu::Model* model);
+/// The game's own pause menu is showing (uIdPause00 out of its closed state).
+bool PauseMenuOpen();
 
 /// Opens the screen stack at `first` and pauses the world; no-op when already open.
 void Open(nativemenu::ScreenId first);

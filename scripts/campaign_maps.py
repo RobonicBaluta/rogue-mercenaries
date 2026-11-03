@@ -64,7 +64,11 @@ BOSSES = {
 }
 BOSS_PLAYER_DISTANCE = (1000, 2500)  # the boss appears within sight, not on top of the player
 # Kept for developer tests but out of the run rotation ("rotation": false), with the reason.
-NO_ROTATION = {}  # 503 was out (its random upper-deck start); the start warp (M6.2) fixed that
+NO_ROTATION = {
+    # The campaign's opening area: the story keeps the inventory, weapon switching and the HUD off
+    # there until an event a run never reaches (user playtest 2026-11-03).
+    100: 'the story keeps the inventory, weapons and HUD off',
+}  # 503 was out (its random upper-deck start); the start warp (M6.2) fixed that
 # Short names from the areas' start views (vetting 2026-11-02); others get "Campaign sNNN".
 NAMES = {
     100: 'Kijuju Town', 104: 'Waterfront', 105: 'Back Alleys', 113: 'Warehouse', 114: 'Slums',

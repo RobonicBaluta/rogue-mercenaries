@@ -82,6 +82,7 @@ struct SkinBuild {
     /// Each melee kill adds one stat for the rest of the run, picked at random: "damage",
     /// "defense", "max_health", "crit" -> the amount it adds (fractions).
     StringMap<double> melee_kill_stats;
+    StringMap<double> melee_kill_caps;  // a stat at its cap is not rolled again (none: no cap)
     double heal_mult = 1.0;          // healing items heal this much
     /// A heal of at least this fraction of max health (spray, mixed herbs; 0 = never) also makes
     /// the player invulnerable and stronger for a while.

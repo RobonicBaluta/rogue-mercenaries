@@ -65,6 +65,9 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | keys | `keys: a key dropped, N held`; `keys: chest locked (no key), it comes back`; `keys: locked chest back at x y z` |
 | Twin Fury, Backup | `enemy XXXXXXXX died (health reached zero): counted, N remain (by the special)` |
 | health | `build: maximum health A -> B (xM)` |
+| specials refused | `special: slot N pressed while <action or paused / the item screen / a mod screen / down>; not used` |
+| enemy stagger states | `enemy states: uEm10 cEm10ActDmgHead after a hit (a lunge's stagger)` (once per class and state) |
+| item screen | `hud: item screen flag 0 -> 1` when the in-match inventory opens (if the hypothesis holds) |
 | specials input | `special: lunge ... [XInput pad]` / `[keyboard]` / `[DirectInput pad]`: the device that triggered it |
 | Wesker's dodge | `special: dodge running as cPlAction_pl_act_avoid_front`; `special: the dodge never started (...)`; `special: dodge still running after 1.5 s (...); back to relax` |
 | burst | `special: burst: reacts killed ... [device]` |

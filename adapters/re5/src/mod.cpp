@@ -1911,7 +1911,8 @@ void BuildKillNotice(const rm::KillOutcome& outcome, double now) {
     }
     if (!outcome.stat_gained.empty()) {
         static const std::map<std::string, std::string> names = {
-            {"damage", "DAMAGE"}, {"defense", "DEFENSE"}, {"max_health", "HEALTH"}, {"crit", "CRITICALS"}};
+            {"damage", "DAMAGE"}, {"defense", "DEFENSE"}, {"max_health", "HEALTH"}, {"crit", "CRITICALS"},
+            {"move_speed", "SPEED"}, {"heal", "HEALING"}, {"supplies", "SUPPLIES"}};
         const auto it = names.find(outcome.stat_gained);
         const std::string stat = it != names.end() ? it->second : Upper(outcome.stat_gained);
         g->notice = Upper(Plain(state.character.build.name)) + "   " + stat + " UP " +
@@ -2517,6 +2518,55 @@ std::string SpecialBindingText(int slot) {
     return Upper(key) + (pad.empty() ? "" : " / " + pad);
 }
 
+// What the player may do a special in: on his feet and in control (standing, moving, aiming,
+// firing, reloading, the knife, a melee or a dodge), not grabbed, hit, down, using an item or in
+// a story action (user playtest 2026-11-03: specials while grabbed and downed).
+bool ActionAllowsSpecial(const std::string& action) {
+    static const char* const kAllowed[] = {
+        "cPlAction_pl_act_wait", "cPlAction_pl_act_relax", "cPlAction_pl_act_walk", "cPlAction_pl_act_run",
+        "cPlAction_pl_act_back", "cPlAction_pl_act_turn", "cPlAction_pl_act_wall_", "cPlAction_pl_act_weapon_",
+        "cPlAction_pl_act_knife_", "cPlAction_pl_act_ready_wait", "cPlAction_pl_act_attack_", "cPlAction_pl_act_avoid_",
+    };
+    for (const char* prefix : kAllowed) {
+        if (action.rfind(prefix, 0) == 0) return true;
+    }
+    return false;
+}
+
+// The game's own screens and pause: its pause menu, a paused world, the item screen.
+bool ItemScreenOpen() {
+    const auto game = ReadMercTimer().object;
+    const auto flags = game ? ReadOr<std::uintptr_t>(game + re5::off::kGameItemScreen, 0) : 0;
+    const bool open = flags != 0 && ReadOr<std::uint8_t>(flags, 0) == 1;
+    static int last = -1;
+    if (static_cast<int>(open) != last) {
+        if (last >= 0) RM_LOGI("hud: item screen flag %d -> %d", last, static_cast<int>(open));
+        last = open;
+    }
+    return open;
+}
+
+bool GamePaused() {
+    const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+    const auto screens = app ? ReadOr<std::uint32_t>(app + re5::off::kAppScreenFlags, 0) : 0;
+    const auto flags = app ? ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) : 0;
+    return (screens & re5::off::kAppScreensPaused) != 0 || (flags & (re5::off::kAppPauseRequest | re5::off::kAppPaused)) != 0 ||
+           matchui::PauseMenuOpen();
+}
+
+// Why a special cannot start now ("" when it can).
+std::string SpecialBlocked(std::uintptr_t local) {
+    if (!local) return "no player";
+    if (matchui::IsOpen() || overlay::IsFocused()) return "a mod screen";
+    if (GamePaused()) return "paused";
+    if (ItemScreenOpen()) return "the item screen";
+    const auto hp = engine::ReadHp(local);
+    if (!hp || hp->hp <= 0) return "down";
+    const std::string action = engine::CurrentActionName(local);
+    if (!action.empty() && !ActionAllowsSpecial(action)) return action;
+    return "";
+}
+
 // The player's facing on the ground plane (uCoord quaternion, +Z forward).
 bool PlayerFacing(std::uintptr_t player, float& fx, float& fz) {
     const float qx = ReadOr<float>(player + re5::off::kUnitRotation, 0.0f), qy = ReadOr<float>(player + re5::off::kUnitRotation + 4, 0.0f);
@@ -2605,7 +2655,7 @@ constexpr float kStaggeredRange = 1000.0f;   // 10 m: a staggered enemy anywhere
 constexpr float kStaggeredCone = 0.643f;     // cos 50 degrees
 constexpr float kLungeStop = 110.0f;         // he ends this far in front of the enemy
 constexpr int kLungeDamage = 300;
-constexpr int kLungeDamageStaggered = 120;   // a staggered one keeps its stagger for the melee
+constexpr int kLungeDamageStaggered = 650;   // a staggered one takes his ranged melee: blown away
 constexpr float kBurstRadius = 350.0f;
 constexpr int kBurstDamage = 350;
 constexpr double kLungeCooldown = 1.2;       // times the special's cooldown
@@ -2629,11 +2679,11 @@ float Horizontal(const float a[3], const float b[3]) {
 // A character reeling in a state the game's melee prompt follows (a head, knee or leg hit, a stagger).
 bool Staggered(std::uintptr_t enemy) {
     const std::string action = engine::CurrentActionName(enemy);
-    if (action.rfind("cEm", 0) != 0) return false;
-    for (const char* state : {"ActDmgHead", "ActDmgKnee", "ActDmgLeg", "ActDmgYoro", "ActDmgArm"}) {
-        if (action.find(state) != std::string::npos) return true;
+    if (action.rfind("cEm", 0) != 0 || action.find("ActDmg") == std::string::npos) return false;
+    for (const char* moving : {"Flyoff", "Fall", "Fire", "Ice", "Ladder"}) {
+        if (action.find(moving) != std::string::npos) return false;
     }
-    return false;
+    return true;
 }
 
 // The floor under (x, z) near height y: a cast from a step above down past a step below.
@@ -2964,13 +3014,14 @@ void StepSpecial(double now) {
             float at[3];
             for (int k = 0; k < 3; ++k) at[k] = ReadOr<float>(g_move.victim + re5::off::kUnitPosition + k * 4, 0.0f);
             FacePoint(local, at);
-            // A staggered one keeps its stagger (the melee prompt's state); another is left reeling.
-            const bool staggered = g_move.victimStaggered && Staggered(g_move.victim);
+            // A staggered one takes his ranged melee (a heavy blow, a Majini blown away); another is
+            // left reeling from a head hit, the state the game's melee prompt follows.
+            const bool staggered = g_move.victimStaggered;
             const std::string result = StrikeEnemy(g_move.victim, staggered ? kLungeDamageStaggered : kLungeDamage,
-                                                   staggered ? -1 : re5::off::kEm10DmgHead, now);
+                                                   staggered ? re5::off::kEm10DmgFlyoff : re5::off::kEm10DmgHead, now);
             RM_LOGI("special: lunge strikes %s%s: %s", engine::ClassName(g_move.victim).c_str(), staggered ? " (staggered)" : "",
                     result.c_str());
-            if (result != "killed" && result != "missed") {
+            if (!staggered && result != "killed" && result != "missed") {
                 g->notice = "MELEE";
                 g->noticeUntil = now + 1.5;
             }
@@ -3029,12 +3080,28 @@ void DriveSpecial(double now) {
         for (int slot = 0; slot < 2; ++slot) g_comboHeld[slot] = SpecialComboDown(slot);
         return;
     }
+    const auto me = engine::LocalPlayer();
+    const std::string blocked = SpecialBlocked(me);
     for (int slot = 0; slot < 2; ++slot) {
         if (!build.Special(slot).Any()) continue;
         const char* source = "?";
-        const bool down = SpecialComboDown(slot, &source) && !matchui::IsOpen() && !overlay::IsFocused();
-        if (down && !g_comboHeld[slot]) StartSpecial(now, slot, source);
+        const bool down = SpecialComboDown(slot, &source);
+        if (down && !g_comboHeld[slot]) {
+            if (blocked.empty()) {
+                StartSpecial(now, slot, source);
+            } else {
+                static double loggedAt = -10.0;
+                if (now - loggedAt > 2.0) {
+                    loggedAt = now;
+                    RM_LOGI("special: slot %d pressed while %s; not used", slot, blocked.c_str());
+                }
+            }
+        }
         g_comboHeld[slot] = down;
+    }
+    // A move in progress stops when he is grabbed, hit or down (not while it plays its own dodge).
+    if (!g_move.kind.empty() && !blocked.empty() && blocked.rfind("cPlAction_pl_act_avoid", 0) != 0) {
+        EndSpecialMove(("interrupted: " + blocked).c_str());
     }
     StepSpecial(now);
     // A dash special's ring shows the move the button would make (checked 10 times a second).
@@ -3169,6 +3236,86 @@ void DrawWeaponCard() {
         list->AddText(font, size, at, (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT), line.c_str());
         y += gap;
     }
+}
+
+// What enemies do just after the player hits them (the stagger states the lunge looks for): one
+// line per class and state in a session.
+struct HitSample {
+    std::uintptr_t enemy = 0;
+    double at = 0.0;
+};
+std::vector<HitSample> g_hitSamples;
+std::set<std::string> g_hitStatesSeen;
+
+void SampleHitStates(double now) {
+    for (auto it = g_hitSamples.begin(); it != g_hitSamples.end();) {
+        if (now < it->at) {
+            ++it;
+            continue;
+        }
+        const std::string state = engine::CurrentActionName(it->enemy);
+        const std::string key = engine::ClassName(it->enemy) + " " + state;
+        if (!state.empty() && g_hitStatesSeen.size() < 80 && g_hitStatesSeen.insert(key).second) {
+            RM_LOGI("enemy states: %s after a hit%s", key.c_str(), Staggered(it->enemy) ? " (a lunge's stagger)" : "");
+        }
+        it = g_hitSamples.erase(it);
+    }
+}
+
+// Excella's speed (a run stat, M8): while she walks or runs she covers that much more ground,
+// each step checked against walls and the floor like Wesker's moves.
+struct SpeedTrack {
+    std::uintptr_t player = 0;
+    float last[3] = {};
+    bool have = false;
+};
+SpeedTrack g_speed;
+constexpr float kSpeedStepMax = 60.0f;   // a longer step between ticks is not walking (a warp)
+constexpr float kSpeedExtraMax = 25.0f;  // the most added in one tick
+constexpr float kSpeedFloor = 50.0f;     // the floor ahead within half a metre of her own
+
+void ApplyMoveSpeed() {
+    rm::RunController& run = *g->run;
+    const double bonus = run.HasActiveRun() ? run.state().stats.move_speed : 0.0;
+    const auto local = engine::LocalPlayer();
+    if (bonus <= 0.0 || !local || run.phase() != rm::Phase::ArenaActive || !g->match.inMatch || !g_move.kind.empty()) {
+        g_speed.have = false;
+        return;
+    }
+    float pos[3];
+    for (int k = 0; k < 3; ++k) pos[k] = ReadOr<float>(local + re5::off::kUnitPosition + k * 4, 0.0f);
+    auto keep = [&](const float at[3]) {
+        g_speed.player = local;
+        for (int k = 0; k < 3; ++k) g_speed.last[k] = at[k];
+        g_speed.have = true;
+    };
+    if (!g_speed.have || g_speed.player != local) {
+        keep(pos);
+        return;
+    }
+    const float dx = pos[0] - g_speed.last[0], dz = pos[2] - g_speed.last[2];
+    const float step = std::sqrt(dx * dx + dz * dz);
+    const std::string action = engine::CurrentActionName(local);
+    const bool moving = action.rfind("cPlAction_pl_act_walk", 0) == 0 || action.rfind("cPlAction_pl_act_run", 0) == 0 ||
+                        action.rfind("cPlAction_pl_act_back", 0) == 0;
+    if (!moving || step < 1.0f || step > kSpeedStepMax || GamePaused() || ItemScreenOpen()) {
+        keep(pos);
+        return;
+    }
+    const float extra = std::min(step * static_cast<float>(bonus), kSpeedExtraMax);
+    const float ux = dx / step, uz = dz / step;
+    const float a[3] = {pos[0], pos[1] + kChestHeight, pos[2]};
+    const float b[3] = {pos[0] + ux * (extra + kWallMargin), pos[1] + kChestHeight, pos[2] + uz * (extra + kWallMargin)};
+    const auto wall = engine::CastSegment(a, b);
+    float floorY = 0.0f;
+    if (!wall || wall->Blocked() || !FloorAt(pos[0] + ux * extra, pos[1], pos[2] + uz * extra, floorY) ||
+        std::fabs(floorY - pos[1]) > kSpeedFloor) {
+        keep(pos);
+        return;
+    }
+    const float to[3] = {pos[0] + ux * extra, floorY, pos[2] + uz * extra};
+    engine::WarpUnit(local, to);
+    keep(to);
 }
 
 void DrawSpecialWidgets() {
@@ -4443,7 +4590,13 @@ private:
                     static_cast<unsigned>(r.enemy), engine::ClassName(r.enemy).c_str(), r.attackerIsPlayer,
                     r.attackerIsLocal, r.hpBefore, r.hpAfter, r.maxHp, r.rawDamage, r.appliedDamage, r.killed, by.c_str());
         }
-        if (!r.killed) return;
+        if (!r.killed) {
+            if (r.attackerIsLocal) {
+                std::lock_guard lock(g->mutex);
+                if (g_hitSamples.size() < 64) g_hitSamples.push_back({r.enemy, Now() + 0.25});
+            }
+            return;
+        }
         std::lock_guard lock(g->mutex);
         rm::KillEvent kill;
         kill.now = Now();
@@ -4561,6 +4714,8 @@ private:
         ApplyHeals();
         DriveSpecial(now);
         WatchEquippedWeapon(now);
+        SampleHitStates(now);
+        ApplyMoveSpeed();
         // A match a run played in stays a run's match until it is gone, so quitting it writes no
         // save even if the run is settled first.
         static bool runMatch = false;

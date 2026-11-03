@@ -776,20 +776,26 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
     CheckKeys(d, b, {"name", "icon", "summary", "offered_weapons", "usable_weapons", "category_damage", "supplies_mult",
                      "free_shop_rerolls", "rarity_shift", "uncapped_upgrades", "starting_weapon",
                      "starting_weapon_rarity", "max_health_mult", "stack_max", "ammo_stack_mult", "extra_weapons",
-                     "melee_damage", "melee_kill_stats", "heal_mult", "heal_buff_fraction", "heal_invulnerable_seconds",
+                     "melee_damage", "melee_kill_stats", "melee_kill_caps", "heal_mult", "heal_buff_fraction", "heal_invulnerable_seconds",
                      "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "special", "special_2"});
     GetString(d, b, "name", out.name, false);
     if (GetString(d, b, "icon", out.icon, false) && !IsValidId(out.icon)) d.Error("icon " + Q(out.icon) + " is not a valid name");
     if (GetNumber(d, b, "ammo_stack_mult", out.ammo_stack_mult, false)) CheckRange(d, "ammo_stack_mult", out.ammo_stack_mult, 1.0, 20.0);
     GetStringList(d, b, "extra_weapons", out.extra_weapons, false);
     if (GetNumber(d, b, "melee_damage", out.melee_damage, false)) CheckRange(d, "melee_damage", out.melee_damage, -0.9, 20.0);
+    // The run stats a melee kill can raise, and their caps.
+    const auto knownStat = [](const std::string& stat) {
+        return stat == "damage" || stat == "defense" || stat == "max_health" || stat == "crit" || stat == "move_speed" ||
+               stat == "heal" || stat == "supplies";
+    };
+    constexpr const char* kStatNames = "damage, defense, max_health, crit, move_speed, heal, supplies";
     if (const json* ms = Get(b, "melee_kill_stats")) {
         if (!ms->is_object()) {
             d.Error("field 'melee_kill_stats' must be an object");
         } else {
             for (const auto& [stat, v] : ms->items()) {
-                if (stat != "damage" && stat != "defense" && stat != "max_health" && stat != "crit") {
-                    d.Error("melee_kill_stats: unknown stat " + Q(stat) + " (damage, defense, max_health, crit)");
+                if (!knownStat(stat)) {
+                    d.Error("melee_kill_stats: unknown stat " + Q(stat) + " (" + kStatNames + ")");
                     continue;
                 }
                 if (!v.is_number()) {
@@ -798,6 +804,22 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                 }
                 CheckRange(d, "melee_kill_stats " + stat, v.get<double>(), 0.0, 1.0, true);
                 out.melee_kill_stats[stat] = v.get<double>();
+            }
+        }
+    }
+    if (const json* mc = Get(b, "melee_kill_caps")) {
+        if (!mc->is_object()) {
+            d.Error("field 'melee_kill_caps' must be an object");
+        } else {
+            for (const auto& [stat, v] : mc->items()) {
+                if (!knownStat(stat)) {
+                    d.Error("melee_kill_caps: unknown stat " + Q(stat) + " (" + kStatNames + ")");
+                } else if (!v.is_number()) {
+                    d.Error("melee_kill_caps " + Q(stat) + " must be a number");
+                } else {
+                    CheckRange(d, "melee_kill_caps " + stat, v.get<double>(), 0.0, 5.0, true);
+                    out.melee_kill_caps[stat] = v.get<double>();
+                }
             }
         }
     }

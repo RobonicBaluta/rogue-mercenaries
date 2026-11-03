@@ -198,7 +198,10 @@ void Frame(std::uintptr_t self) {
     Draw(self, nativemenu::kHelpSlot, 640, kHelpY, kHelpScale, kWhite);
 }
 
+std::atomic<bool> g_pauseMenuOpen{false};
+
 void __fastcall PauseMoveDetour(std::uintptr_t self, void*) {
+    g_pauseMenuOpen = ReadOr<std::uint8_t>(self + re5::off::kMenuState, 0) != 0;
     // While a mod screen is open the game's own pause menu stays shut (its closed state only
     // watches for the pause button); otherwise the screen runs as usual.
     const bool blockPause = g_open.load() && ReadOr<std::uint8_t>(self + re5::off::kMenuState, 1) == 0;
@@ -233,6 +236,8 @@ void __fastcall PauseMoveDetour(std::uintptr_t self, void*) {
 }
 
 }  // namespace
+
+bool PauseMenuOpen() { return g_pauseMenuOpen.load(); }
 
 bool Install() {
     if (!engine::Caps().pauseScreen) {

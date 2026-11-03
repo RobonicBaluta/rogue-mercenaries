@@ -91,7 +91,7 @@ the others are written and wait for a playtest (2026-11-03).
 | Josh | BSAA | Call for Backup | Special: covering fire on the nearest enemy (within 18 m) every 1.2 s for the rest of the arena, once every two arenas. A stand-in until a real computer partner can be spawned. |
 | Barry | S.T.A.R.S. | Old Reliable | An S and W M29 that upgrades without limit; health x1.5. |
 | Rebecca | S.T.A.R.S. | Field Surgeon | Heals x1.5. A big heal (at least 60 percent of her health: a spray, a mixed herb) makes her untouchable for 4 s and 30 percent stronger for 12 s. |
-| Excella | Dress | Ambition | Every melee kill raises damage (+4 percent), defence (+3), health (+5) or critical chance (+2) for the rest of the run. |
+| Excella | Dress | Ambition | Every melee kill raises one stat for the rest of the run, up to its cap: damage (+4 percent, to +100), defence (+3, to +50), health (+5, to +100), critical chance (+2, to +30), movement speed (+3, to +30), healing (+5, to +50) or supplies (+4, to +50). |
 | Wesker | Midnight | Uroboros Speed | Special: a dash, or a lunge at an enemy ahead (below); a second special, the burst. Untouchable while they act. Half his health. |
 | Wesker | S.T.A.R.S. | Iron Fist | Melee hits three times as hard. Only his Samurai Edge, magnums and the Hydra can be bought or used. |
 
@@ -115,15 +115,17 @@ and the backup deal damage without shots on screen. Their kills count as yours.
 and level, its damage factor, what its level adds, and its traits.
 
 **Wesker's special** picks its move, and its ring shows which one the button would make: **LUNGE**, his
-long-range melee, at a staggered enemy up to 10 m away in a wide cone ahead (a head, knee or leg hit:
-the state the game's own melee prompt follows; he closes in at Uroboros speed and the screen says
-*MELEE*, so the game's melee button finishes it with his own move) or else at an enemy lined up within
-12 m (hit for 300 and left reeling from a head hit, ready for the same melee; 3 s to recover), else
-**DASH** (5 m ahead, 200 damage and a stagger to everyone he runs through; 2.5 s). Both play his own
-forward dodge, started the way the game starts its dodges. His second special, **BURST** (X or both
-sticks): 350 damage to everyone within 3.5 m on his level, a Majini is blown away; 6 s. Every move is
-checked against the level with the game's own collision query, the one its dodges use: he stops short
-of walls and lands on a floor within a step of his own, or he does not move.
+long-range melee, at an enemy up to 10 m away in a wide cone ahead that is reeling from a hit (shot in
+the head, a knee, a stagger): he closes in at Uroboros speed and strikes it for 650, a Majini is blown
+away; or at an enemy lined up within 12 m (hit for 300 and left reeling from a head hit, the state the
+game's own melee prompt follows, the screen says *MELEE*); 4.2 s to recover. Else **DASH** (5 m ahead,
+200 damage and a stagger to everyone he runs through; 3.5 s). Both play his own forward dodge, started
+the way the game starts its dodges. His second special, **BURST** (X or both sticks): 350 damage to
+everyone within 3.5 m on his level, a Majini is blown away; 7 s. Every move is checked against the
+level with the game's own collision query, the one its dodges use: he stops short of walls and lands
+on a floor within a step of his own, or he does not move. Specials only work while he is on his feet
+and in control: not while grabbed, hit, down, using an item, in a story action, with the game paused
+or in a menu.
 
 **Stuck enemies.** An enemy that has not moved for 12 s while far from you (8 s for a boss), or one of
 the last three when nothing has died for 25 s and it is far, is moved to a point within your reach and

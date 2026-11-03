@@ -662,6 +662,7 @@
       "id": "campaign_s100",
       "name": "Kijuju Town",
       "stage": 100,
+      "rotation": false,
       "start": [10492.5, 0.0, 7927.8],
       "max_alive": 12,
       "min_player_distance": 800,
