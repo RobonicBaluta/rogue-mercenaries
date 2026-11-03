@@ -29,6 +29,7 @@ struct Verified {
     bool dodge = false;         // the player's dodge, started the game's way (M8: Wesker's moves)
     bool turn = false;          // a character turned the game's way (M8: Wesker faces his lunge's target)
     bool motions = false;       // motion lists looked up, bound to a model and played (M8: boss moves)
+    bool partner = false;       // a computer player added the game's way (E22: Josh's backup)
     bool hitAttacker = false;
     bool gameWork = false;   // mode/stage/merc timer layout
     bool mercCountdown = false;
@@ -126,6 +127,19 @@ struct BodyMotion {
     float frames = 0.0f;
 };
 std::optional<BodyMotion> ReadBodyMotion(std::uintptr_t unit);
+
+/// A computer-controlled player (ROADMAP E22: Josh's backup), added the way the Port stage adds its
+/// Josh (re5::addr::kFnPlayerAdd): `character` (0 Chris, 1 Sheva, 2 Jill, 3 Wesker, 4 Josh ...)
+/// in `costume`, in `slot` (1..3, free). The game fills the save's player entry of that slot and
+/// game work's slot fields on the way: the caller keeps copies (SavePlayerArea) and puts them
+/// back. 0 when refused or faulted. The class's archive must be loaded, else the game ends.
+std::uintptr_t AddPlayer(int slot, int character, int costume);
+/// The save's player entries, their items and the slots' extra blocks (save + slot data + 0x23300,
+/// 0x1600 bytes), the area the add writes; empty without a save.
+std::vector<std::uint8_t> SavePlayerArea();
+bool RestorePlayerArea(const std::vector<std::uint8_t>& copy);
+/// The player class the add creates for (character, costume): the class lookup by id (category 1).
+std::string PlayerClassName(int character, int costume);
 
 /// Fixes of the game's own code for what Mercenaries mode 2 never met before the mod (in memory,
 /// each behind its signature): Excella's finisher on a Majini (re5::addr::kDeadBombModeJump).

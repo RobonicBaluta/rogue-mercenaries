@@ -136,7 +136,7 @@ BUILDS = {
     },
     'josh_bsaa': {
         'name': 'Call for Backup', 'icon': 'radio',
-        'summary': 'The special button calls covering fire on the nearest enemies for the arena, once every two arenas.',
+        'summary': 'The special button calls in Sheva to fight by your side for the arena, once every two arenas.',
         'special': {'kind': 'backup', 'name': 'Backup', 'icon': 'radio', 'every_arenas': 2},
     },
     'excella_dress': {

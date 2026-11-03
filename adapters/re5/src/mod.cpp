@@ -2331,7 +2331,8 @@ void DriveArena(double now) {
     }
 }
 
-const char* BossArchiveForRun();  // the specials' borrowed boss moves, below
+const char* BossArchiveForRun();   // the specials' borrowed boss moves, below
+const char* PartnerClassForRun();  // Josh's backup partner, below
 
 // The plaga a Majini of this type (descriptor mPlagaType) bursts into. The game's set-record
 // load (0x0072AB20) queues it for the stage's own Majini; a run-planned guest's comes with it.
@@ -2356,15 +2357,21 @@ void UpdatePreloads() {
     const bool planned = g->run->HasActiveRun() && CurrentMapKey() == g->run->PlannedMapKey();
     const std::vector<std::string> guests = planned ? g->run->PlannedGuests() : std::vector<std::string>{};
     const char* bossArchive = runLoads ? BossArchiveForRun() : nullptr;
+    const char* partnerClass = runLoads ? PartnerClassForRun() : nullptr;
     static int lastStage = -2;
     static bool lastRun = false;
     static std::vector<std::string> lastGuests;
     static const char* lastBoss = nullptr;
-    if (runLoads == lastRun && CurrentMapKey() == lastStage && guests == lastGuests && bossArchive == lastBoss) return;
+    static const char* lastPartner = nullptr;
+    if (runLoads == lastRun && CurrentMapKey() == lastStage && guests == lastGuests && bossArchive == lastBoss &&
+        partnerClass == lastPartner) {
+        return;
+    }
     lastRun = runLoads;
     lastStage = CurrentMapKey();
     lastGuests = guests;
     lastBoss = bossArchive;
+    lastPartner = partnerClass;
     resources::Extras extras;
     if (runLoads) {
         // Every gun, and every other item perks, rewards and the shop hand out: a first aid
@@ -2400,6 +2407,9 @@ void UpdatePreloads() {
         // The boss whose moves the build's specials borrow (M8: its motion lists; nothing of it is
         // created). As a class, so its own weapons come along.
         if (bossArchive != nullptr) extras.enemyClasses.push_back(bossArchive);
+        // The partner the build's backup calls in (E22): her class with its effects (0x007D5820
+        // adds the uPl01 archive); her gear is among the run's guns and knives.
+        if (partnerClass != nullptr) extras.enemyClasses.push_back(partnerClass);
         // The game's Organize/Buy screen (M7.1).
         if (g->settings.nativeItemBox && engine::Caps().itemBox) extras.uiArchives.push_back("ShopResource");
         const rm::MapDef* own = CurrentMap();
@@ -3030,6 +3040,179 @@ void WatchDodge(double now) {
     }
 }
 
+// ---- A computer partner (ROADMAP E22) -------------------------------------------------------------
+// The game adds computer players itself: the Port stage's own code adds Josh with the game's
+// add-player (slot 2, control 1) and places him at its story position (adapter.log 2026-11-03:
+// he stood in wait near the map's origin all arena). The mod adds one the same way, next to the
+// player. The add fills the save's player entry of the slot and game work's slot fields; the
+// mod keeps copies and puts the save's back a second later (the new player reads its entry
+// while it sets itself up) and game work's when the match is over, so nothing of it outlives
+// the arena. Its class must be loaded with the stage, or the game ends ("Failed open file").
+struct Partner {
+    std::uintptr_t unit = 0;
+    int slot = -1;
+    int generation = -1;  // the match it was added in
+    std::vector<std::uint8_t> saveCopy;
+    double restoreSaveAt = -1.0;
+    std::uint32_t gwBits = 0;
+    std::int32_t gwControl = 0, gwSecond = 0, gwArg = 0;
+    double addedAt = 0.0;
+    int placeTries = 0;     // moves beside the player once the game has placed him
+    double nextLogAt = 0.0;
+    int logs = 0;
+};
+Partner g_partner;
+constexpr double kPartnerPlaceAfter = 0.5;  // seconds: his setup puts him at the slot's own start first
+constexpr float kPartnerBeside = 150.0f;    // he stands this far to the player's side
+constexpr double kPartnerLogEvery = 3.0;
+
+// The archive a player class loads from (0x007D5820: uPl04JoshCos1's is uPl04Josh).
+std::string PlayerArchive(const std::string& cls) { return cls == "uPl04JoshCos1" ? "uPl04Josh" : cls; }
+
+// Josh's Call for Backup: Sheva in her BSAA outfit (the add's character 1, costume 0). Her class
+// loads with the stages of a run whose build has the special (UpdatePreloads).
+struct Ally {
+    int character;
+    int costume;
+    const char* cls;
+};
+constexpr Ally kBackupAlly = {1, 0, "uPl01ShebaNormal"};
+
+// The ally class the run's build calls in, if any: the run's, or before it starts the build of the
+// skin chosen in the menu.
+const char* PartnerClassForRun() {
+    rm::RunController& run = *g->run;
+    const bool active = run.HasActiveRun();
+    const rm::SkinDef* chosen = active ? nullptr : SelectedSkinDef(run);
+    if (!active && chosen == nullptr) return nullptr;
+    const rm::SkinBuild& build = active ? run.state().character.build : chosen->build;
+    for (int slot = 0; slot < 2; ++slot) {
+        if (build.Special(slot).kind == "backup") return kBackupAlly.cls;
+    }
+    return nullptr;
+}
+
+void RestorePartnerGameWork() {
+    const auto gw = GameWorkPtr();
+    if (!gw || g_partner.slot < 0) return;
+    const std::size_t s = static_cast<std::size_t>(g_partner.slot) * 4;
+    SafeStore<std::uint32_t>(gw + re5::off::kGameWorkPlayerBits, g_partner.gwBits);
+    SafeStore<std::int32_t>(gw + re5::off::kGameWorkPlayerControl + s, g_partner.gwControl);
+    SafeStore<std::int32_t>(gw + re5::off::kGameWorkPlayerSecond + s, g_partner.gwSecond);
+    SafeStore<std::int32_t>(gw + re5::off::kGameWorkPlayerArg + s, g_partner.gwArg);
+}
+
+// Adds `character` in `costume` beside the local player; the unit, or 0 with the reason logged.
+std::uintptr_t AddPartner(int character, int costume, const char* why) {
+    const auto local = engine::LocalPlayer();
+    const auto gw = GameWorkPtr();
+    if (!local || !gw || !engine::Caps().partner) {
+        RM_LOGW("partner: not added (%s): no player, game work or add-player", why);
+        return 0;
+    }
+    if (g_partner.unit && g_partner.generation == g->matchGeneration) {
+        RM_LOGI("partner: not added (%s): one is here already", why);
+        return 0;
+    }
+    const std::string cls = engine::PlayerClassName(character, costume);
+    if (cls.empty() || (resources::Available() && !resources::ArchiveLoaded(PlayerArchive(cls)))) {
+        RM_LOGW("partner: not added (%s): %s (character %d, costume %d) is not loaded on this stage", why,
+                cls.empty() ? "no class" : cls.c_str(), character, costume);
+        return 0;
+    }
+    // A free slot: the Port stage's own Josh takes 2.
+    const auto players = ReadOr<std::uintptr_t>(re5::addr::kSPlayerInstance, 0);
+    int slot = -1;
+    for (int s = 1; s < 4 && slot < 0; ++s) {
+        if (players && ReadOr<std::uintptr_t>(players + re5::off::kSPlayerList + static_cast<std::size_t>(s) * 4, 1) == 0) slot = s;
+    }
+    if (slot < 0) {
+        RM_LOGW("partner: not added (%s): no free player slot", why);
+        return 0;
+    }
+    Partner p;
+    p.slot = slot;
+    p.saveCopy = engine::SavePlayerArea();
+    if (p.saveCopy.empty()) {
+        RM_LOGW("partner: not added (%s): the save's player entries are not readable", why);
+        return 0;
+    }
+    const std::size_t s4 = static_cast<std::size_t>(slot) * 4;
+    p.gwBits = ReadOr<std::uint32_t>(gw + re5::off::kGameWorkPlayerBits, 0);
+    p.gwControl = ReadOr<std::int32_t>(gw + re5::off::kGameWorkPlayerControl + s4, 0);
+    p.gwSecond = ReadOr<std::int32_t>(gw + re5::off::kGameWorkPlayerSecond + s4, 0);
+    p.gwArg = ReadOr<std::int32_t>(gw + re5::off::kGameWorkPlayerArg + s4, 0);
+    const std::uintptr_t unit = engine::AddPlayer(slot, character, costume);
+    if (!unit) {
+        engine::RestorePlayerArea(p.saveCopy);
+        RM_LOGW("partner: not added (%s): the game refused %s in slot %d", why, cls.c_str(), slot);
+        return 0;
+    }
+    // Beside the player (as the stage code places its Josh: the position before his first update).
+    float fx = 0.0f, fz = 1.0f;
+    PlayerFacing(local, fx, fz);
+    const float at[3] = {ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) - fz * 120.0f,
+                         ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f),
+                         ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) + fx * 120.0f};
+    for (int k = 0; k < 3; ++k) SafeStore<float>(unit + re5::off::kUnitPosition + static_cast<std::size_t>(k) * 4, at[k]);
+    SafeStore<std::uint32_t>(unit + re5::off::kPlayerAddFlags, ReadOr<std::uint32_t>(unit + re5::off::kPlayerAddFlags, 0) | 1u);
+    p.unit = unit;
+    p.generation = g->matchGeneration;
+    p.addedAt = Now();
+    p.restoreSaveAt = Now() + 1.0;
+    p.nextLogAt = Now() + kPartnerPlaceAfter;
+    g_partner = std::move(p);
+    RM_LOGI("partner: %s (character %d, costume %d) added in slot %d at %.0f %.0f %.0f (%s): control %d, hp %d", cls.c_str(), character,
+            costume, slot, at[0], at[1], at[2], why, ReadOr<std::int32_t>(unit + re5::off::kPlayerControl, -1),
+            engine::ReadHp(unit) ? engine::ReadHp(unit)->hp : -1);
+    return unit;
+}
+
+// Each tick: once the game has placed him (at the slot's own start, tens of metres away: adapter.log
+// 2026-11-03) he is moved beside the player; the save's entries go back once he has set himself
+// up; game work's slot fields when his match is over. His state is logged every few seconds.
+void DrivePartner(double now) {
+    if (g_partner.slot < 0) return;
+    const auto local = engine::LocalPlayer();
+    const auto hp = g_partner.unit ? engine::ReadHp(g_partner.unit) : std::nullopt;
+    if (local && hp && g->match.inMatch && g->matchGeneration == g_partner.generation) {
+        float me[3], him[3];
+        for (int k = 0; k < 3; ++k) {
+            me[k] = ReadOr<float>(local + re5::off::kUnitPosition + static_cast<std::size_t>(k) * 4, 0.0f);
+            him[k] = ReadOr<float>(g_partner.unit + re5::off::kUnitPosition + static_cast<std::size_t>(k) * 4, 0.0f);
+        }
+        const float away = Horizontal(me, him);
+        if (g_partner.placeTries < 3 && now - g_partner.addedAt >= kPartnerPlaceAfter && away > 2.0f * kPartnerBeside) {
+            ++g_partner.placeTries;
+            float fx = 0.0f, fz = 1.0f;
+            PlayerFacing(local, fx, fz);
+            const float to[3] = {me[0] - fz * kPartnerBeside, me[1], me[2] + fx * kPartnerBeside};
+            const int copies = engine::WarpUnit(g_partner.unit, to);
+            RM_LOGI("partner: %.1f m away at %.0f %.0f %.0f; moved beside the player (%d copies)", away / 100.0f, him[0], him[1], him[2],
+                    copies);
+        }
+        if (now >= g_partner.nextLogAt && g_partner.logs < 40) {
+            g_partner.nextLogAt = now + kPartnerLogEvery;
+            ++g_partner.logs;
+            const auto mine = engine::ReadHp(local);
+            RM_LOGI("partner: %.1f m from the player (player at %.0f %.0f %.0f, hp %d, %s), %s, hp %d/%d", away / 100.0f, me[0], me[1],
+                    me[2], mine ? mine->hp : -1, engine::CurrentActionName(local).c_str(), engine::CurrentActionName(g_partner.unit).c_str(),
+                    hp->hp, hp->max);
+        }
+    }
+    if (g_partner.restoreSaveAt >= 0.0 && now >= g_partner.restoreSaveAt) {
+        g_partner.restoreSaveAt = -1.0;
+        const bool ok = engine::RestorePlayerArea(g_partner.saveCopy);
+        RM_LOGI("partner: the save's player entries put back: %s", ok ? "ok" : "FAILED");
+    }
+    if (!g->match.inMatch || g->matchGeneration != g_partner.generation) {
+        if (g_partner.restoreSaveAt >= 0.0) engine::RestorePlayerArea(g_partner.saveCopy);
+        RestorePartnerGameWork();
+        RM_LOGI("partner: match over; game work's slot %d put back", g_partner.slot);
+        g_partner = {};
+    }
+}
+
 // ---- Borrowed boss moves -------------------------------------------------------------------------
 // A special plays the matching boss's own moves on the player (user playtest 2026-11-03: "the
 // ability doesn't get her twin smg out and do the sweep like in the campaign"; "wesker has in the
@@ -3374,8 +3557,16 @@ void StartSpecial(double now, int slot, const char* source) {
         g_move.borrowed = StartBossMove(local, "dual_smg", now);
         if (g_move.borrowed) g_move.until = now + kBossMoveLimit;
     } else if (sp.kind == "backup") {
-        // Stand-in until a real computer ally can be spawned (ROADMAP E22): covering fire on the
-        // nearest enemy for the rest of the arena.
+        // Sheva comes as a computer partner for the arena: the game's own partner, who follows,
+        // shoots, reloads and heals herself (E22, seen in game 2026-11-03 with a Chris partner).
+        // Without her (not loaded, no free slot): covering fire on the nearest enemy instead.
+        if (AddPartner(kBackupAlly.character, kBackupAlly.costume, "backup")) {
+            g_move = {};
+            g->notice = "SHEVA JOINS YOU";
+            g->noticeUntil = now + 2.5;
+            RM_LOGI("special: backup used: %s joins for the arena [%s]", kBackupAlly.cls, source);
+            return;
+        }
         g_move.damage = static_cast<int>(sp.power > 0.0 ? sp.power : kBackupDamage);
         g_move.until = now + 1.0e9;
         g_move.nextPulse = now + 0.5;
@@ -4598,6 +4789,17 @@ void PollDevCommand(double now) {
             RM_LOGW("dev spawn %s (weapon %X) at %.0f %.0f %.0f -> %08X %s", cls.c_str(), weapon, spawnAt[0], spawnAt[1], spawnAt[2],
                     static_cast<unsigned>(unit), unit ? engine::ClassName(unit).c_str() : "failed");
         }
+    } else if (command.rfind("partnerhp ", 0) == 0) {
+        // "partnerhp <hp>": the partner's health (what does her death do to a run's match?).
+        const int hp = std::atoi(command.c_str() + 10);
+        const bool ok = g_partner.unit && SafeStore<std::int16_t>(g_partner.unit + re5::off::kHp, static_cast<std::int16_t>(hp));
+        RM_LOGW("dev partnerhp %d: %s", hp, ok ? "ok" : "no partner");
+    } else if (command == "partner" || command.rfind("partner ", 0) == 0) {
+        // "partner <character> <costume>": a computer player beside the local one (E22 research).
+        int character = 0, costume = 0;
+        std::sscanf(command.c_str() + 7, "%d %d", &character, &costume);
+        const std::uintptr_t unit = AddPartner(character, costume, "dev");
+        RM_LOGW("dev partner %d %d -> %08X", character, costume, static_cast<unsigned>(unit));
     } else if (command.rfind("warp ", 0) == 0) {
         // "warp x y z": writes the local player's position (does a start position stick?).
         float pos[3] = {};
@@ -5158,6 +5360,7 @@ private:
         OpenChests(now);
         ApplyHeals();
         DriveSpecial(now);
+        DrivePartner(now);
         WatchEquippedWeapon(now);
         SampleHitStates(now);
         ApplyMoveSpeed();

@@ -87,6 +87,14 @@ constexpr std::uintptr_t kFnResourceRelease = 0x00447020;
 constexpr std::uintptr_t kFnMotionListSet = 0x005CCDD0;
 constexpr std::uintptr_t kFnCharSetMotion = 0x0084CFF0;
 constexpr std::uintptr_t kDtiMotionList = 0x0124B574;  // rMotionList
+// sPlayer's add-player (thiscall on [kSPlayerInstance]: slot, character, costume, a game work value
+// for +0x4C0; ret 0x10): refuses a slot in use; fills the save's player entry of that slot from
+// the character table (0x00C92D60 on save + slot data + 0x23300: the entry at +0x10 + slot*0x50,
+// its items at +0x150 + slot*0x420), sets game work +0x480 (control: 1 = computer), +0x490 (-1)
+// and +0x4C0 for the slot, creates the player (0x007E9800 -> 0x007E9730: unit group 6, number
+// +0x2D9C) and sets the slot's bit in game work +0x478. The Port stage's own code (0x00741690)
+// adds Josh this way: (2, 4, 0, 0), then sets +0x2DAC |= 1 and his position (+0x30).
+constexpr std::uintptr_t kFnPlayerAdd = 0x007E9A50;
 // cEm10ActDeadArmyBomb (Majini action 0x93), its update 0x00C10BA0, step 0: the effect of the
 // body's end. In game mode 5 (Reunion) any of uEm10/11/12/14/21/92 (0x00C00770) gets uEm14's
 // em140a, which Excella's own archive carries; in mode 2 only uEm14 does and the others ask for
@@ -383,7 +391,20 @@ constexpr int kEm10DmgFlyoff = 0x73;  // cEm10ActDmgFlyoff: blown away
 constexpr int kEm10DmgYoroke = 0x7C;  // cEm10ActDmgYoroke: stagger
 // uPlayer
 constexpr std::size_t kPlayerNumber = 0x2D9C;   // uint8, copied into enemy+0x136C on hit
-constexpr std::size_t kPlayerControl = 0x2DA8;  // int32; 0/1/2 observed in code paths (hypothesis: 2 = AI)
+constexpr std::size_t kPlayerControl = 0x2DA8;  // int32 from game work +0x480 + slot*4: 0 the local player, 1 a computer one
+constexpr std::size_t kPlayerAddFlags = 0x2DAC;  // the Port stage sets bit 0 on the Josh it adds
+// Game work's player slots (addr::kFnPlayerAdd): the bits of the players in the match, then per
+// slot (4 bytes each) the control, a second value (-1 when added) and the add's last argument.
+constexpr std::size_t kGameWorkPlayerBits = 0x478;
+constexpr std::size_t kGameWorkPlayerControl = 0x480;
+constexpr std::size_t kGameWorkPlayerSecond = 0x490;
+constexpr std::size_t kGameWorkPlayerArg = 0x4C0;
+// The save's player entries (addr::kFnPlayerAdd): from save + slot data + 0x23310, 0x50 each;
+// their items from + 0x23450, 0x420 each.
+constexpr std::size_t kSavePlayerEntries = 0x23310;
+constexpr std::size_t kSavePlayerEntry = 0x50;
+constexpr std::size_t kSavePlayerItems = 0x23450;
+constexpr std::size_t kSavePlayerItemsSize = 0x420;
 // uPlayer inventory: 24 slots of 0x30 bytes starting at inventory+4.
 constexpr std::size_t kPlayerInventory = 0x21A0;
 constexpr int kInventorySlots = 0x18;
@@ -530,6 +551,9 @@ inline constexpr Signature kSignatures[] = {
     {"resource_release", addr::kFnResourceRelease, "53 56 8B F0 32 DB 38 5E 1C 75 08 38 1D 2E 9C 24 01 74 0A 8D 46 04 50 FF 15 F8 A0 F4"},
     // `... mov edi, [esi+ebx*4+0xA88]; test edi, edi; jz; mov eax, [kResourceManager]; call release`.
     {"motion_list_set", addr::kFnMotionListSet, "53 8B 5C 24 0C 56 8B F1 57 8B BC 9E 88 0A 00 00 85 FF 74 15 A1 80 45 23 01 E8 32 A2"},
+    // `push esi; mov esi, [esp+8]; cmp esi, -1; push edi; mov edi, ecx; jle; cmp esi, 4; jge;
+    // cmp [edi+esi*4+0x24], 0; jz; pop edi; xor eax, eax`.
+    {"player_add", addr::kFnPlayerAdd, "56 8B 74 24 08 83 FE FF 57 8B F9 7E 13 83 FE 04 7D 0E 83 7C B7 24 00 74 07 5F 33 C0"},
     {"char_set_motion", addr::kFnCharSetMotion, "53 56 8B F1 8B 8E 74 19 00 00 85 C9 57 74 05 E8 7C 1B 40 00 8B 7C 24 10 85 FF 8B 5C"},
     // `mov edx, [kGameRoot]; mov eax, [edx+0x1042C]; cmp [eax+0x58], 5; mov ecx, [esi+0x1C]; jnz +0B;
     // push ecx; call 0x00C00770; add esp, 4; jmp +0A; push uEm14 DTI; call IsKindOf`.

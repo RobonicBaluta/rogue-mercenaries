@@ -161,6 +161,7 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.motions = g_caps.players && SignatureOk("resource_get") && SignatureOk("resource_release") &&
                      SignatureOk("motion_list_set") && SignatureOk("char_set_motion") && motionListName &&
                      ReadCString(motionListName, 16) == "rMotionList";
+    g_caps.partner = g_caps.players && g_caps.gameWork && SignatureOk("player_add") && SignatureOk("class_by_id");
     return all;
 }
 
@@ -570,6 +571,72 @@ std::optional<BodyMotion> ReadBodyMotion(std::uintptr_t unit) {
     m.frame = ReadOr<float>(unit + re5::off::kMotionLayer0Frame, 0.0f);
     m.frames = ReadOr<float>(unit + re5::off::kMotionLayer0Frames, 0.0f);
     return m;
+}
+
+namespace {
+
+using PlayerAddFn = std::uintptr_t(__thiscall*)(std::uintptr_t players, int slot, int character, int costume, int arg);
+using ClassByIdFn = std::uintptr_t(__cdecl*)(std::uint32_t classId);
+constexpr std::size_t kPlayerAreaStart = 0x23300;  // the add's entry table base (save + slot data + this)
+constexpr std::size_t kPlayerAreaSize = 0x1600;    // entries, items, counts and the slots' extra blocks
+
+bool CallPlayerAdd(std::uintptr_t players, int slot, int character, int costume, std::uintptr_t& out) {
+    __try {
+        out = reinterpret_cast<PlayerAddFn>(re5::addr::kFnPlayerAdd)(players, slot, character, costume, 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
+std::uintptr_t ClassById(std::uint32_t classId) {
+    __try {
+        return reinterpret_cast<ClassByIdFn>(re5::addr::kFnClassById)(classId);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+std::uintptr_t PlayerAreaBase() {
+    const auto save = ReadOr<std::uintptr_t>(re5::addr::kSaveData, 0);
+    if (!save) return 0;
+    const auto slot = ReadOr<std::int32_t>(save + re5::off::kSaveSlot, -1);
+    if (slot < 0 || slot > 7) return 0;
+    return save + static_cast<std::size_t>(slot) * re5::off::kSaveSlotStride + kPlayerAreaStart;
+}
+
+}  // namespace
+
+std::uintptr_t AddPlayer(int slot, int character, int costume) {
+    if (!g_caps.partner || slot < 1 || slot > 3 || character < 0 || character > 0x20 || costume < 0 || costume > 0x10) return 0;
+    const auto players = ReadOr<std::uintptr_t>(re5::addr::kSPlayerInstance, 0);
+    if (!players || !PlayerAreaBase()) return 0;
+    std::uintptr_t unit = 0;
+    if (!CallPlayerAdd(players, slot, character, costume, unit)) {
+        RM_LOGW("partner: the game's add-player faulted; partners off");
+        g_caps.partner = false;
+        return 0;
+    }
+    return unit;
+}
+
+std::vector<std::uint8_t> SavePlayerArea() {
+    const std::uintptr_t base = PlayerAreaBase();
+    std::vector<std::uint8_t> copy(kPlayerAreaSize);
+    if (!base || !SafeCopy(copy.data(), base, copy.size())) return {};
+    return copy;
+}
+
+bool RestorePlayerArea(const std::vector<std::uint8_t>& copy) {
+    const std::uintptr_t base = PlayerAreaBase();
+    return base && copy.size() == kPlayerAreaSize && SafeWrite(base, copy.data(), copy.size());
+}
+
+std::string PlayerClassName(int character, int costume) {
+    const std::uint32_t id = (0x10000u | static_cast<std::uint32_t>(character & 0xFFFF)) << 8 | static_cast<std::uint32_t>(costume & 0xFF);
+    const std::uintptr_t dti = ClassById(id);
+    const auto name = dti ? ReadOr<std::uintptr_t>(dti + 4, 0) : 0;
+    return name ? ReadCString(name, 64) : std::string();
 }
 
 int WarpUnit(std::uintptr_t unit, const float pos[3]) {

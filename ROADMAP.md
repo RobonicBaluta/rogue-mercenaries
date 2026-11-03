@@ -288,6 +288,8 @@ Second playtest (2026-11-03, TASKS.md "round 2"): the collision query needs its 
 
 Fourth playtest (2026-11-03, TASKS.md "Playtest 4"): E17 and E18 take the bosses' own animations. The engine plays a motion list from another unit's archive on the player (the Uroboros' archive carries Chris's grab motions the same way), and every player model shares one skeleton: the boss Jill's WideFire plays on Jill Battle Suit (her readying and the sweep, her shots landing during the sweep), the boss Wesker's dash-strike, knee and kick on Midnight Wesker's dash, lunge and burst (research/re5-engine-map.md "Motions"). Open: her second gun in the left hand (the boss holds two weapon units; spawning and attaching one to the player is the next step if the motions work).
 
+E22 done (2026-11-03, verified in game by the mod's own test, `scripts/test_partner.sh`): Josh's Call for Backup adds Sheva as a computer partner with the game's own add-player (the call the Port stage makes for its Josh). She follows, fights, reloads, heals herself and revives a dying Josh; her kills count; her death does not end the match; the next stage loads as before. The covering fire stays as the fallback when she cannot be added.
+
 Order: B1 to B7 with the builds that need no engine work (Warrior, Clubbin', Business, Fairy Tale,
 S.T.A.R.S. Chris, Barry), then E19/E20/E21 (Wesker S.T.A.R.S., Excella, Rebecca), E13/E14 and item
 ids (Safari, Heavy Metal, Tribal), B8/E15 (keys, Jill BSAA), then E16 with E17/E18/E22 (Battle

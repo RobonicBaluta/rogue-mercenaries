@@ -106,7 +106,7 @@ the others are written and wait for a playtest (2026-11-03).
 | Sheva | Fairy Tale | Enchanted Arms | A legendary M3 that upgrades without limit. |
 | Jill | BSAA | Locksmith | Opens every chest without a key. |
 | Jill | Battle Suit | Twin Fury | Special: 1.5 s of fire from two SMGs on everything in a 40 degree cone up to 14 m ahead; 25 s to recover. |
-| Josh | BSAA | Call for Backup | Special: covering fire on the nearest enemy (within 18 m) every 1.2 s for the rest of the arena, once every two arenas. A stand-in until a real computer partner can be spawned. |
+| Josh | BSAA | Call for Backup | Special: Sheva joins as a computer partner for the rest of the arena, once every two arenas: the game's own partner, who follows you, fights, heals herself and revives you when you are bleeding out. Her kills count as yours. If she cannot join (the stage did not load her), covering fire on the nearest enemy instead. |
 | Barry | S.T.A.R.S. | Old Reliable | An S and W M29 that upgrades without limit; health x1.5. |
 | Rebecca | S.T.A.R.S. | Field Surgeon | Heals x1.5. A big heal (at least 60 percent of her health: a spray, a mixed herb) makes her untouchable for 4 s and 30 percent stronger for 12 s. |
 | Excella | Dress | Ambition | Every melee kill raises one stat for the rest of the run, up to its cap: damage (+4 percent, to +100), defence (+3, to +70), health (+5, to +100), critical chance (+2, to +30), movement speed (+3, to +60), healing (+5, to +50) or supplies (+4, to +50). |
@@ -127,7 +127,7 @@ while it acts. Change the bindings in `RogueMercenaries\adapter.json`: `"special
 `"special2_key_scancode": 45` (DirectInput scan codes; 16 is Q, 45 is X), `"special_pad": ["LB", "RB"]` and
 `"special2_pad": ["LS", "RS"]` (buttons held together: A, B, X, Y, LB, RB, BACK, START, LS, RS; XInput pads and,
 through the names in the game's own `config.ini` `[JOYPAD]`, DirectInput pads, where LT and RT work too). Twin Fury
-and the backup deal damage without shots on screen. Their kills count as yours.
+deals damage without shots on screen. Its kills count as yours.
 
 **Weapons.** Switching guns during an arena shows a card at the bottom right for a few seconds: the gun, its rarity
 and level, its damage factor, what its level adds, and its traits.

@@ -55,7 +55,6 @@ KNOWN ISSUES (ALPHA)
   - Only tested on one game save so far. The mod starts its matches itself, so it should
     not need The Mercenaries or its stages unlocked in your save; if START RUN does
     nothing on your save, please say so.
-  - Josh's Call for Backup is a stand-in: covering fire, no visible partner.
   - Some campaign areas may still have spots where enemies get stuck; the mod moves
     them after a while.
   - The Play menu row only shows with Latin-alphabet game languages. With Japanese,
