@@ -93,6 +93,10 @@ std::string CurrentActionName(std::uintptr_t character);
 /// Turns a character to face `yaw` (radians; facing (sin, cos) on the ground plane) the game's
 /// way (re5::addr::kFnCharTurnTo): at once under 2 frames, else over that many frames.
 bool TurnTo(std::uintptr_t character, float yaw, int frames);
+
+/// Fixes of the game's own code for what Mercenaries mode 2 never met before the mod (in memory,
+/// each behind its signature): Excella's finisher on a Majini (re5::addr::kDeadBombModeJump).
+void ApplyCodeFixes();
 /// Moves a unit: every copy of its position in the object (the first 16 KB: transform, previous
 /// and movement positions) gets `pos`; writing +0x30 alone is undone by its movement. Returns
 /// the copies written (0: not moved). Verified on the player (s304: stays, walks on the floor).

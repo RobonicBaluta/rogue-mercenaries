@@ -93,7 +93,10 @@ DWORD WINAPI Worker(LPVOID) {
     } else if (!InstallD3d9Hooks()) {
         RM_LOGE("d3d9 hooks failed: no overlay");
     }
-    if (engine::Caps().buildIdentity) InstallFatalErrorHook();
+    if (engine::Caps().buildIdentity) {
+        InstallFatalErrorHook();
+        engine::ApplyCodeFixes();
+    }
     if (settings.disableCombatHooks) {
         RM_LOGW("dev: combat hooks disabled");
     } else if (engine::Caps().buildIdentity) {

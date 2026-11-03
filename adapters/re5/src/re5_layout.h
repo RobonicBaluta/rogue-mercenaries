@@ -72,6 +72,15 @@ constexpr std::uintptr_t kFnPlayerDodgePrep = 0x00B82F10;
 // applies. The co-op sync feeds it; the local player's own turning does not use +0x1904 (it reads
 // 0 there). Static analysis 2026-11-03.
 constexpr std::uintptr_t kFnCharTurnTo = 0x00B55D40;
+// cEm10ActDeadArmyBomb (Majini action 0x93), its update 0x00C10BA0, step 0: the effect of the
+// body's end. In game mode 5 (Reunion) any of uEm10/11/12/14/21/92 (0x00C00770) gets uEm14's
+// em140a, which Excella's own archive carries; in mode 2 only uEm14 does and the others ask for
+// their class's effect 0x25: em1025 is in no PC archive, and the game ends ("Failed open file
+// ... em1025.efl"). Excella's finisher (cEmAction_pl_act_attack_neck, her variant: 350, 440,
+// 170 frames) ends in it (user playtest 2026-11-03, the Mines). The check: `cmp [gw+0x58], 5;
+// mov ecx, [esi+0x1C]; jnz` at kDeadBombModeCheck, the jnz (75 0B) at kDeadBombModeJump.
+constexpr std::uintptr_t kDeadBombModeCheck = 0x00C10BFE;
+constexpr std::uintptr_t kDeadBombModeJump = 0x00C10C11;
 constexpr std::uintptr_t kFnEm10ActionTable = 0x00868590;
 constexpr std::uintptr_t kFnHitGetAttacker = 0x00C49530;  // cUnit* cHit::GetAttacker()
 constexpr std::uintptr_t kFnMercAddTime = 0x00718050;     // void ?::MercAddTime(int seconds)
@@ -481,6 +490,10 @@ inline constexpr Signature kSignatures[] = {
     {"player_dodge_prep", addr::kFnPlayerDodgePrep, "8B 44 24 04 8B 80 8C 2D 00 00 8B D0 C1 EA 08 F6"},
     // `... lea eax, [esp+0x10]; push eax; mov esi, ecx; call GetEuler; mov eax, [ebp+8]; cmp eax, 1`.
     {"char_turn_to", addr::kFnCharTurnTo, "55 8B EC 83 E4 F0 83 EC 1C 56 8D 44 24 10 50 8B F1 E8 9A 4A 93 FF 8B 45 08 83 F8 01"},
+    // `mov edx, [kGameRoot]; mov eax, [edx+0x1042C]; cmp [eax+0x58], 5; mov ecx, [esi+0x1C]; jnz +0B;
+    // push ecx; call 0x00C00770; add esp, 4; jmp +0A; push uEm14 DTI; call IsKindOf`.
+    {"dead_bomb_mode_check", addr::kDeadBombModeCheck,
+     "8B 15 A4 40 23 01 8B 82 2C 04 01 00 83 78 58 05 8B 4E 1C 75 0B 51 E8 57 FB FE FF 83 C4 04 EB 0A 68 D0 A9 1E 01"},
     {"segment_hit", addr::kFnSegmentHit, "55 8B EC 83 E4 F0 8B 55 08 F3 0F 10 52 08 F3 0F 5C 52 18"},
     {"change_action", addr::kFnChangeAction, "56 57 8B 7C 24 0C 81 FF 00 00 00 80 8B F1 74 5C"},
     {"player_change_action", addr::kFnPlayerChangeAction, "56 8B F1 80 BE 6C 2D 00 00 00 75 6C 8B 86 74 2A"},

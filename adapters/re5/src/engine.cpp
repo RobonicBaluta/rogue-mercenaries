@@ -354,6 +354,35 @@ bool CallTurnTo(std::uintptr_t fn, std::uintptr_t character, unsigned frames) {
 
 }  // namespace
 
+namespace {
+
+// Writes code bytes over the ones expected there; false (nothing written) when they differ.
+bool WriteCode(std::uintptr_t address, const char* expectedHex, const unsigned char* bytes, std::size_t size) {
+    if (!BytesMatch(address, expectedHex)) return false;
+    auto* p = reinterpret_cast<void*>(address);
+    DWORD old = 0;
+    if (!VirtualProtect(p, size, PAGE_EXECUTE_READWRITE, &old)) return false;
+    const bool ok = SafeWrite(address, bytes, size);
+    VirtualProtect(p, size, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), p, size);
+    return ok;
+}
+
+}  // namespace
+
+void ApplyCodeFixes() {
+    // Excella's finisher ends a Majini in its bomb death, whose effect in mode 2 is a file the PC
+    // game lacks: the death takes the mode-5 (Reunion) choice instead, uEm14's em140a from her own
+    // archive (re5_layout.h, kDeadBombModeJump).
+    if (SignatureOk("dead_bomb_mode_check")) {
+        static const unsigned char kNops[] = {0x90, 0x90};
+        const bool ok = WriteCode(re5::addr::kDeadBombModeJump, "75 0B", kNops, sizeof(kNops));
+        RM_LOGI("code fix: a Majini's bomb death takes Reunion's effect (Excella's finisher): %s", ok ? "applied" : "failed");
+    } else {
+        RM_LOGW("code fix: the bomb death's mode check is not as expected; Excella's finisher on a Majini may end the game");
+    }
+}
+
 bool TurnTo(std::uintptr_t character, float yaw, int frames) {
     if (!g_caps.turn || !character || !(yaw > -7.0f && yaw < 7.0f)) return false;
     // Only through the character's own virtual, when it is the routine the signature checked.
