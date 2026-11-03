@@ -287,6 +287,8 @@ public:
     /// (a dash build's stronger moves recover longer).
     Status UseSpecial(double now, double cooldown_scale = 1.0);
     [[nodiscard]] bool Invulnerable(double now) const { return run_.active && now < run_.invulnerable_until; }
+    /// The current arena's enemy threat level (economy enemy_threat; 0 without a director or levels).
+    [[nodiscard]] int ArenaThreatLevel() const { return director_ ? director_->threat_level() : 0; }
     /// Sum of queued heal fractions (capped at 1.0).
     [[nodiscard]] double PendingHeal() const;
     /// Items earned by perks since the last call (item_on_kill / item_on_arena_clear).

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -9,6 +10,7 @@
 #include <vector>
 
 #include "rm/common.h"
+#include "rm/director.h"
 #include "rm/rarity.h"
 
 namespace rm {
@@ -114,6 +116,35 @@ struct EconomyConfig {
         double item_chance = 0.6;
         double weapon_chance = 0.1;
     } chests;
+
+    /// Enemy threat (ROADMAP M3.4, written by scripts/write_threats.py): the first arena is level
+    /// 1, later arenas their route's tier plus later_arena_bonus, up to max_level. Disabled: every
+    /// enemy of the map, as before.
+    struct EnemyThreat {
+        bool enabled = false;
+        int later_arena_bonus = 1;
+        int max_level = 4;
+        std::vector<int> max_alive_by_level;  // index level - 1; empty: the map's own max_alive
+        int specials_from_level = 3;
+        ThreatTable table;
+
+        /// The level of a run's `arena`-th arena (1-based) on a route of `tier`; 0 when disabled.
+        [[nodiscard]] int Level(int arena, int tier) const {
+            if (!enabled) return 0;
+            return std::clamp(tier + (arena > 1 ? later_arena_bonus : 0), 1, std::max(1, max_level));
+        }
+        [[nodiscard]] ArenaThreat ForArena(int arena, int tier) const {
+            ArenaThreat out;
+            out.level = Level(arena, tier);
+            if (out.level <= 0) return out;
+            if (static_cast<std::size_t>(out.level) <= max_alive_by_level.size()) {
+                out.max_alive = max_alive_by_level[static_cast<std::size_t>(out.level - 1)];
+            }
+            out.specials_from = specials_from_level;
+            out.table = table;
+            return out;
+        }
+    } enemy_threat;
 
     /// Keys (M8): a chest opens only with a key (one used per chest), except for a build with
     /// chest_keys_exempt. Kills of the listed enemy classes (prefixes, e.g. "uEm1" = the Majini)

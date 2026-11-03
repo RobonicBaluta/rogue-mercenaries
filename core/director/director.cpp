@@ -18,15 +18,84 @@ double DistanceSq(const std::array<double, 3>& a, const std::array<double, 3>& b
 
 }  // namespace
 
-Director::Director(const MapDef& map, int budget, int tier, std::uint64_t seed)
-    : map_(map), budget_(std::max(0, budget)), tier_(std::max(1, tier)), rng_(seed), point_failures_(map.points.size(), 0) {
+int ThreatTable::Weapon(std::int64_t arm) const {
+    if (arm < 0) return none;
+    if ((arm & ~std::int64_t{0xFF}) != 0x70100) return fallback;
+    const int nn = static_cast<int>(arm & 0xFF);
+    if (nn == 0) return none;
+    const auto it = weapons.find(nn);
+    return it != weapons.end() ? it->second : fallback;
+}
+
+int ThreatTable::Class(const std::string& unit_class) const {
+    const auto it = classes.find(unit_class);
+    return it != classes.end() ? it->second : fallback;
+}
+
+int ThreatTable::Of(const MapEnemy& enemy, std::int64_t arm) const { return std::max(Class(enemy.unit_class), Weapon(arm)); }
+
+std::vector<std::pair<int, double>> ThreatTable::Variants(const MapEnemy& enemy) const {
+    std::vector<std::pair<int, double>> out;
+    if (!enemy.profiles.empty()) {
+        for (const EnemyProfile& p : enemy.profiles) out.emplace_back(Of(enemy, ProfileArm(p)), std::max(0.0, p.weight));
+    } else if (!enemy.arms.empty()) {
+        for (const std::int64_t arm : enemy.arms) out.emplace_back(Of(enemy, arm), 1.0);
+    } else {
+        out.emplace_back(Of(enemy, -1), 1.0);
+    }
+    return out;
+}
+
+int ThreatTable::Lowest(const MapEnemy& enemy) const {
+    int lowest = 0;
+    for (const auto& [threat, weight] : Variants(enemy)) {
+        if (weight > 0.0 && (lowest == 0 || threat < lowest)) lowest = threat;
+    }
+    return lowest;
+}
+
+int ThreatTable::Lowest(const MapDef& map) const {
+    if (map.boss) return 0;
+    int lowest = 0, lowestAny = 0;
+    for (const MapEnemy& e : map.roster) {
+        if (e.weight <= 0.0) continue;
+        const int t = Lowest(e);
+        if (t <= 0) continue;
+        if (lowestAny == 0 || t < lowestAny) lowestAny = t;
+        if (!e.special && (lowest == 0 || t < lowest)) lowest = t;
+    }
+    return lowest > 0 ? lowest : lowestAny;  // a roster of specials only: they are its normal enemies
+}
+
+std::int64_t ProfileArm(const EnemyProfile& profile) {
+    for (const auto& [name, value] : profile.fields) {
+        if (name == "arm") return static_cast<std::int64_t>(value);
+    }
+    return -1;
+}
+
+Director::Director(const MapDef& map, int budget, int tier, std::uint64_t seed, ArenaThreat threat)
+    : map_(map), budget_(std::max(0, budget)), tier_(std::max(1, tier)), threat_(std::move(threat)), rng_(seed),
+      point_failures_(map.points.size(), 0) {
     if (map_.boss) {
         // The boss alone: the roster becomes it, and its death is the whole budget.
         MapEnemy boss;
         boss.unit_class = map_.boss->unit_class;
         map_.roster = {boss};
         budget_ = 1;
+        threat_.level = 0;
     }
+    if (threat_.level > 0) pick_level_ = std::max(threat_.level, threat_.table.Lowest(map_));
+}
+
+double Director::Share(const MapEnemy& enemy) const {
+    if (pick_level_ <= 0) return 1.0;
+    double total = 0.0, allowed = 0.0;
+    for (const auto& [threat, weight] : threat_.table.Variants(enemy)) {
+        total += weight;
+        if (Fits(threat)) allowed += weight;
+    }
+    return total > 0.0 ? allowed / total : 0.0;
 }
 
 const MapEnemy* Director::PickEnemy() {
@@ -37,8 +106,10 @@ const MapEnemy* Director::PickEnemy() {
     for (const auto& [tierGate, withSpecial] : kPasses) {
         for (const MapEnemy& e : map_.roster) {
             if ((tierGate && e.min_tier > tier_) || e.weight <= 0.0 || (e.special && !withSpecial)) continue;
+            const double share = Share(e);
+            if (share <= 0.0) continue;
             pool.push_back(&e);
-            weights.push_back(e.weight);
+            weights.push_back(e.weight * share);
         }
         if (!pool.empty()) break;
     }
@@ -55,13 +126,18 @@ int Director::Active(const MapEnemy* enemy) const {
 
 const MapEnemy* Director::PickSpecial() {
     if (static_cast<double>(dead_) < map_.special_after * static_cast<double>(budget_)) return nullptr;
+    // With a threat level: none before specials_from, one more alive per level above it.
+    const bool byThreat = threat_.level > 0;
+    if (byThreat && threat_.level < threat_.specials_from) return nullptr;
     int specials = 0;
     for (const auto& [ticket, e] : ticket_enemy_) specials += e->special ? 1 : 0;
-    if (specials >= std::max(1, map_.max_specials) + tier_ - 1) return nullptr;
+    const int extra = byThreat ? threat_.level - threat_.specials_from : tier_ - 1;
+    if (specials >= std::max(1, map_.max_specials) + extra) return nullptr;
     std::vector<const MapEnemy*> pool;
     std::vector<double> weights;
     for (const MapEnemy& e : map_.roster) {
         if (!e.special || e.min_tier > tier_ || Active(&e) >= std::max(1, e.max_alive)) continue;
+        if (byThreat && threat_.table.Lowest(e) > threat_.level) continue;
         pool.push_back(&e);
         weights.push_back(std::max(e.weight, 0.001));
     }
@@ -108,7 +184,8 @@ int Director::PickPoint(const std::optional<std::array<double, 3>>& player) {
 std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::array<double, 3>>& player) {
     std::vector<SpawnRequest> out;
     last_now_ = now;
-    const int cap = std::max(1, map_.max_alive);
+    int cap = std::max(1, map_.max_alive);
+    if (threat_.max_alive > 0) cap = std::min(cap, threat_.max_alive);
     while (requested_ < budget_ && alive() + pending() < cap && now >= next_spawn_time_) {
         const MapEnemy* enemy = PickSpecial();
         if (enemy == nullptr) enemy = PickEnemy();
@@ -117,10 +194,29 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::ar
         SpawnRequest r;
         r.ticket = next_ticket_++;
         r.unit_class = enemy->unit_class;
-        r.arm = enemy->arms.empty() ? -1 : enemy->arms[rng_.Index(enemy->arms.size())];
+        // The weapon and profile: only variants within the arena's threat (all of them when none fits).
+        if (!enemy->arms.empty()) {
+            std::vector<std::int64_t> arms;
+            for (const std::int64_t arm : enemy->arms) {
+                if (Fits(threat_.table.Of(*enemy, arm))) arms.push_back(arm);
+            }
+            if (arms.empty()) arms = enemy->arms;
+            r.arm = arms[rng_.Index(arms.size())];
+        } else {
+            r.arm = -1;
+        }
         if (!enemy->profiles.empty()) {
             std::vector<double> weights;
-            for (const EnemyProfile& p : enemy->profiles) weights.push_back(std::max(0.0, p.weight));
+            bool any = false;
+            for (const EnemyProfile& p : enemy->profiles) {
+                const bool fits = Fits(threat_.table.Of(*enemy, ProfileArm(p)));
+                weights.push_back(fits ? std::max(0.0, p.weight) : 0.0);
+                any = any || (fits && p.weight > 0.0);
+            }
+            if (!any) {
+                weights.clear();
+                for (const EnemyProfile& p : enemy->profiles) weights.push_back(std::max(0.0, p.weight));
+            }
             const std::size_t i = rng_.WeightedIndex(weights);
             r.fields = enemy->profiles[i < enemy->profiles.size() ? i : 0].fields;
             for (const auto& [name, value] : r.fields) {

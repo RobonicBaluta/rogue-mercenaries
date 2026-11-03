@@ -138,6 +138,16 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    own stage's setup (special plaga types, the big special enemies, dogs and birds that need open
    ground) stay with their stage or are left out. Done when a run's arenas each show their planned,
    partly foreign classes, with no fatal error and no class spawned that the stage did not load.
+4. Enemy threat (user, 2026-11-03: "easy at start and harder as it goes"; the first arena had stun-rod
+   soldiers and a Licker). Coded 2026-11-03, not yet played: every spawn variant has a threat level, the
+   higher of its class's and its weapon's (1 bare hands and small blades, 2 big blades, fire, bows and
+   handguns, 3 explosives, stun rods, shotguns and the big specials, 4 machine guns, rockets, gatlings,
+   the chainsaw). Weapons are graded from their archives' hit effects (`scripts/write_threats.py`,
+   `research/re5-engine-map.md`). The first arena is level 1, later arenas their route's tier plus one
+   (so 1, then 2 or 3, then 3 or 4); the director fields only variants at or under the level, keeps
+   6/8/10/12 alive at once, and lets specials in from level 3 (one more per level above); the run map
+   only puts a map on a node when it can field enemies at that level (the soldier maps, Experimental
+   Facility and Underground Facility, wait for level 3). Tuning in `economy.json` `enemy_threat`.
 
 ### M4 — World objects
 1. ~~E10: chests placed by the arena data (no more reliance on time bonuses).~~ Done 2026-11-02: the

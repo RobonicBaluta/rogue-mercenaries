@@ -1942,7 +1942,7 @@ void ArenaBegan(double now) {
     if (line.empty()) return;
     g->notice = line;
     g->noticeUntil = now + 5.0;
-    RM_LOGI("arena %d: %s (stage %d)", s.arena, line.c_str(), CurrentMapKey());
+    RM_LOGI("arena %d: %s (stage %d, enemy threat %d)", s.arena, line.c_str(), CurrentMapKey(), g->run->ArenaThreatLevel());
 }
 
 void TryBeginArena(double now) {

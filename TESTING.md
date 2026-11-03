@@ -67,6 +67,7 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | health | `build: maximum health A -> B (xM)` |
 | Wesker's moves | `special: dash X of 5.0 m (clear (flags F) / wall at Y m (flags F)[, floor at N percent])[, hits: killed reacts ...]`; `special: lunge X m (uEm10 at N m, ...)` then `special: lunge strikes uEm10: reacts`; `special: burst (N enemies on him): reacts ...`; `special: yaw ... does not match his facing` if the facing write is skipped |
 | quitting a run | `autopilot: a run's match quits; Mercenaries phase N cleared (no save screen, no save)` |
+| enemy threat | `arena N: <MAP>   <ROUTE> (stage S, enemy threat L)`; the director's spawn lines show each class and weapon (`arm 70150`: the weapon class uWp50, graded in `economy.json` `enemy_threat` `weapons`) |
 | kills not by the player | `enemy_hit ... killed=1 by=<class>` |
 
 ## Commands

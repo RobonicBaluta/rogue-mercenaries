@@ -41,10 +41,23 @@ RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& 
     }
     if (normal.empty()) normal = arenas;
     const int fought = !bosses.empty() && layers >= 2 ? layers - 1 : layers;  // layers before the boss
+    // With enemy threat levels a node only gets a map that can field enemies at its level (the
+    // first arena: the mildest); failing that, any map.
+    auto fitting = [&](int arena, const std::string& route_id) {
+        const RouteDef* route = content.FindRoute(route_id);
+        const int level = eco.enemy_threat.Level(arena, route != nullptr ? route->difficulty_tier : 1);
+        if (level <= 0) return normal;
+        std::vector<int> out;
+        for (const int key : normal) {
+            const MapDef* m = content.FindMapByStage(key);
+            if (m == nullptr || eco.enemy_threat.table.Lowest(*m) <= level) out.push_back(key);
+        }
+        return out.empty() ? normal : out;
+    };
 
     RunMapNode start;
     start.route_id = eco.run.starting_route;
-    start.map_key = first >= 0 ? first : DrawArena(rng, normal, {});
+    start.map_key = first >= 0 ? first : DrawArena(rng, fitting(1, start.route_id), {});
     map.layers.push_back({start});
 
     for (int d = 1; d < fought; ++d) {
@@ -83,7 +96,7 @@ RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& 
             for (const RunMapNode& p : prev) {
                 if (std::find(p.next.begin(), p.next.end(), static_cast<int>(k)) != p.next.end()) avoid.insert(p.map_key);
             }
-            layer[k].map_key = DrawArena(rng, normal, avoid);
+            layer[k].map_key = DrawArena(rng, fitting(d + 1, layer[k].route_id), avoid);
             arenas_used.insert(layer[k].map_key);
         }
         map.layers.push_back(std::move(layer));

@@ -71,6 +71,37 @@ struct MapDef {
     std::optional<MapBoss> boss;         // a boss arena (the roster is not used)
 };
 
+/// How dangerous an enemy is (ROADMAP M3.4): 1 a Majini with a blade or bare hands, 2 big blades,
+/// fire, bows and handguns, 3 explosives, stun rods, shotguns and the big specials, 4 machine
+/// guns, rockets, gatlings and the chainsaw. A spawn's threat is the higher of its class's and
+/// its weapon's (economy.json enemy_threat, written by scripts/write_threats.py).
+struct ThreatTable {
+    int none = 1;      // no weapon (no arm, or the arm 0x70100)
+    int fallback = 2;  // a class or weapon not listed
+    std::unordered_map<int, int> weapons;  // by weapon class: the arm 0x701NN's NN
+    StringMap<int> classes;
+
+    [[nodiscard]] int Weapon(std::int64_t arm) const;
+    [[nodiscard]] int Class(const std::string& unit_class) const;
+    [[nodiscard]] int Of(const MapEnemy& enemy, std::int64_t arm) const;
+    /// Each variant of an entry with its weight: its profiles, else its arms, else the class alone.
+    [[nodiscard]] std::vector<std::pair<int, double>> Variants(const MapEnemy& enemy) const;
+    [[nodiscard]] int Lowest(const MapEnemy& enemy) const;
+    /// The mildest enemy a map's normal (not special) roster can field; 0 for a boss map.
+    [[nodiscard]] int Lowest(const MapDef& map) const;
+};
+
+/// The weapon a profile gives (its "arm" field), -1 without one.
+std::int64_t ProfileArm(const EnemyProfile& profile);
+
+/// What an arena may field (the run builds it from economy enemy_threat).
+struct ArenaThreat {
+    int level = 0;          // 0: no limit (every enemy, the map's max_alive, specials by tier)
+    int max_alive = 0;      // > 0: at most this many alive at once (within the map's own)
+    int specials_from = 1;  // the stage's specials join from this level on
+    ThreatTable table;
+};
+
 /// What the adapter must create now. `ticket` identifies the request until it is answered.
 struct SpawnRequest {
     std::uint64_t ticket = 0;
@@ -87,7 +118,10 @@ struct SpawnRequest {
 /// the only unit (budget 1).
 class Director {
 public:
-    Director(const MapDef& map, int budget, int tier, std::uint64_t seed);
+    /// `threat` (level > 0) holds the arena to enemies at or under its level: entries and
+    /// variants above it are left out (a map with nothing that mild fields its mildest), at most
+    /// threat.max_alive are alive at once, and specials join only from threat.specials_from.
+    Director(const MapDef& map, int budget, int tier, std::uint64_t seed, ArenaThreat threat = {});
 
     /// Requests to spawn now. `player` (when known) steers spawns away from the player.
     std::vector<SpawnRequest> Tick(double now, const std::optional<std::array<double, 3>>& player);
@@ -110,16 +144,24 @@ public:
     [[nodiscard]] int remaining() const { return budget_ - dead_; }
     [[nodiscard]] bool complete() const { return dead_ >= budget_; }
     [[nodiscard]] const MapDef& map() const { return map_; }
+    /// The arena's threat level (0: none), and the level spawns are held to (the map's mildest
+    /// when that is above the arena's).
+    [[nodiscard]] int threat_level() const { return threat_.level; }
+    [[nodiscard]] int pick_level() const { return pick_level_; }
 
 private:
     const MapEnemy* PickEnemy();
     const MapEnemy* PickSpecial();
+    [[nodiscard]] double Share(const MapEnemy& enemy) const;  // the part of an entry this arena may field
+    [[nodiscard]] bool Fits(int threat) const { return pick_level_ <= 0 || threat <= pick_level_; }
     [[nodiscard]] int Active(const MapEnemy* enemy) const;  // alive + pending of that roster entry
     int PickPoint(const std::optional<std::array<double, 3>>& player);
 
     MapDef map_;
     int budget_ = 0;
     int tier_ = 1;
+    ArenaThreat threat_;
+    int pick_level_ = 0;
     Rng rng_;
     std::uint64_t next_ticket_ = 1;
     int requested_ = 0;  // spawns asked for and not failed (alive + pending + dead)

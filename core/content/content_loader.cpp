@@ -1249,7 +1249,7 @@ void ParseLoadouts(const Diag& file, const json& doc, LoadoutConfig& out) {
 void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     const Diag d = file.Sub("");
     CheckKeys(d, doc, {"schema_version", "run", "rewards", "weapon_rarity", "upgrades", "supplies",
-                       "credits", "rating", "damage", "shop", "run_map", "chests", "keys"});
+                       "credits", "rating", "damage", "shop", "run_map", "chests", "keys", "enemy_threat"});
     if (const json* s = Section(d, doc, "run")) {
         const Diag sd = d.Sub(": run");
         CheckKeys(sd, *s, {"arena_count", "starting_route", "starting_supplies",
@@ -1428,6 +1428,71 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
             if (GetNumber(sd, *s, "item_chance", eco.chests.item_chance, false)) CheckRange(sd, "item_chance", eco.chests.item_chance, 0.0, 1.0);
             if (GetNumber(sd, *s, "weapon_chance", eco.chests.weapon_chance, false)) CheckRange(sd, "weapon_chance", eco.chests.weapon_chance, 0.0, 1.0);
             if (eco.chests.item_chance + eco.chests.weapon_chance > 1.0) sd.Error("item_chance + weapon_chance must be <= 1");
+        }
+    }
+    if (Get(doc, "enemy_threat") != nullptr) {
+        if (const json* s = Section(d, doc, "enemy_threat")) {
+            const Diag td = d.Sub(": enemy_threat");
+            CheckKeys(td, *s, {"enabled", "later_arena_bonus", "max_level", "max_alive_by_level", "specials_from_level",
+                               "default", "weapons", "classes"});
+            EconomyConfig::EnemyThreat& t = eco.enemy_threat;
+            GetBool(td, *s, "enabled", t.enabled, false);
+            GetIntRange(td, *s, "max_level", t.max_level, false, 1, 9);
+            GetIntRange(td, *s, "later_arena_bonus", t.later_arena_bonus, false, 0, 9);
+            GetIntRange(td, *s, "specials_from_level", t.specials_from_level, false, 1, 10);
+            GetIntRange(td, *s, "default", t.table.fallback, false, 1, t.max_level);
+            auto level = [&](const Diag& ld, const json& v, const std::string& what, int& out) {
+                if (!v.is_number_integer() || v.get<std::int64_t>() < 1 || v.get<std::int64_t>() > t.max_level) {
+                    ld.Error(what + " must be a level 1.." + std::to_string(t.max_level));
+                    return false;
+                }
+                out = v.get<int>();
+                return true;
+            };
+            if (const json* m = Get(*s, "max_alive_by_level")) {
+                if (!m->is_array() || m->size() != static_cast<std::size_t>(t.max_level)) {
+                    td.Error("max_alive_by_level must hold one count per level (" + std::to_string(t.max_level) + ")");
+                } else {
+                    for (const json& v : *m) {
+                        if (!v.is_number_integer() || v.get<std::int64_t>() < 1 || v.get<std::int64_t>() > 40) {
+                            td.Error("max_alive_by_level entries must be 1..40");
+                            break;
+                        }
+                        t.max_alive_by_level.push_back(v.get<int>());
+                    }
+                }
+            }
+            if (const json* w = Get(*s, "weapons")) {
+                if (!w->is_object()) {
+                    td.Error("weapons must be an object");
+                } else {
+                    for (const auto& [key, value] : w->items()) {
+                        int lv = 0;
+                        if (!level(td, value, "weapon " + Q(key), lv)) continue;
+                        if (key == "none") {
+                            t.table.none = lv;
+                            continue;
+                        }
+                        const bool hex = key.size() == 2 && std::all_of(key.begin(), key.end(), [](char c) {
+                            return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+                        });
+                        if (!hex) td.Error("weapon " + Q(key) + " must be \"none\" or two lower-case hex digits");
+                        else t.table.weapons[std::stoi(key, nullptr, 16)] = lv;
+                    }
+                }
+            }
+            if (const json* c = Get(*s, "classes")) {
+                if (!c->is_object()) {
+                    td.Error("classes must be an object");
+                } else {
+                    for (const auto& [key, value] : c->items()) {
+                        int lv = 0;
+                        if (key.rfind("uEm", 0) != 0) td.Error("class " + Q(key) + " must be an enemy class (uEm..)");
+                        else if (level(td, value, "class " + Q(key), lv)) t.table.classes[key] = lv;
+                    }
+                }
+            }
+            if (t.specials_from_level > t.max_level + 1) td.Error("specials_from_level must be at most max_level + 1");
         }
     }
     if (const json* s = Section(d, doc, "run_map")) {

@@ -638,7 +638,8 @@ Status RunController::BeginArena(double now) {
     director_.reset();
     if (caps_.Has(cap::kDirector)) {
         if (const MapDef* map = content_->FindMapByStage(map_stage_)) {
-            director_.emplace(*map, route->enemy_budget, route->difficulty_tier, streams_->director.Next());
+            director_.emplace(*map, route->enemy_budget, route->difficulty_tier, streams_->director.Next(),
+                              content_->economy().enemy_threat.ForArena(run_.arena_index, route->difficulty_tier));
             director_->PickChests(content_->economy().chests.per_arena);
             run_.arenas.back().budget = director_->budget();  // a boss arena: the boss alone
         }
@@ -646,6 +647,7 @@ Status RunController::BeginArena(double now) {
 
     Event e = MakeEvent(EventType::ArenaStarted);
     e.Add("route", route->id).Add("tier", route->difficulty_tier).Add("budget", run_.arenas.back().budget)
+        .Add("threat", director_ ? director_->threat_level() : 0).Add("threat_held_to", director_ ? director_->pick_level() : 0)
         .Add("boss", director_ && director_->map().boss ? director_->map().boss->unit_class : std::string())
         .Add("par_time_seconds", route->modifiers.par_time_seconds)
         .Add("incoming_mult", route->modifiers.incoming_damage_mult)
