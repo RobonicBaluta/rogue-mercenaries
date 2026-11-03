@@ -112,6 +112,9 @@ and `$ctest` to `ctest.exe` in the same folder.
     `[COSTUMES="3 6 .."] [NEXTMAP=<key>] bash scripts/test_native_shop_roster.sh` (the same screen with each character: restarts the game
     per costume slot, opens and closes the screen untouched, prints the grid before, after and in arena 2 and whether the first aid
     spray's archive is loaded there; same save backup and hash check),
+    `MODE=die|finish bash scripts/test_run_results.sh` (M7.3: the end of a run; `die` with `configs/adapter.mortal.json` lets the
+    director's enemies kill the player in arena 1, `finish` clears every arena; the game must go back to its Play menu by itself
+    with the mod menu open on RUN RESULTS, which is captured with the main screen and CREDITS; same save backup and hash check),
     `NUMBER=<n> bash scripts/test_grab_hang.sh` (enemies left to grab the player), `bash scripts/check_campaign_starts.sh` (each campaign map
     as a later arena: where the player starts, do the enemies close in), `bash scripts/survey_stage_preloads.sh` (what each
     Mercenaries stage loads for its enemies: `research/stage_preloads.json`, read by `campaign_maps.py`). `DLL=<path>` makes

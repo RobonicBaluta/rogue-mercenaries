@@ -83,6 +83,7 @@ std::atomic<bool> g_atInput{false};  // menu state was "input" after the last mo
 std::atomic<Model*> g_model{nullptr};
 std::atomic<bool> g_modMenu{false};      // the mod's screens are showing
 std::atomic<bool> g_resetRequested{false};
+std::atomic<int> g_openOnMenu{-1};       // screen to open by itself at the next Play menu (-1 = none)
 // Play menu inside its draw on this thread. The engine runs menu move() on
 // job threads, and the label/help helpers are shared by every menu.
 thread_local std::uintptr_t t_drawingMenu = 0;
@@ -350,13 +351,13 @@ void Rebuild() {
     g_dirty = true;
 }
 
-void EnterModMenu(std::uintptr_t self) {
+void EnterModMenu(std::uintptr_t self, bool sound = true) {
     g_stack.assign(1, Level{});
     Rebuild();
     g_modMenu = true;
     SafeStore<std::uint8_t>(self + re5::off::kMenuBlink, 0);
     SetBallIndex(self, 0);
-    PlaySound(re5::addr::kFnMenuSoundDecide, self);
+    if (sound) PlaySound(re5::addr::kFnMenuSoundDecide, self);
     RM_LOGI("native menu: mod menu opened");
 }
 
@@ -435,7 +436,7 @@ bool ModMenuFrame(std::uintptr_t self, bool readInput) {
             g_buttonLatch = true;
             Model* model = g_model.load();
             Decision d;
-            d.outcome = Outcome::StartRun;  // no model: behave like the plain row
+            d.outcome = model ? Outcome::Stay : Outcome::StartRun;  // no model: behave like the plain row
             if (model && n > 0) d = model->Decide(level->id, level->cursor);
             switch (d.outcome) {
                 case Outcome::Stay: break;
@@ -525,6 +526,20 @@ void __fastcall PlayMenuMoveDetour(std::uintptr_t self, void*) {
     }
     const auto cursor = ReadOr<std::int32_t>(self + re5::off::kMenuCursor, -1);
     const auto state = ReadOr<std::uint8_t>(self + re5::off::kMenuState, 0);
+    // Back from a finished run: the mod menu opens by itself on the run's results.
+    if (state == kStateInput && Extended(self) && g_openOnMenu.load() >= 0) {
+        const auto screen = static_cast<ScreenId>(g_openOnMenu.exchange(-1));
+        EnterModMenu(self, false);
+        if (screen != ScreenId::Main) {
+            g_stack.push_back(Level{screen});
+            Rebuild();
+        }
+        g_buttonLatch = true;  // a button still held from the match acts only once released
+        ModMenuFrame(self, false);
+        g_atInput = true;
+        RM_LOGI("native menu: opened on screen %d by itself", static_cast<int>(screen));
+        return;
+    }
     // move() handles decide before navigation, so the cursor here is the
     // row drawn highlighted last frame.
     if (state == kStateInput && (MenuInputBits() & PadMask(re5::off::kPadDecideMask)) != 0) {
@@ -752,6 +767,8 @@ void OnGameTick() {
 }
 
 bool MenuAtInput() { return g_atInput.load() && GetTickCount() - g_lastMenuFrame.load() < 500; }
+void OpenOnPlayMenu(ScreenId screen) { g_openOnMenu = static_cast<int>(screen); }
+void CancelOpenOnPlayMenu() { g_openOnMenu = -1; }
 bool TakeChosen() { return g_chosen.exchange(false); }
 bool Chosen() { return g_chosen.load(); }
 

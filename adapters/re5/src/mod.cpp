@@ -591,6 +591,120 @@ int SelectedCostume(rm::RunController& run) {
     return CostumeOf(characters, static_cast<std::size_t>(g->selectedCharacter));
 }
 
+// A character or skin by id: the character's name (with the skin's for a skin) and its costume
+// slot. False when the id is unknown.
+bool FindLook(const std::vector<rm::CharacterAvailability>& characters, const std::string& id, std::string& name,
+              int& costume) {
+    for (const auto& c : characters) {
+        if (c.id == id) {
+            name = c.name;
+            costume = static_cast<int>(c.costume_index);
+            return true;
+        }
+        for (const auto& s : c.skins) {
+            if (s.id != id) continue;
+            name = c.name + " " + s.name;
+            costume = static_cast<int>(s.costume_index >= 0 ? s.costume_index : c.costume_index);
+            return true;
+        }
+    }
+    return false;
+}
+
+const char* WeaponIcon(rm::WeaponCategory c) {
+    switch (c) {
+        case rm::WeaponCategory::Shotgun: return "shotgun";
+        case rm::WeaponCategory::Smg:
+        case rm::WeaponCategory::MachineGun: return "smg";
+        case rm::WeaponCategory::Rifle: return "rifle";
+        case rm::WeaponCategory::Magnum: return "magnum";
+        default: return "handgun";
+    }
+}
+
+// "12 min 5 sec", or "40 sec" under a minute.
+std::string DurationText(double seconds) {
+    const int total = std::max(0, static_cast<int>(seconds + 0.5));
+    return total >= 60 ? std::to_string(total / 60) + " min " + std::to_string(total % 60) + " sec"
+                       : std::to_string(total) + " sec";
+}
+
+// RUN RESULTS (M7.3): the last finished run, opened by itself when the game is back at the Play
+// menu and from CREDITS.
+nativemenu::Screen RunResultsScreen(rm::RunController& run) {
+    nativemenu::Screen screen;
+    const auto& last = run.last_summary();
+    if (!last) {
+        screen.header = "RUN RESULTS";
+        screen.empty_help = "No run has ended since the game started.";
+        return screen;
+    }
+    const rm::RunSummary& s = *last;
+    const auto characters = run.Characters();
+    std::string character, look;
+    int costume = -1;
+    FindLook(characters, s.character_id, character, costume);
+    if (!s.skin_id.empty()) FindLook(characters, s.skin_id, look, costume);
+    screen.header = std::string(s.completed ? "RUN COMPLETE" : "RUN OVER") + (character.empty() ? "" : "   " + Upper(character));
+    screen.portrait = costume;
+    auto add = [&](std::string label, std::string help, const char* icon) {
+        nativemenu::Item item;
+        item.label = std::move(label);
+        item.help = std::move(help);
+        item.icon = icon;
+        screen.items.push_back(std::move(item));
+        return &screen.items.back();
+    };
+    const int reached = s.arenas_cleared + 1;  // the arena a failed run ended in
+    if (s.completed) {
+        const bool boss = !s.arenas.empty() && s.arenas.back().boss;
+        add("ALL " + std::to_string(s.arenas_cleared) + " ARENAS CLEARED",
+            boss && !s.arenas.back().arena_name.empty() ? "The boss of " + Plain(s.arenas.back().arena_name) + " is dead."
+                                                        : "Every arena of the run cleared.",
+            "trophy");
+    } else {
+        add(std::to_string(s.arenas_cleared) + " OF " + std::to_string(s.arena_count) + " ARENAS CLEARED",
+            std::string(s.end_reason == "died" ? "Killed" : "Ended") + " in arena " + std::to_string(reached) +
+                (s.final_arena.empty() ? "." : ", " + Plain(s.final_arena) + "."),
+            "last_stand");
+    }
+    add(Upper(Plural(s.total_kills, "kill")), "Enemies killed in this run.", "crosshair");
+    add("TIME " + Upper(DurationText(s.time_seconds)), "Time spent fighting in the run's arenas.", "clock");
+    add(std::to_string(s.supplies_earned) + " SUPPLIES EARNED", std::to_string(s.supplies_spent) + " spent in the shop.",
+        "supplies");
+    const std::string balance = "\nBalance " + Plural(run.profile().credits.balance(), "credit") + ".";
+    add(Upper(Plural(s.credits_banked, "credit")) + " BANKED",
+        (s.completed                ? std::string("Earned in the run, with the bonus for finishing it.")
+         : s.credits_pending > 0 ? "A death keeps part of the " + Plural(s.credits_pending, "credit") + " earned."
+                                 : std::string("This run earned no credits.")) +
+            balance,
+        "credits");
+    if (!s.already_banked && s.arenas_cleared > s.previous_best_arena) {
+        add("NEW BEST RUN", s.previous_best_arena > 0 ? "Your record was " + Plural(s.previous_best_arena, "arena") + "."
+                                                      : "Your first record.",
+            "medal");
+    }
+    for (const std::string& id : s.unlocked) {
+        std::string name;
+        int unlockedCostume = -1;
+        if (!FindLook(characters, id, name, unlockedCostume)) continue;
+        nativemenu::Item* item = add("UNLOCKED   " + Upper(name), "This run met its challenge.\nChoose it in CHARACTERS.", "person");
+        item->portrait = unlockedCostume;
+    }
+    for (const rm::ArenaResult& a : s.arenas) {
+        add("ARENA " + std::to_string(a.arena) + (a.arena_name.empty() ? "" : "   " + Upper(Plain(a.arena_name))),
+            std::string(a.boss ? "Boss arena. " : "") + "Rating " + std::string(rm::RatingName(a.rating)) + ", " +
+                DurationText(a.time_seconds) + ", " + Plural(a.kills, "kill") + (a.no_damage ? ", no damage taken." : "."),
+            a.boss ? "explosion" : "flag");
+    }
+    if (!s.completed && reached <= s.arena_count) {
+        nativemenu::Item* item = add("ARENA " + std::to_string(reached) + (s.final_arena.empty() ? "" : "   " + Upper(Plain(s.final_arena))),
+                                     s.end_reason == "died" ? "You fell here." : "The run ended here.", "last_stand");
+        item->locked = true;
+    }
+    return screen;
+}
+
 // Screens of the native menu, built from the run controller. Called on the
 // game's menu thread, so everything happens under the mod mutex.
 class MenuModel final : public nativemenu::Model {
@@ -621,11 +735,15 @@ private:
                 screen.header = "ROGUE MERCENARIES   " + Upper(CreditsLine());
                 screen.portrait = SelectedCostume(run);
                 screen.items = {
-                    {"START RUN", "Solo Mercenaries on any stage. Pick your character,\nthe run starts with the match."},
-                    {"CHARACTERS", "Choose who you play. Locked characters show\nhow to unlock them."},
-                    {"PERKS", "Permanent perks. Locked ones are bought with credits."},
-                    {"CREDITS", "Your credits, lifetime records and weapon unlocks."},
+                    {"START RUN", "Solo Mercenaries on any stage. Pick your character,\nthe run starts with the match.",
+                     false, 0, "crosshair"},
+                    {"CHARACTERS", "Choose who you play. Locked characters show\nhow to unlock them.", false, 0, "person"},
+                    {"PERKS", "Permanent perks. Locked ones are bought with credits.", false, 0, "medal"},
+                    {"CREDITS", "Your credits, lifetime records and weapon unlocks.", false, 0, "credits"},
                 };
+                break;
+            case ScreenId::RunResults:
+                screen = RunResultsScreen(run);
                 break;
             case ScreenId::Characters: {
                 screen.header = "CHARACTERS";
@@ -835,19 +953,27 @@ private:
                 const auto& stats = profile.stats;
                 screen.header = "CREDITS";
                 screen.items = {
-                    {Upper(CreditsLine()), "Earned by finishing runs. Spent on perks,\nweapons and characters."},
-                    {Upper(Plural(stats.credits_earned, "credit")) + " EARNED", "All credits earned by your runs so far."},
-                    {Upper(Plural(stats.runs_completed, "run")) + " COMPLETED", Plural(stats.runs_failed, "run") + " ended early."},
-                    {Upper(Plural(stats.total_kills, "kill")), "Enemies killed in all runs."},
-                    {"BEST RUN " + Upper(Plural(stats.best_arena, "arena")), "Most arenas cleared in one run."},
-                    {Upper(Plural(stats.s_rank_arenas, "S rating")), Plural(stats.no_damage_arenas, "arena") +
-                                                                       " cleared without taking damage."},
+                    {Upper(CreditsLine()), "Earned by finishing runs. Spent on perks,\nweapons and characters.", false, 0,
+                     "credits"},
+                    {Upper(Plural(stats.credits_earned, "credit")) + " EARNED", "All credits earned by your runs so far.",
+                     false, 0, "credits"},
+                    {Upper(Plural(stats.runs_completed, "run")) + " COMPLETED", Plural(stats.runs_failed, "run") + " ended early.",
+                     false, 0, "trophy"},
+                    {Upper(Plural(stats.total_kills, "kill")), "Enemies killed in all runs.", false, 0, "crosshair"},
+                    {"BEST RUN " + Upper(Plural(stats.best_arena, "arena")), "Most arenas cleared in one run.", false, 0, "flag"},
+                    {Upper(Plural(stats.s_rank_arenas, "S rating")),
+                     Plural(stats.no_damage_arenas, "arena") + " cleared without taking damage.", false, 0, "medal"},
                 };
+                if (const auto& last = run.last_summary()) {
+                    screen.items.push_back({std::string("LAST RUN   ") + (last->completed ? "COMPLETE" : "OVER"),
+                                            "The results of your last run. Press to see them.", false, 0, "clock"});
+                }
                 for (const auto& weapon : run.content().weapons()) {
                     if (!weapon.enabled || weapon.unlock_cost_credits <= 0) continue;
                     Item item;
                     const bool owned = profile.unlocked_weapons.count(weapon.id) > 0;
                     item.label = Upper(weapon.name) + (owned ? "   UNLOCKED" : "");
+                    item.icon = WeaponIcon(weapon.category);
                     item.locked = !owned;
                     item.help = owned ? "This weapon can appear in your runs."
                                       : "Weapon. Unlock for " + Plural(weapon.unlock_cost_credits, "credit") + ".";
@@ -1035,6 +1161,9 @@ private:
                 d.outcome = Outcome::Close;  // the tick then banks the run and lets the match end
                 break;
             }
+            case ScreenId::RunResults:
+                d.outcome = Outcome::Back;
+                break;
             case ScreenId::Skins: {
                 const auto characters = run.Characters();
                 if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) break;
@@ -1050,6 +1179,14 @@ private:
             }
             case ScreenId::Credits: {
                 int row = 6;  // rows before the weapon list
+                if (run.last_summary()) {
+                    if (index == row) {
+                        d.outcome = Outcome::Push;
+                        d.next = ScreenId::RunResults;
+                        break;
+                    }
+                    ++row;
+                }
                 for (const auto& weapon : run.content().weapons()) {
                     if (!weapon.enabled || weapon.unlock_cost_credits <= 0) continue;
                     if (row++ != index) continue;
@@ -2029,6 +2166,11 @@ void SettleFinishedRun() {
             g->matchUiOpenRequested = false;
             g_enemyTracks.clear();
             autopilot::Disarm("run over");
+            // M7.3: the last match's Mercenaries results are skipped (they would write a record
+            // into the game's save) and the game goes back to its Play menu, where the mod menu
+            // opens on the run's results.
+            autopilot::ReturnToTitle(true);
+            if (autopilot::ReturningToTitle()) nativemenu::OpenOnPlayMenu(nativemenu::ScreenId::RunResults);
             host::SetStageOverride(-1);  // plain Mercenaries loads its own stages again
             if (phase == rm::Phase::RunFailed) ClearMercMatchEnd();
             SetStatus("run ended (" + summary->end_reason + "): +" + std::to_string(summary->credits_banked) +

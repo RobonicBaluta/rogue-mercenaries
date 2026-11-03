@@ -97,6 +97,8 @@ struct ArenaResult {
     Rating rating = Rating::C;
     std::int64_t supplies_awarded = 0;
     std::int64_t credits_accrued = 0;
+    std::string arena_name;  // the maps.json name of the map it was played on, empty when unknown
+    bool boss = false;       // a boss arena
 };
 
 struct RunSummary {
@@ -115,6 +117,12 @@ struct RunSummary {
     bool already_banked = false;  // EndRun called again / ledger already had this run
     std::vector<ArenaResult> arenas;
     StringMap<int> perks;
+    // For the run's results screen.
+    std::string skin_id;
+    double time_seconds = 0.0;    // time spent in arenas, the one a failed run ended in included
+    int previous_best_arena = 0;  // the profile's record before this run was banked
+    std::vector<std::string> unlocked;  // characters and skins whose challenge this run met
+    std::string final_arena;  // the map the run ended on (where the player died), empty when unknown
 };
 
 /// Complete temporary state of one run. Rebuilt from scratch by StartRun.

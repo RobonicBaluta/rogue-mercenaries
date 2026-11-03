@@ -45,7 +45,7 @@ weapons/enemies are limited to what the stage loaded; the arena ends through the
 time-up; the shop and route are list screens.
 
 Missing: campaign areas, bosses, custom icons and
-previews, the native organize/buy screen.
+previews, the native organize/buy screen. (All four have since been done, M5 to M7.)
 
 ## 3. Architecture: the Rogue mode layer
 
@@ -182,7 +182,10 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    ends the next stage (every item the content hands out preloads). Open: treasures; upgrades
    checked on the M92F only.
 2. ~~E8: perk icons in the PERKS screen; E9: character and skin previews.~~ Done 2026-11-03.
-3. Title menus with icons and previews; results of a run.
+3. ~~Title menus with icons and previews; results of a run.~~ Done 2026-11-03: icons on the main screen
+   and CREDITS; at a run's end (boss beaten or death) the game's Mercenaries results, its game-over
+   choice and their save writes are skipped, the game returns to its Play menu and the mod menu opens
+   on RUN RESULTS (also CREDITS → LAST RUN).
 
 ### M8 — Builds
 1. E12 mechanics: grab immunity with a cost, move speed, weapon-category damage.

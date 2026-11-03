@@ -63,6 +63,9 @@ std::atomic<unsigned> g_lockedStages{0};  // bit per stage the game refused this
 // Set around one screen's move(): its own input query then reports decide.
 thread_local std::uint32_t t_injectBits = 0;  // menu input bits added for this frame
 std::atomic<bool> g_resultsHook{false};
+std::atomic<bool> g_toTitle{false};  // a run is over: skip its results screen, then back to the title
+std::atomic<DWORD> g_toTitleAt{0};
+constexpr DWORD kToTitleTimeoutMs = 180000;  // never left set into plain Mercenaries play
 
 std::uint32_t DecideMask() {
     const auto pad = ReadOr<std::uintptr_t>(re5::addr::kPadInstance, 0);
@@ -85,8 +88,15 @@ std::uintptr_t GameWork() {
     return ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
 }
 
-// Title-flow script: the Iniciar/Solo screen. Answer "Iniciar, Solo" at once.
+// Title-flow script: the Iniciar/Solo screen. Answer "Iniciar, Solo" at once; after a run,
+// answer "back" (the screen's cancel result): the script then requests the title scene and
+// the game shows its Play menu again.
 int __fastcall FlowStep20Detour(std::uintptr_t ctx, void*) {
+    if (g_toTitle.load() && !g_armed.load() && ReadOr<std::uint8_t>(ctx + re5::off::kFlowStepState, 1) == 0) {
+        g_toTitle = false;
+        RM_LOGI("autopilot: flow Iniciar answered with back, to the title");
+        return -1;
+    }
     if (g_armed.load() && ReadOr<std::uint8_t>(ctx + re5::off::kFlowStepState, 1) == 0) {
         if (const auto gw = GameWork()) {
             SafeStore<std::int32_t>(gw + re5::off::kGameWorkMercItem, 0);
@@ -103,6 +113,12 @@ int __fastcall FlowStep20Detour(std::uintptr_t ctx, void*) {
 // choice and report "accepted" without creating the screen; the script then
 // starts the match itself (its state 0x14).
 int __fastcall FlowStepDetour(std::uintptr_t ctx, void*, int kind) {
+    // After a run the script resumes at the stage screen; its "back" returns the script to the
+    // Iniciar/Solo step, whose "back" (above) leads to the title.
+    if (g_toTitle.load() && !g_armed.load() && kind == 0 && ReadOr<std::uint8_t>(ctx + re5::off::kFlowStepState, 1) == 0) {
+        RM_LOGI("autopilot: flow stage screen answered with back");
+        return -1;
+    }
     if (g_armed.load() && (kind == 0 || kind == 1) && ReadOr<std::uint8_t>(ctx + re5::off::kFlowStepState, 1) == 0) {
         if (const auto gw = GameWork()) {
             if (kind == 0) {
@@ -185,13 +201,16 @@ void Drive(std::uintptr_t self, MoveFn orig, int screen) {
 // Mercenaries results screen (uIdMerceEd00) between the stages of one run: while the
 // autopilot is armed the screen is accepted at once (a decide press is fed to its input
 // query every frame) and kept behind the fader, so the game returns to its Mercenaries
-// menu scene, where the title-flow script restarts the match on the armed stage.
+// menu scene, where the title-flow script restarts the match on the armed stage. The same
+// after a run's last match, on the way back to the title.
 MoveFn g_origResultsMove = nullptr;
 std::atomic<int> g_resultsState{-1};
 
+bool SkipResults() { return g_enabled.load() && (g_armed.load() || g_toTitle.load()); }
+
 void __fastcall ResultsMoveDetour(std::uintptr_t self, void*) {
     std::uint32_t inject = 0;
-    if (g_enabled.load() && g_armed.load()) {
+    if (SkipResults()) {
         const auto state = ReadOr<std::uint8_t>(self + re5::off::kMenuState, 0);
         const bool optionsPhase = state == 10;
         const int last = g_resultsState.exchange(state);
@@ -210,7 +229,7 @@ void __fastcall ResultsMoveDetour(std::uintptr_t self, void*) {
     t_injectBits = inject;
     g_origResultsMove(self);
     t_injectBits = 0;
-    if (g_enabled.load() && g_armed.load()) {
+    if (SkipResults()) {
         // Once initialised (state 0 done), jump to the screen's own exit states (0x5A..0x5C:
         // flow request, wait, close) so the stats page and the record save never run.
         const auto after = ReadOr<std::uint8_t>(self + re5::off::kMenuState, 0);
@@ -219,6 +238,32 @@ void __fastcall ResultsMoveDetour(std::uintptr_t self, void*) {
             RM_LOGI("autopilot: results screen skipped (state %u -> 0x5A)", after);
         }
     }
+}
+
+// Mercenaries game-over screen (uIdGameover00) after a run's death: "Yes" would restart the
+// stage as plain Mercenaries, so the screen answers "No" itself as soon as it asks, the way its
+// own decide does, with the Mercenaries phase cleared first: the match's quit state then skips
+// its save screen (nothing is written to the game's save) and changes to the title scene, from
+// where the title flow re-enters the Mercenaries menu and the flow hooks above take the game
+// back to its Play menu.
+using GameoverDecideFn = void(__fastcall*)(std::uintptr_t self, void*);
+MoveFn g_origGameoverMove = nullptr;
+std::atomic<bool> g_gameoverHook{false};
+
+void __fastcall GameoverMoveDetour(std::uintptr_t self, void*) {
+    if (g_enabled.load() && g_toTitle.load() && !g_armed.load() &&
+        ReadOr<std::uint8_t>(self + re5::off::kMenuState, 0) == re5::off::kGameoverInputState) {
+        const auto gw = GameWork();
+        const auto phase = gw ? ReadOr<std::int32_t>(gw + re5::off::kGameWorkMercPhase, -1) : -1;
+        if (gw) SafeStore<std::int32_t>(gw + re5::off::kGameWorkMercPhase, 0);
+        SafeStore<std::int32_t>(self + re5::off::kGameoverCursor, 1);
+        SafeStore<std::uint8_t>(self + re5::off::kGameoverDecided, 1);
+        SafeStore<float>(self + re5::off::kGameoverDelay, ReadOr<float>(re5::addr::kGameoverDecideDelay, 30.0f));
+        reinterpret_cast<GameoverDecideFn>(re5::addr::kFnGameoverDecide)(self, nullptr);
+        SafeStore<std::uint8_t>(self + re5::off::kMenuState, re5::off::kGameoverDecidedState);
+        RM_LOGI("autopilot: game over answered with no (Mercenaries phase %d cleared, no save screen)", phase);
+    }
+    g_origGameoverMove(self);
 }
 
 void __fastcall Move20Detour(std::uintptr_t self, void*) { Drive(self, g_origMove20, 20); }
@@ -269,6 +314,12 @@ bool Install() {
         g_resultsHook = true;
         RM_LOGI("autopilot: results screen hook queued (accepted while armed)");
     }
+    if (g_resultsHook.load() && engine::Caps().gameoverScreen &&
+        QueueHook(re5::addr::kFnGameoverMove, reinterpret_cast<void*>(&GameoverMoveDetour),
+                  reinterpret_cast<void**>(&g_origGameoverMove))) {
+        g_gameoverHook = true;
+        RM_LOGI("autopilot: game over screen hook queued (a run's death leaves for the menu)");
+    }
     return true;
 }
 
@@ -289,6 +340,7 @@ void Arm(const Plan& plan) {
     g_faded = false;
     g_screen = 0;
     g_armedAt = GetTickCount();
+    g_toTitle = false;
     g_armed = true;
     RM_LOGI("autopilot: armed (stage %d, costume slot %d)", plan.stage, plan.costume);
     // With the flow hooks no screen ever takes input; black out from here.
@@ -305,8 +357,19 @@ void Disarm(const char* reason) {
 
 bool Armed() { return g_armed.load(); }
 
+void ReturnToTitle(bool on) {
+    if (on && !CanChangeStage()) return;
+    g_toTitleAt = GetTickCount();
+    if (g_toTitle.exchange(on) != on) RM_LOGI("autopilot: back to the title after this match %s", on ? "on" : "off");
+}
+
+bool ReturningToTitle() { return g_toTitle.load(); }
+
 void OnGameTick() {
     if (g_armed.load() && GetTickCount() - g_armedAt.load() > kTimeoutMs) Disarm("timed out");
+    if (g_toTitle.load() && GetTickCount() - g_toTitleAt.load() > kToTitleTimeoutMs && g_toTitle.exchange(false)) {
+        RM_LOGW("autopilot: back to the title timed out (the game never reached its Mercenaries menu)");
+    }
 }
 
 }  // namespace rmre5::autopilot

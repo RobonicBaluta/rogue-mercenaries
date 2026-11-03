@@ -114,6 +114,9 @@ TEST_CASE("a completed run updates lifetime stats and unlocks the themed charact
     CHECK(stats.total_kills == summary.total_kills);
     CHECK(h.rc.profile().unlocked_characters.count("epsilon") == 1);
     CHECK(h.sink.Count(EventType::CharacterUnlocked) >= 1);
+    // The summary names what the run unlocked, for its results screen.
+    CHECK(std::count(summary.unlocked.begin(), summary.unlocked.end(), "epsilon") == 1);
+    CHECK(summary.unlocked.size() == static_cast<std::size_t>(h.sink.Count(EventType::CharacterUnlocked)));
     const auto list = h.rc.Characters();
     REQUIRE(Find(list, "epsilon") != nullptr);
     CHECK(Find(list, "epsilon")->gate == CharacterGate::Selectable);

@@ -217,6 +217,19 @@ constexpr std::uintptr_t kSceneManager = 0x011B1DD8;
 // is running (this+0x12E0/0x12E4/0x12F0 == 0) and this+0x38 (current scene) is set.
 constexpr std::uintptr_t kGameFlow = 0x01249C1C;
 constexpr std::uintptr_t kFnFlowToMercMenu = 0x00794F30;
+// Mercenaries game-over screen uIdGameover00 (vtable 0x00FA54A8, "Continue? Yes / No"):
+// move() = slot 6. State 1 fades "you are dead" in, 2 waits for the choice (cursor +0x190:
+// 0 yes, 1 no). The decide sets +0x196 = 1, a 30-frame delay at +0x198 (the float at
+// kGameoverDecideDelay), calls kFnGameoverDecide(this) (the application's retry 0x80000 or
+// quit 0x10000 flag) and goes to state 3, then the exit states 0x5A..0x5C. The match's death
+// handler (FUN_00725030) then restarts the stage or, on quit, enters the match's quit state
+// (FUN_00720A50): it shows a save screen ("data saved", the game's save is written) when the
+// Mercenaries phase (game work +0x67C) is set, then changes to the title scene, from where the
+// title flow re-enters the Mercenaries menu. Offline, the game-flow requests of these screens
+// (kFnFlowToMercMenu, FUN_00794EC0) only record a result: [kGameFlow]+0x38 is null.
+constexpr std::uintptr_t kFnGameoverMove = 0x00A00B40;
+constexpr std::uintptr_t kFnGameoverDecide = 0x00A00550;
+constexpr std::uintptr_t kGameoverDecideDelay = 0x00FF02FC;
 // void aGame::NotifyItemGet(int item, int count): the game's "item acquired"
 // notice (uIdItemGet00) with the item's own name and icon.
 constexpr std::uintptr_t kFnGameNotifyItem = 0x00719B60;
@@ -320,6 +333,13 @@ constexpr std::size_t kResultsOptionsFlag = 0x2BC;
 constexpr std::uint32_t kMenuInputCancelBit = 0x8;
 // uIdMerceEd00 exit path: 0x5A requests the flow change, 0x5B waits, 0x5C closes the screen.
 constexpr std::uint8_t kResultsExitState = 0x5A;
+// uIdGameover00 (see addr::kFnGameoverMove).
+constexpr std::uint8_t kGameoverInputState = 2;
+constexpr std::uint8_t kGameoverDecidedState = 3;
+constexpr std::size_t kGameoverCursor = 0x190;   // int32: 0 yes (retry), 1 no (quit)
+constexpr std::size_t kGameoverDecided = 0x196;  // uint8
+constexpr std::size_t kGameoverDelay = 0x198;    // float: frames until the exit states
+constexpr std::size_t kGameWorkMercPhase = 0x67C;  // int32 Mercenaries phase (2, 3 at the match's end)
 constexpr std::size_t kMenuCursor = 0x48;      // int32 selected item
 constexpr std::size_t kMenuItemCount = 0x190;  // int32: 7, or 8 with "Contenido extra"
 constexpr std::size_t kMenuEnabledMask = 0x194; // uint32 bit per item; clear bits draw red
@@ -405,6 +425,12 @@ inline constexpr Signature kSignatures[] = {
     {"startup22_fade_out", 0x00A4867D, "D9 E8 8B 0D 04 88 1E 01 8B 11 8B 42 30 6A 20 51 D9 1C 24 FF D0"},
     {"flow_step", addr::kFnFlowStep, "56 8B F1 0F BE 46 25 83 E8 00 74 6A 83 E8 01 74"},
     {"merce_results_move", addr::kFnMerceResultsMove, "53 56 57 6A FF 6A FF 8B F1 E8 82 2B FC FF 8B 0D"},
+    {"gameover_move", addr::kFnGameoverMove, "53 55 56 8B F1 8B 0D 78 45 23 01 57 E8 BF 80 D6 FF"},
+    {"gameover_move_slot", 0x00FA54C0, "40 0B A0 00"},
+    {"gameover_decide", addr::kFnGameoverDecide, "83 B9 90 01 00 00 00 56 57 8B 3D A4 40 23 01 8D 77 1C 75 4C"},
+    // The move's decide: `movss xmm0, [delay]; mov ecx, esi; mov [esi+0x196], bl;
+    // movss [esi+0x198], xmm0; call Decide`.
+    {"gameover_decide_block", 0x00A00D66, "F3 0F 10 05 FC 02 FF 00 8B CE 88 9E 96 01 00 00 F3 0F 11 86 98 01 00 00 E8 CD F7 FF FF"},
     {"pause_move", addr::kFnPauseMove, "A1 A4 40 23 01 F7 80 34 04 01 00 00 05 00 00 56"},
     {"inventory_slot_clear", addr::kFnInventorySlotClear, "8B 44 24 04 53 56 57 50 8B F1 E8 B1 EE FF FF 6A 2C 33 DB 8D"},
     {"enemy_create", addr::kFnEnemyCreate, "8B 15 50 4F 1F 01 56 8B F1 8B 4C 24 08 39 51 04 74 20 8B 41"},

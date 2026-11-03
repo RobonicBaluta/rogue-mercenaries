@@ -1008,6 +1008,10 @@ Result<ArenaResult> RunController::CompleteArena(double now) {
     result.rating = rating;
     result.supplies_awarded = a.supplies_awarded;
     result.credits_accrued = a.credits_accrued;
+    if (const MapDef* map = content_->FindMapByStage(map_stage_)) {
+        result.arena_name = map->name;
+        result.boss = map->boss.has_value();
+    }
     run_.results.push_back(result);
 
     run_.reward_rarity_shift = route.rarity_bonus + eco.rewards.rating_rarity_bonus[RatingIndex(rating)];
@@ -1443,6 +1447,10 @@ Result<RunSummary> RunController::EndRun() {
     s.credits_pending = run_.credits_pending;
     s.arenas = run_.results;
     s.perks = run_.perks;
+    s.skin_id = run_.skin_id;
+    for (const ArenaMetrics& a : run_.arenas) s.time_seconds += std::max(0.0, a.end_time - a.start_time);
+    s.previous_best_arena = static_cast<int>(profile_.stats.best_arena);
+    if (const MapDef* map = content_->FindMapByStage(map_stage_)) s.final_arena = map->name;
 
     const TxResult r = BankRunCredits(profile_, run_.run_id, amount);
     s.already_banked = r == TxResult::AlreadyApplied;
@@ -1467,7 +1475,7 @@ Result<RunSummary> RunController::EndRun() {
         Emit(std::move(c));
     }
     profile_.active_run.reset();
-    (void)EvaluateCharacterUnlocks();
+    s.unlocked = EvaluateCharacterUnlocks();
     (void)SaveProfile("end_run");
 
     Event e = MakeEvent(EventType::RunEnded);

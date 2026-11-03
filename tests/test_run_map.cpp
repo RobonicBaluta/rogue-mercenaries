@@ -314,8 +314,18 @@ TEST_CASE("a run ends on the boss: offered by name, its death alone clears the a
     boss.enemy_id = "beast";
     CHECK(h.rc.OnEnemyKilled(boss).counted);
     CHECK(h.rc.IsArenaComplete());
-    REQUIRE(h.rc.CompleteArena(t + 30.0).ok());
+    const auto result = h.rc.CompleteArena(t + 30.0);
+    REQUIRE(result.ok());
+    // Results name the map played and mark the boss arena, for the run's results screen.
+    CHECK(result->boss);
+    REQUIRE(h.rc.content().FindMapByStage(200) != nullptr);
+    CHECK(result->arena_name == h.rc.content().FindMapByStage(200)->name);
+    CHECK_FALSE(result->arena_name.empty());
     REQUIRE(h.rc.ContinueToRewards().ok());
     REQUIRE(h.rc.ChooseReward(0).ok());
     CHECK(h.rc.phase() == Phase::RunComplete);
+    const auto summary = h.rc.EndRun();
+    REQUIRE(summary.ok());
+    CHECK(summary->final_arena == result->arena_name);
+    CHECK(summary->arenas.back().boss);
 }

@@ -115,6 +115,8 @@ bool VerifySignatures(unsigned timeoutMs) {
                         SignatureOk("flow_merc_setup") && SignatureOk("startup21_stage_write") &&
                         SignatureOk("startup22_character_write");
     g_caps.resultsScreen = g_caps.flowScript && SignatureOk("merce_results_move");
+    g_caps.gameoverScreen = g_caps.resultsScreen && SignatureOk("gameover_move") && SignatureOk("gameover_move_slot") &&
+                            SignatureOk("gameover_decide") && SignatureOk("gameover_decide_block");
     g_caps.pauseScreen = g_caps.playMenu && SignatureOk("pause_move");
     g_caps.slotClear = g_caps.inventory && SignatureOk("inventory_slot_clear");
     g_caps.gameShop = SignatureOk("shop_create") && SignatureOk("unit_register");

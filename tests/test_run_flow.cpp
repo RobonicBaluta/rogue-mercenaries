@@ -107,6 +107,11 @@ TEST_CASE("full three-arena run driven by a fake event script", "[run]") {
     CHECK(summary->arenas_cleared == 3);
     CHECK(summary->total_kills == expected_kills);
     CHECK(summary->credits_banked == pending + 50);
+    CHECK(summary->previous_best_arena == 0);
+    double time = 0.0;
+    for (const ArenaResult& a : summary->arenas) time += a.time_seconds;
+    CHECK(summary->time_seconds == time);
+    CHECK(summary->time_seconds > 0.0);
     CHECK(rc.profile().credits.balance() == pending + 50);
     CHECK(rc.profile().stats.runs_completed == 1);
     CHECK(rc.profile().stats.best_arena == 3);
@@ -206,6 +211,9 @@ TEST_CASE("death fails the run and banks credits at the death rate", "[run]") {
     CHECK(s->end_reason == "died");
     CHECK(s->arenas_cleared == 1);
     CHECK(s->credits_banked == pending / 2);
+    // The results screen's time counts the arena the player died in (100 s to 105 s).
+    CHECK(s->time_seconds == s->arenas.front().time_seconds + 5.0);
+    CHECK(s->previous_best_arena == 0);
     CHECK(h.rc.profile().credits.balance() == pending / 2);
     CHECK(h.rc.profile().stats.runs_failed == 1);
     CHECK(h.rc.profile().stats.runs_completed == 0);

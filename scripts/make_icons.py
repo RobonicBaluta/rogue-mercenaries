@@ -229,6 +229,83 @@ def rifle():
     return gun(body, [scope, mag], [[(32, 49), (36, 49), (34, 54)]], angle=-30)
 
 
+def handgun():
+    s = Shape()
+    a = -18
+    s.poly(rotate([(30, 34), (90, 34), (90, 46), (30, 46)], a))                      # slide
+    s.poly(rotate([(84, 30), (88, 30), (88, 34), (84, 34)], a))                      # front sight
+    s.poly(rotate([(30, 46), (64, 46), (64, 50), (30, 50)], a))                      # frame
+    s.poly(rotate(spline([(30, 48), (46, 48), (44, 60), (40, 76), (24, 78), (22, 70), (28, 56)], 6), a))  # grip
+    s.poly(rotate([(46, 48), (60, 48), (58, 56), (52, 62), (44, 62)], a))            # trigger guard
+    s.poly(rotate([(48, 51), (55, 51), (52, 58), (47, 58)], a), cut=True)
+    for x in (38, 44, 50):
+        s.line(rotate([(x, 37), (x, 43)], a), 2.0, cut=True)                        # slide serrations
+    return s
+
+
+def credits():
+    s = Shape()
+    w = max(1, int(3.0 * UNIT))
+    for y in (78, 64, 50, 36):                                                       # a stack of coins, bottom up
+        s.rect(18, y, 82, y + 10, 0)
+        s.ellipse(50, y + 10, 32, 8)
+        s.ellipse(50, y, 32, 8)
+        # The rim of this coin's top face; the next coin covers its upper half.
+        s.d.ellipse([18 * UNIT, (y - 8) * UNIT, 82 * UNIT, (y + 8) * UNIT], outline=0, width=w)
+    s.ellipse(50, 36, 30, 6.5)
+    s.ellipse(50, 36, 20, 4, cut=True)
+    s.ellipse(50, 36, 13, 2.2)
+    return s
+
+
+def clock():
+    s = Shape()
+    s.rect(43, 6, 57, 14, 2)                                                         # stopwatch button
+    s.rect(47, 12, 53, 22, 0)
+    s.ellipse(50, 56, 38, 38)
+    s.ellipse(50, 56, 30, 30, cut=True)
+    s.line([(50, 56), (50, 34)], 5.0)                                                # hands
+    s.line([(50, 56), (66, 64)], 5.0)
+    s.ellipse(50, 56, 5, 5)
+    for k in range(12):
+        ang = math.radians(k * 30)
+        r0, r1 = (22, 27) if k % 3 else (19, 27)
+        s.line([(50 + r0 * math.sin(ang), 56 - r0 * math.cos(ang)), (50 + r1 * math.sin(ang), 56 - r1 * math.cos(ang))], 2.4)
+    return s
+
+
+def flag():
+    s = Shape()
+    s.rect(18, 8, 25, 94, 2)                                                         # pole
+    s.ellipse(21.5, 8, 6, 6)
+    cloth = [(25, 14), (40, 10), (58, 16), (76, 12), (88, 14), (84, 34), (88, 54), (72, 52), (56, 58), (40, 52), (25, 56)]
+    s.poly(spline(cloth, 6))
+    s.poly(star(54, 34, 11, 4.5), cut=True)
+    return s
+
+
+def trophy():
+    s = Shape()
+    s.poly(spline([(24, 10), (76, 10), (74, 34), (64, 52), (50, 58), (36, 52), (26, 34)], 6))  # cup
+    s.ring(22, 26, 12, 5.0)                                                          # handles
+    s.ring(78, 26, 12, 5.0)
+    s.rect(24, 10, 76, 14, 0)
+    s.rect(45, 56, 55, 72, 0)                                                        # stem
+    s.rect(32, 72, 68, 80, 2)                                                        # base
+    s.rect(26, 80, 74, 90, 2)
+    s.poly(star(50, 30, 12, 5), cut=True)
+    return s
+
+
+def person():
+    s = Shape()
+    s.ellipse(50, 32, 18, 21)                                                        # head
+    s.poly(spline([(14, 94), (16, 72), (30, 60), (50, 56), (70, 60), (84, 72), (86, 94)], 6))  # shoulders
+    s.ellipse(50, 56, 20, 6, cut=True)                                               # neck gap
+    s.ellipse(50, 32, 18, 21)
+    return s
+
+
 def crosshair():
     s = Shape()
     s.ring(50, 50, 30, 5.5)
@@ -319,6 +396,7 @@ ICONS = {
     'grenade': grenade, 'flash': flash, 'fire': fire, 'medkit': medkit, 'heal': heal, 'second_wind': second_wind,
     'ammo': ammo, 'shotgun': shotgun, 'smg': smg, 'magnum': magnum, 'rifle': rifle, 'crosshair': crosshair,
     'supplies': supplies, 'last_stand': last_stand, 'shield': shield, 'medal': medal, 'explosion': explosion,
+    'handgun': handgun, 'credits': credits, 'clock': clock, 'flag': flag, 'trophy': trophy, 'person': person,
 }
 
 

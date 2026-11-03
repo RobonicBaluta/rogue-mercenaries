@@ -12,7 +12,8 @@ namespace rmre5::nativemenu {
 
 enum class ScreenId {
     Main = 0, Characters, Perks, Credits, Skins, PerkList,
-    MatchResults, MatchRewards, MatchShop, MatchRoute, MatchRunOver, MatchOrganize
+    MatchResults, MatchRewards, MatchShop, MatchRoute, MatchRunOver, MatchOrganize,
+    RunResults
 };
 
 struct Item {
@@ -102,6 +103,10 @@ int CursorPortrait();
 /// the messages are not loaded or are not those names.
 bool SetItemBoxLabels(const std::string& first, const std::string& second);
 void RestoreItemBoxLabels();
+/// The next time the Play menu waits for input, the mod menu opens by itself on `screen`
+/// (above its main screen), as if ROGUE MERCENARIES had been chosen: a finished run's results.
+void OpenOnPlayMenu(ScreenId screen);
+void CancelOpenOnPlayMenu();
 // True once (then cleared) after the player chose START RUN.
 bool TakeChosen();
 bool Chosen();

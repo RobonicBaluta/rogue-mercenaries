@@ -28,6 +28,7 @@ struct Verified {
     bool flowScript = false;    // title-flow script steps (direct start without screens)
     bool inventory = false;     // uPlayer inventory layout and add helpers
     bool resultsScreen = false; // Mercenaries results screen move (auto-accept between stages)
+    bool gameoverScreen = false; // game-over screen move and its decide (a run's death answers "no")
     bool pauseScreen = false;   // pause screen move (host of the in-match screens)
     bool timeBonus = false;     // time-bonus pickups and the countdown add (chests)
     bool fatalHandler = false;  // the engine's fatal error handler (its message is logged)

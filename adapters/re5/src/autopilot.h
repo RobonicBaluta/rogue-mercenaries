@@ -21,6 +21,12 @@ bool CanChangeStage();
 void Arm(const Plan& plan);
 void Disarm(const char* reason);
 bool Armed();
+/// After a run's last match: its Mercenaries results screen is skipped like a stage change's
+/// (no stats page, no record written to the game's save) and the Mercenaries menu script's
+/// first step answers "back", so the game returns to its title Play menu. Cleared by Arm and
+/// once the script has taken it. Needs CanChangeStage().
+void ReturnToTitle(bool on);
+bool ReturningToTitle();
 // Game thread: times out an autopilot that could not finish.
 void OnGameTick();
 
