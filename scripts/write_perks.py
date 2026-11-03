@@ -144,7 +144,7 @@ BUILDS = {
         'summary': 'Every melee kill raises one of seven stats for the run, each to a cap: damage, speed, healing and more.',
         'melee_kill_stats': {'damage': 0.04, 'defense': 0.03, 'max_health': 0.05, 'crit': 0.02, 'move_speed': 0.03,
                              'heal': 0.05, 'supplies': 0.04},
-        'melee_kill_caps': {'damage': 1.0, 'defense': 0.5, 'max_health': 1.0, 'crit': 0.3, 'move_speed': 0.3,
+        'melee_kill_caps': {'damage': 1.0, 'defense': 0.7, 'max_health': 1.0, 'crit': 0.3, 'move_speed': 0.6,
                             'heal': 0.5, 'supplies': 0.5},
     },
     'chris_warrior': {

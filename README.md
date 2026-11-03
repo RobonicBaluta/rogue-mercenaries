@@ -91,7 +91,7 @@ the others are written and wait for a playtest (2026-11-03).
 | Josh | BSAA | Call for Backup | Special: covering fire on the nearest enemy (within 18 m) every 1.2 s for the rest of the arena, once every two arenas. A stand-in until a real computer partner can be spawned. |
 | Barry | S.T.A.R.S. | Old Reliable | An S and W M29 that upgrades without limit; health x1.5. |
 | Rebecca | S.T.A.R.S. | Field Surgeon | Heals x1.5. A big heal (at least 60 percent of her health: a spray, a mixed herb) makes her untouchable for 4 s and 30 percent stronger for 12 s. |
-| Excella | Dress | Ambition | Every melee kill raises one stat for the rest of the run, up to its cap: damage (+4 percent, to +100), defence (+3, to +50), health (+5, to +100), critical chance (+2, to +30), movement speed (+3, to +30), healing (+5, to +50) or supplies (+4, to +50). |
+| Excella | Dress | Ambition | Every melee kill raises one stat for the rest of the run, up to its cap: damage (+4 percent, to +100), defence (+3, to +70), health (+5, to +100), critical chance (+2, to +30), movement speed (+3, to +60), healing (+5, to +50) or supplies (+4, to +50). |
 | Wesker | Midnight | Uroboros Speed | Special: a dash, or a lunge at an enemy ahead (below); a second special, the burst. Untouchable while they act. Half his health. |
 | Wesker | S.T.A.R.S. | Iron Fist | Melee hits three times as hard. Only his Samurai Edge, magnums and the Hydra can be bought or used. |
 
