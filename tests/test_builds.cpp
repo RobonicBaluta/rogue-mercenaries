@@ -286,6 +286,26 @@ TEST_CASE("the second batch of build fields is validated", "[builds]") {
     CHECK(HasError(LoadErrors(json{{"extra_weapons", {"shotgun"}}}), "not build_only"));
     CHECK(HasError(LoadErrors(json{{"drops_as", "0x0999"}}), "no loadouts.json equipment"));
     CHECK(LoadErrors(json{{"drops_as", 262}}).empty());  // the fixture's grenade
+    CHECK(LoadErrors(json{{"extra_chests", 3}}).empty());
+    CHECK_FALSE(LoadErrors(json{{"extra_chests", 9}}).empty());
+}
+
+TEST_CASE("a build's extra chests are placed in every arena it plays", "[builds]") {
+    // A map with eight chest positions; the economy places 3 per arena (its default).
+    auto run = [](const char* skin) {
+        ContentSources src = BuildSources(json{{"name", "Locksmith"}, {"chest_keys_exempt", true}, {"extra_chests", 2}});
+        src.maps = R"({"schema_version": 1, "maps": [{"id": "m", "name": "M", "stage": 4,
+          "points": [[0, 0, 0], [1000, 0, 0]], "roster": [{"class": "uEm10"}],
+          "chests": [[1, 0, 0], [2, 0, 0], [3, 0, 0], [4, 0, 0], [5, 0, 0], [6, 0, 0], [7, 0, 0], [8, 0, 0]]}]})";
+        test::Harness h(test::Load(src));
+        h.rc.SetMapStage(4);
+        REQUIRE(h.rc.StartRun("alpha", 3, skin).ok());
+        REQUIRE(h.rc.BeginArena(0.0).ok());
+        REQUIRE(h.rc.director() != nullptr);
+        return h.rc.director()->chests().size();
+    };
+    CHECK(run("alpha_base") == 3);
+    CHECK(run("alpha_build") == 5);
 }
 
 TEST_CASE("melee damage applies to melee hits, melee kills add run stats", "[builds]") {

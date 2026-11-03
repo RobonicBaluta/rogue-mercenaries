@@ -51,7 +51,7 @@
     {
       "id": "sheva_field_training",
       "name": "Field Training",
-      "description": "Sheva. Each kill heals 3 percent of max health.",
+      "description": "Sheva. Each kill heals 2 percent of max health.",
       "category": "style",
       "rarity": "common",
       "tags": [
@@ -61,7 +61,7 @@
       "effects": [
         {
           "kind": "heal_on_kill",
-          "amount_fraction_of_max": 0.03
+          "amount_fraction_of_max": 0.02
         }
       ],
       "characters": [
@@ -96,7 +96,7 @@
     {
       "id": "jill_battle_instinct",
       "name": "Battle Instinct",
-      "description": "Jill. 10 percent of hits are critical and deal double damage.",
+      "description": "Jill. 15 percent of hits are critical and deal double damage.",
       "category": "style",
       "rarity": "common",
       "tags": [
@@ -106,7 +106,7 @@
       "effects": [
         {
           "kind": "crit",
-          "chance": 0.1,
+          "chance": 0.15,
           "multiplier": 2.0
         }
       ],
@@ -191,7 +191,7 @@
     {
       "id": "rebecca_combat_medic",
       "name": "Combat Medic",
-      "description": "Rebecca. Each kill heals 4 percent of max health, an arena clear restocks a spray.",
+      "description": "Rebecca. Each kill heals 2 percent of max health, an arena clear restocks a spray.",
       "category": "style",
       "rarity": "common",
       "tags": [
@@ -202,7 +202,7 @@
       "effects": [
         {
           "kind": "heal_on_kill",
-          "amount_fraction_of_max": 0.04
+          "amount_fraction_of_max": 0.02
         },
         {
           "kind": "item_on_arena_clear",
@@ -687,7 +687,7 @@
     {
       "id": "sheva_tribal_trait",
       "name": "Quiver",
-      "description": "Tribal Sheva starts with 20 arrows and finds 10 more on every arena clear.",
+      "description": "Tribal Sheva starts with 20 arrows, finds 10 more on every arena clear, and each kill heals 1.5 percent.",
       "category": "skin",
       "rarity": "common",
       "tags": [
@@ -704,6 +704,10 @@
           "kind": "item_on_arena_clear",
           "game_item": 523,
           "amount": 10
+        },
+        {
+          "kind": "heal_on_kill",
+          "amount_fraction_of_max": 0.015
         }
       ]
     },

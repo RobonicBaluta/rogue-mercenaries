@@ -30,12 +30,12 @@ perks += [
          [{'kind': 'item_on_arena_clear', 'game_item': SPRAY, 'amount': 1}], ['chris'], tags=['items']),
     perk('chris_pocket_grenades', 'Pocket Grenades', 'Chris. Every 4 kills put a hand grenade in your pocket.', 'style',
          [{'kind': 'item_on_kill', 'game_item': HAND, 'amount': 1, 'every_kills': 4}], ['chris'], cost=120, rarity='rare', tags=['items']),
-    perk('sheva_field_training', 'Field Training', 'Sheva. Each kill heals 3 percent of max health.', 'style',
-         [{'kind': 'heal_on_kill', 'amount_fraction_of_max': 0.03}], ['sheva'], tags=['heal']),
+    perk('sheva_field_training', 'Field Training', 'Sheva. Each kill heals 2 percent of max health.', 'style',
+         [{'kind': 'heal_on_kill', 'amount_fraction_of_max': 0.02}], ['sheva'], tags=['heal']),
     perk('sheva_flash_tactics', 'Flash Tactics', 'Sheva. Every 3 kills hand you a flash grenade.', 'style',
          [{'kind': 'item_on_kill', 'game_item': FLASH, 'amount': 1, 'every_kills': 3}], ['sheva'], cost=120, rarity='rare', tags=['items']),
-    perk('jill_battle_instinct', 'Battle Instinct', 'Jill. 10 percent of hits are critical and deal double damage.', 'style',
-         [{'kind': 'crit', 'chance': 0.10, 'multiplier': 2.0}], ['jill'], tags=['crit']),
+    perk('jill_battle_instinct', 'Battle Instinct', 'Jill. 15 percent of hits are critical and deal double damage.', 'style',
+         [{'kind': 'crit', 'chance': 0.15, 'multiplier': 2.0}], ['jill'], tags=['crit']),
     perk('wesker_firestarter', 'Firestarter', 'Wesker. Every 3 kills hand you an incendiary grenade.', 'style',
          [{'kind': 'item_on_kill', 'game_item': INCENDIARY, 'amount': 1, 'every_kills': 3}], ['wesker'], tags=['items']),
     perk('josh_squad_tactics', 'Squad Tactics', 'Josh. Every kill gives 2 extra supplies.', 'style',
@@ -43,8 +43,8 @@ perks += [
     perk('barry_demolition_man', 'Demolition Man', 'Barry. Every 5 kills hand you a grenade, and an arena clear two more.', 'style',
          [{'kind': 'item_on_kill', 'game_item': HAND, 'amount': 1, 'every_kills': 5},
           {'kind': 'item_on_arena_clear', 'game_item': HAND, 'amount': 2}], ['barry'], tags=['items']),
-    perk('rebecca_combat_medic', 'Combat Medic', 'Rebecca. Each kill heals 4 percent of max health, an arena clear restocks a spray.', 'style',
-         [{'kind': 'heal_on_kill', 'amount_fraction_of_max': 0.04},
+    perk('rebecca_combat_medic', 'Combat Medic', 'Rebecca. Each kill heals 2 percent of max health, an arena clear restocks a spray.', 'style',
+         [{'kind': 'heal_on_kill', 'amount_fraction_of_max': 0.02},
           {'kind': 'item_on_arena_clear', 'game_item': SPRAY, 'amount': 1}], ['rebecca'], tags=['heal', 'items']),
     perk('excella_executive_bonus', 'Executive Bonus', 'Excella. 25 extra supplies for every arena cleared.', 'style',
          [{'kind': 'supplies_on_arena_clear', 'amount': 25, 'require_no_damage': False}], ['excella'], tags=['supplies']),
@@ -83,16 +83,17 @@ perks += [
 skin_traits = {
     'chris_stars_trait': ('S.T.A.R.S. Restock', 'S.T.A.R.S. Chris restocks a first aid spray on every arena clear.',
                           [{'kind': 'item_on_arena_clear', 'game_item': 0x0304, 'amount': 1}]),
-    'sheva_tribal_trait': ('Quiver', 'Tribal Sheva starts with 20 arrows and finds 10 more on every arena clear.',
+    'sheva_tribal_trait': ('Quiver', 'Tribal Sheva starts with 20 arrows, finds 10 more on every arena clear, and each kill heals 1.5 percent.',
                            [{'kind': 'item_on_start', 'game_item': 0x020B, 'amount': 20},
-                            {'kind': 'item_on_arena_clear', 'game_item': 0x020B, 'amount': 10}]),
+                            {'kind': 'item_on_arena_clear', 'game_item': 0x020B, 'amount': 10},
+                            {'kind': 'heal_on_kill', 'amount_fraction_of_max': 0.015}]),
 }
 # ---- Skin builds (characters.json skin "build", core/include/rm/characters.h SkinBuild). ----
 BUILDS = {
     'chris_safari': {
         'name': 'Mine Layer', 'icon': 'mine',
-        'summary': 'Every chest and every enemy drop is a proximity bomb, and they stack up to 10.',
-        'drops_as': '0x010A', 'stack_max': {'0x010A': 10},
+        'summary': 'Every chest and every enemy drop is a proximity bomb, and they stack up to 10. 25 percent more health.',
+        'drops_as': '0x010A', 'stack_max': {'0x010A': 10}, 'max_health_mult': 1.25,
     },
     'chris_stars': {
         'name': 'Field Kit', 'icon': 'medkit',
@@ -110,8 +111,8 @@ BUILDS = {
     },
     'jill_bsaa': {
         'name': 'Locksmith', 'icon': 'key',
-        'summary': 'Opens every chest without a key.',
-        'chest_keys_exempt': True,
+        'summary': 'Opens every chest without a key, and finds three more chests in every arena.',
+        'chest_keys_exempt': True, 'extra_chests': 3,
     },
     'jill_battle_suit': {
         'name': 'Twin Fury', 'icon': 'dual_smg',
@@ -121,8 +122,8 @@ BUILDS = {
     },
     'wesker_midnight': {
         'name': 'Uroboros Speed', 'icon': 'dash',
-        'summary': 'Dash, or lunge at an enemy ahead to finish it in melee; a second button bursts. Half health.',
-        'max_health_mult': 0.5,
+        'summary': 'Dash, or lunge at an enemy ahead to finish it in melee; a second button bursts. 70 percent health.',
+        'max_health_mult': 0.7,
         'special': {'kind': 'dash', 'name': 'Dash', 'icon': 'dash', 'cooldown_seconds': 3.5, 'power': 5,
                     'duration_seconds': 0.5},
         'special_2': {'kind': 'burst', 'name': 'Burst', 'icon': 'shockwave', 'cooldown_seconds': 7, 'power': 350,
@@ -131,7 +132,7 @@ BUILDS = {
     'rebecca_stars': {
         'name': 'Field Surgeon', 'icon': 'heal',
         'summary': 'Stronger heals. A spray or mixed herb gives 4 seconds untouchable and 12 seconds of 30 percent more damage.',
-        'heal_mult': 1.5, 'heal_buff_fraction': 0.6, 'heal_invulnerable_seconds': 4, 'heal_damage_bonus': 0.3,
+        'heal_mult': 1.3, 'heal_buff_fraction': 0.6, 'heal_invulnerable_seconds': 4, 'heal_damage_bonus': 0.3,
         'heal_damage_seconds': 12,
     },
     'josh_bsaa': {

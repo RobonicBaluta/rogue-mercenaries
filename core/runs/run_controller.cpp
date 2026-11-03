@@ -649,7 +649,7 @@ Status RunController::BeginArena(double now) {
             }
             director_.emplace(*map, route->enemy_budget, route->difficulty_tier, streams_->director.Next(),
                               content_->economy().enemy_threat.ForArena(run_.arena_index, route->difficulty_tier));
-            director_->PickChests(content_->economy().chests.per_arena);
+            director_->PickChests(content_->economy().chests.per_arena + run_.character.build.extra_chests);
             run_.arenas.back().budget = director_->budget();  // a boss arena: the boss alone
         }
     }

@@ -92,6 +92,7 @@ struct SkinBuild {
     double heal_damage_seconds = 0.0;
     std::int64_t drops_as = -1;      // enemy drops and chest items become this game item (-1 = no)
     bool chest_keys_exempt = false;  // opens chests without keys
+    int extra_chests = 0;            // chests placed in each arena besides economy chests.per_arena
     SkinSpecial special;
     SkinSpecial special_2;  // a second special on its own button (Wesker's burst)
     [[nodiscard]] const SkinSpecial& Special(int slot) const { return slot == 1 ? special_2 : special; }

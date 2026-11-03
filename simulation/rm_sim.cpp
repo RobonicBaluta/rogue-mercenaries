@@ -4,6 +4,7 @@
 // invariants and report balance:
 //   rm_sim --runs 10000 --seed 1 --config configs --out build/sim
 // Options: --capabilities all|none|<comma list>  --policy mix|random|greedy|safe
+//          --hit-scale X (enemies hit X times as often: calibrates the model's difficulty)
 //          --log-runs N (write JSONL telemetry for the first N runs)  --date YYYY-MM-DD
 // Exit code: 0 = all invariants hold, 1 = an invariant failed, 2 = usage/config error.
 
@@ -50,6 +51,34 @@ constexpr double kMeleeHitChance = 0.10;
 constexpr double kRegenBetweenArenas = 30.0;
 constexpr double kSkillMin = 0.8;
 constexpr double kSkillMax = 1.3;
+// Healing items (loadouts.json game items the rewards, the shop and perks hand out), used when
+// health is under kHealBelow: the share of maximum health each heals before the build's own
+// multiplier (a red herb only with a green one, as the mixed herb).
+constexpr double kHealBelow = 0.35;
+constexpr std::int64_t kItemSpray = 0x0304, kItemGreenHerb = 0x0305, kItemRedHerb = 0x0306, kItemMixedHerb = 0x0309;
+constexpr double kSprayHeal = 1.0, kGreenHerbHeal = 0.4, kMixedHerbHeal = 1.0;
+// The builds' specials, used whenever ready (estimates, the adapter performs them in game): kill
+// credits (enemies finished at once) per use, and for the backup partner a share of the arena's
+// work for the rest of it (seen in game 2026-11-03: Sheva followed, shot, killed and revived).
+// Against Majini of 600 to 3000 health: the twin SMGs deal about 900 to each enemy in their cone,
+// the burst 350 to each one near, a dash 200 to those on its line and a lunge 300 to 650 to one.
+constexpr double kDashKills = 0.35, kBurstKills = 0.6, kDualSmgKills = 1.2;
+constexpr double kPartnerKillSpeed = 1.5, kPartnerIncoming = 0.8;
+// The arena's chests (economy chests.per_arena, placed by the adapter) are reached after a
+// quarter, half and three quarters of its kills (a key each, unless the build is exempt); the
+// Majini killed are of the key classes. A kill drops a green herb this often (the game's own
+// drops; a build's drops_as turns them into its item).
+constexpr double kHerbDropChance = 0.04;
+constexpr double kAnyDropChance = 0.2;  // any item drop (mostly ammo), for a build's drops_as
+constexpr const char* kEnemyClass = "uEm10";
+// Thrown and placed items (perk grants, rewards, the shop, a build's drops): used as they come, one
+// every kThrowSeconds, each finishing this many enemies (estimates).
+constexpr std::int64_t kItemHandGrenade = 0x0106, kItemIncendiary = 0x0107, kItemFlash = 0x0108, kItemMine = 0x010A;
+constexpr double kGrenadeKills = 0.8, kIncendiaryKills = 0.6, kFlashKills = 0.3, kMineKills = 1.0;
+constexpr double kThrowSeconds = 6.0;
+// The backup partner revives a player bleeding out once per arena (seen in game 2026-11-03), at
+// this share of maximum health.
+constexpr double kPartnerReviveHp = 0.25;
 
 enum class Policy { Random, Greedy, Safe };
 const char* PolicyName(Policy p) {
@@ -68,6 +97,7 @@ struct Options {
     std::string out = "build/sim";
     std::string capabilities = "all";
     std::string policy = "mix";
+    double hit_scale = 1.0;  // enemies hit this much more often (calibration)
     int log_runs = 0;
     std::string date;
 };
@@ -93,6 +123,8 @@ bool ParseArgs(int argc, char** argv, Options& o) {
             o.capabilities = v;
         } else if (a == "--policy" && next(v)) {
             o.policy = v;
+        } else if (a == "--hit-scale" && next(v)) {
+            o.hit_scale = std::stod(v);
         } else if (a == "--log-runs" && next(v)) {
             o.log_runs = std::stoi(v);
         } else if (a == "--date" && next(v)) {
@@ -101,7 +133,7 @@ bool ParseArgs(int argc, char** argv, Options& o) {
             return false;
         }
     }
-    return o.runs > 0 && (o.policy == "mix" || o.policy == "random" || o.policy == "greedy" || o.policy == "safe");
+    return o.runs > 0 && o.hit_scale > 0.0 && (o.policy == "mix" || o.policy == "random" || o.policy == "greedy" || o.policy == "safe");
 }
 
 Capabilities ParseCaps(const std::string& spec) {
@@ -180,6 +212,13 @@ double ScoreReward(const RewardChoice& c, Policy policy, const Content& content)
         case RewardKind::Weapon:
             return (policy == Policy::Greedy ? 6.0 : 4.0) + 2.0 * r + static_cast<double>(c.weapon.affixes.size());
         case RewardKind::Supplies: return policy == Policy::Greedy ? 1.0 : 3.0;
+        case RewardKind::Item: {
+            // Healing first when playing safe, grenades and ammo otherwise.
+            const EquipmentDef* e = content.loadouts().FindEquipment(c.item_id);
+            const bool heals = e != nullptr && (e->game_item >> 8) == 3;
+            if (policy == Policy::Safe) return heals ? 9.0 : 4.0;
+            return heals ? 5.0 : 6.0;
+        }
     }
     return 0.0;
 }
@@ -228,17 +267,29 @@ private:
     IEventSink* target_;
 };
 
+/// One build (a character's skin) and how its runs went.
+struct BuildStats {
+    std::string character, skin, name;
+    std::int64_t runs = 0, completed = 0, arenas_cleared = 0, reached_last = 0;
+    std::int64_t credits = 0, supplies_earned = 0, specials = 0, heals = 0, chests_opened = 0, chests_locked = 0;
+    std::int64_t throws = 0, revives = 0;
+    double incoming_raw = 0.0, incoming_dealt = 0.0;  // damage before and after the run's modifiers
+    double outgoing_mult = 0.0;                       // summed clamped multipliers of its hits
+    std::int64_t hits = 0;
+};
+
 struct Stats {
     std::int64_t runs = 0, completed = 0, failed = 0;
     std::map<std::string, std::int64_t> runs_by_policy, completed_by_policy;
     std::map<std::string, std::int64_t> runs_by_character;
-    std::array<std::int64_t, 4> arenas_cleared_hist{};
+    std::vector<std::int64_t> arenas_cleared_hist;  // index = arenas cleared, 0..arena_count
+    std::map<std::string, BuildStats> builds;       // by skin id
     std::map<int, std::int64_t> death_arena_hist;
     std::int64_t supplies_earned = 0, supplies_spent = 0;
     std::int64_t credits_banked = 0, credits_banked_completed = 0, credits_banked_failed = 0;
     std::int64_t arenas_played = 0;
     std::map<std::string, std::int64_t> ratings;
-    std::map<std::string, std::int64_t> perk_offers, perk_picks, perk_shop_offers, perk_shop_buys;
+    std::map<std::string, std::int64_t> perk_offers, perk_picks, perk_shop_offers, perk_shop_buys, perk_equips;
     std::map<std::string, std::int64_t> curse_offers, curse_taken;
     std::map<std::string, std::int64_t> weapon_offers, unique_rolls;
     std::map<std::string, std::int64_t> route_offers, route_picks;
@@ -272,14 +323,90 @@ private:
     void BuyUnlocks(RunController& rc, int index);
     void CheckBalances(const RunController& rc);
     void ApplyHeals(RunController& rc, double& hp);
+    void CollectItems(RunController& rc);
+    void UseHealingItem(RunController& rc, double now, double& hp);
+    double ThrowItem();
+    double UseSpecials(RunController& rc, double now, double& partner);
+    [[nodiscard]] double HpMax(const RunController& rc) const;
     int WriteReports(const SimSink& sink, double seconds);
 
+    struct BuildRef {
+        std::string character, skin;
+    };
     Options opts_;
     std::shared_ptr<const Content> content_;
     Capabilities caps_;
     Stats s_;
-    std::vector<std::string> character_ids_;
+    std::vector<BuildRef> builds_;
+    BuildStats* build_ = nullptr;   // the run being played
+    std::map<std::int64_t, int> items_;  // healing items held this run (game item -> count)
 };
+
+double Simulator::HpMax(const RunController& rc) const {
+    // The build's maximum health and what the run's melee-kill stats added (the adapter scales it in game).
+    return kHpMax * rc.state().character.build.max_health_mult * (1.0 + rc.state().stats.max_health);
+}
+
+void Simulator::CollectItems(RunController& rc) {
+    for (const ItemGrant& g : rc.ConsumeItemGrants()) {
+        switch (g.game_item) {
+            case kItemSpray: case kItemGreenHerb: case kItemRedHerb: case kItemMixedHerb:
+            case kItemHandGrenade: case kItemIncendiary: case kItemFlash: case kItemMine:
+                items_[g.game_item] += g.count;
+                break;
+            default: break;
+        }
+    }
+}
+
+double Simulator::ThrowItem() {
+    for (const auto& [item, kills] : {std::pair{kItemMine, kMineKills}, std::pair{kItemHandGrenade, kGrenadeKills},
+                                      std::pair{kItemIncendiary, kIncendiaryKills}, std::pair{kItemFlash, kFlashKills}}) {
+        if (items_[item] <= 0) continue;
+        --items_[item];
+        if (build_ != nullptr) ++build_->throws;
+        return kills;
+    }
+    return 0.0;
+}
+
+void Simulator::UseHealingItem(RunController& rc, double now, double& hp) {
+    const double max = HpMax(rc);
+    if (hp >= kHealBelow * max) return;
+    double share = 0.0;
+    auto take = [&](std::int64_t item, double heal) {
+        if (share > 0.0 || items_[item] <= 0) return;
+        --items_[item];
+        share = heal;
+    };
+    take(kItemMixedHerb, kMixedHerbHeal);
+    if (share == 0.0 && items_[kItemRedHerb] > 0 && items_[kItemGreenHerb] > 0) {
+        --items_[kItemRedHerb];
+        --items_[kItemGreenHerb];
+        share = kMixedHerbHeal;
+    }
+    take(kItemSpray, kSprayHeal);
+    take(kItemGreenHerb, kGreenHerbHeal);
+    if (share == 0.0) return;
+    // The core applies the build's heal multiplier and a big heal's buffs (invulnerability, damage).
+    const HealOutcome out = rc.OnPlayerHealed(HealContext{now, share * max, hp, max});
+    hp = std::min(max, hp + out.amount);
+    if (build_ != nullptr) ++build_->heals;
+}
+
+double Simulator::UseSpecials(RunController& rc, double now, double& partner) {
+    double kills = 0.0;
+    for (int slot = 0; slot < 2; ++slot) {
+        const SpecialState st = rc.Special(now, slot);
+        if (st.kind.empty() || !st.ready || !rc.UseSpecial(now, 1.0, slot).ok()) continue;
+        if (build_ != nullptr) ++build_->specials;
+        if (st.kind == "dash") kills += kDashKills;
+        else if (st.kind == "burst") kills += kBurstKills;
+        else if (st.kind == "dual_smg") kills += kDualSmgKills;
+        else if (st.kind == "backup") partner = 1.0;
+    }
+    return kills;
+}
 
 void Simulator::CheckBalances(const RunController& rc) {
     if (rc.state().supplies.balance() < 0) ++s_.negative_balance;
@@ -287,8 +414,9 @@ void Simulator::CheckBalances(const RunController& rc) {
 }
 
 void Simulator::ApplyHeals(RunController& rc, double& hp) {
+    const double max = HpMax(rc);
     for (const HealRequest& h : rc.ConsumeHealRequests()) {
-        hp = std::min(kHpMax, hp + h.fraction_of_max * kHpMax);
+        hp = std::min(max, hp + h.fraction_of_max * max);
         ++s_.heals_applied;
     }
 }
@@ -307,27 +435,48 @@ bool Simulator::PlayArena(RunController& rc, Rng& player, double& t, double& hp,
     if (route->enemy_budget <= 0) ++s_.invalid_budget;
     ++s_.arenas_played;
     const int tier = std::clamp(route->difficulty_tier, 1, 3);
-    const double hit_rate = kIncomingHitsPerSecond * kTierHitScale[static_cast<std::size_t>(tier)] / skill;
+    const double hit_rate = kIncomingHitsPerSecond * opts_.hit_scale * kTierHitScale[static_cast<std::size_t>(tier)] / skill;
     double power = 1.0;
     double power_sum = 0.0;
     std::int64_t power_n = 0;
     int enemy_serial = 0;
     const int max_events = route->enemy_budget * 4 + 20;
     const bool melee_known = caps_.Has(cap::kMeleeDetect);
+    double partner = 0.0;       // the backup partner fights the rest of this arena (1) or not (0)
+    double kill_credits = 0.0;  // enemies the specials finish at once
+    const int chests = content_->economy().chests.per_arena + rc.state().character.build.extra_chests;
+    int chests_tried = 0, kills = 0;
+    double next_throw = t;
+    bool revived = false;
 
     for (int ev = 0; ev < max_events && !rc.IsArenaComplete(); ++ev) {
-        // Time until the next kill, scaled by current damage output and player skill.
-        const double mean = kBaseKillSeconds / std::max(0.25, power * skill);
-        const double dt = std::max(0.5, -std::log(1.0 - player.NextDouble()) * mean);
+        kill_credits += UseSpecials(rc, t, partner);
+        if (t >= next_throw) {
+            const double k = ThrowItem();
+            if (k > 0.0) {
+                kill_credits += k;
+                next_throw = t + kThrowSeconds;
+            }
+        }
+        // Time until the next kill, scaled by current damage output, player skill and the partner;
+        // a special's kill comes at once.
+        const double speed = power * skill * (partner > 0.0 ? kPartnerKillSpeed : 1.0);
+        const double mean = kBaseKillSeconds / std::max(0.25, speed);
+        double dt = std::max(0.5, -std::log(1.0 - player.NextDouble()) * mean);
+        if (kill_credits >= 1.0) {
+            kill_credits -= 1.0;
+            dt = 0.5;
+        }
 
-        // Incoming hits during dt.
-        const double expected_hits = hit_rate * dt;
+        // Incoming hits during dt (fewer with a partner drawing enemies).
+        const double expected_hits = hit_rate * dt * (partner > 0.0 ? kPartnerIncoming : 1.0);
         int hits = 0;
         for (double l = std::exp(-expected_hits), p = player.NextDouble(); p > l; p *= player.NextDouble()) ++hits;
         for (int h = 0; h < hits; ++h) {
             const double now = t + dt * (h + 1) / (hits + 1);
             const double amount = player.UniformReal(kHitDamageMin, kHitDamageMax);
-            const IncomingResult in = rc.ComputeIncoming(IncomingContext{now, amount, hp, kHpMax});
+            const double max = HpMax(rc);
+            const IncomingResult in = rc.ComputeIncoming(IncomingContext{now, amount, hp, max});
             const double before = hp;
             const double dealt = amount * in.multiplier;
             if (in.prevent_death) {
@@ -336,7 +485,19 @@ bool Simulator::PlayArena(RunController& rc, Rng& player, double& t, double& hp,
             } else {
                 hp = std::max(0.0, hp - dealt);
             }
-            rc.OnPlayerDamaged(DamageEvent{now, before - hp > 0 ? before - hp : 0.0, before, hp, kHpMax});
+            if (build_ != nullptr) {
+                build_->incoming_raw += amount;
+                build_->incoming_dealt += before - hp > 0 ? before - hp : 0.0;
+            }
+            rc.OnPlayerDamaged(DamageEvent{now, before - hp > 0 ? before - hp : 0.0, before, hp, max});
+            CollectItems(rc);
+            UseHealingItem(rc, now, hp);
+            if (hp <= 0.0 && partner > 0.0 && !revived) {
+                // Bleeding out with the partner here: she revives once.
+                revived = true;
+                hp = kPartnerReviveHp * HpMax(rc);
+                if (build_ != nullptr) ++build_->revives;
+            }
             if (hp <= 0.0) {
                 rc.OnPlayerDied(now);
                 t += dt;
@@ -361,11 +522,15 @@ bool Simulator::PlayArena(RunController& rc, Rng& player, double& t, double& hp,
             last_melee = melee_known && player.Chance(kMeleeHitChance);
             if (melee_known) hit.is_melee = last_melee;
             hit.player_hp = hp;
-            hit.player_hp_max = kHpMax;
+            hit.player_hp_max = HpMax(rc);
             const OutgoingResult r = rc.ComputeOutgoingMultiplier(hit);
             s_.raw_mult.push_back(static_cast<float>(r.breakdown.raw));
             s_.clamped_mult.push_back(static_cast<float>(r.multiplier));
             ++s_.hits;
+            if (build_ != nullptr) {
+                build_->outgoing_mult += r.multiplier;
+                ++build_->hits;
+            }
             if (r.breakdown.raw != r.breakdown.clamped) ++s_.clamped_hits;
             if (r.crit) ++s_.crits;
             power_sum += r.multiplier;
@@ -380,9 +545,27 @@ bool Simulator::PlayArena(RunController& rc, Rng& player, double& t, double& hp,
         kill.weapon_id = weapon_id;
         if (melee_known) kill.was_melee = last_melee;
         kill.enemy_id = enemy;
+        kill.enemy_class = kEnemyClass;
         rc.OnEnemyKilled(kill);
         if (kill.by_player && player.Chance(kDuplicateReportChance)) rc.OnEnemyKilled(kill);  // duplicate hook report
+        // The game's own drops: a green herb now and then; a build that turns every drop (ammo,
+        // herbs, grenades) into its item gets that item from any of them (Safari: mines).
+        const std::int64_t drops_as = rc.state().character.build.drops_as;
+        if (drops_as >= 0) {
+            if (player.Chance(kAnyDropChance)) ++items_[drops_as];
+        } else if (player.Chance(kHerbDropChance)) {
+            ++items_[kItemGreenHerb];
+        }
+        // A chest each quarter of the arena (a key each, or the build's exemption).
+        ++kills;
+        while (chests_tried < chests && kills * (chests + 1) >= route->enemy_budget * (chests_tried + 1)) {
+            ++chests_tried;
+            const Result<ChestReward> chest = rc.OpenChest(t);
+            if (build_ != nullptr && chest.ok()) ++(chest->locked ? build_->chests_locked : build_->chests_opened);
+        }
         ApplyHeals(rc, hp);
+        CollectItems(rc);
+        hp = std::min(hp, HpMax(rc));
         CheckBalances(rc);
     }
     if (!rc.IsArenaComplete()) {
@@ -407,7 +590,8 @@ void Simulator::ChooseReward(RunController& rc, Rng& player, Policy policy) {
         ++s_.reward_offers_total;
         std::set<std::string> distinct;
         for (const RewardChoice& c : offer) {
-            distinct.insert(std::string(RewardKindName(c.kind)) + c.perk_id + c.weapon.base_id + std::to_string(c.supplies));
+            distinct.insert(std::string(RewardKindName(c.kind)) + c.perk_id + c.weapon.base_id + std::to_string(c.supplies) +
+                            c.item_id + "x" + std::to_string(c.item_count));
             ++s_.reward_kind_offers[std::string(RewardKindName(c.kind))];
             if (c.kind == RewardKind::Perk) {
                 ++s_.perk_offers[c.perk_id];
@@ -478,6 +662,8 @@ void Simulator::Shop(RunController& rc, Rng& player, Policy policy, double& hp) 
     for (std::size_t i = 0; i < offers.size(); ++i) {
         const ShopOffer& o = offers[i];
         const double r = static_cast<double>(RarityIndex(o.rarity));
+        const EquipmentDef* item = o.kind == ShopOfferKind::Item ? content_->loadouts().FindEquipment(o.item_id) : nullptr;
+        const bool heals = item != nullptr && (item->game_item >> 8) == 3;
         double score = 0.0;
         switch (policy) {
             case Policy::Random: score = player.Chance(0.5) ? player.NextDouble() + 1.0 : 0.0; break;
@@ -485,9 +671,11 @@ void Simulator::Shop(RunController& rc, Rng& player, Policy policy, double& hp) 
                 if (o.kind == ShopOfferKind::WeaponUpgrade) score = 9.0;
                 if (o.kind == ShopOfferKind::Perk && Traits(*content_->FindPerk(o.perk_id)).offense) score = 6.0 + r;
                 if (o.kind == ShopOfferKind::Weapon && o.rarity >= Rarity::Rare) score = 5.0 + r;
+                if (item != nullptr && !heals) score = 3.0;
                 break;
             case Policy::Safe:
-                if (o.kind == ShopOfferKind::Heal && hp < 0.7 * kHpMax) score = 10.0;
+                if (o.kind == ShopOfferKind::Heal && hp < 0.7 * HpMax(rc)) score = 10.0;
+                if (heals) score = 8.0;
                 if (o.kind == ShopOfferKind::Perk && Traits(*content_->FindPerk(o.perk_id)).defense) score = 7.0 + r;
                 if (o.kind == ShopOfferKind::WeaponUpgrade) score = 4.0;
                 break;
@@ -529,7 +717,10 @@ void Simulator::ChooseRoute(RunController& rc, Rng& player, Policy policy) {
         if (!c.curse_perk_id.empty()) ++s_.curse_offers[c.curse_perk_id];
         tiers.insert(r->difficulty_tier);
     }
-    if (choices.size() < 2 || choices.size() > 3 || tiers.size() < 2) ++s_.invalid_route_choice;
+    // A safer and a harder tier, except once the run map's tiers reach the highest (its last
+    // layers repeat it: rm::GenerateRunMap).
+    const bool at_top = !tiers.empty() && *tiers.begin() == content_->MaxRouteTier();
+    if (choices.size() < 2 || choices.size() > 3 || (tiers.size() < 2 && !at_top)) ++s_.invalid_route_choice;
     if (choices.empty()) return;
     std::size_t pick = 0;
     if (policy == Policy::Random) {
@@ -584,7 +775,11 @@ void Simulator::BuyUnlocks(RunController& rc, int index) {
         const Candidate& c = candidates.front();
         if (rc.PurchaseUnlock(c.kind, c.id).ok()) {
             s_.unlock_run[std::string(UnlockKindName(c.kind)) + ":" + c.id] = index + 1;
-            if (c.kind == UnlockKind::Character) character_ids_.push_back(c.id);
+            if (c.kind == UnlockKind::Character) {
+                if (const CharacterDef* ch = content_->FindCharacter(c.id)) {
+                    for (const SkinDef& s : ch->skins) builds_.push_back({ch->id, s.id});
+                }
+            }
         }
     }
     CheckBalances(rc);
@@ -594,27 +789,52 @@ void Simulator::PlayRun(RunController& rc, int index, Policy policy) {
     std::uint64_t mix = opts_.seed + static_cast<std::uint64_t>(index);
     const std::uint64_t run_seed = SplitMix64(mix);
     Rng player = Rng::Derive(run_seed, "sim_player");
-    const std::string character = character_ids_[static_cast<std::size_t>(index) % character_ids_.size()];
-    if (!rc.StartRun(character, run_seed).ok()) {
-        std::cerr << "StartRun failed for run " << index << "\n";
+    // Every build in turn (a character's skin), with a perk of each kind the profile has, as the
+    // PERKS menu would equip them.
+    const BuildRef& b = builds_[static_cast<std::size_t>(index) % builds_.size()];
+    const std::string& character = b.character;
+    Rng loadout = Rng::Derive(run_seed, "sim_loadout");
+    for (const PerkCategory category : {PerkCategory::Style, PerkCategory::Supply, PerkCategory::Support}) {
+        std::vector<const PerkDef*> pool;
+        for (const PerkDef& p : content_->perks()) {
+            if (p.category == category && p.enabled) pool.push_back(&p);
+        }
+        loadout.Shuffle(pool);
+        for (const PerkDef* p : pool) {
+            if (rc.EquipPerk(character, p->id).ok()) break;  // locked, or another character's: the next
+        }
+    }
+    for (const std::string& id : rc.EquippedPerks(character)) ++s_.perk_equips[id];
+    if (!rc.StartRun(character, run_seed, b.skin).ok()) {
+        std::cerr << "StartRun failed for run " << index << " (" << character << " " << b.skin << ")\n";
         return;
     }
     ++s_.runs;
     ++s_.runs_by_policy[PolicyName(policy)];
     ++s_.runs_by_character[character];
+    build_ = &s_.builds[b.skin];
+    build_->character = character;
+    build_->skin = b.skin;
+    build_->name = rc.state().character.build.name;
+    ++build_->runs;
+    items_.clear();
+    CollectItems(rc);  // supply perks' starting items
     const double skill = player.UniformReal(kSkillMin, kSkillMax);
-    double hp = kHpMax;
+    double hp = HpMax(rc);
     double t = 0.0;
     while (rc.HasActiveRun()) {
         const Phase phase = rc.phase();
         if (phase == Phase::RunComplete || phase == Phase::RunFailed) break;
+        if (rc.state().arena_index + 1 == rc.state().arena_count) ++build_->reached_last;
         if (!PlayArena(rc, player, t, hp, skill, index)) break;
         rc.ContinueToRewards();
         ChooseReward(rc, player, policy);
+        CollectItems(rc);
         if (rc.phase() == Phase::Shop) {
             Shop(rc, player, policy, hp);
+            CollectItems(rc);
             ChooseRoute(rc, player, policy);
-            hp = std::min(kHpMax, hp + kRegenBetweenArenas);
+            hp = std::min(HpMax(rc), hp + kRegenBetweenArenas * HpMax(rc) / kHpMax);
             t += 30.0;
         }
         CheckBalances(rc);
@@ -630,12 +850,18 @@ void Simulator::PlayRun(RunController& rc, int index, Policy policy) {
         ++s_.completed;
         ++s_.completed_by_policy[PolicyName(policy)];
         s_.credits_banked_completed += sum.credits_banked;
+        ++build_->completed;
     } else {
         ++s_.failed;
         ++s_.death_arena_hist[sum.arenas_cleared + 1];
         s_.credits_banked_failed += sum.credits_banked;
     }
-    s_.arenas_cleared_hist[static_cast<std::size_t>(std::clamp(sum.arenas_cleared, 0, 3))]++;
+    build_->arenas_cleared += sum.arenas_cleared;
+    build_->credits += sum.credits_banked;
+    build_->supplies_earned += sum.supplies_earned;
+    const std::size_t cleared = static_cast<std::size_t>(std::max(0, sum.arenas_cleared));
+    if (s_.arenas_cleared_hist.size() <= cleared) s_.arenas_cleared_hist.resize(cleared + 1, 0);
+    s_.arenas_cleared_hist[cleared]++;
     s_.supplies_earned += sum.supplies_earned;
     s_.supplies_spent += sum.supplies_spent;
     s_.credits_banked += sum.credits_banked;
@@ -647,13 +873,18 @@ void Simulator::PlayRun(RunController& rc, int index, Policy policy) {
 }
 
 int Simulator::Run() {
+    // Every selectable character's every selectable skin: each skin is its own build.
     for (const CharacterDef& c : content_->characters()) {
-        if (CheckCharacter(&c, {}) == CharacterGate::Selectable) character_ids_.push_back(c.id);
+        if (CheckCharacter(&c, {}) != CharacterGate::Selectable) continue;
+        for (const SkinDef& s : c.skins) {
+            if (CheckSkin(s, {}) == CharacterGate::Selectable) builds_.push_back({c.id, s.id});
+        }
     }
-    if (character_ids_.empty()) {
+    if (builds_.empty()) {
         std::cerr << "no selectable character\n";
         return 2;
     }
+    s_.arenas_cleared_hist.assign(static_cast<std::size_t>(std::max(1, content_->economy().run.arena_count)) + 1, 0);
     std::filesystem::create_directories(opts_.out);
     std::unique_ptr<JsonlSink> jsonl;
     if (opts_.log_runs > 0) {
@@ -722,14 +953,24 @@ int Simulator::WriteReports(const SimSink& sink, double seconds) {
         bool is_passive = false;
         for (const CharacterDef& c : content_->characters()) {
             if (c.starting_passive == p.id && p.max_stacks <= 1) is_passive = true;
+            for (const SkinDef& s : c.skins) is_passive = is_passive || s.starting_passive == p.id;
         }
-        if (is_passive) continue;  // granted at run start, never offered by design
-        if (!s_.perk_offers.count(p.id) && !s_.perk_shop_offers.count(p.id)) unreachable.push_back("perk:" + p.id);
+        if (is_passive) continue;  // granted at run start (a character's or a skin's trait), never offered by design
+        // Perks come from the PERKS menu (equipped) since rewards became items; offers still count.
+        if (!s_.perk_offers.count(p.id) && !s_.perk_shop_offers.count(p.id) && !s_.perk_equips.count(p.id)) {
+            unreachable.push_back("perk:" + p.id);
+        }
+    }
+    std::set<std::string> starting;  // a build's own starting weapon is handed over, never offered
+    for (const CharacterDef& c : content_->characters()) {
+        for (const SkinDef& sk : c.skins) {
+            if (!sk.build.starting_weapon.empty()) starting.insert(sk.build.starting_weapon);
+        }
     }
     for (const WeaponBaseDef& w : content_->weapons()) {
         if (!w.enabled) {
             disabled.push_back("weapon:" + w.id);
-        } else if (!s_.weapon_offers.count(w.id)) {
+        } else if (!s_.weapon_offers.count(w.id) && !starting.count(w.id)) {
             unreachable.push_back("weapon:" + w.id);
         }
     }
@@ -800,10 +1041,10 @@ int Simulator::WriteReports(const SimSink& sink, double seconds) {
     j["date"] = opts_.date;
     j["command"] = "rm_sim --runs " + std::to_string(opts_.runs) + " --seed " + std::to_string(opts_.seed) +
                    " --config " + opts_.config + " --out " + opts_.out + " --capabilities " + opts_.capabilities +
-                   " --policy " + opts_.policy;
+                   " --policy " + opts_.policy + (opts_.hit_scale != 1.0 ? " --hit-scale " + Fmt(opts_.hit_scale, 2) : std::string());
     j["capabilities"] = caps_.ToString();
     j["player_model"] = {{"hp_max", kHpMax}, {"base_kill_seconds", kBaseKillSeconds},
-                         {"incoming_hits_per_second", kIncomingHitsPerSecond},
+                         {"incoming_hits_per_second", kIncomingHitsPerSecond * opts_.hit_scale},
                          {"tier_hit_scale", {kTierHitScale[1], kTierHitScale[2], kTierHitScale[3]}},
                          {"hit_damage", {kHitDamageMin, kHitDamageMax}}, {"partner_kill_chance", kPartnerKillChance},
                          {"duplicate_report_chance", kDuplicateReportChance}, {"melee_hit_chance", kMeleeHitChance},
@@ -884,6 +1125,31 @@ int Simulator::WriteReports(const SimSink& sink, double seconds) {
     j["progression"] = {{"avg_credits_per_run", avg_credits}, {"unlocks", reach},
                         {"runs_to_unlock_all_enabled",
                          avg_credits > 0 ? std::ceil(static_cast<double>(cumulative) / avg_credits) : -1.0}};
+    // Per build (a character's skin), weakest first.
+    std::vector<const BuildStats*> builds;
+    for (const auto& [id, b] : s_.builds) builds.push_back(&b);
+    auto rate = [](std::int64_t n, std::int64_t d) { return d > 0 ? static_cast<double>(n) / static_cast<double>(d) : 0.0; };
+    std::sort(builds.begin(), builds.end(), [&](const BuildStats* a, const BuildStats* b) {
+        return rate(a->completed, a->runs) < rate(b->completed, b->runs);
+    });
+    ordered_json builds_json = ordered_json::array();
+    for (const BuildStats* b : builds) {
+        builds_json.push_back({{"skin", b->skin}, {"character", b->character}, {"build", b->name}, {"runs", b->runs},
+                               {"completion_rate", rate(b->completed, b->runs)},
+                               {"reached_last_arena_rate", rate(b->reached_last, b->runs)},
+                               {"avg_arenas_cleared", b->runs > 0 ? static_cast<double>(b->arenas_cleared) / static_cast<double>(b->runs) : 0.0},
+                               {"avg_credits", b->runs > 0 ? static_cast<double>(b->credits) / static_cast<double>(b->runs) : 0.0},
+                               {"avg_supplies_earned", b->runs > 0 ? static_cast<double>(b->supplies_earned) / static_cast<double>(b->runs) : 0.0},
+                               {"specials_per_run", b->runs > 0 ? static_cast<double>(b->specials) / static_cast<double>(b->runs) : 0.0},
+                               {"heals_per_run", b->runs > 0 ? static_cast<double>(b->heals) / static_cast<double>(b->runs) : 0.0},
+                               {"throws_per_run", b->runs > 0 ? static_cast<double>(b->throws) / static_cast<double>(b->runs) : 0.0},
+                               {"revives_per_run", b->runs > 0 ? static_cast<double>(b->revives) / static_cast<double>(b->runs) : 0.0},
+                               {"chests_opened_per_run", b->runs > 0 ? static_cast<double>(b->chests_opened) / static_cast<double>(b->runs) : 0.0},
+                               {"chests_locked_per_run", b->runs > 0 ? static_cast<double>(b->chests_locked) / static_cast<double>(b->runs) : 0.0},
+                               {"mean_outgoing_mult", b->hits > 0 ? b->outgoing_mult / static_cast<double>(b->hits) : 0.0},
+                               {"incoming_taken_per_raw", b->incoming_raw > 0.0 ? b->incoming_dealt / b->incoming_raw : 0.0}});
+    }
+    j["builds"] = builds_json;
     j["unreachable"] = unreachable;
     j["disabled_content"] = disabled;
     j["all_invariants_pass"] = ok;
@@ -939,6 +1205,24 @@ int Simulator::WriteReports(const SimSink& sink, double seconds) {
         first = false;
     }
     md << ".\n\n";
+
+    md << "## Builds\n\nEvery skin is its own build (characters.json); runs rotate through all of them, weakest "
+          "first here. Damage taken is per point of raw incoming damage (defence, perks, invulnerability; a "
+          "partner's share of the enemies' attention is in the hit rate instead). Specials and the partner are "
+          "estimates (see the player model).\n\n";
+    md << "| Build | Skin | Runs | Complete | Reached last | Arenas | Credits | Supplies | Specials | Heals | Throws | Chests (shut) | Out mult | Damage taken |\n"
+          "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n";
+    for (const ordered_json& b : builds_json) {
+        md << "| " << b["build"].get<std::string>() << " | " << b["skin"].get<std::string>() << " | " << b["runs"].get<std::int64_t>()
+           << " | " << Fmt(100.0 * b["completion_rate"].get<double>(), 1) << "% | " << Fmt(100.0 * b["reached_last_arena_rate"].get<double>(), 1)
+           << "% | " << Fmt(b["avg_arenas_cleared"].get<double>(), 2) << " | " << Fmt(b["avg_credits"].get<double>(), 0) << " | "
+           << Fmt(b["avg_supplies_earned"].get<double>(), 0) << " | " << Fmt(b["specials_per_run"].get<double>(), 1) << " | "
+           << Fmt(b["heals_per_run"].get<double>(), 1) << " | " << Fmt(b["throws_per_run"].get<double>(), 1) << " | "
+           << Fmt(b["chests_opened_per_run"].get<double>(), 1) << " ("
+           << Fmt(b["chests_locked_per_run"].get<double>(), 1) << ") | " << Fmt(b["mean_outgoing_mult"].get<double>(), 3) << " | "
+           << Fmt(b["incoming_taken_per_raw"].get<double>(), 3) << " |\n";
+    }
+    md << "\n";
 
     md << "## Rarity distribution\n\n| Rarity | Perk offers | Weapon offers | Weapons acquired |\n|---|---|---|---|\n";
     std::int64_t po = 0, wo = 0, wa = 0;
@@ -1005,10 +1289,25 @@ int Simulator::WriteReports(const SimSink& sink, double seconds) {
     md << "## Player model\n\nPer arena: kill intervals ~ Exp(" << kBaseKillSeconds
        << " s / (mean clamped multiplier x skill)), skill ~ U(" << kSkillMin << ", " << kSkillMax << ") per run; 3-6 hits per "
        << "enemy at decreasing target HP; " << Fmt(kMeleeHitChance * 100, 0) << "% melee hits; incoming hits Poisson("
-       << kIncomingHitsPerSecond << "/s x tier scale 1.0/1.3/1.6 / skill), " << kHitDamageMin << "-" << kHitDamageMax
+       << kIncomingHitsPerSecond * opts_.hit_scale << "/s x tier scale 1.0/1.3/1.6 / skill), " << kHitDamageMin << "-" << kHitDamageMax
        << " damage before modifiers; " << Fmt(kPartnerKillChance * 100, 0) << "% partner kills (not counted), "
        << Fmt(kDuplicateReportChance * 100, 0) << "% duplicate kill reports; +" << kRegenBetweenArenas
-       << " HP between arenas; heal requests applied immediately.\n";
+       << " HP between arenas (per 100 of maximum); heal requests applied immediately. Maximum health is " << kHpMax
+       << " times the build's multiplier and its melee-kill health. Healing items from rewards, the shop and perks "
+          "are used under " << Fmt(kHealBelow * 100, 0) << "% health (spray and mixed herb " << Fmt(kSprayHeal * 100, 0)
+       << "%, green herb " << Fmt(kGreenHerbHeal * 100, 0) << "%, red only with a green), through the core's heal "
+          "(the build's heal multiplier and buffs). Specials are used whenever ready: a dash finishes "
+       << kDashKills << " enemies, the burst " << kBurstKills << ", the twin SMGs " << kDualSmgKills
+       << " (estimates); the backup partner kills " << kPartnerKillSpeed << "x as fast with you and leaves "
+       << kPartnerIncoming << "x the hits for the rest of its arena. The arena's " << content_->economy().chests.per_arena
+       << " chests are reached after equal shares of its kills (each needs a key unless the build is exempt; the "
+          "kills are of a key class); a kill drops a green herb " << Fmt(kHerbDropChance * 100, 0)
+       << "% of the time, or for a build that turns drops into its own item that item " << Fmt(kAnyDropChance * 100, 0)
+       << "% of the time (any drop). Grenades and mines are thrown as they come, one every " << kThrowSeconds
+       << " s (a mine finishes " << kMineKills << " enemies, a hand grenade " << kGrenadeKills << ", an incendiary "
+       << kIncendiaryKills << ", a flash " << kFlashKills << "); the backup partner revives a player bleeding out "
+          "once per arena, at " << Fmt(kPartnerReviveHp * 100, 0) << "% health. Each run equips a random unlocked perk per "
+          "category (the PERKS menu); the profile buys the cheapest affordable unlock after each run.\n";
 
     {
         std::ofstream f(out / "summary.md", std::ios::binary | std::ios::trunc);
@@ -1039,7 +1338,7 @@ int main(int argc, char** argv) {
     try {
         if (!ParseArgs(argc, argv, opts)) {
             std::cerr << "usage: rm_sim [--runs N] [--seed S] [--config DIR] [--out DIR] [--capabilities all|none|a,b]"
-                         " [--policy mix|random|greedy|safe] [--log-runs N] [--date YYYY-MM-DD]\n";
+                         " [--policy mix|random|greedy|safe] [--hit-scale X] [--log-runs N] [--date YYYY-MM-DD]\n";
             return 2;
         }
     } catch (const std::exception& e) {

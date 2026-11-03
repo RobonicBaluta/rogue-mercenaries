@@ -290,6 +290,8 @@ Fourth playtest (2026-11-03, TASKS.md "Playtest 4"): E17 and E18 take the bosses
 
 E22 done (2026-11-03, verified in game by the mod's own test, `scripts/test_partner.sh`): Josh's Call for Backup adds Sheva as a computer partner with the game's own add-player (the call the Port stage makes for its Josh). She follows, fights, reloads, heals herself and revives a dying Josh; her kills count; her death does not end the match; the next stage loads as before. The covering fire stays as the fallback when she cannot be added.
 
+Balance pass, round 1 (2026-11-03, `research/sim/balance-2026-11-03.md`): `rm_sim` plays every skin's build and calibrates with `--hit-scale`; eight changes narrowed the builds' completion in the model from 4-98 percent to 19-93 percent (heal on kill down for Sheva and Rebecca, Field Surgeon x1.3, Jill's crit up, a small heal on kill for Tribal Sheva, more health for Midnight and Safari, three more chests per arena for Locksmith: six, seen in game). The model cannot judge Excella, Heavy Metal and Josh; playtests decide from here.
+
 Order: B1 to B7 with the builds that need no engine work (Warrior, Clubbin', Business, Fairy Tale,
 S.T.A.R.S. Chris, Barry), then E19/E20/E21 (Wesker S.T.A.R.S., Excella, Rebecca), E13/E14 and item
 ids (Safari, Heavy Metal, Tribal), B8/E15 (keys, Jill BSAA), then E16 with E17/E18/E22 (Battle

@@ -63,6 +63,7 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | Field Surgeon | `build heal: A -> B` and `(big heal: buffs)` |
 | Ambition, Iron Fist | `kill counted: ... (melee)`; `build: melee kill, <stat> +0.0N (N gains)`; with a debug log, `outgoing ... (<weapon>, melee)` |
 | keys | `keys: a key dropped, N held`; `keys: chest locked (no key), it comes back`; `keys: locked chest back at x y z` |
+| Locksmith | `chests: 6 of 6 placed for arena N` (three more than the others' `3 of 3`) |
 | Twin Fury, Backup | `enemy XXXXXXXX died (health reached zero): counted, N remain (by the special)` |
 | health | `build: maximum health A -> B (xM)` |
 | specials refused | `special: slot N pressed while <action or paused / the item screen / a mod screen / down>; not used` |

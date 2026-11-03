@@ -31,11 +31,12 @@
           "build": {
             "name": "Mine Layer",
             "icon": "mine",
-            "summary": "Every chest and every enemy drop is a proximity bomb, and they stack up to 10.",
+            "summary": "Every chest and every enemy drop is a proximity bomb, and they stack up to 10. 25 percent more health.",
             "drops_as": "0x010A",
             "stack_max": {
               "0x010A": 10
-            }
+            },
+            "max_health_mult": 1.25
           }
         },
         {
@@ -200,8 +201,9 @@
           "build": {
             "name": "Locksmith",
             "icon": "key",
-            "summary": "Opens every chest without a key.",
-            "chest_keys_exempt": true
+            "summary": "Opens every chest without a key, and finds three more chests in every arena.",
+            "chest_keys_exempt": true,
+            "extra_chests": 3
           }
         },
         {
@@ -317,7 +319,7 @@
             "name": "Field Surgeon",
             "icon": "heal",
             "summary": "Stronger heals. A spray or mixed herb gives 4 seconds untouchable and 12 seconds of 30 percent more damage.",
-            "heal_mult": 1.5,
+            "heal_mult": 1.3,
             "heal_buff_fraction": 0.6,
             "heal_invulnerable_seconds": 4,
             "heal_damage_bonus": 0.3,
@@ -395,8 +397,8 @@
           "build": {
             "name": "Uroboros Speed",
             "icon": "dash",
-            "summary": "Dash, or lunge at an enemy ahead to finish it in melee; a second button bursts. Half health.",
-            "max_health_mult": 0.5,
+            "summary": "Dash, or lunge at an enemy ahead to finish it in melee; a second button bursts. 70 percent health.",
+            "max_health_mult": 0.7,
             "special": {
               "kind": "dash",
               "name": "Dash",

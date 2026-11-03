@@ -777,7 +777,8 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                      "free_shop_rerolls", "rarity_shift", "uncapped_upgrades", "starting_weapon",
                      "starting_weapon_rarity", "max_health_mult", "stack_max", "ammo_stack_mult", "extra_weapons",
                      "melee_damage", "melee_kill_stats", "melee_kill_caps", "heal_mult", "heal_buff_fraction", "heal_invulnerable_seconds",
-                     "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "special", "special_2"});
+                     "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "extra_chests", "special",
+                     "special_2"});
     GetString(d, b, "name", out.name, false);
     if (GetString(d, b, "icon", out.icon, false) && !IsValidId(out.icon)) d.Error("icon " + Q(out.icon) + " is not a valid name");
     if (GetNumber(d, b, "ammo_stack_mult", out.ammo_stack_mult, false)) CheckRange(d, "ammo_stack_mult", out.ammo_stack_mult, 1.0, 20.0);
@@ -837,6 +838,7 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
         if (out.drops_as < 0 || out.drops_as > 0xFFFF) d.Error("drops_as is not a game item id");
     }
     GetBool(d, b, "chest_keys_exempt", out.chest_keys_exempt, false);
+    GetIntRange(d, b, "extra_chests", out.extra_chests, false, 0, 6);
     if (const json* sp = Get(b, "special")) {
         if (sp->is_object()) {
             ParseSpecial(d.Sub(" special"), *sp, out.special);
