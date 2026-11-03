@@ -1278,7 +1278,8 @@ void ParseLoadouts(const Diag& file, const json& doc, LoadoutConfig& out) {
 void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     const Diag d = file.Sub("");
     CheckKeys(d, doc, {"schema_version", "run", "rewards", "weapon_rarity", "upgrades", "supplies",
-                       "credits", "rating", "damage", "shop", "run_map", "chests", "keys", "enemy_threat"});
+                       "credits", "rating", "damage", "shop", "run_map", "chests", "keys", "enemy_threat",
+                       "run_rosters"});
     if (const json* s = Section(d, doc, "run")) {
         const Diag sd = d.Sub(": run");
         CheckKeys(sd, *s, {"arena_count", "starting_route", "starting_supplies",
@@ -1530,6 +1531,34 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
             if (t.specials_from_level > t.max_level + 1) td.Error("specials_from_level must be at most max_level + 1");
         }
     }
+    if (Get(doc, "run_rosters") != nullptr) {
+        if (const json* s = Section(d, doc, "run_rosters")) {
+            const Diag rd = d.Sub(": run_rosters");
+            CheckKeys(rd, *s, {"enabled", "from_arena", "normal_guests", "special_guests", "max_classes", "normal_share",
+                               "special_share", "guests"});
+            EconomyConfig::RunRosters& r = eco.run_rosters;
+            GetBool(rd, *s, "enabled", r.enabled, false);
+            GetIntRange(rd, *s, "from_arena", r.from_arena, false, 1, 9);
+            GetIntRange(rd, *s, "normal_guests", r.normal_guests, false, 0, 3);
+            GetIntRange(rd, *s, "special_guests", r.special_guests, false, 0, 3);
+            GetIntRange(rd, *s, "max_classes", r.max_classes, false, 1, 12);
+            // Below 1: a share of 1 would leave the map's own enemies no picks at all.
+            if (GetNumber(rd, *s, "normal_share", r.normal_share, false)) CheckRange(rd, "normal_share", r.normal_share, 0.0, 0.9);
+            if (GetNumber(rd, *s, "special_share", r.special_share, false)) CheckRange(rd, "special_share", r.special_share, 0.0, 0.9);
+            if (const json* g = Get(*s, "guests")) {
+                if (!g->is_object()) {
+                    rd.Error("guests must be an object (enemy class -> home map key)");
+                } else {
+                    for (const auto& [key, value] : g->items()) {
+                        if (key.rfind("uEm", 0) != 0) rd.Error("guest " + Q(key) + " must be an enemy class (uEm..)");
+                        else if (!value.is_number_integer()) rd.Error("guest " + Q(key) + " needs its home map key (a number)");
+                        else r.guests[key] = value.get<int>();
+                    }
+                }
+            }
+            if (r.enabled && r.guests.empty()) rd.Error("enabled run_rosters need at least one guest class");
+        }
+    }
     if (const json* s = Section(d, doc, "run_map")) {
         const Diag sd = d.Sub(": run_map");
         CheckKeys(sd, *s, {"width"});
@@ -1745,6 +1774,16 @@ private:
                 eco_d.Error("run.starting_route references unknown route " + Q(c.economy_.run.starting_route));
             } else if (!start->enabled) {
                 eco_d.Error("run.starting_route " + Q(start->id) + " is disabled");
+            }
+        }
+        // A guest travels as its home map's roster entry (ROADMAP M3.3).
+        for (const auto& [unit_class, home] : c.economy_.run_rosters.guests) {
+            const MapDef* m = c.FindMapByStage(home);
+            const std::string what = "run_rosters.guests." + unit_class;
+            if (m == nullptr) {
+                eco_d.Error(what + " references unknown map " + std::to_string(home));
+            } else if (std::none_of(m->roster.begin(), m->roster.end(), [&](const MapEnemy& e) { return e.unit_class == unit_class; })) {
+                eco_d.Error(what + ": map " + std::to_string(home) + " (" + m->name + ") has no " + unit_class + " in its roster");
             }
         }
         if (c.weapons_.empty()) weapons_d.Error("at least one weapon is required");

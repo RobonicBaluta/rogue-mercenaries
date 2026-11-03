@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <stdexcept>
 
+#include "rm/rosters.h"
+
 namespace rm {
 namespace {
 
@@ -498,6 +500,9 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     run_.loadout = RollLoadout(run_.character, *content_, streams_->loadout);
     run_.keys = eco.keys.enabled ? eco.keys.start : 0;
     run_.run_map = GenerateRunMap(*content_, streams_->route, arena_pool_, first_arena_);
+    // Its own stream: planning the guests never shifts the run map or anything else.
+    Rng rosters = Rng::Derive(seed, streams::kRoster);
+    PlanRunRosters(*content_, rosters, run_.run_map);
     last_summary_.reset();
     ++profile_.next_run_number;
     ++profile_.stats.runs_started;
@@ -636,8 +641,12 @@ Status RunController::BeginArena(double now) {
 
     // The director runs the arena when the adapter can spawn and the map is known.
     director_.reset();
+    std::string guests;
     if (caps_.Has(cap::kDirector)) {
-        if (const MapDef* map = content_->FindMapByStage(map_stage_)) {
+        if (const std::optional<MapDef> map = ArenaMap(map_stage_)) {
+            for (const MapEnemy& e : map->roster) {
+                if (e.home >= 0) guests += (guests.empty() ? "" : ",") + e.unit_class;
+            }
             director_.emplace(*map, route->enemy_budget, route->difficulty_tier, streams_->director.Next(),
                               content_->economy().enemy_threat.ForArena(run_.arena_index, route->difficulty_tier));
             director_->PickChests(content_->economy().chests.per_arena);
@@ -649,6 +658,7 @@ Status RunController::BeginArena(double now) {
     e.Add("route", route->id).Add("tier", route->difficulty_tier).Add("budget", run_.arenas.back().budget)
         .Add("threat", director_ ? director_->threat_level() : 0).Add("threat_held_to", director_ ? director_->pick_level() : 0)
         .Add("boss", director_ && director_->map().boss ? director_->map().boss->unit_class : std::string())
+        .Add("guests", guests)
         .Add("par_time_seconds", route->modifiers.par_time_seconds)
         .Add("incoming_mult", route->modifiers.incoming_damage_mult)
         .Add("outgoing_mult", route->modifiers.outgoing_damage_mult).Add("now", now);
@@ -1448,6 +1458,21 @@ int RunController::PlannedMapKey() const {
     return static_cast<std::size_t>(run_.map_node) < layer.size() ? layer[static_cast<std::size_t>(run_.map_node)].map_key : -1;
 }
 
+std::vector<std::string> RunController::PlannedGuests() const {
+    const auto& layers = run_.run_map.layers;
+    if (!run_.active || static_cast<std::size_t>(run_.map_layer) >= layers.size()) return {};
+    const auto& layer = layers[static_cast<std::size_t>(run_.map_layer)];
+    return static_cast<std::size_t>(run_.map_node) < layer.size() ? layer[static_cast<std::size_t>(run_.map_node)].guests
+                                                                   : std::vector<std::string>{};
+}
+
+std::optional<MapDef> RunController::ArenaMap(int stage) const {
+    const MapDef* map = content_->FindMapByStage(stage);
+    if (map == nullptr) return std::nullopt;
+    if (stage != PlannedMapKey()) return *map;
+    return WithGuests(*content_, *map, PlannedGuests());
+}
+
 Status RunController::ChooseRoute(std::size_t index) {
     constexpr std::string_view op = "choose_route";
     if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
@@ -1495,6 +1520,10 @@ void RunController::DirectorSpawned(std::uint64_t ticket, const std::string& uni
 
 void RunController::DirectorSpawnFailed(std::uint64_t ticket) {
     if (director_) director_->SpawnFailed(ticket);
+}
+
+void RunController::DirectorClassUnavailable(const std::string& unit_class) {
+    if (director_) director_->Unavailable(unit_class);
 }
 
 std::optional<std::array<double, 3>> RunController::DirectorRelocate(const std::string& unit_id,

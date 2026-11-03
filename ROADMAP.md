@@ -138,6 +138,14 @@ Milestones in order. Inside a milestone, items go top to bottom. Each item ends 
    own stage's setup (special plaga types, the big special enemies, dogs and birds that need open
    ground) stay with their stage or are left out. Done when a run's arenas each show their planned,
    partly foreign classes, with no fatal error and no class spawned that the stage did not load.
+   Coded 2026-11-03, not yet played (`TASKS.md` M3.3): `economy.json` `run_rosters`, `rm::PlanRunRosters`.
+   From the second arena on (the first arena's stage loads before the run exists) each node of the
+   run map gets one normal guest and, where its threat level lets specials in, one special, from the
+   14 classes of the Mercenaries rosters, within 5 classes per arena, preferring classes not yet
+   fielded on the paths into the node. Off their home stage only some were seen in game (uEm11 in
+   the Village, the chainsaw Majini uEm22 on s503; the campaign areas borrow these rosters, but no
+   per-class record of them exists), so the user's playtest is the vetting: a class that misbehaves
+   leaves `guests`.
 4. Enemy threat (user, 2026-11-03: "easy at start and harder as it goes"; the first arena had stun-rod
    soldiers and a Licker). Coded 2026-11-03, not yet played: every spawn variant has a threat level, the
    higher of its class's and its weapon's (1 bare hands and small blades, 2 big blades, fire, bows and

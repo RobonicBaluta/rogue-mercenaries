@@ -252,6 +252,8 @@ struct RunMapNodeView {
     std::string boss_name;  // a boss arena's boss, empty otherwise
     std::vector<int> next;
     bool current = false;  // the node of the current arena (or of the next once chosen)
+    std::vector<std::string> guests;  // enemy classes of other maps it adds (ROADMAP M3.3)
+    std::string guests_from;          // their home maps: "Ship Deck and Village"
 };
 
 /// Plain data for UI rendering; never references internal state.

@@ -220,5 +220,31 @@
       "uEm22": 4,
       "uEm23": 4
     }
+  },
+  "run_rosters": {
+    "_comment": "Run-planned rosters (ROADMAP M3.3, rm::PlanRunRosters). When a run starts, every arena of its map from from_arena on (boss arenas aside) adds enemy classes of other maps to its map's own: up to normal_guests normal ones and, once the arena's threat level lets specials in, special_guests specials, within max_classes classes in all, at or under the arena's threat level, preferring classes the run has not fielded yet. A guest is its home map's roster entry (guests: class -> home map key; only listed classes travel). Guests take normal_share of the normal picks and special_share of the special ones. The first arena keeps its map's own enemies: its stage loads before the run exists. The adapter loads each arena's classes with its stage, with their weapons and plagas.",
+    "enabled": true,
+    "from_arena": 2,
+    "normal_guests": 1,
+    "special_guests": 1,
+    "max_classes": 5,
+    "normal_share": 0.35,
+    "special_share": 0.5,
+    "guests": {
+      "uEm10": 0,
+      "uEm11": 0,
+      "uEm12": 2,
+      "uEm14": 4,
+      "uEm0b": 2,
+      "uEm13": 1,
+      "uEm20": 0,
+      "uEm21": 0,
+      "uEm22": 6,
+      "uEm23": 5,
+      "uEm24": 3,
+      "uEm26": 7,
+      "uEm32": 4,
+      "uEm34": 1
+    }
   }
 }

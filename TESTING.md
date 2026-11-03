@@ -84,6 +84,7 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | quitting a run | `autopilot: a run's match quits; Mercenaries phase N cleared (no save screen, no save)` |
 | enemy threat | `arena N: <MAP>   <ROUTE> (stage S, enemy threat L)`; the director's spawn lines show each class and weapon (`arm 70150`: the weapon class uWp50, graded in `economy.json` `enemy_threat` `weapons`) |
 | kills not by the player | `enemy_hit ... killed=1 by=<class>` |
+| run-planned guests (M3.3) | `run map: arena N: 204 dockside_push +uEm14 +uEm32 -> 0 1` (each node's guests); at a stage change `resources: stage S brings the run's guests: uEm14 uEm32` and `resources: list 4 (enemies) extras queued: ... uEm14 uEm32 uEm0d ...`; `arena N: <MAP>   <ROUTE> (stage S, enemy threat L, guests uEm14 from 4, uEm32 from 4)`; `director: uEm14 (arm 7016D, ...)` spawn lines for them; a guest whose archive did not load: `director: uEm14 is not loaded on this stage; not spawned, dropped for this arena`; telemetry `arena_started` `guests` |
 
 ## Commands
 

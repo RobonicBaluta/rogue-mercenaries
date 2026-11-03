@@ -107,6 +107,7 @@ const MapEnemy* Director::PickEnemy() {
     for (const auto& [tierGate, withSpecial] : kPasses) {
         for (const MapEnemy& e : map_.roster) {
             if ((tierGate && e.min_tier > tier_) || e.weight <= 0.0 || (e.special && !withSpecial)) continue;
+            if (unavailable_.count(e.unit_class) != 0) continue;
             const double share = Share(e);
             if (share <= 0.0) continue;
             pool.push_back(&e);
@@ -139,6 +140,7 @@ const MapEnemy* Director::PickSpecial() {
     for (const MapEnemy& e : map_.roster) {
         if (!e.special || e.min_tier > tier_ || Active(&e) >= std::max(1, e.max_alive)) continue;
         if (byThreat && threat_.table.Lowest(e) > threat_.level) continue;
+        if (unavailable_.count(e.unit_class) != 0) continue;
         pool.push_back(&e);
         weights.push_back(std::max(e.weight, 0.001));
     }
@@ -286,6 +288,8 @@ void Director::SpawnFailed(std::uint64_t ticket) {
     // No retry in the same frame: a refused spawn waits like a refill.
     next_spawn_time_ = std::max(next_spawn_time_, last_now_ + kSpawnInterval);
 }
+
+void Director::Unavailable(const std::string& unit_class) { unavailable_.insert(unit_class); }
 
 bool Director::Died(const std::string& unit_id) {
     const auto it = alive_.find(unit_id);

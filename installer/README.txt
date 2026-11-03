@@ -4,7 +4,8 @@ and please send your logs (see "When something breaks").
 
 WHAT IT IS
   Each run is three arenas and a boss. Arenas are Mercenaries stages and campaign areas,
-  picked on a branching run map. The mod spawns the enemies and there is no clock. After
+  picked on a branching run map. The mod spawns the enemies and there is no clock; from
+  the second arena on, each arena also brings enemies from another stage. After
   each arena you pick a reward, shop with the run's supplies, and choose the next arena.
   A run banks Credits, which unlock perks and weapons in the mod's menu. You start with
   every character and skin, but most perks and some weapons are locked until you buy them.

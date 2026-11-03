@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 
+#include "rm/rosters.h"
 #include "rm/run_controller.h"
 
 namespace rm {
@@ -207,6 +208,8 @@ RunSnapshot RunController::Snapshot(double now) const {
                 v.tier = r->difficulty_tier;
             }
             v.next = node.next;
+            v.guests = node.guests;
+            v.guests_from = GuestHomes(c, node.guests);
             v.current = static_cast<int>(l) == run_.map_layer && static_cast<int>(n) == run_.map_node;
             if (v.current) s.arena_name = v.arena_name;
             views.push_back(std::move(v));
@@ -259,6 +262,15 @@ RunSnapshot RunController::Snapshot(double now) const {
                 then += !name.empty() ? name : ar != nullptr ? "tier " + std::to_string(ar->difficulty_tier) : after.route_id;
             }
             v.detail += then.empty() ? "\nThe last arena of the run." : "\nThen " + then + ".";
+            // The arena's guests (M3.3), on whichever line of the help box has room.
+            const std::string from = GuestHomes(c, node.guests);
+            if (!from.empty()) {
+                constexpr std::size_t kHelpLine = 56;
+                const std::string also = " Also enemies from " + from + ".";
+                const std::size_t nl = v.detail.find('\n');
+                if (v.detail.size() - nl - 1 + also.size() <= kHelpLine) v.detail += also;
+                else if (nl + 1 + also.size() <= kHelpLine) v.detail.insert(nl, "." + also);  // the first line has no stop
+            }
         }
         s.route_offers.push_back(std::move(v));
     }

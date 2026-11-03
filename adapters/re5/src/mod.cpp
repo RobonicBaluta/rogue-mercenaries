@@ -50,6 +50,7 @@
 #include "rm/content.h"
 #include "rm/diagnostics.h"
 #include "rm/profile.h"
+#include "rm/rosters.h"
 #include "rm/run_controller.h"
 #include "rm/telemetry.h"
 
@@ -172,6 +173,7 @@ struct ModState {
     std::string notice;       // short line shown instead of the status (chest contents)
     int organizePick = -1;    // ORGANIZE: grid cell picked up (-1 = none)
     double noticeUntil = 0.0;
+    std::string noticeNext;   // shown once `notice` is over (an arena's guests after its name)
     // Weapon item ids whose models this match loaded (the character's own loadout): the only
     // weapons that can be created mid-match without hanging the game.
     std::set<std::uint32_t> loadedWeaponItems;
@@ -1343,6 +1345,7 @@ void LogRunMap() {
         for (std::size_t n = 0; n < layers[l].size(); ++n) {
             const rm::RunMapNode& node = layers[l][n];
             line += (n > 0 ? " | " : "") + std::to_string(node.map_key) + " " + node.route_id;
+            for (const std::string& guest : node.guests) line += " +" + guest;
             if (!node.next.empty()) {
                 line += " ->";
                 for (const int next : node.next) line += " " + std::to_string(next);
@@ -1999,10 +2002,23 @@ void ArenaBegan(double now) {
     std::string line = map != nullptr ? Upper(Plain(map->name)) : std::string();
     if (map != nullptr && map->boss) line += "   BOSS " + Upper(Plain(map->boss->name));
     else if (!s.route_name.empty()) line += (line.empty() ? "" : "   ") + Upper(Plain(s.route_name));
+    // The run-planned guests the director fields here (M3.3): named after the arena.
+    std::vector<std::string> guests;
+    std::string guestLog;
+    if (const rm::Director* d = g->run->director()) {
+        for (const rm::MapEnemy& e : d->map().roster) {
+            if (e.home < 0) continue;
+            guests.push_back(e.unit_class);
+            guestLog += (guestLog.empty() ? ", guests " : ", ") + e.unit_class + " from " + std::to_string(e.home);
+        }
+    }
+    const std::string from = rm::GuestHomes(*g->content, guests);
+    g->noticeNext = from.empty() ? std::string() : "WITH ENEMIES FROM " + Upper(Plain(from));
     if (line.empty()) return;
     g->notice = line;
     g->noticeUntil = now + 5.0;
-    RM_LOGI("arena %d: %s (stage %d, enemy threat %d)", s.arena, line.c_str(), CurrentMapKey(), g->run->ArenaThreatLevel());
+    RM_LOGI("arena %d: %s (stage %d, enemy threat %d%s)", s.arena, line.c_str(), CurrentMapKey(), g->run->ArenaThreatLevel(),
+            guestLog.c_str());
 }
 
 void TryBeginArena(double now) {
@@ -2221,9 +2237,11 @@ void DriveDirector(double now) {
         spec.weapon = static_cast<int>(r.arm);
         spec.fields = r.fields;
         const float* pos = spec.pos;
-        // A class whose archive is not loaded would hang the game when created.
+        // A class whose archive is not loaded would hang the game when created; the director
+        // stops picking it for this arena.
         if (resources::Available() && !resources::ArchiveLoaded(r.unit_class)) {
-            RM_LOGW("director: %s is not loaded on this stage; not spawned", r.unit_class.c_str());
+            RM_LOGW("director: %s is not loaded on this stage; not spawned, dropped for this arena", r.unit_class.c_str());
+            run.DirectorClassUnavailable(r.unit_class);
             run.DirectorSpawnFailed(r.ticket);
             continue;
         }
@@ -2275,18 +2293,35 @@ void DriveArena(double now) {
     }
 }
 
+// The plaga a Majini of this type (descriptor mPlagaType) bursts into. The game's set-record
+// load (0x0072AB20) queues it for the stage's own Majini; a run-planned guest's comes with it.
+const char* PlagaClass(int type) {
+    switch (type) {
+        case 1: return "uEm0d";
+        case 2: return "uEm0e";
+        case 4: return "uEm0c";
+        case 8: return "uEm0b";
+        default: return nullptr;
+    }
+}
+
 // M3: from START RUN on, every load of the run brings every item the content hands out with the
 // player's items (rewards, the shop, chests and carried-over purchases may hold any of them)
 // and the armed stage's roster with its enemies (a class or weapon the stage does not use
-// itself loads too). Outside runs nothing extra loads.
+// itself loads too): the run map node's, with its planned guests (M3.3), when the stage is the
+// node's. Outside runs nothing extra loads.
 void UpdatePreloads() {
     if (!resources::Available()) return;
     const bool runLoads = g->run->HasActiveRun() || g->rogueModePending || autopilot::Armed();
+    const bool planned = g->run->HasActiveRun() && CurrentMapKey() == g->run->PlannedMapKey();
+    const std::vector<std::string> guests = planned ? g->run->PlannedGuests() : std::vector<std::string>{};
     static int lastStage = -2;
     static bool lastRun = false;
-    if (runLoads == lastRun && CurrentMapKey() == lastStage) return;
+    static std::vector<std::string> lastGuests;
+    if (runLoads == lastRun && CurrentMapKey() == lastStage && guests == lastGuests) return;
     lastRun = runLoads;
     lastStage = CurrentMapKey();
+    lastGuests = guests;
     resources::Extras extras;
     if (runLoads) {
         // Every gun, and every other item perks, rewards and the shop hand out: a first aid
@@ -2321,19 +2356,43 @@ void UpdatePreloads() {
         extras.enemyClasses.push_back("uOm0100");
         // The game's Organize/Buy screen (M7.1).
         if (g->settings.nativeItemBox && engine::Caps().itemBox) extras.uiArchives.push_back("ShopResource");
-        if (const rm::MapDef* map = CurrentMap()) {
+        const rm::MapDef* own = CurrentMap();
+        const std::optional<rm::MapDef> map =
+            own == nullptr ? std::nullopt : planned ? g->run->ArenaMap(CurrentMapKey()) : std::optional<rm::MapDef>(*own);
+        if (map) {
             extras.enemyArchives = map->preload;
             if (map->boss) extras.enemyClasses.push_back(map->boss->unit_class);
+            auto addClass = [&](const std::string& name) {
+                if (std::find(extras.enemyClasses.begin(), extras.enemyClasses.end(), name) == extras.enemyClasses.end()) {
+                    extras.enemyClasses.push_back(name);
+                }
+            };
+            // In chapter 3's areas (s3xx) the game hands a Majini given uWp5f a uWp6f and one
+            // given uWp60 a uWp63 (0x0072AB20: the save's stage number / 100 == 3): both load.
+            const bool chapter3 = map->stage / 100 == 3;
+            auto addArm = [&](std::int64_t arm) {
+                addWeapon(arm);
+                if (chapter3 && arm == 0x7015F) addWeapon(0x7016F);
+                if (chapter3 && arm == 0x70160) addWeapon(0x70163);
+            };
+            // The class archive brings what the class itself needs (its parts, its own weapons,
+            // uEm10Eff for the Majini; 0x007D5820); its descriptors' weapons and plagas are added.
             for (const rm::MapEnemy& e : map->roster) {
-                extras.enemyClasses.push_back(e.unit_class);
-                for (const std::int64_t arm : e.arms) addWeapon(arm);
+                addClass(e.unit_class);
+                for (const std::int64_t arm : e.arms) addArm(arm);
                 for (const rm::EnemyProfile& p : e.profiles) {
                     for (const auto& [field, value] : p.fields) {
-                        if (field == "arm") addWeapon(static_cast<std::int64_t>(value));
+                        if (field == "arm") addArm(static_cast<std::int64_t>(value));
+                        if (field == "plaga") {
+                            if (const char* plaga = PlagaClass(static_cast<int>(value))) addClass(plaga);
+                        }
                     }
                 }
             }
         }
+        std::string guestLine;
+        for (const std::string& guest : guests) guestLine += " " + guest;
+        if (!guestLine.empty()) RM_LOGI("resources: stage %d brings the run's guests:%s", CurrentMapKey(), guestLine.c_str());
     }
     RM_LOGI("resources: %s, stage %d: %zu player items, %zu enemy classes, %zu enemy weapons and %zu archives go with every load",
             runLoads ? "run" : "no run", CurrentMapKey(), extras.playerItems.size(), extras.enemyClasses.size(),
@@ -3422,6 +3481,11 @@ void UpdateMatchStatus() {
             }
             hud.right = std::to_string(s.supplies) + " SUPPLIES";
             if (s.keys_needed) hud.right += "   " + Upper(Plural(s.keys, "key"));
+            if (!g->noticeNext.empty() && Now() >= g->noticeUntil) {
+                g->notice = std::move(g->noticeNext);
+                g->noticeNext.clear();
+                g->noticeUntil = Now() + 4.0;
+            }
             if (Now() < g->noticeUntil) hud.notice = g->notice;
         } else if (phase == rm::Phase::RouteSelection && run.state().route_chosen) {
             hud.notice = "NEXT STAGE LOADING";

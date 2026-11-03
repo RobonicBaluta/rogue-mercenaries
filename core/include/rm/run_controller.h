@@ -338,6 +338,12 @@ public:
     /// The map key of the run map node being played, or of the next one once a route is
     /// chosen (-1: none or unknown).
     [[nodiscard]] int PlannedMapKey() const;
+    /// That node's guests (ROADMAP M3.3): enemy classes of other maps its arena adds to its
+    /// map's own; the arena fields them when it is played on PlannedMapKey(). Empty without a plan.
+    [[nodiscard]] std::vector<std::string> PlannedGuests() const;
+    /// The map an arena on `stage` is fought on: its maps.json entry with the planned guests when
+    /// `stage` is PlannedMapKey(), as it is otherwise (a dev pick); empty for an unknown stage.
+    [[nodiscard]] std::optional<MapDef> ArenaMap(int stage) const;
 
     /// From RunComplete/RunFailed: banks credits into the profile exactly once per run id and
     /// saves. Calling again returns the same summary with already_banked = true.
@@ -371,6 +377,9 @@ public:
     std::vector<SpawnRequest> DirectorTick(double now, const std::optional<std::array<double, 3>>& player);
     void DirectorSpawned(std::uint64_t ticket, const std::string& unit_id);
     void DirectorSpawnFailed(std::uint64_t ticket);
+    /// The adapter cannot create this class on the stage (its archive is not loaded): the
+    /// director stops picking it this arena (Director::Unavailable).
+    void DirectorClassUnavailable(const std::string& unit_class);
     /// A director unit cannot reach the player: where to move it (Director::Relocate).
     std::optional<std::array<double, 3>> DirectorRelocate(const std::string& unit_id,
                                                           const std::optional<std::array<double, 3>>& player);

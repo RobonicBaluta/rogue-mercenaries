@@ -22,6 +22,7 @@ inline constexpr std::string_view kShop = "shop";
 inline constexpr std::string_view kCombat = "combat";
 inline constexpr std::string_view kLoadout = "loadout";
 inline constexpr std::string_view kDirector = "director";
+inline constexpr std::string_view kRoster = "roster";  // the run map's planned guests (M3.3)
 }  // namespace streams
 
 std::uint64_t SplitMix64(std::uint64_t& state);

@@ -151,6 +151,26 @@ struct EconomyConfig {
         }
     } enemy_threat;
 
+    /// Run-planned rosters (ROADMAP M3.3, rm::PlanRunRosters): when a run starts, every arena of
+    /// its map from `from_arena` on (boss arenas aside) adds enemy classes of other maps to its
+    /// map's own, its "guests": up to `normal_guests` normal ones and, where the arena's threat
+    /// lets specials in, `special_guests` specials, within `max_classes` classes in all and at or
+    /// under the arena's threat level, preferring classes the run has not fielded yet. A guest is
+    /// its home map's roster entry (`guests`: class -> home map key; only listed classes travel);
+    /// guests take `normal_share` of the normal picks and `special_share` of the special ones.
+    /// The adapter loads exactly each arena's classes with its stage. Disabled: every arena
+    /// fields its own map's enemies.
+    struct RunRosters {
+        bool enabled = false;
+        int from_arena = 2;
+        int normal_guests = 1;
+        int special_guests = 1;
+        int max_classes = 5;
+        double normal_share = 0.35;
+        double special_share = 0.5;
+        StringMap<int> guests;
+    } run_rosters;
+
     /// Keys (M8): a chest opens only with a key (one used per chest), except for a build with
     /// chest_keys_exempt. Kills of the listed enemy classes (prefixes, e.g. "uEm1" = the Majini)
     /// drop one with drop_chance. Disabled: chests open freely.

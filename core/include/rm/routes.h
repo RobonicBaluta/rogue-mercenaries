@@ -48,6 +48,9 @@ struct RunMapNode {
     int map_key = -1;
     std::string route_id;
     std::vector<int> next;  // the nodes of the following layer it leads to
+    /// Enemy classes of other maps this arena adds to its map's own (ROADMAP M3.3,
+    /// rm::PlanRunRosters); empty: the map's own roster.
+    std::vector<std::string> guests;
 };
 
 /// The arenas of a run, generated when it starts: one layer per arena, the first holding only

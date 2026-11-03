@@ -35,6 +35,9 @@ struct MapEnemy {
     /// (default 1) until the budget runs out. Its kills count like any other.
     bool special = false;
     int max_alive = 0;
+    /// A guest (ROADMAP M3.3, rm::WithGuests): the map key of the map whose roster entry this is;
+    /// -1 for the map's own enemies.
+    int home = -1;
 };
 
 /// A boss (ROADMAP M6): on its map the director spawns only the boss, and the arena clears when
@@ -130,6 +133,9 @@ public:
     /// The adapter could not create it; the slot goes back to the budget (the point is
     /// avoided after repeated failures).
     void SpawnFailed(std::uint64_t ticket);
+    /// The adapter cannot create this class at all here (its archive is not loaded): it is not
+    /// picked again this arena. Call SpawnFailed for the request as well.
+    void Unavailable(const std::string& unit_class);
     /// A unit died or vanished. True (once) when it was one of ours.
     bool Died(const std::string& unit_id);
     /// One of our units cannot reach the player (behind a door, on a ledge): its spawn point is
@@ -182,6 +188,7 @@ private:
     std::unordered_map<std::uint64_t, int> ticket_point_;               // alive tickets: their point
     int relocations_ = 0;
     std::vector<std::array<double, 3>> chests_;
+    StringSet unavailable_;  // classes the adapter cannot create on this stage
 };
 
 }  // namespace rm
