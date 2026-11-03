@@ -41,6 +41,24 @@ powershell -ExecutionPolicy Bypass -File scripts\deploy.ps1 -Mode uninstall
 
 Installed files: `<game>\dinput8.dll` and `<game>\RogueMercenaries\` (`configs\*.json` and `adapter.json`). Your mod save and logs live in `%LOCALAPPDATA%\RogueMercenaries\`. The game's own save is never touched.
 
+### Tester package (alpha)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_core.ps1
+powershell -ExecutionPolicy Bypass -File scripts\package_release.ps1
+```
+
+This writes `dist\RogueMercenaries-<version>.zip` (the version is `kModVersion` in `adapters\re5\src\version.h`;
+the script refuses a DLL of another version or a developer `adapter.json`). The ZIP holds one folder: `Install.bat`,
+`Uninstall.bat`, `README.txt` (the tester's guide, from `installer\README.txt`), the scripts in `installer\`, the
+files they install (`files\`), licenses and `SHA256SUMS.txt`; no game files, profile or logs. `Install.bat` finds
+RE5 through Steam's library folders, checks `re5dx9.exe` against the supported build (asks before installing on
+another), copies the game's save to `%LOCALAPPDATA%\RogueMercenaries\save-backups`, keeps another mod's
+`dinput8.dll` in `RogueMercenaries\backup`, and records every file in `RogueMercenaries\install.json`. Running it again
+replaces an earlier install. `Uninstall.bat` (in the package or in the game's `RogueMercenaries` folder) removes exactly
+those files, puts the other `dinput8.dll` back, and asks before deleting progress and logs. A tester's progress starts
+empty: the mod's profile lives in `%LOCALAPPDATA%`, which the package never ships or touches.
+
 ## Playing
 
 1. Launch RE5 from Steam. Top right shows *Rogue Mercenaries – Play menu or F7*.
