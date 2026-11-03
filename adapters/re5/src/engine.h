@@ -28,6 +28,7 @@ struct Verified {
     bool actions = false;       // character actions by id (M8: staggers)
     bool dodge = false;         // the player's dodge, started the game's way (M8: Wesker's moves)
     bool turn = false;          // a character turned the game's way (M8: Wesker faces his lunge's target)
+    bool motions = false;       // motion lists looked up, bound to a model and played (M8: boss moves)
     bool hitAttacker = false;
     bool gameWork = false;   // mode/stage/merc timer layout
     bool mercCountdown = false;
@@ -93,6 +94,35 @@ std::string CurrentActionName(std::uintptr_t character);
 /// Turns a character to face `yaw` (radians; facing (sin, cos) on the ground plane) the game's
 /// way (re5::addr::kFnCharTurnTo): at once under 2 frames, else over that many frames.
 bool TurnTo(std::uintptr_t character, float yaw, int frames);
+
+/// Motions borrowed from another unit's archive (M8: the boss Jill's twin-SMG sweep on the
+/// playable Jill, the boss Wesker's moves on his; re5_layout.h "Motions"). Every player model
+/// shares one skeleton, and the boss lists' tracks name its bones (checked offline).
+/// The motion list at `path` (e.g. "pawn\em\em84\motion\em84atk") when its archive is loaded,
+/// with a reference held for the caller (ReleaseResource); 0 when not: looked up, never loaded.
+std::uintptr_t LoadedMotionList(const char* path);
+void ReleaseResource(std::uintptr_t resource);
+/// Puts `list` into one of the unit's motion list slots through the game's own (reference
+/// counted) setter: the slot holding it already, else the highest free one. The slot, or -1.
+int BindMotionList(std::uintptr_t unit, std::uintptr_t list);
+/// Of motion `index` in the unit's slot: its bone tracks, how many of them reach a joint of the
+/// unit's model, and its length in frames (empty: no such motion).
+struct MotionFit {
+    int tracks = 0;
+    int mapped = 0;
+    float frames = 0.0f;
+};
+std::optional<MotionFit> CheckMotion(std::uintptr_t unit, int slot, int index);
+/// Plays motion `index` of the unit's slot on its body layer (0), once, the way enemies start
+/// theirs (re5::addr::kFnCharSetMotion). False when refused.
+bool PlayMotion(std::uintptr_t unit, int slot, int index, float blendFrames, float speed);
+/// The body layer's motion: its id (slot << 8 | index), current frame and length.
+struct BodyMotion {
+    int id = 0xFFFF;
+    float frame = 0.0f;
+    float frames = 0.0f;
+};
+std::optional<BodyMotion> ReadBodyMotion(std::uintptr_t unit);
 
 /// Fixes of the game's own code for what Mercenaries mode 2 never met before the mod (in memory,
 /// each behind its signature): Excella's finisher on a Majini (re5::addr::kDeadBombModeJump).

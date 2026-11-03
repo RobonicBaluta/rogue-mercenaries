@@ -286,6 +286,8 @@ from the pause menu wrote the game's save: the match's quit state now finds the 
 
 Second playtest (2026-11-03, TASKS.md "round 2"): the collision query needs its world in ECX (a thiscall); the special's buttons are the mod's while a build with specials fights; Wesker's burst has its own button (a build's special_2); his dash and lunge play the game's forward dodge (E18 partly: an animation over the emulated move); stuck enemies are moved to reachable points; the boss waits 8 s with its own health; the Organize screen keeps Buy and Upgrade out of a run; the SHOP sells NEW STOCK.
 
+Fourth playtest (2026-11-03, TASKS.md "Playtest 4"): E17 and E18 take the bosses' own animations. The engine plays a motion list from another unit's archive on the player (the Uroboros' archive carries Chris's grab motions the same way), and every player model shares one skeleton: the boss Jill's WideFire plays on Jill Battle Suit (her readying and the sweep, her shots landing during the sweep), the boss Wesker's dash-strike, knee and kick on Midnight Wesker's dash, lunge and burst (research/re5-engine-map.md "Motions"). Open: her second gun in the left hand (the boss holds two weapon units; spawning and attaching one to the player is the next step if the motions work).
+
 Order: B1 to B7 with the builds that need no engine work (Warrior, Clubbin', Business, Fairy Tale,
 S.T.A.R.S. Chris, Barry), then E19/E20/E21 (Wesker S.T.A.R.S., Excella, Rebecca), E13/E14 and item
 ids (Safari, Heavy Metal, Tribal), B8/E15 (keys, Jill BSAA), then E16 with E17/E18/E22 (Battle

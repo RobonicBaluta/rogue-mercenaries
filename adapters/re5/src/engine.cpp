@@ -6,6 +6,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "log.h"
 #include "memory.h"
@@ -99,9 +100,6 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.collision = SignatureOk("segment_hit");
     g_caps.dodge = SignatureOk("player_dodge_prep");
     g_caps.turn = SignatureOk("char_turn_to");
-    g_caps.matchQuit = g_caps.gameWork && SignatureOk("match_quit_state");
-    g_caps.itemBoxGuard = g_caps.itemBox && SignatureOk("itembox_panel_update") && SignatureOk("itembox_panel_tab");
-    g_caps.itemBoxPictures = g_caps.itemBox && SignatureOk("itembox_picture_name");
     g_caps.actions = g_caps.characterSubHp && SignatureOk("change_action") && SignatureOk("player_change_action") &&
                      SignatureOk("enemy_change_action") && SignatureOk("player_action_table") &&
                      SignatureOk("em10_action_table");
@@ -152,6 +150,17 @@ bool VerifySignatures(unsigned timeoutMs) {
                      SignatureOk("layout_page_elements") && SignatureOk("layout_set_element_draw") &&
                      SignatureOk("layout_element_count") && SignatureOk("cockpit_digit_templates") &&
                      SignatureOk("cockpit_digit_targets");
+    // After gameWork and itemBox: computed before them, these three were always off (the pause
+    // menu's quit wrote the game's save, the Organize screen kept Buy and Upgrade, user playtest
+    // 2026-11-03).
+    g_caps.matchQuit = g_caps.gameWork && SignatureOk("match_quit_state");
+    g_caps.itemBoxGuard = g_caps.itemBox && SignatureOk("itembox_panel_update") && SignatureOk("itembox_panel_tab");
+    g_caps.itemBoxPictures = g_caps.itemBox && SignatureOk("itembox_picture_name");
+    // The motion list type is data: its name is checked too.
+    const auto motionListName = ReadOr<std::uintptr_t>(re5::addr::kDtiMotionList + 4, 0);
+    g_caps.motions = g_caps.players && SignatureOk("resource_get") && SignatureOk("resource_release") &&
+                     SignatureOk("motion_list_set") && SignatureOk("char_set_motion") && motionListName &&
+                     ReadCString(motionListName, 16) == "rMotionList";
     return all;
 }
 
@@ -406,21 +415,184 @@ bool TurnTo(std::uintptr_t character, float yaw, int frames) {
     return true;
 }
 
+namespace {
+
+using ResourceGetFn = std::uintptr_t(__thiscall*)(std::uintptr_t manager, std::uintptr_t dti, const char* path, unsigned flags);
+using MotionListSetFn = void(__thiscall*)(std::uintptr_t model, std::uintptr_t list, int slot);
+using CharSetMotionFn = void(__thiscall*)(std::uintptr_t character, int layer, unsigned id, float blend, float start, float speed,
+                                          unsigned flags);
+constexpr unsigned kLookupOnly = 0x80;    // the get's flags: never load
+constexpr unsigned kPlayOnce = 4;         // the motion call's flags
+constexpr std::size_t kListMotions = 0x60;  // rMotionList: its motion data (u16 count at +6, pointers from +8)
+constexpr std::size_t kTrackSize = 0x20;    // a motion's track: +1 type (0..2 a bone's, 3..4 the root's), +3 bone id
+
+bool CallResourceGet(std::uintptr_t manager, const char* path, std::uintptr_t& out) {
+    __try {
+        out = reinterpret_cast<ResourceGetFn>(re5::addr::kFnResourceGet)(manager, re5::addr::kDtiMotionList, path, kLookupOnly);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
+bool CallResourceRelease(std::uintptr_t manager, std::uintptr_t resource) {
+    const std::uintptr_t fn = re5::addr::kFnResourceRelease;
+    __try {
+        // The release takes the manager in EAX and the resource in EDI.
+        __asm {
+            mov eax, manager
+            mov edi, resource
+            call fn
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
+bool CallMotionListSet(std::uintptr_t model, std::uintptr_t list, int slot) {
+    __try {
+        reinterpret_cast<MotionListSetFn>(re5::addr::kFnMotionListSet)(model, list, slot);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
+bool CallCharSetMotion(std::uintptr_t character, unsigned id, float blend, float speed) {
+    __try {
+        reinterpret_cast<CharSetMotionFn>(re5::addr::kFnCharSetMotion)(character, 0, id, blend, 0.0f, speed, kPlayOnce);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
+// The motion record of `index` in the unit's slot (0: none).
+std::uintptr_t MotionRecord(std::uintptr_t unit, int slot, int index) {
+    if (!unit || slot < 0 || slot >= re5::off::kMotionListSlots || index < 0 || index > 0xFF) return 0;
+    const auto list = ReadOr<std::uintptr_t>(unit + re5::off::kMotionLists + static_cast<std::size_t>(slot) * 4, 0);
+    const auto motions = list ? ReadOr<std::uintptr_t>(list + kListMotions, 0) : 0;
+    if (!motions || index >= ReadOr<std::uint16_t>(motions + 6, 0)) return 0;
+    return ReadOr<std::uintptr_t>(motions + 8 + static_cast<std::size_t>(index) * 4, 0);
+}
+
+}  // namespace
+
+std::uintptr_t LoadedMotionList(const char* path) {
+    if (!g_caps.motions || !path) return 0;
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kResourceManager, 0);
+    if (!manager) return 0;
+    std::uintptr_t list = 0;
+    if (!CallResourceGet(manager, path, list)) {
+        RM_LOGW("motions: the resource lookup faulted; borrowed motions off");
+        g_caps.motions = false;
+        return 0;
+    }
+    if (list && DtiOf(list) != re5::addr::kDtiMotionList && !IsKindOf(list, re5::addr::kDtiMotionList)) {
+        RM_LOGW("motions: %s is a %s, not a motion list; not used", path, ClassName(list).c_str());
+        ReleaseResource(list);
+        return 0;
+    }
+    return list;
+}
+
+void ReleaseResource(std::uintptr_t resource) {
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kResourceManager, 0);
+    if (!g_caps.motions || !resource || !manager) return;
+    if (!CallResourceRelease(manager, resource)) {
+        RM_LOGW("motions: a resource release faulted; borrowed motions off");
+        g_caps.motions = false;
+    }
+}
+
+int BindMotionList(std::uintptr_t unit, std::uintptr_t list) {
+    if (!g_caps.motions || !unit || !list) return -1;
+    int freeSlot = -1;
+    for (int slot = 0; slot < re5::off::kMotionListSlots; ++slot) {
+        const auto held = ReadOr<std::uintptr_t>(unit + re5::off::kMotionLists + static_cast<std::size_t>(slot) * 4, 1);
+        if (held == list) return slot;
+        if (held == 0) freeSlot = slot;  // the highest free one
+    }
+    if (freeSlot < 0) return -1;
+    if (!CallMotionListSet(unit, list, freeSlot)) {
+        RM_LOGW("motions: the motion list setter faulted; borrowed motions off");
+        g_caps.motions = false;
+        return -1;
+    }
+    return ReadOr<std::uintptr_t>(unit + re5::off::kMotionLists + static_cast<std::size_t>(freeSlot) * 4, 0) == list ? freeSlot : -1;
+}
+
+std::optional<MotionFit> CheckMotion(std::uintptr_t unit, int slot, int index) {
+    const std::uintptr_t motion = MotionRecord(unit, slot, index);
+    if (!motion) return std::nullopt;
+    const auto tracks = ReadOr<std::uintptr_t>(motion, 0);
+    const int count = ReadOr<std::int32_t>(motion + 4, 0);
+    const auto remap = ReadOr<std::uintptr_t>(unit + re5::off::kModelBoneToJoint, 0);
+    const auto joints = ReadOr<std::uint32_t>(unit + re5::off::kModelJointCount, 0);
+    if (!tracks || count <= 0 || count > 1024 || !remap) return std::nullopt;
+    MotionFit fit;
+    fit.frames = static_cast<float>(ReadOr<std::int32_t>(motion + 8, 0));
+    for (int t = 0; t < count; ++t) {
+        const std::uintptr_t track = tracks + static_cast<std::size_t>(t) * kTrackSize;
+        if (ReadOr<std::uint8_t>(track + 1, 0xFF) > 2) continue;  // the root's, or unreadable
+        ++fit.tracks;
+        const std::uint8_t joint = ReadOr<std::uint8_t>(remap + ReadOr<std::uint8_t>(track + 3, 0), 0xFF);
+        if (joint != 0xFF && joint < joints) ++fit.mapped;
+    }
+    return fit;
+}
+
+bool PlayMotion(std::uintptr_t unit, int slot, int index, float blendFrames, float speed) {
+    if (!g_caps.motions || !MotionRecord(unit, slot, index) || ReadOr<std::uint32_t>(unit + re5::off::kMotionLayerCount, 0) == 0) {
+        return false;
+    }
+    const unsigned id = static_cast<unsigned>(slot) << 8 | static_cast<unsigned>(index);
+    if (!CallCharSetMotion(unit, id, blendFrames, speed)) {
+        RM_LOGW("motions: the motion call faulted; borrowed motions off");
+        g_caps.motions = false;
+        return false;
+    }
+    return ReadOr<std::uint16_t>(unit + re5::off::kMotionLayer0Id, 0xFFFF) == id;
+}
+
+std::optional<BodyMotion> ReadBodyMotion(std::uintptr_t unit) {
+    if (!unit || ReadOr<std::uint32_t>(unit + re5::off::kMotionLayerCount, 0) == 0) return std::nullopt;
+    BodyMotion m;
+    m.id = ReadOr<std::uint16_t>(unit + re5::off::kMotionLayer0Id, 0xFFFF);
+    m.frame = ReadOr<float>(unit + re5::off::kMotionLayer0Frame, 0.0f);
+    m.frames = ReadOr<float>(unit + re5::off::kMotionLayer0Frames, 0.0f);
+    return m;
+}
+
 int WarpUnit(std::uintptr_t unit, const float pos[3]) {
     if (!unit) return 0;
     const float x = ReadOr<float>(unit + re5::off::kUnitPosition, 0.0f);
     const float y = ReadOr<float>(unit + re5::off::kUnitPosition + 4, 0.0f);
     const float z = ReadOr<float>(unit + re5::off::kUnitPosition + 8, 0.0f);
-    int written = 0;
+    // A unit not placed yet stands at the origin, and every run of zeros in it (null pointers,
+    // counters) would pass for a copy of its position: writing them ended the game on a match's
+    // first frame (Steel Docks, 1189 "copies", a coordinate read as a pointer). Wait until it is.
+    constexpr float kUnplaced = 50.0f;  // engine units (half a metre) from the origin
+    if (std::fabs(x) < kUnplaced && std::fabs(y) < kUnplaced && std::fabs(z) < kUnplaced) return 0;
+    // The copies first, then the writes, and none when there are implausibly many (2 to 12 seen).
+    constexpr int kMaxCopies = 24;
+    std::vector<std::size_t> copies;
     for (std::size_t off = 0; off < 0x4000; off += 4) {
         const float cx = ReadOr<float>(unit + off, 0.0f), cy = ReadOr<float>(unit + off + 4, 0.0f), cz = ReadOr<float>(unit + off + 8, 0.0f);
         if (std::fabs(cx - x) < 1.0f && std::fabs(cy - y) < 1.0f && std::fabs(cz - z) < 1.0f) {
-            for (int i = 0; i < 3; ++i) SafeStore(unit + off + static_cast<std::size_t>(i) * 4, pos[i]);
-            ++written;
+            copies.push_back(off);
             off += 8;
         }
     }
-    return written;
+    if (copies.size() > static_cast<std::size_t>(kMaxCopies)) {
+        RM_LOGW("warp: %zu places hold the unit's position %.0f %.0f %.0f, more than a unit has; not moved", copies.size(), x, y, z);
+        return 0;
+    }
+    for (const std::size_t off : copies) {
+        for (int i = 0; i < 3; ++i) SafeStore(unit + off + static_cast<std::size_t>(i) * 4, pos[i]);
+    }
+    return static_cast<int>(copies.size());
 }
 
 bool SetHealth(std::uintptr_t character, int hp) {

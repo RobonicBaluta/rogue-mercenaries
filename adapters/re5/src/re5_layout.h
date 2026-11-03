@@ -72,6 +72,21 @@ constexpr std::uintptr_t kFnPlayerDodgePrep = 0x00B82F10;
 // applies. The co-op sync feeds it; the local player's own turning does not use +0x1904 (it reads
 // 0 there). Static analysis 2026-11-03.
 constexpr std::uintptr_t kFnCharTurnTo = 0x00B55D40;
+// Motions (static analysis 2026-11-03, research/re5-engine-map.md "Motions"). A model's 16 motion
+// list slots are at +0xA88; a motion id is slot << 8 | index into that list, played per layer
+// (layer n at +0x380 + n * 0xE0; layer 0 the body). The resource manager [kResourceManager]'s get
+// (thiscall: type DTI, path, flags; ret 0xC) returns a cached resource with a reference added;
+// flags bit 7 makes it a lookup that never loads (a missing file is the game's fatal error).
+// Its release takes the manager in EAX and the resource in EDI. The slot setter (thiscall: list,
+// slot; ret 8) is reference counted and refreshes the layers; the character's motion call
+// (thiscall: layer, id, blend frames, start frame, speed, flags; ret 0x18; flag 4: play once) is
+// the one enemies use at vtable +0x16C and the player's own calls for its upper layers.
+constexpr std::uintptr_t kResourceManager = 0x01234580;
+constexpr std::uintptr_t kFnResourceGet = 0x00448B70;
+constexpr std::uintptr_t kFnResourceRelease = 0x00447020;
+constexpr std::uintptr_t kFnMotionListSet = 0x005CCDD0;
+constexpr std::uintptr_t kFnCharSetMotion = 0x0084CFF0;
+constexpr std::uintptr_t kDtiMotionList = 0x0124B574;  // rMotionList
 // cEm10ActDeadArmyBomb (Majini action 0x93), its update 0x00C10BA0, step 0: the effect of the
 // body's end. In game mode 5 (Reunion) any of uEm10/11/12/14/21/92 (0x00C00770) gets uEm14's
 // em140a, which Excella's own archive carries; in mode 2 only uEm14 does and the others ask for
@@ -338,6 +353,19 @@ constexpr std::size_t kPlayerDodgeOwner = 0x2D64;   // the dodge prep's object (
 constexpr std::size_t kDodgePrepOffset = 0x220;
 constexpr int kPlActRelax = 0x01;       // cPlAction_pl_act_relax
 constexpr int kPlActAvoidFront = 0x51;  // cPlAction_pl_act_avoid_front (toward the threat point)
+// cPlAction_pl_act_setEventAct_wait: the scripted scenes' hold; it sets no motion of its own
+// (start 0x00C906C0, update 0x00C75DA0), so a motion played over it keeps playing.
+constexpr int kPlActEventWait = 0x84;
+// Motions (addr::kFnCharSetMotion): the model's motion list slots and layer count, and layer 0's
+// motion id (u16), current frame and length.
+constexpr std::size_t kMotionLists = 0xA88;
+constexpr int kMotionListSlots = 16;
+constexpr std::size_t kMotionLayerCount = 0x374;
+constexpr std::size_t kMotionLayer0Id = 0x384;
+constexpr std::size_t kMotionLayer0Frame = 0x398;
+constexpr std::size_t kMotionLayer0Frames = 0x39C;
+constexpr std::size_t kModelJointCount = 0x314;
+constexpr std::size_t kModelBoneToJoint = 0x31C;  // byte table: a motion track's bone id -> joint (0xFF none)
 constexpr std::size_t kVtableChangeAction = 0xDC;
 constexpr std::size_t kVtableTurnTo = 0x154;
 constexpr std::uint32_t kCollisionMask = 0x3FFFFF00;  // the dodge picker's and the ground snap's
@@ -490,6 +518,12 @@ inline constexpr Signature kSignatures[] = {
     {"player_dodge_prep", addr::kFnPlayerDodgePrep, "8B 44 24 04 8B 80 8C 2D 00 00 8B D0 C1 EA 08 F6"},
     // `... lea eax, [esp+0x10]; push eax; mov esi, ecx; call GetEuler; mov eax, [ebp+8]; cmp eax, 1`.
     {"char_turn_to", addr::kFnCharTurnTo, "55 8B EC 83 E4 F0 83 EC 1C 56 8D 44 24 10 50 8B F1 E8 9A 4A 93 FF 8B 45 08 83 F8 01"},
+    {"resource_get", addr::kFnResourceGet, "55 8B EC 83 E4 F8 83 EC 0C 8B 45 08 53 56 57 50 8B 45 0C 8B F9 E8 76 08 00 00 80 7F"},
+    // `push esi; mov esi, eax; xor bl, bl; cmp [esi+0x1C], bl ...`: the manager in EAX.
+    {"resource_release", addr::kFnResourceRelease, "53 56 8B F0 32 DB 38 5E 1C 75 08 38 1D 2E 9C 24 01 74 0A 8D 46 04 50 FF 15 F8 A0 F4"},
+    // `... mov edi, [esi+ebx*4+0xA88]; test edi, edi; jz; mov eax, [kResourceManager]; call release`.
+    {"motion_list_set", addr::kFnMotionListSet, "53 8B 5C 24 0C 56 8B F1 57 8B BC 9E 88 0A 00 00 85 FF 74 15 A1 80 45 23 01 E8 32 A2"},
+    {"char_set_motion", addr::kFnCharSetMotion, "53 56 8B F1 8B 8E 74 19 00 00 85 C9 57 74 05 E8 7C 1B 40 00 8B 7C 24 10 85 FF 8B 5C"},
     // `mov edx, [kGameRoot]; mov eax, [edx+0x1042C]; cmp [eax+0x58], 5; mov ecx, [esi+0x1C]; jnz +0B;
     // push ecx; call 0x00C00770; add esp, 4; jmp +0A; push uEm14 DTI; call IsKindOf`.
     {"dead_bomb_mode_check", addr::kDeadBombModeCheck,
