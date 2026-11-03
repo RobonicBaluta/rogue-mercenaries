@@ -259,7 +259,11 @@ without a key is placed again where it stood. E16: the combo read from the hooke
 and DirectInput (the game's `[JOYPAD]` names). E17 emulated (damage pulses in a cone through
 `uCharacter::SubHp`), E18 emulated (the player warp over 0.18 s with core invulnerability). E19:
 the action at `uPlayer+0x10F8` at the hit. E21 by the amount `uPlayer::AddHp` gets (60 percent of
-the maximum or more is a big heal), not by the item. E22 not attempted: Josh's backup is a stand-in
+the maximum or more is a big heal), not by the item. E22 lead (2026-11-03): the Port stage (s204) made
+Josh (`uPl04JoshCos1`, player slot 2, control 1) in a Mercenaries match, so the engine can run a
+computer player there; nothing in s204's set data creates him and the area load's player flags
+(game work `+0x478`) are not set by the stage, so the source is still unknown, and the `partner:` log
+lines will say whether he follows and fights. Until then Josh's backup is a stand-in
 (covering fire on the nearest enemy for the arena) until a real ally can be spawned. The special's
 cooldown HUD is an overlay ring at the bottom left.
 

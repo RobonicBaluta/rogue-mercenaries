@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <cmath>
+#include <map>
 #include <mutex>
 #include <string>
 
@@ -9,6 +11,8 @@
 #include "hooks.h"
 #include "imgui.h"
 #include "log.h"
+#include "memory.h"
+#include "re5_layout.h"
 
 namespace rmre5::probe {
 namespace {
@@ -38,6 +42,33 @@ void LogPlayers(const engine::PlayersSnapshot& players) {
             RM_LOGI("probe   slot=%d obj=%08X class=%s number=%d control=%d hp=%d/%d", p.slot,
                     static_cast<unsigned>(p.object), p.className.c_str(), p.number, p.control, p.hp.hp, p.hp.max);
         }
+    }
+}
+
+// A player besides the local one (the Port stage made Josh, control 1, in a Mercenaries match,
+// 2026-11-03): where it stands and what it does, every 5 s, so the logs say whether a computer
+// partner follows and fights there (ROADMAP E22, Josh's Call for Backup).
+void LogOtherPlayers(const engine::PlayersSnapshot& players, DWORD now) {
+    static std::map<std::uintptr_t, int> logged;
+    static DWORD last = 0;
+    if (now - last < 5000) return;
+    last = now;
+    std::uintptr_t local = 0;
+    for (const auto& p : players.players) {
+        if (p.object && p.slot == players.localSlot) local = p.object;
+    }
+    if (!local) return;
+    const float lx = ReadOr<float>(local + re5::off::kUnitPosition, 0.0f), ly = ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f);
+    const float lz = ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f);
+    for (const auto& p : players.players) {
+        if (!p.object || p.object == local || logged[p.object] >= 24) continue;
+        ++logged[p.object];
+        const float dx = ReadOr<float>(p.object + re5::off::kUnitPosition, 0.0f) - lx;
+        const float dy = ReadOr<float>(p.object + re5::off::kUnitPosition + 4, 0.0f) - ly;
+        const float dz = ReadOr<float>(p.object + re5::off::kUnitPosition + 8, 0.0f) - lz;
+        RM_LOGI("partner: slot %d %s control %d, %.1f m from the player (%+.1f m up), action %s, hp %d/%d", p.slot,
+                p.className.c_str(), p.control, std::sqrt(dx * dx + dz * dz) / 100.0f, dy / 100.0f,
+                engine::CurrentActionName(p.object).c_str(), p.hp.hp, p.hp.max);
     }
 }
 
@@ -74,6 +105,7 @@ void OnGameTick() {
     }
 
     const DWORD now = GetTickCount();
+    if (players.count > 1) LogOtherPlayers(players, now);
     if (g_intervalMs > 0 && now - g_lastProbe >= static_cast<DWORD>(g_intervalMs)) {
         g_lastProbe = now;
         const auto& status = Status();

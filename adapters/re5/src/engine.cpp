@@ -98,8 +98,10 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.pickupItem = SignatureOk("pickup_item") && SignatureOk("item_from_handle");
     g_caps.collision = SignatureOk("segment_hit");
     g_caps.dodge = SignatureOk("player_dodge_prep");
+    g_caps.turn = SignatureOk("char_turn_to");
     g_caps.matchQuit = g_caps.gameWork && SignatureOk("match_quit_state");
     g_caps.itemBoxGuard = g_caps.itemBox && SignatureOk("itembox_panel_update") && SignatureOk("itembox_panel_tab");
+    g_caps.itemBoxPictures = g_caps.itemBox && SignatureOk("itembox_picture_name");
     g_caps.actions = g_caps.characterSubHp && SignatureOk("change_action") && SignatureOk("player_change_action") &&
                      SignatureOk("enemy_change_action") && SignatureOk("player_action_table") &&
                      SignatureOk("em10_action_table");
@@ -337,15 +339,42 @@ std::string CurrentActionName(std::uintptr_t character) {
     return action ? ClassName(action) : std::string();
 }
 
-std::optional<float> ReadYaw(std::uintptr_t character) {
-    float yaw = 0.0f;
-    if (!character || !SafeRead(character + re5::off::kCharYaw, yaw) || !(yaw > -7.0f && yaw < 7.0f)) return std::nullopt;
-    return yaw;
+namespace {
+
+using TurnToFn = void(__thiscall*)(std::uintptr_t character, unsigned frames);
+
+bool CallTurnTo(std::uintptr_t fn, std::uintptr_t character, unsigned frames) {
+    __try {
+        reinterpret_cast<TurnToFn>(fn)(character, frames);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
 }
 
-bool WriteYaw(std::uintptr_t character, float yaw) {
-    if (!ReadYaw(character) || !(yaw > -7.0f && yaw < 7.0f)) return false;  // only over a value that looks like an angle
-    return SafeStore(character + re5::off::kCharYaw, yaw);
+}  // namespace
+
+bool TurnTo(std::uintptr_t character, float yaw, int frames) {
+    if (!g_caps.turn || !character || !(yaw > -7.0f && yaw < 7.0f)) return false;
+    // Only through the character's own virtual, when it is the routine the signature checked.
+    const auto vtable = ReadOr<std::uintptr_t>(character, 0);
+    const auto fn = vtable ? ReadOr<std::uintptr_t>(vtable + re5::off::kVtableTurnTo, 0) : 0;
+    if (fn != re5::addr::kFnCharTurnTo) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            RM_LOGW("turn: %s has %08X at the turn's slot, not the known one; not called", ClassName(character).c_str(),
+                    static_cast<unsigned>(fn));
+        }
+        return false;
+    }
+    if (!SafeStore(character + re5::off::kCharYaw, yaw)) return false;
+    if (!CallTurnTo(fn, character, static_cast<unsigned>(std::max(0, frames)))) {
+        RM_LOGW("turn: the turn faulted; turning off");
+        g_caps.turn = false;
+        return false;
+    }
+    return true;
 }
 
 int WarpUnit(std::uintptr_t unit, const float pos[3]) {

@@ -3,7 +3,9 @@
 // The game's Organize/Buy screen (uIdItemBox00) with a run in it (ROADMAP M7.1): Buy and Upgrade
 // belong to the mod's SHOP, so while the guard is on the screen keeps its top-menu cursor off
 // "Buy" and turns an "Upgrade" back into the organize grid. Organize, combine, details and sell
-// stay the game's. A hook on the screen's per-player panel update.
+// stay the game's. A hook on the screen's per-player panel update. While it is on, the screen's
+// item table also holds the run's guns the campaign never stocks (the Px4, the Samurai Edge),
+// so they have a picture and a preview model there; the table is put back when it goes off.
 namespace rmre5::itemboxguard {
 
 bool Install();

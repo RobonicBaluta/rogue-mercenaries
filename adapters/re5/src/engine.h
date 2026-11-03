@@ -24,8 +24,10 @@ struct Verified {
     bool collision = false;     // segment casts against the world (M8: Wesker's moves)
     bool matchQuit = false;     // the match's quit state (a run's quit writes no save)
     bool itemBoxGuard = false;  // the Organize screen's panels (no Buy or Upgrade with a run in it)
+    bool itemBoxPictures = false;  // the Organize screen's item table (pictures for the run's guns)
     bool actions = false;       // character actions by id (M8: staggers)
     bool dodge = false;         // the player's dodge, started the game's way (M8: Wesker's moves)
+    bool turn = false;          // a character turned the game's way (M8: Wesker faces his lunge's target)
     bool hitAttacker = false;
     bool gameWork = false;   // mode/stage/merc timer layout
     bool mercCountdown = false;
@@ -88,9 +90,9 @@ bool StartAction(std::uintptr_t character, int id, const char* expectedClass);
 bool StartDodge(std::uintptr_t player, const float toward[3]);
 /// The class of the character's current action (re5::off::kPlayerAction; "" without one).
 std::string CurrentActionName(std::uintptr_t character);
-/// The character's yaw (re5::off::kCharYaw, radians), and a write of it.
-std::optional<float> ReadYaw(std::uintptr_t character);
-bool WriteYaw(std::uintptr_t character, float yaw);
+/// Turns a character to face `yaw` (radians; facing (sin, cos) on the ground plane) the game's
+/// way (re5::addr::kFnCharTurnTo): at once under 2 frames, else over that many frames.
+bool TurnTo(std::uintptr_t character, float yaw, int frames);
 /// Moves a unit: every copy of its position in the object (the first 16 KB: transform, previous
 /// and movement positions) gets `pos`; writing +0x30 alone is undone by its movement. Returns
 /// the copies written (0: not moved). Verified on the player (s304: stays, walks on the floor).

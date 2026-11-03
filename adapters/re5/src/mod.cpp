@@ -1748,6 +1748,29 @@ int RemoveItemRecords(std::uint32_t id) {
     return removed;
 }
 
+bool IsWeaponItem(std::uint32_t id) {
+    const auto record = ItemRecord(id);
+    return record && ReadOr<std::int32_t>(record + 0x30, 0) == 3;
+}
+
+// The rounds in a held gun (its record's count).
+void SetWeaponRounds(std::uint32_t id, int rounds) {
+    const auto player = engine::LocalPlayer();
+    if (!player) return;
+    const auto inv = player + re5::off::kPlayerInventory;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        if (ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != id) continue;
+        const int before = ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0);
+        if (before != rounds) {
+            SafeStore<std::int32_t>(slot + re5::off::kSlotCount, rounds);
+            RM_LOGI("carried: weapon %04X rounds %d -> %d", id, before, rounds);
+        }
+        return;
+    }
+}
+
 // Before the match ends for the next stage: remember every item and count.
 void SnapshotInventory() {
     g->transition.carry = ReadInventory();
@@ -1763,9 +1786,15 @@ void SnapshotInventory() {
     RM_LOGI("stage change: inventory snapshot (%zu records): %s", g->transition.carry.size(), text.c_str());
 }
 
+void KeepInRunStash(std::uint32_t id, int count, const char* why);
+
 // In the new match: make the inventory match the snapshot. The game recreates the
-// character's own loadout, so stacks are topped up or shrunk and extra items re-created;
-// items that were used up are set to 0.
+// character's own loadout: its items the run no longer has go first and stacks are lowered,
+// so their cells are free before the run's items come back (with them still in the grid, a
+// full run lost its herbs and ammo, user playtest 2026-11-03); stacks are then topped up and
+// extra items re-created. What still does not fit is kept in the run's storage (ORGANIZE).
+// A gun's count is the ammo in it: a gun is there or not, and its rounds follow the snapshot
+// (an empty gun stays, empty; one held already is never copied into the storage).
 void ApplyCarriedInventory() {
     if (!engine::Caps().inventory || !engine::LocalPlayer()) return;
     RefreshPlaceableWeapons();
@@ -1773,19 +1802,30 @@ void ApplyCarriedInventory() {
     for (const auto& [id, count] : g->transition.carry) wanted[id] += count;
     std::map<std::uint32_t, int> have;
     for (const auto& [id, count] : ReadInventory()) have[id] += count;
-    for (const auto& [id, total] : wanted) {
-        const int current = have.count(id) ? have[id] : 0;
-        if (total > current) {
-            GiveItem("carried", id, total - current);
-        } else if (total < current) {
-            if (total <= 0) RemoveItemRecords(id); else ShrinkItem(id, total);
-            RM_LOGI("carried: item %04X shrunk %d -> %d", id, current, total);
-        }
-    }
     for (const auto& [id, current] : have) {
         if (wanted.count(id) == 0) {
             RemoveItemRecords(id);
             RM_LOGI("carried: item %04X was used up, removed", id);
+        }
+    }
+    for (const auto& [id, total] : wanted) {
+        const int current = have.count(id) ? have[id] : 0;
+        if (IsWeaponItem(id) || total >= current) continue;
+        if (total <= 0) RemoveItemRecords(id); else ShrinkItem(id, total);
+        RM_LOGI("carried: item %04X shrunk %d -> %d", id, current, total);
+    }
+    for (const auto& [id, total] : wanted) {
+        if (id == 0) continue;
+        if (IsWeaponItem(id)) {
+            const bool held = have.count(id) != 0 || GiveItem("carried", id, 1) > 0;
+            if (!held) KeepInRunStash(id, std::max(0, total), "could not be created after the stage change");
+            if (held) SetWeaponRounds(id, std::max(0, total));
+            continue;
+        }
+        const int current = have.count(id) ? have[id] : 0;
+        if (total > current) {
+            const int missing = (total - current) - GiveItem("carried", id, total - current);
+            if (missing > 0) KeepInRunStash(id, missing, "did not fit after the stage change");
         }
     }
     g->transition.carry.clear();
@@ -2635,12 +2675,14 @@ std::vector<std::pair<std::uintptr_t, float>> EnemiesAround(std::uintptr_t playe
 
 // ---- Wesker's moves (Uroboros Speed) -------------------------------------------------------------
 // The special (slot 0) dashes, or lunges (his long-range melee) at an enemy ahead: a staggered one
-// first, the state the game's melee prompt follows, so his own melee finishes it. The second
-// special (slot 1) is the burst. Every move is checked against the level with the game's own
-// segment query, the one its dodges use (engine::CastSegment): he stops short of walls and lands
-// on a floor within a step of his own, else he does not move. The dash and the lunge play his
-// own forward dodge (engine::StartDodge), started the way the game starts one. A Majini he hits
-// takes the game's own reaction (engine::StartAction).
+// first, the state the game's melee prompt follows. He turns to face it the game's way
+// (engine::TurnTo) and ends in front of it facing it, so the game's own melee prompt is up and his
+// own melee move finishes it. The second special (slot 1) is the burst. Every move is checked
+// against the level with the game's own segment query, the one its dodges use
+// (engine::CastSegment): he stops short of walls and lands on a floor within a step of his own,
+// else he does not move. The dash and the lunge play his own forward dodge (engine::StartDodge),
+// started the way the game starts one. A Majini he hits takes the game's own reaction
+// (engine::StartAction).
 constexpr double kDashSeconds = 0.15;
 constexpr double kLungeSeconds = 0.2;
 constexpr double kBurstSeconds = 0.3;
@@ -2808,23 +2850,26 @@ std::string StrikeEnemy(std::uintptr_t enemy, int damage, int reaction, double n
     return engine::StartAction(enemy, reaction, ReactionClass(reaction)) ? "reacts" : "hit (no reaction)";
 }
 
-// He turns to face a point. The yaw field is written only while it holds his facing the way
-// the rotation says it (one check per write), so a wrong guess about it changes nothing.
-void FacePoint(std::uintptr_t local, const float at[3]) {
-    const float px = ReadOr<float>(local + re5::off::kUnitPosition, 0.0f), pz = ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f);
+// He turns to face a point at once, the game's way (engine::TurnTo); true when his rotation then
+// faces it (within kFacingCone), which is what the game's melee prompt needs.
+constexpr float kFacingCone = 0.94f;  // cos 20 degrees
+
+bool FacePoint(std::uintptr_t local, const float at[3]) {
+    const float dx = at[0] - ReadOr<float>(local + re5::off::kUnitPosition, 0.0f);
+    const float dz = at[2] - ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f);
+    const float len = std::sqrt(dx * dx + dz * dz);
+    if (len < 1.0f) return true;
+    const float want = std::atan2(dx, dz);
+    const bool turned = engine::TurnTo(local, want, 0);
     float fx = 0.0f, fz = 1.0f;
-    const auto yaw = engine::ReadYaw(local);
-    if (!yaw || !PlayerFacing(local, fx, fz)) return;
-    float diff = *yaw - std::atan2(fx, fz);
-    while (diff > IM_PI) diff -= 2.0f * IM_PI;
-    while (diff < -IM_PI) diff += 2.0f * IM_PI;
-    static int mismatches = 0;
-    if (std::fabs(diff) > 0.25f) {
-        if (mismatches++ < 3) RM_LOGI("special: yaw %.2f does not match his facing %.2f; not turned", *yaw, std::atan2(fx, fz));
-        return;
+    const bool facing = PlayerFacing(local, fx, fz) && (fx * dx + fz * dz) / len >= kFacingCone;
+    static int logged = 0;
+    if (logged < 8 || (turned && !facing)) {
+        ++logged;
+        RM_LOGI("special: turn to %.2f %s; facing %.2f now (%s)", want, turned ? "done" : "refused", std::atan2(fx, fz),
+                facing ? "on target" : "off target");
     }
-    const float want = std::atan2(at[0] - px, at[2] - pz);
-    if (engine::WriteYaw(local, want)) RM_LOGD("special: turned %.2f -> %.2f", *yaw, want);
+    return facing;
 }
 
 // His own dodge plays over the move. A dodge still running after 1.5 s is ended (relax), so a
@@ -2900,6 +2945,8 @@ void StartDashMove(double now, const rm::SkinSpecial& sp, std::uintptr_t local, 
         g_move.victimStaggered = plan.staggered;
         for (int k = 0; k < 3; ++k) toward[k] = ReadOr<float>(plan.target + re5::off::kUnitPosition + k * 4, toward[k]);
         RM_LOGI("special: lunge %.1f m (%s) [%s]", plan.distance / 100.0f, plan.why.c_str(), source);
+        // He faces it before his forward dodge, so he dashes in the way he looks.
+        FacePoint(local, toward);
     } else {
         g_move.until = now + kDashSeconds;
         // Everyone on the line he runs through is hit as he passes.
@@ -3013,17 +3060,29 @@ void StepSpecial(double now) {
         if (g_move.move == "lunge" && g_move.victim) {
             float at[3];
             for (int k = 0; k < 3; ++k) at[k] = ReadOr<float>(g_move.victim + re5::off::kUnitPosition + k * 4, 0.0f);
-            FacePoint(local, at);
-            // A staggered one takes his ranged melee (a heavy blow, a Majini blown away); another is
-            // left reeling from a head hit, the state the game's melee prompt follows.
-            const bool staggered = g_move.victimStaggered;
-            const std::string result = StrikeEnemy(g_move.victim, staggered ? kLungeDamageStaggered : kLungeDamage,
-                                                   staggered ? re5::off::kEm10DmgFlyoff : re5::off::kEm10DmgHead, now);
-            RM_LOGI("special: lunge strikes %s%s: %s", engine::ClassName(g_move.victim).c_str(), staggered ? " (staggered)" : "",
-                    result.c_str());
-            if (!staggered && result != "killed" && result != "missed") {
+            const bool facing = FacePoint(local, at);
+            const auto hp = engine::ReadHp(g_move.victim);
+            const bool reeling = hp && hp->hp > 0 && Staggered(g_move.victim);
+            if (facing && reeling) {
+                // In front of it, facing it, while it reels: the game's own melee prompt is up and his
+                // own melee move finishes it (his ranged melee: the lunge, then the melee button).
+                RM_LOGI("special: lunge reached %s (%s), facing it: the game's melee finishes it",
+                        engine::ClassName(g_move.victim).c_str(), engine::CurrentActionName(g_move.victim).c_str());
                 g->notice = "MELEE";
                 g->noticeUntil = now + 1.5;
+            } else {
+                // Not facing it (the turn did not hold): a staggered one takes a heavy blow instead (a
+                // Majini blown away). Else it is left reeling from a head hit, the state the game's
+                // melee prompt follows.
+                const bool heavy = g_move.victimStaggered && !facing;
+                const std::string result = StrikeEnemy(g_move.victim, heavy ? kLungeDamageStaggered : kLungeDamage,
+                                                       heavy ? re5::off::kEm10DmgFlyoff : re5::off::kEm10DmgHead, now);
+                RM_LOGI("special: lunge strikes %s%s (%s): %s", engine::ClassName(g_move.victim).c_str(),
+                        g_move.victimStaggered ? " (was staggered)" : "", facing ? "facing it" : "not facing it", result.c_str());
+                if (!heavy && result != "killed" && result != "missed") {
+                    g->notice = "MELEE";
+                    g->noticeUntil = now + 1.5;
+                }
             }
         }
         EndSpecialMove("done");
@@ -3596,6 +3655,25 @@ struct RunInBox {
 };
 RunInBox g_runInBox;
 
+// An item the match cannot take now (a full grid, a gun whose model is not loaded here) goes to
+// the run's storage, the one the ORGANIZE screen shows, instead of being lost.
+void KeepInRunStash(std::uint32_t id, int count, const char* why) {
+    if (id == 0 || count <= 0) return;
+    if (g_runInBox.runId != g->run->state().run_id) {
+        g_runInBox.runId = g->run->state().run_id;
+        g_runInBox.remainder = 0;
+        g_runInBox.stash.clear();
+    }
+    std::array<std::uint8_t, 12> record{};
+    record[0] = static_cast<std::uint8_t>(id & 0xFF);
+    record[1] = static_cast<std::uint8_t>(id >> 8);
+    record[2] = static_cast<std::uint8_t>(count & 0xFF);
+    record[3] = static_cast<std::uint8_t>((count >> 8) & 0xFF);
+    g_runInBox.stash.push_back(record);
+    RM_LOGW("inventory: %04X x%d %s; kept in the run's storage (ORGANIZE)", id, count, why);
+    g->toasts.Push(GridItemName(id) + " is in the storage (ORGANIZE)");
+}
+
 
 void WriteSaveGrid(std::uintptr_t block, const std::array<GridCell, kGridCells>* grid) {
     for (int r = 0; r < kSaveGridRecords; ++r) {
@@ -3692,7 +3770,11 @@ void TakeRunFromSave(std::uintptr_t save) {
         std::snprintf(buf, sizeof(buf), " %d:%04Xx%d", cell, id, count);
         text += buf;
         if (ItemStackMax(id) == 0) {  // a weapon: its levels as the screen left them
-            const WeaponLevels levels = SlotLevels(rec);
+            WeaponLevels levels = SlotLevels(rec);
+            // Out of the storage with none (a gun the stage change could not place goes there
+            // without its levels): the run's levels for it stay, they never go down in a run.
+            const auto known = RunLevels().find(id);
+            if (levels == WeaponLevels{} && known != RunLevels().end()) levels = known->second;
             RunLevels()[id] = levels;
             std::snprintf(buf, sizeof(buf), "[%08X %08X]", levels[0], levels[1]);
             text += buf;
@@ -3730,24 +3812,8 @@ void TakeRunFromSave(std::uintptr_t save) {
         stashed += buf;
     }
     RM_LOGI("itembox: stash (%zu):%s", g_runInBox.stash.size(), stashed.c_str());
-    const auto wanted = g->transition.carry;
+    // What the match cannot take (a gun whose model is not loaded here) goes to the stash.
     ApplyCarriedInventory();
-    // What the match could not take (a gun whose model is not loaded here) goes to the stash.
-    std::map<std::uint32_t, int> have;
-    for (const auto& [id, count] : ReadInventory()) have[id] += count;
-    std::map<std::uint32_t, int> want;
-    for (const auto& [id, count] : wanted) want[id] += count;
-    for (const auto& [id, count] : want) {
-        const int missing = count - (have.count(id) ? have[id] : 0);
-        if (missing <= 0 || id == 0) continue;
-        std::array<std::uint8_t, 12> record{};
-        record[0] = static_cast<std::uint8_t>(id & 0xFF);
-        record[1] = static_cast<std::uint8_t>(id >> 8);
-        record[2] = static_cast<std::uint8_t>(missing & 0xFF);
-        record[3] = static_cast<std::uint8_t>((missing >> 8) & 0xFF);
-        g_runInBox.stash.push_back(record);
-        RM_LOGW("itembox: %04X x%d could not go into the match; kept in the stash", id, missing);
-    }
     // Supplies follow the gold; what is short of a whole supply waits for the next visit.
     const auto gold = static_cast<std::int64_t>(ReadOr<std::uint32_t>(save + kSaveGold, 0));
     const std::int64_t supplies = g->run->Snapshot(Now()).supplies;
@@ -3803,8 +3869,6 @@ bool NativeItemBoxReady() {
 void PollItemBox() {
     static double openedAt = 0.0;
     static bool paused = false;
-    // With the run in the screen, Buy and Upgrade are the SHOP's (user playtest 2026-11-03).
-    itemboxguard::SetGuard(g_itemBox != 0 && g_runInBox.active);
     if (g->itemBoxRequested && !matchui::IsOpen()) {
         g->itemBoxRequested = false;
         OpenItemBox({}, true);
@@ -3817,6 +3881,9 @@ void PollItemBox() {
             openedAt = Now();
         }
     }
+    // With the run in the screen, Buy and Upgrade are the SHOP's and its guns have pictures (user
+    // playtest 2026-11-03); set before the screen's first frame, cleared the tick after it goes.
+    itemboxguard::SetGuard(g_itemBox != 0 && g_runInBox.active);
     if (!g_itemBox) return;
     // Never stuck in it: after 90 s the screen goes (the save data is restored all the same).
     if (paused && Now() - openedAt > 90.0 && ReadOr<std::uint8_t>(g_itemBox + 0x3C, 0) == 0) {

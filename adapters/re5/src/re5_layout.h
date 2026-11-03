@@ -65,6 +65,13 @@ constexpr std::uintptr_t kFnPlayerActionTable = 0x00B7F090;
 // this prep (thiscall on [player+0x2D64]+0x220, the player as its argument; it resets a motion
 // state unless the player is reacting to damage), then ChangeAction(avoid_*, 0, 0, -1, 0).
 constexpr std::uintptr_t kFnPlayerDodgePrep = 0x00B82F10;
+// uCharacter's turn to the yaw at +0x1904 (thiscall: the character, frames; ret 4), virtual
+// +0x154 in every character vtable: under 2 frames it sets the unit's Euler Y (FUN_0048A7F0 get,
+// FUN_00489CE0 set; Y = theta faces (sin theta, cos theta)) to that yaw at once, else it stores a
+// per-frame step (+0x1908, +0x190C frames left, flag +0x18DD bit 2) that the virtual at 0x00B55DF0
+// applies. The co-op sync feeds it; the local player's own turning does not use +0x1904 (it reads
+// 0 there). Static analysis 2026-11-03.
+constexpr std::uintptr_t kFnCharTurnTo = 0x00B55D40;
 constexpr std::uintptr_t kFnEm10ActionTable = 0x00868590;
 constexpr std::uintptr_t kFnHitGetAttacker = 0x00C49530;  // cUnit* cHit::GetAttacker()
 constexpr std::uintptr_t kFnMercAddTime = 0x00718050;     // void ?::MercAddTime(int seconds)
@@ -269,6 +276,15 @@ constexpr std::uintptr_t kFnGameoverMove = 0x00A00B40;
 // Static analysis 2026-11-03 (mes_system 0x168 + the help ids name the modes).
 constexpr std::uintptr_t kFnItemBoxPanelUpdate = 0x00A0EF00;
 constexpr std::uintptr_t kFnItemBoxPanelTab = 0x00A09A40;
+// The same screen's item table: 105 records of 12 bytes (u16 item; u16 picture, the layout
+// element "item_NNN" cut from cockpit\cp05; u16 most per storage record, 1 for a gun; two flag
+// bytes; the model path its preview loads). Its picture lookup (stdcall: buffer, item) names
+// "item_094", which the layout lacks, for an item without a record; the grid's draw, the model
+// request and the storage sort (by record order) read the records directly, all within
+// 0x00A02950..0x00A06D10. Static analysis 2026-11-03 (the layout's rects decoded from cp05).
+constexpr std::uintptr_t kFnItemBoxPictureName = 0x00A02A10;
+constexpr std::uintptr_t kItemBoxTable = 0x01128C70;
+constexpr int kItemBoxTableRecords = 105;
 // The match's quit state (fastcall this = the match): its step byte at +5; step 0, in
 // Mercenaries (game mode 2), opens the save screen and writes the game's save when the
 // Mercenaries phase (game work +0x67C) is set. The game over's "No" and the pause menu's quit
@@ -303,7 +319,7 @@ constexpr std::size_t kMaxHp = 0x1366;  // int16
 constexpr std::size_t kPlayerAction = 0x10F8;
 // uCharacter actions: the instances, one per id (MtArray at +0x10CC: count +0x10D0, data +0x10DC),
 // the requested id (+0x10E0, INT_MIN none) and the yaw (+0x1904, radians: the co-op sync writes a
-// packed short times 2 pi / 65536 there).
+// packed short times 2 pi / 65536 there; the target of the turn, addr::kFnCharTurnTo).
 constexpr std::size_t kCharActionCount = 0x10D0;
 constexpr std::size_t kCharActionData = 0x10DC;
 constexpr std::size_t kCharActionRequest = 0x10E0;
@@ -314,6 +330,7 @@ constexpr std::size_t kDodgePrepOffset = 0x220;
 constexpr int kPlActRelax = 0x01;       // cPlAction_pl_act_relax
 constexpr int kPlActAvoidFront = 0x51;  // cPlAction_pl_act_avoid_front (toward the threat point)
 constexpr std::size_t kVtableChangeAction = 0xDC;
+constexpr std::size_t kVtableTurnTo = 0x154;
 constexpr std::uint32_t kCollisionMask = 0x3FFFFF00;  // the dodge picker's and the ground snap's
 constexpr std::uint32_t kSegmentBlocked = 4;          // the dodge picker's "blocked" bit
 // uEm10 (Majini) reactions, from its action table.
@@ -462,6 +479,8 @@ inline constexpr Signature kSignatures[] = {
     {"pickup_item", addr::kFnPickUpItem, "83 EC 38 56 8B 74 24 40 57 6A 01 8B CE E8 CE 20 37 00"},
     {"item_from_handle", addr::kFnItemFromHandle, "53 55 56 8B D9 8B 43 24 57 33 FF 85 C0 76 55 8B 6C 24 14 85"},
     {"player_dodge_prep", addr::kFnPlayerDodgePrep, "8B 44 24 04 8B 80 8C 2D 00 00 8B D0 C1 EA 08 F6"},
+    // `... lea eax, [esp+0x10]; push eax; mov esi, ecx; call GetEuler; mov eax, [ebp+8]; cmp eax, 1`.
+    {"char_turn_to", addr::kFnCharTurnTo, "55 8B EC 83 E4 F0 83 EC 1C 56 8D 44 24 10 50 8B F1 E8 9A 4A 93 FF 8B 45 08 83 F8 01"},
     {"segment_hit", addr::kFnSegmentHit, "55 8B EC 83 E4 F0 8B 55 08 F3 0F 10 52 08 F3 0F 5C 52 18"},
     {"change_action", addr::kFnChangeAction, "56 57 8B 7C 24 0C 81 FF 00 00 00 80 8B F1 74 5C"},
     {"player_change_action", addr::kFnPlayerChangeAction, "56 8B F1 80 BE 6C 2D 00 00 00 75 6C 8B 86 74 2A"},
@@ -517,6 +536,8 @@ inline constexpr Signature kSignatures[] = {
     {"gameover_decide_block", 0x00A00D66, "F3 0F 10 05 FC 02 FF 00 8B CE 88 9E 96 01 00 00 F3 0F 11 86 98 01 00 00 E8 CD F7 FF FF"},
     {"itembox_panel_update", addr::kFnItemBoxPanelUpdate, "57 8B F9 E8 68 40 FF FF 85 C0 0F 85 99 01 00 00"},
     {"itembox_panel_tab", addr::kFnItemBoxPanelTab, "8A 44 24 08 56 8B 74 24 08 88 46 18"},
+    // The picture lookup's scan of the item table (`movzx edi, word [eax + 0x01128C70]`).
+    {"itembox_picture_name", addr::kFnItemBoxPictureName, "8B 54 24 08 56 33 C9 57 BE 94 00 00 00 33 C0 90 0F B7 B8 70 8C 12 01"},
     {"match_quit_state", addr::kFnMatchQuitState, "57 8B F9 8A 47 05 0F B6 C8 83 F9 0C 0F 87 A1 00 00 00"},
     {"pause_move", addr::kFnPauseMove, "A1 A4 40 23 01 F7 80 34 04 01 00 00 05 00 00 56"},
     {"inventory_slot_clear", addr::kFnInventorySlotClear, "8B 44 24 04 53 56 57 50 8B F1 E8 B1 EE FF FF 6A 2C 33 DB 8D"},
