@@ -152,6 +152,7 @@ struct RunState {
     double damage_buff = 0.0;          // a build's heal: extra outgoing damage until damage_buff_until
     double damage_buff_until = -1.0;
     double special_ready_at = 0.0;     // the build's special: usable again from this time
+    double special_cooldown = 0.0;     // the cooldown its last use started (scaled per move)
     int special_used_arena = 0;        // arena of its last use (0 = never)
     int special_uses = 0;
     Phase phase = Phase::Idle;

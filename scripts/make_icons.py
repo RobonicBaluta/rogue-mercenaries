@@ -400,6 +400,28 @@ def fist():
     return s
 
 
+def lunge():
+    small = fist().mask.resize((int(CANVAS * 0.66), int(CANVAS * 0.66)), Image.LANCZOS)
+    s = Shape()
+    s.mask.paste(small, (int(32 * UNIT), int(18 * UNIT)))
+    s.d = ImageDraw.Draw(s.mask)
+    for y, x0, x1 in ((34, 6, 30), (50, 2, 30), (66, 6, 30)):                         # speed lines
+        s.line([(x0, y), (x1, y)], 3.4)
+    return s
+
+
+def shockwave():
+    s = Shape()
+    s.ellipse(50, 50, 12, 12)                                                        # the core
+    s.ring(50, 50, 28, 6.5)                                                          # two waves
+    s.ring(50, 50, 44, 5.0)
+    for a in (45, 135, 225, 315):                                                    # broken at the diagonals
+        r = math.radians(a)
+        s.line([(50 + 20 * math.cos(r), 50 + 20 * math.sin(r)), (50 + 50 * math.cos(r), 50 + 50 * math.sin(r))], 7.0,
+               cut=True)
+    return s
+
+
 def crown():
     s = Shape()
     s.poly([(10, 34), (30, 56), (50, 18), (70, 56), (90, 34), (82, 78), (18, 78)])
@@ -510,7 +532,7 @@ ICONS = {
     'supplies': supplies, 'last_stand': last_stand, 'shield': shield, 'medal': medal, 'explosion': explosion,
     'handgun': handgun, 'credits': credits, 'clock': clock, 'flag': flag, 'trophy': trophy, 'person': person,
     'mine': mine, 'gatling': gatling, 'bow': bow, 'key': key, 'dash': dash, 'dual_smg': dual_smg, 'radio': radio,
-    'fist': fist, 'crown': crown, 'star': big_star,
+    'fist': fist, 'crown': crown, 'star': big_star, 'lunge': lunge, 'shockwave': shockwave,
 }
 
 

@@ -41,12 +41,19 @@ MAX_PLAYER_DISTANCE = 3500
 STARTS = {
     100: (10492.5, 0.0, 7927.8), 104: (2123.6, -350.0, -10882.3), 105: (44.0, -99.8, -1147.4),
     113: (-92.9, 16.7, -4678.2), 114: (1266.0, 50.0, 1598.8), 202: (-3969.7, 301.2, 7726.8),
-    204: (33885.1, 50.7, -87305.7), 300: (-3314.4, 2996.6, 46320.6), 302: (1696.9, 950.0, 14451.7),
+    204: (33856.2, 112.7, -87173.7), 300: (-3314.4, 2996.6, 46320.6), 302: (1696.9, 950.0, 14451.7),
     310: (342.5, -1299.5, -23565.0), 314: (-2455.7, 900.0, -22567.5), 500: (529.4, 0.0, 2613.4),
     503: (1718.5, 0.0, 19263.3), 505: (-2253.9, 703.2, -723.6), 506: (-137.7, -700.0, 821.5),
     508: (-897.9, -4.2, 798.2), 700: (0.0, 0.0, 0.0), 103: (-810.0, -1200.0, -1140.0),
     304: (470.0, -10900.0, 524.0),
 }
+# Starts moved off the recorded spot. s204: the host puts the player on the boat the story arrives
+# on (33885 51 -87306), and the climb to the ledge is a story action that never appears here (user
+# playtest 2026-11-03: stuck in the boat; the vetting's nearest enemy never closed in). The start is
+# the ledge where that climb ends (its waypoints: boat 41-46, the climb 77, the ledge 113).
+# Points below a height are left out: nobody spawned there could leave either.
+BELOW = {204: 90.0}
+
 # Boss arenas (ROADMAP M6, scripts/test_boss_spawn.sh): the area the boss is fought in, the boss
 # (its class, a name for the menus, its health: the story's is far above a run's guns) and the
 # archives that come with its class. Their maps hold no roster; runs end on one.
@@ -125,6 +132,8 @@ for stage in args.stages:
         if any(math.hypot(x - q[0], z - q[2]) < MERGE_DISTANCE and abs(y - q[1]) < 200 for q in points):
             continue
         points.append([round(x, 1), round(y, 1), round(z, 1)])
+    if stage in BELOW:
+        points = [p for p in points if p[1] >= BELOW[stage]]
     chest_points = points
     if stage in STARTS:
         sx, sy, sz = STARTS[stage]
@@ -150,7 +159,11 @@ for stage in args.stages:
         entry['min_player_distance'], entry['max_player_distance'] = BOSS_PLAYER_DISTANCE
         entry['preload'] = boss['preload']
         entry['boss'] = {'class': boss['class'], 'name': boss['name'], 'hp': boss['hp']}
-    doc['maps'] = [m for m in doc['maps'] if m['stage'] != stage] + [entry]
+    # An area made again keeps its place in the list (the run map draws from it in order).
+    if any(m['stage'] == stage for m in doc['maps']):
+        doc['maps'] = [entry if m['stage'] == stage else m for m in doc['maps']]
+    else:
+        doc['maps'].append(entry)
     if stage in BOSSES:
         print(f's{stage}: {len(points)} points, {len(entry["chests"])} chests, boss {entry["boss"]["name"]} ({entry["boss"]["class"]})')
     else:

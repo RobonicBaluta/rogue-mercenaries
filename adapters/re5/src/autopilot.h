@@ -27,6 +27,9 @@ bool Armed();
 /// once the script has taken it. Needs CanChangeStage().
 void ReturnToTitle(bool on);
 bool ReturningToTitle();
+/// A run's match is on (the mod sets it every tick): if it is quit (the pause menu, the game
+/// over), the match's quit state finds the Mercenaries phase cleared and writes no save.
+void SetRunMatch(bool on);
 // Game thread: times out an autopilot that could not finish.
 void OnGameTick();
 

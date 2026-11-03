@@ -121,7 +121,7 @@ BUILDS = {
     },
     'wesker_midnight': {
         'name': 'Uroboros Speed', 'icon': 'dash',
-        'summary': 'The special button dashes forward, untouchable while he moves. He has only half his health.',
+        'summary': 'Special: a dash, a lunge at the enemy ahead or a burst when surrounded, untouchable. Half health.',
         'max_health_mult': 0.5,
         'special': {'kind': 'dash', 'name': 'Dash', 'icon': 'dash', 'cooldown_seconds': 2.5, 'power': 5,
                     'duration_seconds': 0.5},

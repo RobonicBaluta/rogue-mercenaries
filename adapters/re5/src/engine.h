@@ -21,6 +21,9 @@ struct Verified {
     bool playerSubHp = false;
     bool playerAddHp = false;   // healing items (M8: a build's heals)
     bool pickupItem = false;    // ground item pickups (M8: a build's drops)
+    bool collision = false;     // segment casts against the world (M8: Wesker's moves)
+    bool matchQuit = false;     // the match's quit state (a run's quit writes no save)
+    bool actions = false;       // character actions by id (M8: staggers)
     bool hitAttacker = false;
     bool gameWork = false;   // mode/stage/merc timer layout
     bool mercCountdown = false;
@@ -65,6 +68,22 @@ std::optional<CharacterHp> ReadHp(std::uintptr_t character);
 bool WriteHp(std::uintptr_t character, int hp);
 /// Sets a character's health and maximum to `hp` (bosses: the game's own suits story weapons).
 bool SetHealth(std::uintptr_t character, int hp);
+/// A segment cast against the world with the game's own query (re5::addr::kFnSegmentHit, the
+/// mask its dodge picker uses). `flags` is its raw result: non-zero hit something,
+/// re5::off::kSegmentBlocked set is what the dodge picker treats as a wall; `hit` is where.
+struct SegmentResult {
+    unsigned flags = 0;
+    float hit[3] = {};
+    [[nodiscard]] bool Blocked() const;
+};
+std::optional<SegmentResult> CastSegment(const float from[3], const float to[3]);
+/// Starts a character's action by id through its own ChangeAction (vtable 0xDC, one of the
+/// known implementations), with the arguments the game's dodges and co-op sync use. Only when
+/// the action instance at that id is of class `expectedClass`. False when refused or unsafe.
+bool StartAction(std::uintptr_t character, int id, const char* expectedClass);
+/// The character's yaw (re5::off::kCharYaw, radians), and a write of it.
+std::optional<float> ReadYaw(std::uintptr_t character);
+bool WriteYaw(std::uintptr_t character, float yaw);
 /// Moves a unit: every copy of its position in the object (the first 16 KB: transform, previous
 /// and movement positions) gets `pos`; writing +0x30 alone is undone by its movement. Returns
 /// the copies written (0: not moved). Verified on the player (s304: stays, walks on the floor).

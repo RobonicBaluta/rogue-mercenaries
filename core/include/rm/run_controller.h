@@ -283,8 +283,9 @@ public:
     [[nodiscard]] SpecialState Special(double now) const;
     /// Uses the build's special during an arena: NotEligible without one, while it cools down or
     /// before its arena limit allows it; a dash also starts its invulnerability. The adapter
-    /// performs the move itself.
-    Status UseSpecial(double now);
+    /// performs the move itself; `cooldown_scale` (> 0) lengthens or shortens this use's cooldown
+    /// (a dash build's stronger moves recover longer).
+    Status UseSpecial(double now, double cooldown_scale = 1.0);
     [[nodiscard]] bool Invulnerable(double now) const { return run_.active && now < run_.invulnerable_until; }
     /// Sum of queued heal fractions (capped at 1.0).
     [[nodiscard]] double PendingHeal() const;

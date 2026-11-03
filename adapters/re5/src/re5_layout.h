@@ -40,6 +40,25 @@ constexpr std::uintptr_t kFnPlayerAddHp = 0x00B7C8D0;
 // (dword +0x78) to the player (category 1 Create, 2 AddAmmo, others AddToStacks).
 constexpr std::uintptr_t kFnPickUpItem = 0x007E9DF0;
 constexpr std::uintptr_t kFnItemFromHandle = 0x007BEA20;
+// Collision: int __stdcall SegmentHit(const float seg[8] {start xyz, pad, end xyz, pad},
+// float hit[3], float out2[4], void* out3 (zeroed), 1, mask, 1). The query reads the collision
+// singleton [0x01249C64] itself. The player's dodge picker (0x00B6CEF0) casts its dodge lines with
+// it (through the yaw wrapper 0x0076E6A0) and treats `result & 4` as blocked; the ground snap
+// (0x00B590F0) casts down from 1 m above a unit and takes hit[1] as the floor when the result is
+// non-zero. Static analysis 2026-11-03, not yet called by the mod in game.
+constexpr std::uintptr_t kFnSegmentHit = 0x0076E520;
+// Character actions (uCharacter, players and enemies alike): bool ChangeAction(int id, int,
+// void* requester, int priority, int) is vtable slot 0xDC; the base 0x00B59030 refuses an id past
+// the list or while a stronger action holds (+0x10E8 > priority), then requests it (+0x10E0).
+// uPlayer (0x00B5C900) and uEnemy (0x009D9DC0) wrap the base. The game starts its dodges with
+// (id, 0, 0, -1, 0) and the co-op sync replays any action by id the same way.
+constexpr std::uintptr_t kFnChangeAction = 0x00B59030;
+constexpr std::uintptr_t kFnPlayerChangeAction = 0x00B5C900;
+constexpr std::uintptr_t kFnEnemyChangeAction = 0x009D9DC0;
+// Action tables ({DTI, 0} per id; vtable slots 0xE8 table, 0xEC count): uPlayer 0x0113AF80 (177),
+// uEm10 0x01115950 (157).
+constexpr std::uintptr_t kFnPlayerActionTable = 0x00B7F090;
+constexpr std::uintptr_t kFnEm10ActionTable = 0x00868590;
 constexpr std::uintptr_t kFnHitGetAttacker = 0x00C49530;  // cUnit* cHit::GetAttacker()
 constexpr std::uintptr_t kFnMercAddTime = 0x00718050;     // void ?::MercAddTime(int seconds)
 // void cMercs::UpdateCountdown(float dt): counts [this+0x4DC] down, sets the
@@ -236,6 +255,11 @@ constexpr std::uintptr_t kFnFlowToMercMenu = 0x00794F30;
 // title flow re-enters the Mercenaries menu. Offline, the game-flow requests of these screens
 // (kFnFlowToMercMenu, FUN_00794EC0) only record a result: [kGameFlow]+0x38 is null.
 constexpr std::uintptr_t kFnGameoverMove = 0x00A00B40;
+// The match's quit state (fastcall this = the match): its step byte at +5; step 0, in
+// Mercenaries (game mode 2), opens the save screen and writes the game's save when the
+// Mercenaries phase (game work +0x67C) is set. The game over's "No" and the pause menu's quit
+// both end here (2026-11-03: a run quit from the pause menu wrote the save).
+constexpr std::uintptr_t kFnMatchQuitState = 0x00720A50;
 constexpr std::uintptr_t kFnGameoverDecide = 0x00A00550;
 constexpr std::uintptr_t kGameoverDecideDelay = 0x00FF02FC;
 // void aGame::NotifyItemGet(int item, int count): the game's "item acquired"
@@ -263,6 +287,20 @@ constexpr std::size_t kMaxHp = 0x1366;  // int16
 // uPlayer: the current action object (cPlAction_pl_act_*: relax at rest, weapon_fire while a shot
 // lands, attack_* for the hand-to-hand moves, knife_attack).
 constexpr std::size_t kPlayerAction = 0x10F8;
+// uCharacter actions: the instances, one per id (MtArray at +0x10CC: count +0x10D0, data +0x10DC),
+// the requested id (+0x10E0, INT_MIN none) and the yaw (+0x1904, radians: the co-op sync writes a
+// packed short times 2 pi / 65536 there).
+constexpr std::size_t kCharActionCount = 0x10D0;
+constexpr std::size_t kCharActionData = 0x10DC;
+constexpr std::size_t kCharActionRequest = 0x10E0;
+constexpr std::size_t kCharYaw = 0x1904;
+constexpr std::size_t kVtableChangeAction = 0xDC;
+constexpr std::uint32_t kCollisionMask = 0x3FFFFF00;  // the dodge picker's and the ground snap's
+constexpr std::uint32_t kSegmentBlocked = 4;          // the dodge picker's "blocked" bit
+// uEm10 (Majini) reactions, from its action table.
+constexpr int kEm10DmgHead = 0x6D;    // cEm10ActDmgHead: head stagger (the melee prompt's state)
+constexpr int kEm10DmgFlyoff = 0x73;  // cEm10ActDmgFlyoff: blown away
+constexpr int kEm10DmgYoroke = 0x7C;  // cEm10ActDmgYoroke: stagger
 // uPlayer
 constexpr std::size_t kPlayerNumber = 0x2D9C;   // uint8, copied into enemy+0x136C on hit
 constexpr std::size_t kPlayerControl = 0x2DA8;  // int32; 0/1/2 observed in code paths (hypothesis: 2 = AI)
@@ -347,6 +385,7 @@ constexpr std::uint8_t kResultsExitState = 0x5A;
 // uIdGameover00 (see addr::kFnGameoverMove).
 constexpr std::uint8_t kGameoverInputState = 2;
 constexpr std::uint8_t kGameoverDecidedState = 3;
+constexpr std::size_t kMatchQuitStep = 0x05;  // uint8, kFnMatchQuitState's step
 constexpr std::size_t kGameoverCursor = 0x190;   // int32: 0 yes (retry), 1 no (quit)
 constexpr std::size_t kGameoverDecided = 0x196;  // uint8
 constexpr std::size_t kGameoverDelay = 0x198;    // float: frames until the exit states
@@ -398,6 +437,12 @@ inline constexpr Signature kSignatures[] = {
     {"player_add_hp", addr::kFnPlayerAddHp, "66 8B 44 24 04 56 8B F1 57 0F BF BE 64 13 00 00 66 01 86 64 13 00 00"},
     {"pickup_item", addr::kFnPickUpItem, "83 EC 38 56 8B 74 24 40 57 6A 01 8B CE E8 CE 20 37 00"},
     {"item_from_handle", addr::kFnItemFromHandle, "53 55 56 8B D9 8B 43 24 57 33 FF 85 C0 76 55 8B 6C 24 14 85"},
+    {"segment_hit", addr::kFnSegmentHit, "55 8B EC 83 E4 F0 8B 55 08 F3 0F 10 52 08 F3 0F 5C 52 18"},
+    {"change_action", addr::kFnChangeAction, "56 57 8B 7C 24 0C 81 FF 00 00 00 80 8B F1 74 5C"},
+    {"player_change_action", addr::kFnPlayerChangeAction, "56 8B F1 80 BE 6C 2D 00 00 00 75 6C 8B 86 74 2A"},
+    {"enemy_change_action", addr::kFnEnemyChangeAction, "C6 81 A0 1B 00 00 00 C7 44 24 14 00 00 00 00 E9"},
+    {"player_action_table", addr::kFnPlayerActionTable, "B8 80 AF 13 01 C3"},
+    {"em10_action_table", addr::kFnEm10ActionTable, "B8 50 59 11 01 C3"},
     {"hit_get_attacker", addr::kFnHitGetAttacker, "56 57 8B F9 8B 77 20"},
     // MercAddTime reads [kGameRoot]+kGameWork and adds to +kMercTimer.
     {"merc_add_time", addr::kFnMercAddTime, "A1 A4 40 23 01 56 8B 74 24 08 57 8B F9 8B 88 2C 04 01 00"},
@@ -445,6 +490,7 @@ inline constexpr Signature kSignatures[] = {
     // The move's decide: `movss xmm0, [delay]; mov ecx, esi; mov [esi+0x196], bl;
     // movss [esi+0x198], xmm0; call Decide`.
     {"gameover_decide_block", 0x00A00D66, "F3 0F 10 05 FC 02 FF 00 8B CE 88 9E 96 01 00 00 F3 0F 11 86 98 01 00 00 E8 CD F7 FF FF"},
+    {"match_quit_state", addr::kFnMatchQuitState, "57 8B F9 8A 47 05 0F B6 C8 83 F9 0C 0F 87 A1 00 00 00"},
     {"pause_move", addr::kFnPauseMove, "A1 A4 40 23 01 F7 80 34 04 01 00 00 05 00 00 56"},
     {"inventory_slot_clear", addr::kFnInventorySlotClear, "8B 44 24 04 53 56 57 50 8B F1 E8 B1 EE FF FF 6A 2C 33 DB 8D"},
     {"enemy_create", addr::kFnEnemyCreate, "8B 15 50 4F 1F 01 56 8B F1 8B 4C 24 08 39 51 04 74 20 8B 41"},

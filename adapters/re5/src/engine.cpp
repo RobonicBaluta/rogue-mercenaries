@@ -96,6 +96,11 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.playerSubHp = SignatureOk("player_sub_hp");
     g_caps.playerAddHp = SignatureOk("player_add_hp");
     g_caps.pickupItem = SignatureOk("pickup_item") && SignatureOk("item_from_handle");
+    g_caps.collision = SignatureOk("segment_hit");
+    g_caps.matchQuit = g_caps.gameWork && SignatureOk("match_quit_state");
+    g_caps.actions = g_caps.characterSubHp && SignatureOk("change_action") && SignatureOk("player_change_action") &&
+                     SignatureOk("enemy_change_action") && SignatureOk("player_action_table") &&
+                     SignatureOk("em10_action_table");
     g_caps.hitAttacker = SignatureOk("hit_get_attacker");
     g_caps.gameWork = SignatureOk("merc_add_time") && SignatureOk("merc_timer_store");
     g_caps.mercCountdown = g_caps.gameWork && SignatureOk("merc_update_countdown");
@@ -209,6 +214,96 @@ bool WriteHp(std::uintptr_t character, int hp) {
     }
     const auto clamped = static_cast<std::int16_t>(hp < 0 ? 0 : (hp > current->max ? current->max : hp));
     return SafeStore(character + re5::off::kHp, clamped);
+}
+
+bool SegmentResult::Blocked() const { return (flags & re5::off::kSegmentBlocked) != 0; }
+
+namespace {
+
+using SegmentHitFn = unsigned(__stdcall*)(const float* seg, float* hit, float* out2, void* out3, int a5,
+                                          std::uint32_t mask, int a7);
+
+bool CallSegmentHit(const float* seg, float* hit, float* out2, void* out3, unsigned& flags) {
+    __try {
+        flags = reinterpret_cast<SegmentHitFn>(re5::addr::kFnSegmentHit)(seg, hit, out2, out3, 1, re5::off::kCollisionMask, 1);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
+using ChangeActionFn = bool(__thiscall*)(std::uintptr_t self, int id, int a2, std::uintptr_t requester, int priority, int a5);
+
+bool CallChangeAction(std::uintptr_t fn, std::uintptr_t self, int id, bool& started) {
+    __try {
+        started = reinterpret_cast<ChangeActionFn>(fn)(self, id, 0, 0, -1, 0);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
+bool Finite(float v) { return v == v && v > -1.0e9f && v < 1.0e9f; }
+
+}  // namespace
+
+std::optional<SegmentResult> CastSegment(const float from[3], const float to[3]) {
+    if (!g_caps.collision) return std::nullopt;
+    for (int k = 0; k < 3; ++k) {
+        if (!Finite(from[k]) || !Finite(to[k])) return std::nullopt;
+    }
+    alignas(16) float seg[8] = {from[0], from[1], from[2], 0.0f, to[0], to[1], to[2], 0.0f};
+    alignas(16) float hit[4] = {};
+    alignas(16) float out2[4] = {};
+    alignas(16) unsigned char out3[32] = {};
+    SegmentResult r;
+    if (!CallSegmentHit(seg, hit, out2, out3, r.flags)) {
+        RM_LOGW("collision: segment query faulted; casts off");
+        g_caps.collision = false;
+        return std::nullopt;
+    }
+    for (int k = 0; k < 3; ++k) r.hit[k] = hit[k];
+    return r;
+}
+
+bool StartAction(std::uintptr_t character, int id, const char* expectedClass) {
+    if (!g_caps.actions || !character || id < 0) return false;
+    const auto hp = ReadHp(character);
+    if (!hp || hp->hp <= 0) return false;
+    const auto count = ReadOr<std::uint32_t>(character + re5::off::kCharActionCount, 0);
+    const auto data = ReadOr<std::uintptr_t>(character + re5::off::kCharActionData, 0);
+    if (static_cast<std::uint32_t>(id) >= count || count > 512 || !data) return false;
+    const auto action = ReadOr<std::uintptr_t>(data + static_cast<std::size_t>(id) * 4, 0);
+    if (!action || ClassName(action) != expectedClass) return false;
+    const auto vtable = ReadOr<std::uintptr_t>(character, 0);
+    const auto fn = vtable ? ReadOr<std::uintptr_t>(vtable + re5::off::kVtableChangeAction, 0) : 0;
+    if (fn != re5::addr::kFnPlayerChangeAction && fn != re5::addr::kFnEnemyChangeAction && fn != re5::addr::kFnChangeAction) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            RM_LOGW("actions: %s has ChangeAction %08X, not a known one; not called", ClassName(character).c_str(),
+                    static_cast<unsigned>(fn));
+        }
+        return false;
+    }
+    bool started = false;
+    if (!CallChangeAction(fn, character, id, started)) {
+        RM_LOGW("actions: ChangeAction faulted; actions off");
+        g_caps.actions = false;
+        return false;
+    }
+    return started;
+}
+
+std::optional<float> ReadYaw(std::uintptr_t character) {
+    float yaw = 0.0f;
+    if (!character || !SafeRead(character + re5::off::kCharYaw, yaw) || !(yaw > -7.0f && yaw < 7.0f)) return std::nullopt;
+    return yaw;
+}
+
+bool WriteYaw(std::uintptr_t character, float yaw) {
+    if (!ReadYaw(character) || !(yaw > -7.0f && yaw < 7.0f)) return false;  // only over a value that looks like an angle
+    return SafeStore(character + re5::off::kCharYaw, yaw);
 }
 
 int WarpUnit(std::uintptr_t unit, const float pos[3]) {

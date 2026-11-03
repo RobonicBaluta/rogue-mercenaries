@@ -40,6 +40,21 @@ Singleton instance pointers sit immediately before each class's DTI (verified-st
 | Player number | `uint8` at `uPlayer+0x2D9C` | verified-static | `uEnemy::OnHit` copies it into `enemy+0x136C` when the attacker is a uPlayer |
 | Control kind | `int32` at `uPlayer+0x2DA8`, values 0/1/2 seen in code | **hypothesis** (0 = local, 2 = AI) | player code branches on `== 2`; enemy death path skips work for `== 1` |
 
+## Character actions and collision (verified-static, 2026-11-03)
+
+Found for Wesker's moves (ROADMAP M8); called by the adapter from 2026-11-03, not yet observed in game.
+
+| Fact | Value | Status | Evidence |
+|---|---|---|---|
+| Action instances | `uCharacter` MtArray at `+0x10CC`: count `+0x10D0`, capacity `+0x10D4`, data `+0x10DC` (one instance per action id) | verified-static | `FUN_00B58F70(table, count)` builds it: per entry `dti->newInstance()`, `action->vfunc[0x14](this, param)` |
+| Current action | holder at `+0x10F4`, pointer `+0x10F8` (setter `0x00CF38F0`), next `+0x1100`, request `+0x10E0` (INT_MIN none), previous request `+0x10E4`, priority `+0x10E8`, timer `+0x10F0` | verified-static | `FUN_00B56600` (is-kind-of), `FUN_00B59340` (request) |
+| Action tables | `{DTI*, 0}` per id; vtable `+0xE8` table, `+0xEC` count. uPlayer `0x0113AF80` (177 ids: wait 0, relax 1, attack_straight 0x32, kick 0x33, lariat_uro 0x44, knee_bazooka 0x47..0x4D, avoid_front/back/left/right 0x51..0x54), uEm10 `0x01115950` (157 ids: DmgHead 0x6D, DmgKnee 0x71, DmgFlyoff 0x73, DmgYoroke 0x7C, DmgUpper 0x80) | verified-static | getters `0x00B7F090`/`0x00B7F0A0`, `0x00868590`/`0x008685A0` |
+| ChangeAction | vtable `+0xDC`, `bool __thiscall (int id, int, void* requester, int priority, int)`, `ret 0x14`. Base `0x00B59030` refuses INT_MIN, -1, id >= count, or `[+0x10E8] > priority`; stores requester at `action+0xC`, requests the id, clears `+0x10F0`, notifies `[0x01249C1C]`. uPlayer `0x00B5C900` and uEnemy `0x009D9DC0` wrap it | verified-static | 583 vtables hold the base at `+0xDC` (uCharacter `0x00F6D580` among them); the game's dodges call `(0x51..0x54, 0, 0, -1, 0)`; the co-op sync (`0x00789EE0`, `0x0078A090`, `0x0078A430`) replays any unit's action by id the same way |
+| Yaw | float radians at `uCharacter+0x1904` | verified-static | the co-op sync writes `(short) * 2 pi / 65536` there with the position |
+| Dodge picker | `FUN_00B6CEF0(?, player index, ...)`: threat point at `player+0x2E10`, `FUN_00B82F10(player)`, then lines right, left, back from 0.5 above the feet (`[0x011B27B4]+0x33C` high, `+0x344` long) and the first free one (`result & 4` clear) picks avoid_right, avoid_left, avoid_back, else avoid_front | verified-static | decompiled |
+| Segment query | `unsigned __stdcall FUN_0076E520(const float seg[8] {start, pad, end, pad}, float hit[3], float out2[4], void* out3, int, unsigned mask, int)`, `ret 0x1C`; 0 when the segment is under 0.1 units; reads the collision singleton `[0x01249C64]`. `FUN_0076E6A0` wraps it with two local points, an origin and a yaw. Mask `0x3FFFFF00` | verified-static | the dodge picker treats `& 4` as blocked; the ground snap `FUN_00B590F0` casts from 1 m above a unit to `[0x011B27B4]+0x94` below and takes `hit[1]` as the floor when the result is non-zero |
+| Match quit state | `FUN_00720A50` (fastcall, the match), step byte `+5`; step 0 in game mode 2 opens the save screen (the save is written) when game work `+0x67C` is set | verified-static, observed: a run quit from the pause menu wrote the save (2026-11-03) | decompiled |
+
 ## Enemies and damage
 
 | Fact | Value | Status |

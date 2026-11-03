@@ -253,6 +253,15 @@ the maximum or more is a big heal), not by the item. E22 not attempted: Josh's b
 (covering fire on the nearest enemy for the arena) until a real ally can be spawned. The special's
 cooldown HUD is an overlay ring at the bottom left.
 
+First playtest (2026-11-03): Midnight's dash dealt no damage and sometimes passed through walls; the user asked for his
+long-range melee and more attacks. From the game's own code (`research/re5-engine-map.md`, "Character actions and
+collision"): every move is now checked with the collision query the game's dodges use, and enemies take the game's
+own reactions through their ChangeAction. Wesker's special picks a burst, a lunge (his long-range melee: the Majini
+is left in the head-hit state the melee prompt follows) or a dash. Next for E17/E18: starting the player's own
+actions (attack_*, avoid_*) the same way, once a playtest shows the enemy reactions work. Port (s204) started the
+player on the story's boat, whose climb to the ledge is a two-person move: the start is now the ledge. A run quit
+from the pause menu wrote the game's save: the match's quit state now finds the Mercenaries phase cleared.
+
 Order: B1 to B7 with the builds that need no engine work (Warrior, Clubbin', Business, Fairy Tale,
 S.T.A.R.S. Chris, Barry), then E19/E20/E21 (Wesker S.T.A.R.S., Excella, Rebecca), E13/E14 and item
 ids (Safari, Heavy Metal, Tribal), B8/E15 (keys, Jill BSAA), then E16 with E17/E18/E22 (Battle

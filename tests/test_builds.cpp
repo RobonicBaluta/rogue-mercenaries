@@ -404,6 +404,14 @@ TEST_CASE("a special keeps its cooldown, its arena limit and a dash's invulnerab
     CHECK(h.rc.Special(2.0).cooldown_left == Catch::Approx(2.0));
     CHECK_FALSE(h.rc.Special(2.0).ready);
     CHECK(h.rc.UseSpecial(4.1).ok());
+    // A stronger move recovers longer, and the HUD's total follows it.
+    CHECK(h.rc.UseSpecial(7.2, 2.0).ok());
+    CHECK(h.rc.Special(8.2).cooldown_total == Catch::Approx(6.0));
+    CHECK(h.rc.Special(8.2).cooldown_left == Catch::Approx(5.0));
+    CHECK(h.rc.UseSpecial(13.1).code == ErrorCode::NotEligible);
+    CHECK(h.rc.UseSpecial(13.3).ok());
+    CHECK(h.rc.Special(13.3).cooldown_total == Catch::Approx(3.0));
+    CHECK(h.rc.UseSpecial(20.0, 0.0).code == ErrorCode::InvalidArgument);
 
     const json backup = {{"special", {{"kind", "backup"}, {"name", "Backup"}, {"every_arenas", 2}}}};
     test::Harness josh(test::Load(BuildSources(backup)));

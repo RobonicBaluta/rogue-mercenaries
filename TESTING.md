@@ -65,6 +65,9 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | keys | `keys: a key dropped, N held`; `keys: chest locked (no key), it comes back`; `keys: locked chest back at x y z` |
 | Twin Fury, Backup | `enemy XXXXXXXX died (health reached zero): counted, N remain (by the special)` |
 | health | `build: maximum health A -> B (xM)` |
+| Wesker's moves | `special: dash X of 5.0 m (clear (flags F) / wall at Y m (flags F)[, floor at N percent])[, hits: killed reacts ...]`; `special: lunge X m (uEm10 at N m, ...)` then `special: lunge strikes uEm10: reacts`; `special: burst (N enemies on him): reacts ...`; `special: yaw ... does not match his facing` if the facing write is skipped |
+| quitting a run | `autopilot: a run's match quits; Mercenaries phase N cleared (no save screen, no save)` |
+| kills not by the player | `enemy_hit ... killed=1 by=<class>` |
 
 ## Commands
 

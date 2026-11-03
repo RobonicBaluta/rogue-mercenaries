@@ -1853,6 +1853,7 @@ public:
 InventoryBridge g_inventoryBridge;
 
 constexpr float kStartTolerance = 1000.0f;  // engine units (10 m) from the map's start
+constexpr float kStartLevel = 40.0f;        // or another level there (s204: the boat under the ledge)
 
 // The skin build's maximum health (M8, Barry): once per match, scaled from the maximum the match
 // started with; health is then full (a stage change restores the carried health after this).
@@ -1929,9 +1930,10 @@ void ArenaBegan(double now) {
         const float dy = ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f) - to[1];
         const float dz = ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) - to[2];
         const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-        if (local && distance > kStartTolerance) {
+        if (local && (distance > kStartTolerance || std::fabs(dy) > kStartLevel)) {
             const int copies = engine::WarpUnit(local, to);
-            RM_LOGI("arena start: player %.0f m from the map's start; moved there (%d copies)", distance / 100.0f, copies);
+            RM_LOGI("arena start: player %.1f m from the map's start (%.1f m %s); moved there (%d copies)", distance / 100.0f,
+                    std::fabs(dy) / 100.0f, dy < 0.0f ? "below" : "above", copies);
         }
     }
     std::string line = map != nullptr ? Upper(Plain(map->name)) : std::string();
@@ -2403,12 +2405,14 @@ bool PlayerFacing(std::uintptr_t player, float& fx, float& fz) {
 // The move in progress.
 struct SpecialMove {
     std::string kind;  // empty: none
+    std::string move;  // a dash special's move: "dash", "lunge" or "burst"
     double start = 0.0;
     double until = 0.0;
     double nextPulse = 0.0;
     float origin[3] = {};
+    float end[3] = {};           // dash and lunge: where he stops, on the floor
+    std::uintptr_t victim = 0;   // lunge: the enemy struck on arrival
     float dirX = 0.0f, dirZ = 1.0f;
-    float distance = 0.0f;  // engine units
     int damage = 0;
     int hits = 0;
     int pulses = 0;
@@ -2417,7 +2421,6 @@ SpecialMove g_move;
 bool g_comboHeld = false;
 double g_specialDeniedUntil = 0.0;
 
-constexpr double kDashSeconds = 0.18;
 constexpr double kSmgPulse = 0.15;
 constexpr float kSmgRange = 1400.0f;     // 14 m
 constexpr float kSmgCone = 0.766f;       // cos 40 degrees
@@ -2427,48 +2430,9 @@ constexpr int kBackupDamage = 150;
 
 void EndSpecialMove(const char* why) {
     if (g_move.kind.empty()) return;
-    RM_LOGI("special: %s over (%s): %d pulses, %d hits", g_move.kind.c_str(), why, g_move.pulses, g_move.hits);
+    RM_LOGI("special: %s%s%s over (%s): %d pulses, %d hits", g_move.kind.c_str(), g_move.move.empty() ? "" : " ",
+            g_move.move.c_str(), why, g_move.pulses, g_move.hits);
     g_move = {};
-}
-
-void StartSpecial(double now) {
-    rm::RunController& run = *g->run;
-    const rm::SpecialState state = run.Special(now);
-    if (state.kind.empty()) return;
-    const rm::Status used = run.UseSpecial(now);
-    if (!used.ok()) {
-        if (now >= g_specialDeniedUntil) {
-            g->notice = Upper(Plain(state.name)) + (state.arenas_left > 0 ? "   NOT THIS ARENA" : "   NOT READY");
-            g->noticeUntil = now + 1.5;
-            g_specialDeniedUntil = now + 1.0;
-        }
-        return;
-    }
-    const auto local = engine::LocalPlayer();
-    const rm::SkinSpecial& sp = run.state().character.build.special;
-    EndSpecialMove("replaced");
-    g_move.kind = sp.kind;
-    g_move.start = now;
-    for (int k = 0; k < 3; ++k) g_move.origin[k] = ReadOr<float>(local + re5::off::kUnitPosition + k * 4, 0.0f);
-    PlayerFacing(local, g_move.dirX, g_move.dirZ);
-    if (sp.kind == "dash") {
-        g_move.distance = static_cast<float>(sp.power > 0.0 ? sp.power : 5.0) * 100.0f;
-        g_move.until = now + kDashSeconds;
-    } else if (sp.kind == "dual_smg") {
-        g_move.damage = static_cast<int>(sp.power > 0.0 ? sp.power : 90.0);
-        g_move.until = now + (sp.duration_seconds > 0.0 ? sp.duration_seconds : 1.5);
-        g_move.nextPulse = now;
-    } else if (sp.kind == "backup") {
-        // Stand-in until a real computer ally can be spawned (ROADMAP E22): covering fire on the
-        // nearest enemy for the rest of the arena.
-        g_move.damage = static_cast<int>(sp.power > 0.0 ? sp.power : kBackupDamage);
-        g_move.until = now + 1.0e9;
-        g_move.nextPulse = now + 0.5;
-    }
-    g->notice = Upper(Plain(sp.name));
-    g->noticeUntil = now + 2.0;
-    RM_LOGI("special: %s used at %.0f %.0f %.0f facing %.2f %.2f", sp.kind.c_str(), g_move.origin[0], g_move.origin[1],
-            g_move.origin[2], g_move.dirX, g_move.dirZ);
 }
 
 // Enemies in front of the player within range (cone: cos of the half angle; -1 = all around).
@@ -2487,6 +2451,280 @@ std::vector<std::pair<std::uintptr_t, float>> EnemiesAround(std::uintptr_t playe
     return out;
 }
 
+// ---- Wesker's moves (Uroboros Speed, the "dash" special) ----------------------------------------
+// The button's move depends on what is around him: a burst when enemies are on him, a lunge (his
+// long-range melee) at an enemy lined up ahead, else a dash. Each is checked against the world
+// with the game's own segment query, the one its dodges use (engine::CastSegment): he stops short
+// of walls and lands on a floor within a step of his own, else he does not move. A Majini he hits
+// takes the game's own reaction (engine::StartAction): the dash staggers it, the lunge leaves it
+// reeling from a head hit (the state the game's melee prompt follows), the burst blows it away.
+constexpr double kDashSeconds = 0.15;
+constexpr double kLungeSeconds = 0.2;
+constexpr double kBurstSeconds = 0.3;
+constexpr float kChestHeight = 110.0f;    // the wall check's height above his feet
+constexpr float kWallMargin = 60.0f;      // he stops this far before a wall
+constexpr float kMaxStep = 150.0f;        // a floor further above or below is not taken
+constexpr float kDashHitRadius = 120.0f;  // enemies this close to the dash's line are hit
+constexpr int kDashDamage = 200;
+constexpr float kLungeRange = 1200.0f;    // 12 m
+constexpr float kLungeCone = 0.906f;      // cos 25 degrees
+constexpr float kLungeStop = 110.0f;      // he ends this far in front of the enemy
+constexpr int kLungeDamage = 300;
+constexpr float kBurstTrigger = 250.0f;   // two enemies this close: a burst
+constexpr float kBurstRadius = 350.0f;
+constexpr int kBurstDamage = 350;
+constexpr double kLungeCooldown = 1.2;    // times the special's cooldown
+constexpr double kBurstCooldown = 2.4;
+
+struct DashPlan {
+    std::string move;  // "dash", "lunge", "burst"
+    std::uintptr_t target = 0;
+    float end[3] = {};
+    float distance = 0.0f;  // engine units travelled
+    std::string why;        // for the log: what shaped it
+};
+std::string g_armedMove;    // the HUD: what the button would do now
+double g_armedAt = -1.0;
+
+float Horizontal(const float a[3], const float b[3]) {
+    const float dx = b[0] - a[0], dz = b[2] - a[2];
+    return std::sqrt(dx * dx + dz * dz);
+}
+
+// The floor under (x, z) near height y: a cast from a step above down past a step below.
+bool FloorAt(float x, float y, float z, float& floorY) {
+    const float from[3] = {x, y + kMaxStep, z};
+    const float to[3] = {x, y - 2.0f * kMaxStep, z};
+    const auto r = engine::CastSegment(from, to);
+    if (!r || r->flags == 0) return false;
+    floorY = r->hit[1];
+    return std::fabs(floorY - y) <= kMaxStep;
+}
+
+// How far he can go from `from` along (dx, dz), up to `want`: the wall check at chest height, then
+// a floor at the end (shortened in fifths until there is one). Writes the end; 0 = no move.
+float ClearDistance(const float from[3], float dx, float dz, float want, float end[3], std::string& why) {
+    for (int k = 0; k < 3; ++k) end[k] = from[k];
+    float reach = want;
+    const float a[3] = {from[0], from[1] + kChestHeight, from[2]};
+    const float b[3] = {from[0] + dx * want, from[1] + kChestHeight, from[2] + dz * want};
+    const auto wall = engine::CastSegment(a, b);
+    if (!wall) {
+        why = "no collision query";
+        return 0.0f;
+    }
+    char text[96];
+    if (wall->Blocked()) {
+        const float hitAt[3] = {wall->hit[0], from[1], wall->hit[2]};
+        reach = std::clamp(Horizontal(from, hitAt) - kWallMargin, 0.0f, want);
+        std::snprintf(text, sizeof(text), "wall at %.1f m (flags %X)", (reach + kWallMargin) / 100.0f, wall->flags);
+    } else {
+        std::snprintf(text, sizeof(text), "clear (flags %X)", wall->flags);
+    }
+    why = text;
+    for (int fifth = 5; fifth >= 1; --fifth) {
+        const float d = reach * static_cast<float>(fifth) / 5.0f;
+        if (d < 30.0f) break;
+        float floorY = 0.0f;
+        if (FloorAt(from[0] + dx * d, from[1], from[2] + dz * d, floorY)) {
+            end[0] = from[0] + dx * d;
+            end[1] = floorY;
+            end[2] = from[2] + dz * d;
+            if (fifth < 5) why += ", floor at " + std::to_string(fifth * 20) + " percent";
+            return d;
+        }
+    }
+    why += ", no floor";
+    return 0.0f;
+}
+
+// What the button does now, with the world checked.
+DashPlan PlanDash(std::uintptr_t local, float dashDistance) {
+    DashPlan plan;
+    float origin[3];
+    for (int k = 0; k < 3; ++k) origin[k] = ReadOr<float>(local + re5::off::kUnitPosition + k * 4, 0.0f);
+    float fx = 0.0f, fz = 1.0f;
+    PlayerFacing(local, fx, fz);
+    // Burst: two enemies on him.
+    int close = 0;
+    for (const auto& [enemy, d] : EnemiesAround(local, kBurstTrigger, -1.0f, 0.0f, 1.0f)) {
+        if (std::fabs(ReadOr<float>(enemy + re5::off::kUnitPosition + 4, 0.0f) - origin[1]) < kMaxStep) ++close;
+    }
+    if (close >= 2) {
+        plan.move = "burst";
+        for (int k = 0; k < 3; ++k) plan.end[k] = origin[k];
+        plan.why = std::to_string(close) + " enemies on him";
+        return plan;
+    }
+    // Lunge: the nearest enemies lined up ahead, first one he can reach.
+    auto ahead = EnemiesAround(local, kLungeRange, kLungeCone, fx, fz);
+    std::sort(ahead.begin(), ahead.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+    int tried = 0;
+    for (const auto& [enemy, d] : ahead) {
+        if (tried++ >= 3) break;
+        float at[3];
+        for (int k = 0; k < 3; ++k) at[k] = ReadOr<float>(enemy + re5::off::kUnitPosition + k * 4, 0.0f);
+        if (std::fabs(at[1] - origin[1]) > 2.0f * kMaxStep || d < kLungeStop + 50.0f) continue;
+        const float dx = (at[0] - origin[0]) / d, dz = (at[2] - origin[2]) / d;
+        const float want = d - kLungeStop;
+        std::string why;
+        float end[3];
+        const float reach = ClearDistance(origin, dx, dz, want, end, why);
+        if (reach >= want * 0.85f) {
+            plan.move = "lunge";
+            plan.target = enemy;
+            plan.distance = reach;
+            for (int k = 0; k < 3; ++k) plan.end[k] = end[k];
+            plan.why = engine::ClassName(enemy) + " at " + std::to_string(static_cast<int>(d / 100.0f)) + " m, " + why;
+            return plan;
+        }
+    }
+    // Dash.
+    plan.move = "dash";
+    plan.distance = ClearDistance(origin, fx, fz, dashDistance, plan.end, plan.why);
+    return plan;
+}
+
+// A Majini's reaction to one of his hits (other classes have other actions at these ids: the
+// class name check in engine::StartAction leaves them alone).
+const char* ReactionClass(int id) {
+    switch (id) {
+        case re5::off::kEm10DmgHead: return "cEm10ActDmgHead";
+        case re5::off::kEm10DmgFlyoff: return "cEm10ActDmgFlyoff";
+        case re5::off::kEm10DmgYoroke: return "cEm10ActDmgYoroke";
+        default: return "";
+    }
+}
+
+// One of his hits: damage, then (if it lives) the game's reaction. Returns a word for the log.
+std::string StrikeEnemy(std::uintptr_t enemy, int damage, int reaction, double now) {
+    if (!director::Damage(enemy, damage)) return "missed";
+    ++g_move.hits;
+    g_specialVictims[enemy] = now;
+    const auto hp = engine::ReadHp(enemy);
+    if (!hp || hp->hp <= 0) return "killed";
+    return engine::StartAction(enemy, reaction, ReactionClass(reaction)) ? "reacts" : "hit (no reaction)";
+}
+
+// He turns to face a point. The yaw field is written only while it holds his facing the way
+// the rotation says it (one check per write), so a wrong guess about it changes nothing.
+void FacePoint(std::uintptr_t local, const float at[3]) {
+    const float px = ReadOr<float>(local + re5::off::kUnitPosition, 0.0f), pz = ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f);
+    float fx = 0.0f, fz = 1.0f;
+    const auto yaw = engine::ReadYaw(local);
+    if (!yaw || !PlayerFacing(local, fx, fz)) return;
+    float diff = *yaw - std::atan2(fx, fz);
+    while (diff > IM_PI) diff -= 2.0f * IM_PI;
+    while (diff < -IM_PI) diff += 2.0f * IM_PI;
+    static int mismatches = 0;
+    if (std::fabs(diff) > 0.25f) {
+        if (mismatches++ < 3) RM_LOGI("special: yaw %.2f does not match his facing %.2f; not turned", *yaw, std::atan2(fx, fz));
+        return;
+    }
+    const float want = std::atan2(at[0] - px, at[2] - pz);
+    if (engine::WriteYaw(local, want)) RM_LOGD("special: turned %.2f -> %.2f", *yaw, want);
+}
+
+void StartDashMove(double now, const rm::SkinSpecial& sp, std::uintptr_t local) {
+    rm::RunController& run = *g->run;
+    const float dashDistance = static_cast<float>(sp.power > 0.0 ? sp.power : 5.0) * 100.0f;
+    const DashPlan plan = PlanDash(local, dashDistance);
+    const double scale = plan.move == "burst" ? kBurstCooldown : plan.move == "lunge" ? kLungeCooldown : 1.0;
+    const rm::Status used = run.UseSpecial(now, scale);
+    if (!used.ok()) {
+        if (now >= g_specialDeniedUntil) {
+            g->notice = Upper(plan.move) + "   NOT READY";
+            g->noticeUntil = now + 1.5;
+            g_specialDeniedUntil = now + 1.0;
+        }
+        return;
+    }
+    EndSpecialMove("replaced");
+    g_move.kind = sp.kind;
+    g_move.move = plan.move;
+    g_move.start = now;
+    for (int k = 0; k < 3; ++k) {
+        g_move.origin[k] = ReadOr<float>(local + re5::off::kUnitPosition + k * 4, 0.0f);
+        g_move.end[k] = plan.end[k];
+    }
+    if (plan.move == "burst") {
+        g_move.until = now + kBurstSeconds;
+        std::string results;
+        for (const auto& [enemy, d] : EnemiesAround(local, kBurstRadius, -1.0f, 0.0f, 1.0f)) {
+            (void)d;
+            results += " " + StrikeEnemy(enemy, kBurstDamage, re5::off::kEm10DmgFlyoff, now);
+        }
+        RM_LOGI("special: burst (%s):%s", plan.why.c_str(), results.empty() ? " nobody in reach" : results.c_str());
+    } else if (plan.move == "lunge") {
+        g_move.until = now + kLungeSeconds;
+        g_move.victim = plan.target;
+        RM_LOGI("special: lunge %.1f m (%s)", plan.distance / 100.0f, plan.why.c_str());
+    } else {
+        g_move.until = now + kDashSeconds;
+        // Everyone on the line he runs through is hit as he passes.
+        std::string results;
+        const float len = Horizontal(g_move.origin, g_move.end);
+        if (len > 1.0f) {
+            const float ux = (g_move.end[0] - g_move.origin[0]) / len, uz = (g_move.end[2] - g_move.origin[2]) / len;
+            for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
+                if (e.hp <= 0) continue;
+                const float ex = ReadOr<float>(e.object + re5::off::kUnitPosition, 0.0f) - g_move.origin[0];
+                const float ey = ReadOr<float>(e.object + re5::off::kUnitPosition + 4, 0.0f) - g_move.origin[1];
+                const float ez = ReadOr<float>(e.object + re5::off::kUnitPosition + 8, 0.0f) - g_move.origin[2];
+                const float along = ex * ux + ez * uz;
+                const float off = std::fabs(ex * uz - ez * ux);
+                if (along < 0.0f || along > len + kDashHitRadius || off > kDashHitRadius || std::fabs(ey) > kMaxStep) continue;
+                results += " " + StrikeEnemy(e.object, kDashDamage, re5::off::kEm10DmgYoroke, now);
+            }
+        }
+        RM_LOGI("special: dash %.1f of %.1f m (%s)%s%s", plan.distance / 100.0f, dashDistance / 100.0f, plan.why.c_str(),
+                results.empty() ? "" : ", hits:", results.c_str());
+    }
+    g->notice = Upper(plan.move);
+    g->noticeUntil = now + 1.2;
+}
+
+void StartSpecial(double now) {
+    rm::RunController& run = *g->run;
+    const rm::SpecialState state = run.Special(now);
+    if (state.kind.empty()) return;
+    const auto local = engine::LocalPlayer();
+    const rm::SkinSpecial& sp = run.state().character.build.special;
+    if (sp.kind == "dash") {
+        if (local) StartDashMove(now, sp, local);
+        return;
+    }
+    const rm::Status used = run.UseSpecial(now);
+    if (!used.ok()) {
+        if (now >= g_specialDeniedUntil) {
+            g->notice = Upper(Plain(state.name)) + (state.arenas_left > 0 ? "   NOT THIS ARENA" : "   NOT READY");
+            g->noticeUntil = now + 1.5;
+            g_specialDeniedUntil = now + 1.0;
+        }
+        return;
+    }
+    EndSpecialMove("replaced");
+    g_move.kind = sp.kind;
+    g_move.start = now;
+    for (int k = 0; k < 3; ++k) g_move.origin[k] = ReadOr<float>(local + re5::off::kUnitPosition + k * 4, 0.0f);
+    PlayerFacing(local, g_move.dirX, g_move.dirZ);
+    if (sp.kind == "dual_smg") {
+        g_move.damage = static_cast<int>(sp.power > 0.0 ? sp.power : 90.0);
+        g_move.until = now + (sp.duration_seconds > 0.0 ? sp.duration_seconds : 1.5);
+        g_move.nextPulse = now;
+    } else if (sp.kind == "backup") {
+        // Stand-in until a real computer ally can be spawned (ROADMAP E22): covering fire on the
+        // nearest enemy for the rest of the arena.
+        g_move.damage = static_cast<int>(sp.power > 0.0 ? sp.power : kBackupDamage);
+        g_move.until = now + 1.0e9;
+        g_move.nextPulse = now + 0.5;
+    }
+    g->notice = Upper(Plain(sp.name));
+    g->noticeUntil = now + 2.0;
+    RM_LOGI("special: %s used at %.0f %.0f %.0f facing %.2f %.2f", sp.kind.c_str(), g_move.origin[0], g_move.origin[1],
+            g_move.origin[2], g_move.dirX, g_move.dirZ);
+}
+
 void StepSpecial(double now) {
     if (g_move.kind.empty()) return;
     const auto local = engine::LocalPlayer();
@@ -2495,11 +2733,26 @@ void StepSpecial(double now) {
         return;
     }
     if (g_move.kind == "dash") {
-        const double t = std::min(1.0, (now - g_move.start) / kDashSeconds);
-        const float to[3] = {g_move.origin[0] + g_move.dirX * g_move.distance * static_cast<float>(t), g_move.origin[1],
-                             g_move.origin[2] + g_move.dirZ * g_move.distance * static_cast<float>(t)};
-        engine::WarpUnit(local, to);
-        if (t >= 1.0) EndSpecialMove("done");
+        if (g_move.move == "burst") {
+            if (now >= g_move.until) EndSpecialMove("done");
+            return;
+        }
+        const double seconds = g_move.move == "lunge" ? kLungeSeconds : kDashSeconds;
+        const float t = static_cast<float>(std::min(1.0, (now - g_move.start) / seconds));
+        if (Horizontal(g_move.origin, g_move.end) > 1.0f) {
+            float to[3];
+            for (int k = 0; k < 3; ++k) to[k] = g_move.origin[k] + (g_move.end[k] - g_move.origin[k]) * t;
+            engine::WarpUnit(local, to);
+        }
+        if (t < 1.0f) return;
+        if (g_move.move == "lunge" && g_move.victim) {
+            float at[3];
+            for (int k = 0; k < 3; ++k) at[k] = ReadOr<float>(g_move.victim + re5::off::kUnitPosition + k * 4, 0.0f);
+            FacePoint(local, at);
+            RM_LOGI("special: lunge strikes %s: %s", engine::ClassName(g_move.victim).c_str(),
+                    StrikeEnemy(g_move.victim, kLungeDamage, re5::off::kEm10DmgHead, now).c_str());
+        }
+        EndSpecialMove("done");
         return;
     }
     if (now >= g_move.until) {
@@ -2547,6 +2800,14 @@ void DriveSpecial(double now) {
     if (down && !g_comboHeld) StartSpecial(now);
     g_comboHeld = down;
     StepSpecial(now);
+    // A dash special's ring shows the move the button would make (checked 10 times a second).
+    const rm::SkinSpecial& sp = run.state().character.build.special;
+    if (sp.kind == "dash" && g_move.kind.empty() && now - g_armedAt >= 0.1) {
+        g_armedAt = now;
+        if (const auto local = engine::LocalPlayer()) {
+            g_armedMove = PlanDash(local, static_cast<float>(sp.power > 0.0 ? sp.power : 5.0) * 100.0f).move;
+        }
+    }
 }
 
 // The special's HUD (bottom left, the 1280x720 canvas mapped like the menu icons): its icon in a
@@ -2566,11 +2827,17 @@ void DrawSpecialWidget() {
     const ImVec2 c(ox + 96.0f * k, oy + 596.0f * k);
     const float r = 38.0f * k;
     ImDrawList* list = ImGui::GetBackgroundDrawList();
-    const bool acting = !g_move.kind.empty() && g_move.kind != "dash";
+    const bool acting = !g_move.kind.empty() && (g_move.kind != "dash" || g_move.move == "burst");
     const bool ready = st.ready;
+    // Wesker: the move the button would make now.
+    std::string icon = st.icon, name = Upper(Plain(st.name));
+    if (st.kind == "dash" && !g_armedMove.empty()) {
+        icon = g_armedMove == "burst" ? "shockwave" : g_armedMove == "lunge" ? "lunge" : "dash";
+        name = Upper(g_armedMove);
+    }
     list->AddCircleFilled(c, r, IM_COL32(0, 0, 0, 150), 48);
     if (device) {
-        if (const auto texture = icons::Texture(device, st.icon)) {
+        if (const auto texture = icons::Texture(device, icon)) {
             const float half = 26.0f * k;
             const int tint = ready || acting ? 255 : 120;
             list->AddImage(static_cast<ImTextureID>(texture), ImVec2(c.x - half, c.y - half), ImVec2(c.x + half, c.y + half),
@@ -2601,7 +2868,7 @@ void DrawSpecialWidget() {
     else if (st.arenas_left > 0) middle = st.arenas_left == 1 ? "NEXT ARENA" : std::to_string(st.arenas_left) + " ARENAS";
     else if (st.cooldown_left > 0.0) middle = std::to_string(static_cast<int>(std::ceil(st.cooldown_left)));
     if (!middle.empty()) centred(middle, (middle.size() > 3 ? 13.0f : 26.0f) * k, c.y - (middle.size() > 3 ? 7.0f : 14.0f) * k, IM_COL32(255, 255, 255, 255));
-    centred(Upper(Plain(st.name)), 15.0f * k, c.y + r + 4.0f * k, ready ? IM_COL32(255, 210, 127, 255) : IM_COL32(220, 220, 220, 230));
+    centred(name, 15.0f * k, c.y + r + 4.0f * k, ready ? IM_COL32(255, 210, 127, 255) : IM_COL32(220, 220, 220, 230));
     centred(SpecialBindingText(), 12.0f * k, c.y + r + 20.0f * k, IM_COL32(200, 200, 200, 200));
 }
 
@@ -3861,9 +4128,12 @@ private:
 
     void EnemyHit(const EnemyHitResult& r) {
         if (g->settings.probeHits || r.killed) {
-            RM_LOGI("enemy_hit enemy=%08X class=%s player=%d local=%d hp %d->%d/%d raw=%d applied=%d killed=%d",
+            // The attacker's class when it is not the player: grenades, mines and barrels are
+            // the player's too in a solo run, and these lines tell which classes they are.
+            const std::string by = r.attackerIsLocal ? std::string() : " by=" + (r.attacker ? engine::ClassName(r.attacker) : std::string("-"));
+            RM_LOGI("enemy_hit enemy=%08X class=%s player=%d local=%d hp %d->%d/%d raw=%d applied=%d killed=%d%s",
                     static_cast<unsigned>(r.enemy), engine::ClassName(r.enemy).c_str(), r.attackerIsPlayer,
-                    r.attackerIsLocal, r.hpBefore, r.hpAfter, r.maxHp, r.rawDamage, r.appliedDamage, r.killed);
+                    r.attackerIsLocal, r.hpBefore, r.hpAfter, r.maxHp, r.rawDamage, r.appliedDamage, r.killed, by.c_str());
         }
         if (!r.killed) return;
         std::lock_guard lock(g->mutex);
@@ -3978,6 +4248,12 @@ private:
         OpenChests(now);
         ApplyHeals();
         DriveSpecial(now);
+        // A match a run played in stays a run's match until it is gone, so quitting it writes no
+        // save even if the run is settled first.
+        static bool runMatch = false;
+        if (!g->match.inMatch) runMatch = false;
+        else if (g->run->HasActiveRun()) runMatch = true;
+        autopilot::SetRunMatch(runMatch);
         if (g->run->phase() == rm::Phase::ArenaActive && g->match.inMatch) ApplyBuildHealth();  // gains mid-arena
         // Items earned by perks, rewards and the shop wait until the player is in a match.
         if (g->match.inMatch && engine::LocalPlayer() && g->run->phase() != rm::Phase::Idle && ReadMercTimer().recent) {

@@ -246,6 +246,25 @@ void __fastcall ResultsMoveDetour(std::uintptr_t self, void*) {
 // its save screen (nothing is written to the game's save) and changes to the title scene, from
 // where the title flow re-enters the Mercenaries menu and the flow hooks above take the game
 // back to its Play menu.
+// The match's quit state, entered by the game over's "No" and by the pause menu's quit: its
+// first step shows the save screen (and writes the game's save) while the Mercenaries phase is
+// set. During a run's match the phase is cleared first, as the game over above does.
+std::atomic<bool> g_runMatch{false};
+MoveFn g_origQuitState = nullptr;
+std::atomic<bool> g_quitHook{false};
+
+void __fastcall QuitStateDetour(std::uintptr_t self, void*) {
+    if (g_enabled.load() && (g_runMatch.load() || g_toTitle.load() || g_armed.load()) &&
+        ReadOr<std::uint8_t>(self + re5::off::kMatchQuitStep, 0xFF) == 0) {
+        const auto gw = GameWork();
+        const auto phase = gw ? ReadOr<std::int32_t>(gw + re5::off::kGameWorkMercPhase, 0) : 0;
+        if (phase != 0 && SafeStore<std::int32_t>(gw + re5::off::kGameWorkMercPhase, 0)) {
+            RM_LOGI("autopilot: a run's match quits; Mercenaries phase %d cleared (no save screen, no save)", phase);
+        }
+    }
+    g_origQuitState(self);
+}
+
 using GameoverDecideFn = void(__fastcall*)(std::uintptr_t self, void*);
 MoveFn g_origGameoverMove = nullptr;
 std::atomic<bool> g_gameoverHook{false};
@@ -320,12 +339,20 @@ bool Install() {
         g_gameoverHook = true;
         RM_LOGI("autopilot: game over screen hook queued (a run's death leaves for the menu)");
     }
+    if (engine::Caps().matchQuit &&
+        QueueHook(re5::addr::kFnMatchQuitState, reinterpret_cast<void*>(&QuitStateDetour),
+                  reinterpret_cast<void**>(&g_origQuitState))) {
+        g_quitHook = true;
+        RM_LOGI("autopilot: match quit hook queued (a run's quit writes no save)");
+    }
     return true;
 }
 
 bool CanChangeStage() { return g_enabled.load() && g_flowHooks.load() && g_resultsHook.load(); }
 
 bool Available() { return g_enabled.load(); }
+
+void SetRunMatch(bool on) { g_runMatch = on; }
 
 void Arm(const Plan& plan) {
     // Skip stages the game refused earlier this session.

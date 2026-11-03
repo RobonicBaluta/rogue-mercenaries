@@ -1226,7 +1226,7 @@ SpecialState RunController::Special(double now) const {
     s.kind = sp.kind;
     s.name = sp.name;
     s.icon = sp.icon;
-    s.cooldown_total = sp.cooldown_seconds;
+    s.cooldown_total = run_.special_cooldown > 0.0 ? run_.special_cooldown : sp.cooldown_seconds;
     s.cooldown_left = std::max(0.0, run_.special_ready_at - now);
     if (sp.every_arenas > 0 && run_.special_used_arena > 0) {
         s.arenas_left = std::max(0, run_.special_used_arena + sp.every_arenas - run_.arena_index);
@@ -1235,7 +1235,7 @@ SpecialState RunController::Special(double now) const {
     return s;
 }
 
-Status RunController::UseSpecial(double now) {
+Status RunController::UseSpecial(double now, double cooldown_scale) {
     constexpr std::string_view op = "use_special";
     if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
     const SkinSpecial& sp = run_.character.build.special;
@@ -1244,7 +1244,9 @@ Status RunController::UseSpecial(double now) {
     const SpecialState state = Special(now);
     if (state.cooldown_left > 0.0) return Fail(op, ErrorCode::NotEligible, sp.name + " is cooling down");
     if (state.arenas_left > 0) return Fail(op, ErrorCode::NotEligible, sp.name + " is used up for this arena");
-    run_.special_ready_at = now + sp.cooldown_seconds;
+    if (!(cooldown_scale > 0.0) || cooldown_scale > 100.0) return Fail(op, ErrorCode::InvalidArgument, "cooldown scale out of range");
+    run_.special_cooldown = sp.cooldown_seconds * cooldown_scale;
+    run_.special_ready_at = now + run_.special_cooldown;
     run_.special_used_arena = run_.arena_index;
     ++run_.special_uses;
     if (sp.kind == "dash" && sp.duration_seconds > 0.0) {
@@ -1252,7 +1254,7 @@ Status RunController::UseSpecial(double now) {
     }
     Event e = MakeEvent(EventType::PerkTriggered);
     e.Add("source", "build").Add("trigger", "special").Add("kind", sp.kind).Add("uses", run_.special_uses)
-        .Add("arena", run_.arena_index).Add("now", now);
+        .Add("arena", run_.arena_index).Add("cooldown", run_.special_cooldown).Add("now", now);
     Emit(std::move(e));
     return Status::Success();
 }
