@@ -118,7 +118,7 @@
     {
       "id": "wesker_firestarter",
       "name": "Firestarter",
-      "description": "Wesker. Every 3 kills hand you an incendiary grenade.",
+      "description": "Wesker. Every 5 kills hand you an incendiary grenade.",
       "category": "style",
       "rarity": "common",
       "tags": [
@@ -130,7 +130,7 @@
           "kind": "item_on_kill",
           "game_item": 263,
           "amount": 1,
-          "every_kills": 3
+          "every_kills": 5
         }
       ],
       "characters": [
