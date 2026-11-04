@@ -157,13 +157,14 @@ const std::vector<std::array<double, 3>>& Director::PickChests(int count) {
     return chests_;
 }
 
-int Director::PickPoint(const std::optional<std::array<double, 3>>& player) {
+int Director::PickPoint(const std::optional<std::array<double, 3>>& player, const PointFilter& accept) {
     std::vector<int> usable;
     std::vector<int> far;      // neither too close nor too far, not the last point used
     std::vector<int> inReach;  // neither too close nor too far
     std::vector<int> apart;    // not too close
     for (int i = 0; i < static_cast<int>(map_.points.size()); ++i) {
         if (point_failures_[static_cast<std::size_t>(i)] >= kMaxPointFailures) continue;
+        if (accept && !accept(map_.points[static_cast<std::size_t>(i)])) continue;
         usable.push_back(i);
         const double d = player ? DistanceSq(map_.points[static_cast<std::size_t>(i)], *player) : 0.0;
         const bool tooClose = player && d < map_.min_player_distance * map_.min_player_distance;
@@ -175,6 +176,7 @@ int Director::PickPoint(const std::optional<std::array<double, 3>>& player) {
         if (i != last_point_) far.push_back(i);
     }
     if (usable.empty() && !map_.points.empty()) {
+        if (accept) return -1;  // nothing the caller takes now; it asks again later
         // Every point failed often: forget the failures and keep trying (slowly, see SpawnFailed).
         std::fill(point_failures_.begin(), point_failures_.end(), 0);
         return PickPoint(player);
@@ -195,7 +197,8 @@ int Director::PickPoint(const std::optional<std::array<double, 3>>& player) {
     return from[rng_.Index(from.size())];
 }
 
-std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::array<double, 3>>& player) {
+std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::array<double, 3>>& player,
+                                         const PointFilter& prefer) {
     std::vector<SpawnRequest> out;
     last_now_ = now;
     int cap = std::max(1, map_.max_alive);
@@ -203,7 +206,8 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::ar
     while (requested_ < budget_ && alive() + pending() < cap && now >= next_spawn_time_) {
         const MapEnemy* enemy = PickSpecial();
         if (enemy == nullptr) enemy = PickEnemy();
-        const int point = PickPoint(player);
+        int point = prefer ? PickPoint(player, prefer) : -1;
+        if (point < 0) point = PickPoint(player);
         if (enemy == nullptr || point < 0) break;
         SpawnRequest r;
         r.ticket = next_ticket_++;
@@ -262,17 +266,24 @@ void Director::Spawned(std::uint64_t ticket, const std::string& unit_id) {
 }
 
 std::optional<std::array<double, 3>> Director::Relocate(const std::string& unit_id,
-                                                        const std::optional<std::array<double, 3>>& player) {
+                                                        const std::optional<std::array<double, 3>>& player,
+                                                        const PointFilter& accept) {
     const auto it = alive_.find(unit_id);
     if (it == alive_.end()) return std::nullopt;
     const auto at = ticket_point_.find(it->second);
     const int from = at != ticket_point_.end() ? at->second : -1;
-    if (from >= 0 && from < static_cast<int>(point_failures_.size())) {
-        point_failures_[static_cast<std::size_t>(from)] = kMaxPointFailures;  // not this arena again
-    }
+    const bool known = from >= 0 && from < static_cast<int>(point_failures_.size());
+    const int failures = known ? point_failures_[static_cast<std::size_t>(from)] : 0;
+    if (known) point_failures_[static_cast<std::size_t>(from)] = kMaxPointFailures;  // not this arena again
+    const int last = last_point_;
     last_point_ = from;
-    const int to = PickPoint(player);
-    if (to < 0 || to == from) return std::nullopt;
+    const int to = PickPoint(player, accept);
+    if (to < 0 || to == from) {
+        // Not moved: its point stays as it was.
+        if (known) point_failures_[static_cast<std::size_t>(from)] = failures;
+        last_point_ = last;
+        return std::nullopt;
+    }
     ticket_point_[it->second] = to;
     ++relocations_;
     return map_.points[static_cast<std::size_t>(to)];

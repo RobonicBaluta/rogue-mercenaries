@@ -292,6 +292,8 @@ E22 done (2026-11-03, verified in game by the mod's own test, `scripts/test_part
 
 Balance pass, round 1 (2026-11-03, `research/sim/balance-2026-11-03.md`): `rm_sim` plays every skin's build and calibrates with `--hit-scale`; eight changes narrowed the builds' completion in the model from 4-98 percent to 19-93 percent (heal on kill down for Sheva and Rebecca, Field Surgeon x1.3, Jill's crit up, a small heal on kill for Tribal Sheva, more health for Midnight and Safari, three more chests per arena for Locksmith: six, seen in game). The model cannot judge Excella, Heavy Metal and Josh; playtests decide from here.
 
+Sixth playtest (2026-11-04, TASKS.md "Playtest 6"): Wesker's moves now play the boss Wesker's own motions by their actions (his shift's stop as the dash arrives, the shift knee for the lunge), Twin Fury's hits stagger and its kills blow Majini away, the Organize screen's result is applied cell by cell, enemies are never moved in the player's sight, the Uroboros is driven (target, turn, its own grabs) since it has no state machine here, and the last arena offers no reward. Open: Jill's second SMG and real bullets (the boss's two guns are units of her own that her code fires; E16).
+
 Order: B1 to B7 with the builds that need no engine work (Warrior, Clubbin', Business, Fairy Tale,
 S.T.A.R.S. Chris, Barry), then E19/E20/E21 (Wesker S.T.A.R.S., Excella, Rebecca), E13/E14 and item
 ids (Safari, Heavy Metal, Tribal), B8/E15 (keys, Jill BSAA), then E16 with E17/E18/E22 (Battle

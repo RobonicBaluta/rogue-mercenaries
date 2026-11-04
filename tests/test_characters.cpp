@@ -41,7 +41,7 @@ RunSummary CompleteRun(RunController& rc, std::string_view character) {
     while (rc.phase() != Phase::RunComplete) {
         test::ClearArena(rc, t);
         REQUIRE(rc.ContinueToRewards().ok());
-        REQUIRE(rc.ChooseReward(0).ok());
+        if (rc.phase() == Phase::RewardSelection) REQUIRE(rc.ChooseReward(0).ok());
         if (rc.phase() == Phase::Shop) {
             REQUIRE(rc.LeaveShop().ok());
             REQUIRE(rc.ChooseRoute(0).ok());

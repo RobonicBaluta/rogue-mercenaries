@@ -1045,8 +1045,12 @@ Result<ArenaResult> RunController::CompleteArena(double now) {
     run_.results.push_back(result);
 
     run_.reward_rarity_shift = route.rarity_bonus + eco.rewards.rating_rarity_bonus[RatingIndex(rating)];
-    run_.reward_offer = GenerateRewardOffer(streams_->reward, MakeOfferContext(run_.reward_rarity_shift),
-                                            [this] { return NextInstanceId(); });
+    // The last arena offers nothing: there is nothing left to use a reward on.
+    run_.reward_offer.clear();
+    if (run_.arena_index < run_.arena_count) {
+        run_.reward_offer = GenerateRewardOffer(streams_->reward, MakeOfferContext(run_.reward_rarity_shift),
+                                                [this] { return NextInstanceId(); });
+    }
     run_.reward_chosen = false;
     run_.phase = Phase::ArenaResults;
     UpdateCheckpoint();
@@ -1066,8 +1070,19 @@ Status RunController::ContinueToRewards() {
     if (run_.phase != Phase::ArenaResults) {
         return Fail("continue_to_rewards", ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
     }
+    if (run_.arena_index >= run_.arena_count) {
+        CompleteRun();
+        return Status::Success();
+    }
     run_.phase = Phase::RewardSelection;
     return Status::Success();
+}
+
+void RunController::CompleteRun() {
+    run_.phase = Phase::RunComplete;
+    run_.end_reason = "complete";
+    UpdateCheckpoint();
+    (void)SaveProfile("run_complete");
 }
 
 Status RunController::RerollReward() {
@@ -1148,10 +1163,7 @@ Status RunController::ChooseReward(std::size_t index) {
     Emit(std::move(e));
 
     if (run_.arena_index >= run_.arena_count) {
-        run_.phase = Phase::RunComplete;
-        run_.end_reason = "complete";
-        UpdateCheckpoint();
-        (void)SaveProfile("run_complete");
+        CompleteRun();
     } else {
         EnterShop();
     }
@@ -1509,9 +1521,10 @@ Status RunController::DevGrantPerk(std::string_view perk_id) {
     return s;
 }
 
-std::vector<SpawnRequest> RunController::DirectorTick(double now, const std::optional<std::array<double, 3>>& player) {
+std::vector<SpawnRequest> RunController::DirectorTick(double now, const std::optional<std::array<double, 3>>& player,
+                                                     const Director::PointFilter& prefer) {
     if (!director_ || !run_.active || run_.phase != Phase::ArenaActive) return {};
-    return director_->Tick(now, player);
+    return director_->Tick(now, player, prefer);
 }
 
 void RunController::DirectorSpawned(std::uint64_t ticket, const std::string& unit_id) {
@@ -1527,9 +1540,10 @@ void RunController::DirectorClassUnavailable(const std::string& unit_class) {
 }
 
 std::optional<std::array<double, 3>> RunController::DirectorRelocate(const std::string& unit_id,
-                                                                     const std::optional<std::array<double, 3>>& player) {
+                                                                     const std::optional<std::array<double, 3>>& player,
+                                                                     const Director::PointFilter& accept) {
     if (!director_ || run_.phase != Phase::ArenaActive) return std::nullopt;
-    return director_->Relocate(unit_id, player);
+    return director_->Relocate(unit_id, player, accept);
 }
 
 Result<ChestReward> RunController::OpenChest(double now) {

@@ -195,6 +195,7 @@ struct ModState {
         double startedAt = 0.0;
         std::vector<std::pair<std::uint32_t, int>> carry;  // (item id, count) per slot record
         std::array<std::uint32_t, 9> cells{};             // item id per grid cell (ORGANIZE layout)
+        std::array<int, 9> counts{};                      // and its count
         int hp = -1;            // player health at the transition (-1 = unknown)
     } transition;
     bool autoOpenedForPhase = false;
@@ -1186,7 +1187,7 @@ private:
                 Report(s, "continue");
                 if (!s.ok()) { d.outcome = Outcome::Denied; break; }
                 d.outcome = Outcome::Push;
-                d.next = ScreenId::MatchRewards;
+                d.next = run.phase() == rm::Phase::RewardSelection ? ScreenId::MatchRewards : ScreenId::MatchRunOver;
                 break;
             }
             case ScreenId::MatchRewards: {
@@ -1778,7 +1779,10 @@ void SetWeaponRounds(std::uint32_t id, int rounds) {
 void SnapshotInventory() {
     g->transition.carry = ReadInventory();
     const auto grid = ReadGrid();
-    for (std::size_t c = 0; c < grid.size(); ++c) g->transition.cells[c] = grid[c].record ? grid[c].id : 0;
+    for (std::size_t c = 0; c < grid.size(); ++c) {
+        g->transition.cells[c] = grid[c].record ? grid[c].id : 0;
+        g->transition.counts[c] = grid[c].record ? grid[c].count : 0;
+    }
     RecordWeaponLevels();
     std::string text;
     for (const auto& [id, count] : g->transition.carry) {
@@ -1790,6 +1794,43 @@ void SnapshotInventory() {
 }
 
 void KeepInRunStash(std::uint32_t id, int count, const char* why);
+
+// After the cells are in place: each stack as the layout had it. ORGANIZE splits and merges
+// stacks and moves some to the storage, so an item's cells take their counts and its records in
+// cells the layout left empty go, when its cells hold all of it (user playtest 2026-11-04: a mine
+// moved to the storage stayed in its cell and the count came off the other stack, so a full grid
+// stayed full). Guns keep their rounds (SetWeaponRounds).
+void ApplyCellCounts(const std::map<std::uint32_t, int>& wanted) {
+    const auto& cells = g->transition.cells;
+    const auto& counts = g->transition.counts;
+    std::map<std::uint32_t, int> inCells;
+    for (int c = 0; c < kGridCells; ++c) {
+        if (cells[static_cast<std::size_t>(c)] != 0) inCells[cells[static_cast<std::size_t>(c)]] += counts[static_cast<std::size_t>(c)];
+    }
+    for (const auto& [id, total] : inCells) {
+        const auto want = wanted.find(id);
+        if (want == wanted.end() || want->second != total || total <= 0 || IsWeaponItem(id)) continue;
+        const auto grid = ReadGrid();
+        bool placed = true;
+        for (int c = 0; c < kGridCells; ++c) {
+            const auto cell = static_cast<std::size_t>(c);
+            if (cells[cell] == id && (!grid[cell].record || grid[cell].id != id)) placed = false;
+        }
+        if (!placed) continue;  // a cell of it could not be filled: the totals stay as they are
+        for (int c = 0; c < kGridCells; ++c) {
+            const auto cell = static_cast<std::size_t>(c);
+            if (!grid[cell].record || grid[cell].id != id) continue;
+            if (cells[cell] == id) {
+                if (grid[cell].count == counts[cell]) continue;
+                SafeStore<std::int32_t>(grid[cell].record + re5::off::kSlotCount, counts[cell]);
+                RM_LOGI("organize: %04X cell %d x%d -> x%d", id, c + 1, grid[cell].count, counts[cell]);
+            } else {
+                ClearSlot(grid[cell].record);
+                RM_LOGI("organize: %04X x%d left cell %d (not there in the layout)", id, grid[cell].count, c + 1);
+            }
+        }
+    }
+}
 
 // In the new match: make the inventory match the snapshot. The game recreates the
 // character's own loadout: its items the run no longer has go first and stacks are lowered,
@@ -1846,7 +1887,9 @@ void ApplyCarriedInventory() {
             break;
         }
     }
+    ApplyCellCounts(wanted);
     g->transition.cells = {};
+    g->transition.counts = {};
     ApplyWeaponLevels();
 }
 
@@ -2135,7 +2178,44 @@ struct StuckTrack {
     double anchorAt = 0.0;
     double lastRescue = -1.0e9;
     float bestAway = 1.0e9f;  // a boss: the closest it has come to the player since anchorAt
+    bool seenNoted = false;   // "in the player's sight" logged since anchorAt
 };
+
+bool PlayerFacing(std::uintptr_t player, float& fx, float& fz);
+
+// Whether the player may be looking at `pos`. The camera looks over his shoulder the way he
+// faces, so a point counts when it is in front of a spot behind him (or close to him whichever
+// way he looks) and no wall stands between his eyes and it. Unknown facing or no collision
+// query counts as seen.
+constexpr float kSeenNear = 600.0f;     // this close, only a wall hides it
+constexpr float kCameraBack = 300.0f;   // the camera's spot behind the player
+constexpr float kSeenCone = 0.42f;      // cos 65 degrees from the camera's spot
+constexpr float kEyeHeight = 160.0f;
+constexpr float kBodyHeight = 120.0f;
+bool PlayerMaySee(std::uintptr_t local, const std::array<double, 3>& player, const float pos[3]) {
+    const float px = static_cast<float>(player[0]), py = static_cast<float>(player[1]), pz = static_cast<float>(player[2]);
+    const float dx = pos[0] - px, dz = pos[2] - pz;
+    if (std::sqrt(dx * dx + dz * dz) > kSeenNear) {
+        float fx = 0.0f, fz = 0.0f;
+        if (!local || !PlayerFacing(local, fx, fz)) return true;
+        const float vx = pos[0] - (px - fx * kCameraBack), vz = pos[2] - (pz - fz * kCameraBack);
+        const float len = std::sqrt(vx * vx + vz * vz);
+        if (len > 1.0f && (vx * fx + vz * fz) / len < kSeenCone) return false;  // beside or behind the view
+    }
+    const float eye[3] = {px, py + kEyeHeight, pz};
+    const float body[3] = {pos[0], pos[1] + kBodyHeight, pos[2]};
+    const auto hit = engine::CastSegment(eye, body);
+    return !hit || !hit->Blocked();
+}
+
+// Nothing in a straight line between `p` and the player (a boss's way to him: the Uroboros
+// came from behind a door, user playtest 2026-11-04). No collision query counts as open.
+bool OpenToPlayer(const std::array<double, 3>& player, const std::array<double, 3>& p) {
+    const float from[3] = {static_cast<float>(p[0]), static_cast<float>(p[1]) + kBodyHeight, static_cast<float>(p[2])};
+    const float to[3] = {static_cast<float>(player[0]), static_cast<float>(player[1]) + kBodyHeight, static_cast<float>(player[2])};
+    const auto hit = engine::CastSegment(from, to);
+    return !hit || !hit->Blocked();
+}
 std::unordered_map<std::uintptr_t, StuckTrack> g_stuckTracks;
 double g_stuckCheckAt = 0.0;
 int g_stuckRemaining = -1;
@@ -2189,18 +2269,38 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
                 for (int k = 0; k < 3; ++k) t.anchor[k] = pos[k];
                 t.anchorAt = now;
                 t.bestAway = away;
+                t.seenNoted = false;
                 if (!lastFew) continue;
             }
         } else if (fresh || moved > kStuckMove) {
             for (int k = 0; k < 3; ++k) t.anchor[k] = pos[k];
             t.anchorAt = now;
+            t.seenNoted = false;
             if (!lastFew) continue;
         }
         const bool stuck = away > kStuckFar && now - t.anchorAt > (boss ? kBossStuckSeconds : kStuckSeconds);
         const bool straggler = lastFew && away > kLastEnemiesFar;
         if ((!stuck && !straggler) || now - t.lastRescue < 15.0) continue;
-        const auto to = run.DirectorRelocate(id, player);
-        if (!to) continue;
+        // Never before the player's eyes: one he may be looking at stays where it is, and the
+        // others go only to a point out of his sight (user playtest 2026-11-04: enemies vanished
+        // in view and appeared elsewhere).
+        const auto local = engine::LocalPlayer();
+        if (PlayerMaySee(local, *player, pos)) {
+            if (!t.seenNoted) {
+                t.seenNoted = true;
+                RM_LOGI("director: %s still %.0f s at %.0f %.0f %.0f, %.0f m from the player, in his sight; left there",
+                        engine::ClassName(unit).c_str(), now - t.anchorAt, pos[0], pos[1], pos[2], away / 100.0f);
+            }
+            continue;
+        }
+        const auto to = run.DirectorRelocate(id, player, [&](const std::array<double, 3>& p) {
+            const float at[3] = {static_cast<float>(p[0]), static_cast<float>(p[1]), static_cast<float>(p[2])};
+            return !PlayerMaySee(local, *player, at) && (!boss || OpenToPlayer(*player, p));
+        });
+        if (!to) {
+            t.lastRescue = now - 10.0;  // no point out of sight now: again in 5 s
+            continue;
+        }
         const float dest[3] = {static_cast<float>((*to)[0]), static_cast<float>((*to)[1]), static_cast<float>((*to)[2])};
         const int copies = engine::WarpUnit(unit, dest);
         RM_LOGI("director: %s %s %.0f s at %.0f %.0f %.0f, %.0f m from the player; moved to %.0f %.0f %.0f (%d copies)",
@@ -2210,6 +2310,98 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
         t.anchorAt = now;
         t.lastRescue = now;
         t.bestAway = static_cast<float>(std::sqrt(std::pow(dest[0] - (*player)[0], 2.0) + std::pow(dest[2] - (*player)[2], 2.0)));
+    }
+}
+
+// The Uroboros (uEm40) the director spawns has no will of its own: in the campaign the stage's
+// scenario boots its state machine (cScenarioArg_BootFSM, rAIFSM), and without one it walked
+// straight on and stood, at walls and doors, never at the player (user playtests 4 and 5:
+// cEm40ActWalk to the end, at 2.4 m too). Its own pieces drive it instead: the player as its
+// target (re5::off::kEnemyTarget, what its far grab reads), its walk's turn (kEm40TurnLeft)
+// aimed at him, its walk started again when it stands, and its own grabs when he is in reach
+// (research/re5-engine-map.md "Uroboros").
+struct BossDrive {
+    std::uintptr_t unit = 0;
+    int walk = -1, nearGrab = -1, farGrab = -1;
+    double nextGrab = 0.0;
+    double nextWalk = 0.0;
+    std::string lastAction;
+    bool targetNoted = false;
+};
+BossDrive g_bossDrive;
+constexpr float kBossNearReach = 300.0f;   // its near grab, under this
+constexpr float kBossFarReach = 700.0f;    // its far grab (the arm thrown out), under this
+constexpr float kBossGrabCone = 0.6f;      // radians off its facing at most
+constexpr double kBossGrabEvery = 4.0;
+constexpr double kBossWalkAgain = 1.5;
+
+bool UroborosIdle(const std::string& action) {
+    return action == "cEm40ActWalk" || action == "cEm40ActRun" || action == "cEm40ActWait";
+}
+
+void DriveBoss(double now, const std::optional<std::array<double, 3>>& player) {
+    const std::uintptr_t unit = g->boss.unit;
+    const auto local = engine::LocalPlayer();
+    if (!unit || g->boss.dead || !player || !local || engine::ClassName(unit) != "uEm40") return;
+    BossDrive& b = g_bossDrive;
+    if (b.unit != unit) {
+        b = {};
+        b.unit = unit;
+        const auto first = [unit](const char* cls) {
+            const auto ids = engine::ActionIdsOf(unit, cls);
+            return ids.empty() ? -1 : ids.front();
+        };
+        b.walk = first("cEm40ActWalk");
+        // Its near grab at 0x26 is the one that reaches for each player (0x008ABC60).
+        const auto nearIds = engine::ActionIdsOf(unit, "cEm40ActNearCatch");
+        b.nearGrab = std::find(nearIds.begin(), nearIds.end(), 0x26) != nearIds.end() ? 0x26 : nearIds.empty() ? -1 : nearIds.front();
+        b.farGrab = first("cEm40ActFarCatch");
+        b.nextGrab = now + 2.0;
+        RM_LOGI("boss drive: uEm40 actions walk %d, near grab %d (of %zu), far grab %d", b.walk, b.nearGrab, nearIds.size(), b.farGrab);
+    }
+    const auto hp = engine::ReadHp(unit);
+    if (!hp || hp->hp <= 0) return;
+    if (ReadOr<std::uintptr_t>(unit + re5::off::kEnemyTarget, 0) == 0) {
+        SafeStore<std::uintptr_t>(unit + re5::off::kEnemyTarget, local);
+        if (!b.targetNoted) RM_LOGI("boss drive: uEm40 had no target; the player is its target now");
+        b.targetNoted = true;
+    }
+    float pos[3];
+    for (int k = 0; k < 3; ++k) pos[k] = ReadOr<float>(unit + re5::off::kUnitPosition + k * 4, 0.0f);
+    const float dx = static_cast<float>((*player)[0]) - pos[0], dz = static_cast<float>((*player)[2]) - pos[2];
+    const float dist = std::sqrt(dx * dx + dz * dz);
+    float fx = 0.0f, fz = 0.0f;
+    if (!PlayerFacing(unit, fx, fz)) return;  // its own facing (any uCoord unit)
+    float turn = std::atan2(dx, dz) - std::atan2(fx, fz);
+    while (turn > 3.14159265f) turn -= 6.2831853f;
+    while (turn < -3.14159265f) turn += 6.2831853f;
+    const std::string action = engine::CurrentActionName(unit);
+    if (action != b.lastAction) {
+        // Its walking and standing are logged every 5 s by RescueStuckEnemies; the rest here.
+        if (!UroborosIdle(action) || !UroborosIdle(b.lastAction)) {
+            RM_LOGI("boss drive: uEm40 %s -> %s, %.1f m from the player, %.0f degrees off",
+                    b.lastAction.empty() ? "-" : b.lastAction.c_str(), action.c_str(), dist / 100.0f, turn * 57.29578f);
+        }
+        b.lastAction = action;
+    }
+    if (action == "cEm40ActWalk" || action == "cEm40ActRun") SafeStore<float>(unit + re5::off::kEm40TurnLeft, turn);
+    if (!UroborosIdle(action)) return;
+    if (now >= b.nextGrab && std::fabs(turn) < kBossGrabCone && dist < kBossFarReach) {
+        const bool nearGrab = dist < kBossNearReach;
+        const int id = nearGrab ? b.nearGrab : b.farGrab;
+        if (id >= 0 && engine::StartAction(unit, id, nearGrab ? "cEm40ActNearCatch" : "cEm40ActFarCatch")) {
+            b.nextGrab = now + kBossGrabEvery;
+            RM_LOGI("boss drive: uEm40 %s grab (action %d) at %.1f m", nearGrab ? "near" : "far", id, dist / 100.0f);
+            return;
+        }
+        b.nextGrab = now + 1.0;
+    }
+    if (action == "cEm40ActWait" && dist >= kBossNearReach && now >= b.nextWalk && b.walk >= 0) {
+        b.nextWalk = now + kBossWalkAgain;
+        static int walks = 0;
+        if (engine::StartAction(unit, b.walk, "cEm40ActWalk") && ++walks <= 3) {
+            RM_LOGI("boss drive: uEm40 walks again (action %d)%s", b.walk, walks == 3 ? "; not logged again" : "");
+        }
     }
 }
 
@@ -2259,7 +2451,10 @@ void DriveDirector(double now) {
                                        ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f),
                                        ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f)};
     }
-    for (const rm::SpawnRequest& r : run.DirectorTick(now, player)) {
+    // A boss comes from a point with nothing between it and the player, when the map has one.
+    rm::Director::PointFilter prefer;
+    if (bossArena && player) prefer = [&](const std::array<double, 3>& p) { return OpenToPlayer(*player, p); };
+    for (const rm::SpawnRequest& r : run.DirectorTick(now, player, prefer)) {
         director::SpawnSpec spec;
         spec.unitClass = r.unit_class;
         for (int i = 0; i < 3; ++i) spec.pos[i] = static_cast<float>(r.pos[i]);
@@ -2304,6 +2499,7 @@ void DriveDirector(double now) {
     }
     TraceDirectorArena(now, player);
     RescueStuckEnemies(now, player);
+    DriveBoss(now, player);
 }
 
 void DriveArena(double now) {
@@ -2763,6 +2959,7 @@ struct SpecialMove {
     int pulses = 0;
     bool borrowed = false;  // a boss's own moves play it (dual_smg: the shots land during the sweep)
     double seconds = 0.0;   // dual_smg: how long it fires without them
+    std::set<std::uintptr_t> staggered;  // dual_smg: enemies its shots have staggered
 };
 SpecialMove g_move;
 bool g_comboHeld[2] = {false, false};
@@ -2778,8 +2975,9 @@ constexpr int kBackupDamage = 150;
 
 void EndSpecialMove(const char* why) {
     if (g_move.kind.empty()) return;
-    RM_LOGI("special: %s%s%s over (%s): %d pulses, %d hits", g_move.kind.c_str(), g_move.move.empty() ? "" : " ",
-            g_move.move.c_str(), why, g_move.pulses, g_move.hits);
+    RM_LOGI("special: %s%s%s over (%s): %d pulses, %d hits%s", g_move.kind.c_str(), g_move.move.empty() ? "" : " ",
+            g_move.move.c_str(), why, g_move.pulses, g_move.hits,
+            g_move.staggered.empty() ? "" : (", " + std::to_string(g_move.staggered.size()) + " staggered").c_str());
     g_move = {};
 }
 
@@ -3249,17 +3447,23 @@ struct BossStep {
     int index;    // into the boss's list
     float speed;  // the motion's play rate
 };
-// The moves (the bosses' own motion ids: cEm84ActWideFire 0x10A ready, 0x10D the sweep;
-// cEm80ActAtkSH_F 0x1B; cEm80ActAtkKick 0xC9; cEm80ActHiza 0x72; all in their first list).
+// The moves (the bosses' own motion ids, all in their first list: cEm84ActWideFire 0x0A ready,
+// 0x0D the sweep). The boss Wesker's, from his actions' starts (0x00917D60.. 0x0091BC30): a shift
+// (his high-speed move) begins with 0x1C and moves in 0x1B (cEm80ActAtkSH_F, _NeeSt,
+// SH_Escape), stops with 0x20 (AtkSH_Stop); 0x24 is the knee out of a shift (AtkSH_Nee); his
+// kicks are 0xC8, 0xC9, 0xCA (AtkKick) and 0xDE (AtkLowKick). 0x72 is cEm80ActHiza, a kneel, and
+// 0x77 / 0x75 his stagger (Shrink): the lunge played the kneel (user playtest 2026-11-04: "falls
+// on his knees"), and the dash 0x1B after he had already moved, which looked like its start.
+// The mod's dash is instant, so it plays the shift's stop as he arrives; the lunge his knee.
 const std::vector<BossStep>* BossSteps(const std::string& move) {
     static const std::vector<BossStep> sweep = {{0x0A, 2.0f}, {0x0D, 2.0f}};
-    static const std::vector<BossStep> dash = {{0x1B, 2.0f}};
+    static const std::vector<BossStep> dash = {{0x20, 1.5f}};
+    static const std::vector<BossStep> knee = {{0x24, 1.6f}};
     static const std::vector<BossStep> kick = {{0xC9, 1.6f}};
-    static const std::vector<BossStep> knee = {{0x72, 1.6f}};
     if (move == "dual_smg") return &sweep;
-    if (move == "dash" || move == "lunge") return &dash;
+    if (move == "dash") return &dash;
+    if (move == "lunge") return &knee;
     if (move == "burst") return &kick;
-    if (move == "knee") return &knee;
     return nullptr;
 }
 // The step of the sweep during which her shots land (dual_smg).
@@ -3617,13 +3821,7 @@ void StepSpecial(double now) {
                                                        heavy ? re5::off::kEm10DmgFlyoff : re5::off::kEm10DmgHead, now);
                 RM_LOGI("special: lunge strikes %s%s (%s): %s", engine::ClassName(g_move.victim).c_str(),
                         g_move.victimStaggered ? " (was staggered)" : "", facing ? "facing it" : "not facing it", result.c_str());
-                // The blow is the boss Wesker's knee, in the same hold as the dash-strike.
-                if (g_boss.move == "lunge") {
-                    g_boss.move = "knee";
-                    g_boss.steps = *BossSteps("knee");
-                    g_boss.step = 0;
-                    g_boss.playing = false;
-                }
+                // The blow is the boss Wesker's knee, playing since the lunge began.
                 if (!heavy && result != "killed" && result != "missed") {
                     g->notice = "MELEE";
                     g->noticeUntil = now + 1.5;
@@ -3659,11 +3857,23 @@ void StepSpecial(double now) {
         ++g_move.pulses;
         float fx = g_move.dirX, fz = g_move.dirZ;
         PlayerFacing(local, fx, fz);  // she turns while she fires
+        // Health alone fell as if a ray hit them, and they dropped once their own action ended
+        // (user playtest 2026-11-04). A Majini hit now staggers the first time, and the killing
+        // shot blows it away before the damage lands (a dead one takes no action), so it falls
+        // there and then.
         for (const auto& [enemy, d] : EnemiesAround(local, kSmgRange, kSmgCone, fx, fz)) {
             (void)d;
+            const auto hp = engine::ReadHp(enemy);
+            if (!hp || hp->hp <= 0) continue;
+            const bool kills = g_move.damage >= hp->hp;
+            const bool reacted = g_move.staggered.count(enemy) != 0;
+            if (kills) engine::StartAction(enemy, re5::off::kEm10DmgFlyoff, ReactionClass(re5::off::kEm10DmgFlyoff));
             if (!director::Damage(enemy, g_move.damage)) continue;
             ++g_move.hits;
             g_specialVictims[enemy] = now;
+            if (!kills && !reacted && engine::StartAction(enemy, re5::off::kEm10DmgYoroke, ReactionClass(re5::off::kEm10DmgYoroke))) {
+                g_move.staggered.insert(enemy);
+            }
         }
     } else if (g_move.kind == "backup") {
         g_move.nextPulse = now + kBackupPulse;
@@ -4315,6 +4525,7 @@ void TakeRunFromSave(std::uintptr_t save) {
     }
     g->transition.carry.clear();
     g->transition.cells = {};
+    g->transition.counts = {};
     // What is not in the nine cells (the knife, unarmed) stays as it is.
     if (const auto player = engine::LocalPlayer()) {
         const auto inv = player + re5::off::kPlayerInventory;
@@ -4335,6 +4546,7 @@ void TakeRunFromSave(std::uintptr_t save) {
         if (id == 0 || cell < 0 || cell >= kGridCells || (id != re5::addr::kItemKnife && count <= 0 && ItemStackMax(id) > 0)) continue;
         g->transition.carry.emplace_back(id, count);
         g->transition.cells[static_cast<std::size_t>(cell)] = id;
+        g->transition.counts[static_cast<std::size_t>(cell)] = count;
         char buf[64];
         std::snprintf(buf, sizeof(buf), " %d:%04Xx%d", cell, id, count);
         text += buf;

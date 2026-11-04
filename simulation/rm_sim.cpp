@@ -828,7 +828,7 @@ void Simulator::PlayRun(RunController& rc, int index, Policy policy) {
         if (rc.state().arena_index + 1 == rc.state().arena_count) ++build_->reached_last;
         if (!PlayArena(rc, player, t, hp, skill, index)) break;
         rc.ContinueToRewards();
-        ChooseReward(rc, player, policy);
+        if (rc.phase() == Phase::RewardSelection) ChooseReward(rc, player, policy);
         CollectItems(rc);
         if (rc.phase() == Phase::Shop) {
             Shop(rc, player, policy, hp);

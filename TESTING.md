@@ -64,6 +64,12 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | Ambition, Iron Fist | `kill counted: ... (melee)`; `build: melee kill, <stat> +0.0N (N gains)`; with a debug log, `outgoing ... (<weapon>, melee)` |
 | keys | `keys: a key dropped, N held`; `keys: chest locked (no key), it comes back`; `keys: locked chest back at x y z` |
 | Locksmith | `chests: 6 of 6 placed for arena N` (three more than the others' `3 of 3`) |
+| ORGANIZE result | after the screen closes: `organize: XXXX cell N xA -> xB` (a stack as the screen left it) and `organize: XXXX xN left cell N (not there in the layout)` (moved to the storage); the next `itembox: the run is in the screen (... grid ...)` must match the last `the run's grid from the screen` |
+| enemies moved | `director: <class> stuck N s ... moved to ...` only out of the player's sight; one in sight: `director: <class> still N s at x y z, N m from the player, in his sight; left there` |
+| the Uroboros | `boss drive: uEm40 actions walk N, near grab N (of N), far grab N`; `boss drive: uEm40 had no target; the player is its target now`; `boss drive: uEm40 near grab (action N) at N m` / `far grab`; `boss drive: uEm40 cEm40ActWalk -> cEm40ActNearCatch, N m from the player, N degrees off` (its actions besides walking and standing); the 5 s `director: boss uEm40 at ...` lines should show the distance falling |
+| Twin Fury hits | `special: dual_smg over (done): N pulses, N hits, N staggered` |
+| Wesker's moves | `special: boss motion pawn\em\em80\motion\em80 20` (the dash's arrival), `... 24` (the lunge's knee), `... C9` (the burst's kick), each `N of N body tracks ...` then `boss motion NN done: N frames in N s` |
+| last arena | `phase arena_results -> run_complete` (no `reward_selection` after the boss) |
 | Twin Fury, Backup | `enemy XXXXXXXX died (health reached zero): counted, N remain (by the special)` |
 | health | `build: maximum health A -> B (xM)` |
 | specials refused | `special: slot N pressed while <action or paused / the item screen / a mod screen / down>; not used` |

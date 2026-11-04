@@ -356,6 +356,12 @@ constexpr std::size_t kCharActionCount = 0x10D0;
 constexpr std::size_t kCharActionData = 0x10DC;
 constexpr std::size_t kCharActionRequest = 0x10E0;
 constexpr std::size_t kCharYaw = 0x1904;
+// uEnemy: its target (a player; cleared by uEm40's update 0x008AE2B0 when it is no unit, read by
+// uEm40's far grab 0x008A85E0 to pick its attack). Majini code sets it widely (their search).
+constexpr std::size_t kEnemyTarget = 0x1BA4;
+// uEm40: the yaw its walk still has to turn (radians, + = more yaw; the walk 0x008AB4A0 turns by it
+// through 0x008A79C0 and lowers it as it turns). Nothing sets it without the boss's state machine.
+constexpr std::size_t kEm40TurnLeft = 0x1B74;
 constexpr std::size_t kPlayerThreatPoint = 0x2E10;  // float x, y, z: what a dodge is relative to
 constexpr std::size_t kPlayerDodgeOwner = 0x2D64;   // the dodge prep's object (+0x220)
 constexpr std::size_t kDodgePrepOffset = 0x220;

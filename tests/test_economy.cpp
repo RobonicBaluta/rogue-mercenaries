@@ -64,8 +64,8 @@ TEST_CASE("character unlocks spend credits transactionally", "[economy]") {
     for (int arena = 0; arena < 3; ++arena) {
         test::ClearArena(h.rc, arena * 100.0);
         REQUIRE(h.rc.ContinueToRewards().ok());
-        REQUIRE(h.rc.ChooseReward(0).ok());
         if (arena < 2) {
+            REQUIRE(h.rc.ChooseReward(0).ok());
             REQUIRE(h.rc.LeaveShop().ok());
             REQUIRE(h.rc.ChooseRoute(0).ok());
         }

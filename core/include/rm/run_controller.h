@@ -299,16 +299,15 @@ public:
     [[nodiscard]] bool IsArenaComplete() const;
     [[nodiscard]] int RemainingEnemies() const;
     /// Requires ArenaActive and IsArenaComplete(). Grades the arena, awards clear supplies,
-    /// accrues credits, generates the reward offer and moves to ArenaResults.
+    /// accrues credits, generates the reward offer (none after the final arena) and moves to ArenaResults.
     Result<ArenaResult> CompleteArena(double now);
-    /// ArenaResults -> RewardSelection.
+    /// ArenaResults -> RewardSelection, or RunComplete after the final arena.
     Status ContinueToRewards();
 
     [[nodiscard]] const std::vector<RewardChoice>& RewardOffer() const { return run_.reward_offer; }
     /// Spends a reroll token to regenerate the current offer (RewardSelection, before choosing).
     Status RerollReward();
-    /// Exactly once per arena; a second call fails with AlreadyChosen. Moves to Shop, or to
-    /// RunComplete after the final arena.
+    /// Exactly once per arena; a second call fails with AlreadyChosen. Moves to Shop.
     Status ChooseReward(std::size_t index);
 
     [[nodiscard]] const std::vector<ShopOffer>& ShopOffers() const { return run_.shop_offers; }
@@ -373,16 +372,20 @@ public:
     void SetMapStage(int stage) { map_stage_ = stage; }
     /// True while the current arena is run by the director (map known, capability present).
     [[nodiscard]] bool DirectorActive() const { return director_.has_value(); }
-    /// Spawns the adapter should perform now.
-    std::vector<SpawnRequest> DirectorTick(double now, const std::optional<std::array<double, 3>>& player);
+    /// Spawns the adapter should perform now, from points `prefer` takes when there are any
+    /// (Director::Tick).
+    std::vector<SpawnRequest> DirectorTick(double now, const std::optional<std::array<double, 3>>& player,
+                                           const Director::PointFilter& prefer = {});
     void DirectorSpawned(std::uint64_t ticket, const std::string& unit_id);
     void DirectorSpawnFailed(std::uint64_t ticket);
     /// The adapter cannot create this class on the stage (its archive is not loaded): the
     /// director stops picking it this arena (Director::Unavailable).
     void DirectorClassUnavailable(const std::string& unit_class);
-    /// A director unit cannot reach the player: where to move it (Director::Relocate).
+    /// A director unit cannot reach the player: where to move it, a point `accept` takes when
+    /// given (Director::Relocate).
     std::optional<std::array<double, 3>> DirectorRelocate(const std::string& unit_id,
-                                                          const std::optional<std::array<double, 3>>& player);
+                                                          const std::optional<std::array<double, 3>>& player,
+                                                          const Director::PointFilter& accept = {});
     [[nodiscard]] const Director* director() const { return director_ ? &*director_ : nullptr; }
 
     [[nodiscard]] RunSnapshot Snapshot(double now) const;
@@ -440,6 +443,7 @@ private:
                                         std::string_view reason);
     void EnterShop();
     void EnterRouteSelection();
+    void CompleteRun();
     void FailRun(double now, std::string_view reason);
 
     std::shared_ptr<const Content> content_;

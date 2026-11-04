@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -121,13 +122,18 @@ struct SpawnRequest {
 /// the only unit (budget 1).
 class Director {
 public:
+    /// A spawn point the adapter takes (e.g. out of the player's sight, open to him).
+    using PointFilter = std::function<bool(const std::array<double, 3>&)>;
+
     /// `threat` (level > 0) holds the arena to enemies at or under its level: entries and
     /// variants above it are left out (a map with nothing that mild fields its mildest), at most
     /// threat.max_alive are alive at once, and specials join only from threat.specials_from.
     Director(const MapDef& map, int budget, int tier, std::uint64_t seed, ArenaThreat threat = {});
 
-    /// Requests to spawn now. `player` (when known) steers spawns away from the player.
-    std::vector<SpawnRequest> Tick(double now, const std::optional<std::array<double, 3>>& player);
+    /// Requests to spawn now. `player` (when known) steers spawns away from the player; points
+    /// `prefer` takes come first when given (any point when it takes none).
+    std::vector<SpawnRequest> Tick(double now, const std::optional<std::array<double, 3>>& player,
+                                   const PointFilter& prefer = {});
     /// The adapter created the request's unit; `unit_id` is how its death will be reported.
     void Spawned(std::uint64_t ticket, const std::string& unit_id);
     /// The adapter could not create it; the slot goes back to the budget (the point is
@@ -138,11 +144,13 @@ public:
     void Unavailable(const std::string& unit_class);
     /// A unit died or vanished. True (once) when it was one of ours.
     bool Died(const std::string& unit_id);
-    /// One of our units cannot reach the player (behind a door, on a ledge): its spawn point is
-    /// not used again this arena and it gets another one, within reach of the player when one
-    /// is known (empty: no other point, or not our unit). The adapter moves it there.
+    /// One of our units cannot reach the player (behind a door, on a ledge): it gets another
+    /// point, within reach of the player when one is known and one `accept` takes (when given),
+    /// and its own point is not used again this arena. Empty: no such point (nothing changes),
+    /// or not our unit. The adapter moves it there.
     std::optional<std::array<double, 3>> Relocate(const std::string& unit_id,
-                                                  const std::optional<std::array<double, 3>>& player);
+                                                  const std::optional<std::array<double, 3>>& player,
+                                                  const PointFilter& accept = {});
     [[nodiscard]] int relocations() const { return relocations_; }
     /// Picks `count` distinct chest positions of the map for this arena (all of them when the
     /// map has fewer); they stay available as chests().
@@ -167,7 +175,7 @@ private:
     [[nodiscard]] double Share(const MapEnemy& enemy) const;  // the part of an entry this arena may field
     [[nodiscard]] bool Fits(int threat) const { return pick_level_ <= 0 || threat <= pick_level_; }
     [[nodiscard]] int Active(const MapEnemy* enemy) const;  // alive + pending of that roster entry
-    int PickPoint(const std::optional<std::array<double, 3>>& player);
+    int PickPoint(const std::optional<std::array<double, 3>>& player, const PointFilter& accept = {});
 
     MapDef map_;
     int budget_ = 0;

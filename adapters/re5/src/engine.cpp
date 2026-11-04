@@ -314,6 +314,19 @@ bool StartAction(std::uintptr_t character, int id, const char* expectedClass) {
     return started;
 }
 
+std::vector<int> ActionIdsOf(std::uintptr_t character, const char* cls) {
+    std::vector<int> ids;
+    if (!character || !cls) return ids;
+    const auto count = ReadOr<std::uint32_t>(character + re5::off::kCharActionCount, 0);
+    const auto data = ReadOr<std::uintptr_t>(character + re5::off::kCharActionData, 0);
+    if (count > 512 || !data) return ids;
+    for (std::uint32_t id = 0; id < count; ++id) {
+        const auto action = ReadOr<std::uintptr_t>(data + static_cast<std::size_t>(id) * 4, 0);
+        if (action && ClassName(action) == cls) ids.push_back(static_cast<int>(id));
+    }
+    return ids;
+}
+
 namespace {
 
 using DodgePrepFn = void(__thiscall*)(std::uintptr_t self, std::uintptr_t player);

@@ -137,8 +137,8 @@ TEST_CASE("route choices are the run map's next nodes and the run follows the ch
     for (int arena = 1; arena <= 3; ++arena) {
         test::ClearArena(h.rc, t);
         REQUIRE(h.rc.ContinueToRewards().ok());
-        REQUIRE(h.rc.ChooseReward(0).ok());
         if (arena == 3) break;
+        REQUIRE(h.rc.ChooseReward(0).ok());
         REQUIRE(h.rc.LeaveShop().ok());
         const RunState& st = h.rc.state();
         const RunMapNode& here = st.run_map.layers[static_cast<std::size_t>(st.map_layer)][static_cast<std::size_t>(st.map_node)];
@@ -223,8 +223,8 @@ TEST_CASE("with the shipped content every route offer fits the game's help box",
         for (int arena = 1; arena <= h.rc.state().arena_count; ++arena) {
             test::ClearArena(h.rc, t);
             REQUIRE(h.rc.ContinueToRewards().ok());
-            REQUIRE(h.rc.ChooseReward(0).ok());
             if (h.rc.phase() == Phase::RunComplete) break;
+            REQUIRE(h.rc.ChooseReward(0).ok());
             REQUIRE(h.rc.LeaveShop().ok());
             for (const OfferView& o : h.rc.Snapshot(t).route_offers) {
                 INFO(o.title << " | " << o.detail);
@@ -321,8 +321,9 @@ TEST_CASE("a run ends on the boss: offered by name, its death alone clears the a
     REQUIRE(h.rc.content().FindMapByStage(200) != nullptr);
     CHECK(result->arena_name == h.rc.content().FindMapByStage(200)->name);
     CHECK_FALSE(result->arena_name.empty());
+    // The boss is the last arena: no reward after it, the run is complete.
+    CHECK(h.rc.RewardOffer().empty());
     REQUIRE(h.rc.ContinueToRewards().ok());
-    REQUIRE(h.rc.ChooseReward(0).ok());
     CHECK(h.rc.phase() == Phase::RunComplete);
     const auto summary = h.rc.EndRun();
     REQUIRE(summary.ok());

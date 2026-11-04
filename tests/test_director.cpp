@@ -217,6 +217,59 @@ TEST_CASE("a stuck unit moves to another point and its point is not used again",
     }
 }
 
+TEST_CASE("a unit is moved only to a point the adapter accepts, and stays put without one", "[director]") {
+    // The adapter refuses points the player can see (user playtest 2026-11-04: enemies moved
+    // before the player's eyes).
+    MapDef map = TestMap(1);
+    map.points = {{0, 0, 0}, {1000, 0, 0}, {0, 0, 1000}};
+    Director d(map, 10, 1, 3);
+    const auto first = d.Tick(0.0, std::nullopt);
+    REQUIRE(first.size() == 1);
+    d.Spawned(first[0].ticket, "a");
+    const std::array<double, 3> hidden{0, 0, 1000};
+    CHECK_FALSE(d.Relocate("a", std::nullopt, [](const std::array<double, 3>&) { return false; }).has_value());
+    CHECK(d.relocations() == 0);
+    if (first[0].pos != hidden) {
+        const auto to = d.Relocate("a", std::nullopt, [&](const std::array<double, 3>& p) { return p == hidden; });
+        REQUIRE(to.has_value());
+        CHECK(*to == hidden);
+        CHECK(d.relocations() == 1);
+    }
+    // Refused moves leave its point usable: with every move refused, it is picked again.
+    Director e(map, 10, 1, 3);
+    const auto spawn = e.Tick(0.0, std::nullopt);
+    REQUIRE(spawn.size() == 1);
+    e.Spawned(spawn[0].ticket, "b");
+    for (int i = 0; i < 5; ++i) CHECK_FALSE(e.Relocate("b", std::nullopt, [](const std::array<double, 3>&) { return false; }).has_value());
+    REQUIRE(e.Died("b"));
+    bool reused = false;
+    for (double t = 1.0; t < 60.0 && !reused; t += 1.0) {
+        for (const SpawnRequest& r : e.Tick(t, std::nullopt)) {
+            reused = reused || r.pos == spawn[0].pos;
+            e.Spawned(r.ticket, "u" + std::to_string(r.ticket));
+            e.Died("u" + std::to_string(r.ticket));
+        }
+    }
+    CHECK(reused);
+}
+
+TEST_CASE("a spawn comes from a point the adapter prefers, and from any point without one", "[director]") {
+    // The boss came from behind a door (user playtest 2026-11-04): the adapter prefers points
+    // with nothing between them and the player.
+    MapDef map = TestMap(1);
+    map.points = {{1000, 0, 0}, {0, 0, 1000}, {-1000, 0, 0}};
+    map.boss = MapBoss{"uEm40", "Beast", 5000};
+    const std::array<double, 3> open{0, 0, 1000};
+    for (std::uint64_t seed = 0; seed < 20; ++seed) {
+        Director d(map, 1, 1, seed);
+        const auto r = d.Tick(0.0, std::array<double, 3>{0, 0, 0}, [&](const std::array<double, 3>& p) { return p == open; });
+        REQUIRE(r.size() == 1);
+        CHECK(r[0].pos == open);
+        Director e(map, 1, 1, seed);
+        CHECK(e.Tick(0.0, std::array<double, 3>{0, 0, 0}, [](const std::array<double, 3>&) { return false; }).size() == 1);
+    }
+}
+
 TEST_CASE("a boss comes from a point on the player's level", "[director]") {
     MapDef map = TestMap(1);
     map.min_player_distance = 500.0;

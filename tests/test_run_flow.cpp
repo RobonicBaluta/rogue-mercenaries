@@ -80,11 +80,18 @@ TEST_CASE("full three-arena run driven by a fake event script", "[run]") {
         CHECK(rc.state().arenas.back().non_player_kills == 1);
         CHECK(rc.state().arenas.back().duplicate_kills == 1);
 
-        // Rewards.
+        // Rewards, except after the last arena (nothing is left to use one on).
         CHECK(rc.ChooseReward(0).code == ErrorCode::WrongPhase);
-        REQUIRE(rc.ContinueToRewards().ok());
-        REQUIRE(rc.RewardOffer().size() == 3);
-        REQUIRE(rc.ChooseReward(1).ok());
+        if (arena == 3) {
+            CHECK(rc.RewardOffer().empty());
+            REQUIRE(rc.ContinueToRewards().ok());
+            CHECK(rc.phase() == Phase::RunComplete);
+            CHECK(rc.ChooseReward(0).code == ErrorCode::WrongPhase);
+        } else {
+            REQUIRE(rc.ContinueToRewards().ok());
+            REQUIRE(rc.RewardOffer().size() == 3);
+            REQUIRE(rc.ChooseReward(1).ok());
+        }
         if (arena < 3) {
             CHECK(rc.phase() == Phase::Shop);
             CHECK(rc.BeginArena(t).code == ErrorCode::WrongPhase);
@@ -123,7 +130,7 @@ TEST_CASE("full three-arena run driven by a fake event script", "[run]") {
     CHECK(CountEvents(h.sink, EventType::RunStarted) == 1);
     CHECK(CountEvents(h.sink, EventType::ArenaStarted) == 3);
     CHECK(CountEvents(h.sink, EventType::ArenaCompleted) == 3);
-    CHECK(CountEvents(h.sink, EventType::RewardSelected) == 3);
+    CHECK(CountEvents(h.sink, EventType::RewardSelected) == 2);  // none after the last arena
     CHECK(CountEvents(h.sink, EventType::RouteSelected) == 2);
     CHECK(CountEvents(h.sink, EventType::RunEnded) == 1);
     for (const Event& e : h.sink.events) {

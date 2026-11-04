@@ -21,7 +21,7 @@ namespace rm {
 ///   Idle --StartRun--> Idle(run active) --BeginArena--> ArenaActive --CompleteArena-->
 ///   ArenaResults --ContinueToRewards--> RewardSelection --ChooseReward-->
 ///   Shop --LeaveShop--> RouteSelection --ChooseRoute, BeginArena--> ArenaActive ...
-///   After the final arena's ChooseReward: RunComplete. OnPlayerDied/AbandonRun: RunFailed.
+///   The final arena offers no reward: its ContinueToRewards goes to RunComplete. OnPlayerDied/AbandonRun: RunFailed.
 ///   EndRun (from RunComplete/RunFailed) banks credits and returns to Idle (no run active).
 enum class Phase {
     Idle,
