@@ -254,6 +254,20 @@ MoveFn g_origQuitState = nullptr;
 std::atomic<bool> g_quitHook{false};
 
 void __fastcall QuitStateDetour(std::uintptr_t self, void*) {
+    // Every quit's first step is logged: a run quit at 20:00:56 on 2026-11-04 wrote the save with no
+    // line from here, so whether a pause menu quit comes this way is not known yet.
+    if (ReadOr<std::uint8_t>(self + re5::off::kMatchQuitStep, 0xFF) == 0) {
+        static std::uintptr_t logged = 0;
+        static unsigned long long loggedAt = 0;
+        const auto gw = GameWork();
+        if (self != logged || GetTickCount64() - loggedAt > 2000) {
+            logged = self;
+            loggedAt = GetTickCount64();
+            RM_LOGI("autopilot: the match's quit state begins (run match %d, to title %d, armed %d, mode %d, Mercenaries phase %d)",
+                    g_runMatch.load() ? 1 : 0, g_toTitle.load() ? 1 : 0, g_armed.load() ? 1 : 0,
+                    gw ? ReadOr<std::int32_t>(gw + 0x58, -1) : -1, gw ? ReadOr<std::int32_t>(gw + re5::off::kGameWorkMercPhase, -1) : -1);
+        }
+    }
     if (g_enabled.load() && (g_runMatch.load() || g_toTitle.load() || g_armed.load()) &&
         ReadOr<std::uint8_t>(self + re5::off::kMatchQuitStep, 0xFF) == 0) {
         const auto gw = GameWork();
