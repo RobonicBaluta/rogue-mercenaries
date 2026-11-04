@@ -81,11 +81,13 @@
           "build": {
             "name": "Heavy Gunner",
             "icon": "gatling",
-            "summary": "Can unlock the Gatling gun in CREDITS and then find it in his runs. Ammo stacks three times as high.",
+            "summary": "Every shop sells the Gatling gun for 100 supplies until he has it. Ammo stacks three times as high.",
             "extra_weapons": [
               "gatling"
             ],
-            "ammo_stack_mult": 3
+            "ammo_stack_mult": 3,
+            "shop_weapon": "gatling",
+            "shop_weapon_price": 100
           }
         }
       ]

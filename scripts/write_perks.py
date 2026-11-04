@@ -154,8 +154,8 @@ BUILDS = {
     },
     'chris_heavy_metal': {
         'name': 'Heavy Gunner', 'icon': 'gatling',
-        'summary': 'Can unlock the Gatling gun in CREDITS and then find it in his runs. Ammo stacks three times as high.',
-        'extra_weapons': ['gatling'], 'ammo_stack_mult': 3,
+        'summary': 'Every shop sells the Gatling gun for 100 supplies until he has it. Ammo stacks three times as high.',
+        'extra_weapons': ['gatling'], 'ammo_stack_mult': 3, 'shop_weapon': 'gatling', 'shop_weapon_price': 100,
     },
     'sheva_tribal': {
         'name': 'Hunter', 'icon': 'bow',
@@ -368,8 +368,8 @@ ids = {'m92f': 0x0102, 'vz61': 0x0103, 'ithaca_m37': 0x0104, 's75': 0x0105, 'sig
        'dragunov': 0x0120, 'samurai_edge': 0x0129, 'gatling': 0x0115, 'longbow': 0x010F,
        'm93r': 0x011E, 'stun_rod': 0x0122, 'grenade_launcher': 0x0125, 'rocket_launcher': 0x010D, 'flamethrower': 0x0121}
 WEAPON_EXTRA = [
-    {'id': 'gatling', 'name': 'Gatling Gun', 'category': 'machine_gun', 'base_damage_mult': 1.0, 'unlock_cost_credits': 600,
-     'build_only': True},
+    # Heavy Metal's own gun: no unlock (every shop of his sells it, user playtest 2026-11-04).
+    {'id': 'gatling', 'name': 'Gatling Gun', 'category': 'machine_gun', 'base_damage_mult': 1.0, 'build_only': True},
     {'id': 'longbow', 'name': 'Longbow', 'category': 'bow', 'base_damage_mult': 1.0, 'build_only': True},
     # The rest of RE5's arsenal (2026-11-04, the user's go), unlocked in CREDITS. The grenade
     # launcher is its explosive-round item (0x0125); the rocket launcher holds one rocket and the
@@ -381,8 +381,11 @@ WEAPON_EXTRA = [
     {'id': 'flamethrower', 'name': 'Flamethrower', 'category': 'flamethrower', 'base_damage_mult': 1.0, 'unlock_cost_credits': 300},
 ]
 for extra in WEAPON_EXTRA:
-    if not any(wd['id'] == extra['id'] for wd in w['weapons']):
+    known = [wd for wd in w['weapons'] if wd['id'] == extra['id']]
+    if not known:
         w['weapons'].append(extra)
+    elif 'unlock_cost_credits' not in extra:
+        known[0].pop('unlock_cost_credits', None)
 for wd in w['weapons']:
     if wd['id'] in ids:
         wd['game_item'] = ids[wd['id']]

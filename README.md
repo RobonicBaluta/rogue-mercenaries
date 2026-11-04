@@ -133,7 +133,7 @@ the others are written and wait for a playtest (2026-11-03).
 | Chris | Safari | Mine Layer | Chests and enemy drops are proximity bombs (an ammo, herb or grenade pickup becomes one); they stack to 10. Health x1.25. |
 | Chris | S.T.A.R.S. | Field Kit | A first aid spray on every arena clear. |
 | Chris | Warrior | Brute Force | Only shotguns, handguns and magnums are offered; they hit 25 percent harder. |
-| Chris | Heavy Metal | Heavy Gunner | The Gatling gun can be unlocked in CREDITS and then turns up in his runs; ammo stacks three times as high. |
+| Chris | Heavy Metal | Heavy Gunner | Starts with the pistol only; every shop sells the Gatling gun for 100 supplies until he has it (no unlock); ammo stacks three times as high. |
 | Sheva | Clubbin' | Night Shopper | Supplies x1.5; one free NEW STOCK at every shop. |
 | Sheva | Tribal | Hunter | Starts with her longbow and 20 arrows (10 more per arena clear); arrows hit 50 percent harder; each kill heals 1.5 percent of her health. |
 | Sheva | Business | Expense Account | Better rarities in rewards, shop and chests; SMGs hit 30 percent harder and upgrade without limit. |

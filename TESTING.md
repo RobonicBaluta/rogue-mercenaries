@@ -70,6 +70,8 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | Twin Fury hits | `special: dual_smg over (done): N pulses, N hits, N staggered` |
 | Wesker's moves | `special: boss motion pawn\em\em80\motion\em80 20` (the dash's arrival), `... 24` (the lunge's knee), `... C9` (the burst's kick), each `N of N body tracks ...` then `boss motion NN done: N frames in N s` |
 | last arena | `phase arena_results -> run_complete` (no `reward_selection` after the boss) |
+| bosses | the Uroboros: `boss drive: uEm40 actions walk N, near grab N (of N), far grab N (lookup N, N actions)` with ids found (not -1), then `near grab (action N)` lines; the giant Uroboros (uEm43): no `director: uEm43 stuck ... moved to` lines (only its own `cEm43ActShift`) |
+| Heavy Metal | every shop lists the Gatling gun (`0115`) at 100 supplies until it is bought |
 | Iron Grip (Chris) | `iron grip: cEm10ActNeckHang_PL by uEm10 thrown off (cEm10ActDmgFlyoff)`; another grabber: `... kept its grab (no known reaction)` or `no grabber found` |
 | Scavenger, Chemist | at the arena's start `world: drops: the game's own, ammo and recovery items as ammo for the gun in hand` / `, swaps 0301->0309 0305->0309`; on a pickup `world: picked up 0305, given as 0203 (ammo for the gun in hand)` / `given as 0309 (a perk's swap)` |
 | stack perks | `build: item 0204 stacks to N (was M)` (Sharpshooter rifle, Weapon Expert handgun, Point Man machine gun, Magnum Specialist magnum rounds) |

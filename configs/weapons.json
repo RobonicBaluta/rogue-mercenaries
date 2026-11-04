@@ -143,7 +143,6 @@
       "name": "Gatling Gun",
       "category": "machine_gun",
       "base_damage_mult": 1.0,
-      "unlock_cost_credits": 600,
       "build_only": true,
       "game_item": 277
     },

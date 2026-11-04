@@ -681,3 +681,32 @@ TEST_CASE("a launcher's rounds are offered only while the run holds the launcher
     const auto loaded = Content::LoadFromStrings(src);
     CHECK(HasError(loaded.errors, "for_weapons references unknown weapon"));
 }
+
+TEST_CASE("a build's shop weapon is in every shop, with no unlock, until the run holds it", "[builds]") {
+    // Heavy Metal's Gatling (user playtest 2026-11-04: never seen without its CREDITS unlock).
+    // The fixture's rifle needs an unlock: the build's shop sells it anyway, at the build's price.
+    const auto content = test::Load(BuildSources(json{{"shop_weapon", "rifle"}, {"shop_weapon_price", 70}}));
+    for (std::uint64_t seed = 1; seed <= 20; ++seed) {
+        test::Harness h(content);
+        REQUIRE(h.rc.StartRun("alpha", seed, "alpha_build").ok());
+        ToShop(h.rc, 0.0);
+        int rifles = 0;
+        std::size_t at = 0;
+        for (std::size_t i = 0; i < h.rc.ShopOffers().size(); ++i) {
+            const ShopOffer& o = h.rc.ShopOffers()[i];
+            if (o.kind != ShopOfferKind::Weapon || o.weapon.base_id != "rifle") continue;
+            ++rifles;
+            at = i;
+            CHECK(o.price == 70);
+        }
+        REQUIRE(rifles == 1);
+        // Bought, it is not offered again.
+        REQUIRE(h.rc.AdjustSupplies(200, "test").ok());
+        REQUIRE(h.rc.Purchase(at).ok());
+        REQUIRE(h.rc.LeaveShop().ok());
+        REQUIRE(h.rc.ChooseRoute(0).ok());
+        ToShop(h.rc, 200.0);
+        for (const ShopOffer& o : h.rc.ShopOffers()) CHECK_FALSE((o.kind == ShopOfferKind::Weapon && o.weapon.base_id == "rifle"));
+    }
+    CHECK(Content::LoadFromStrings(BuildSources(json{{"shop_weapon", "bazooka"}})).errors.size() > 0);
+}

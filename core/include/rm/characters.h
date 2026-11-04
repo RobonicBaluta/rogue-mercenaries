@@ -100,6 +100,10 @@ struct SkinBuild {
     /// Game item picked up -> the item given instead (JSON keys and values may be hex).
     std::vector<std::pair<std::int64_t, std::int64_t>> pickup_as;
     bool break_grabs = false;        // a grab is broken at once: the grabber is thrown off (Majini)
+    /// Base id the shop always offers, with no unlock, until the run holds it (Heavy Metal's
+    /// Gatling), at shop_weapon_price supplies (0: the common weapon price).
+    std::string shop_weapon;
+    std::int64_t shop_weapon_price = 0;
     SkinSpecial special;
     SkinSpecial special_2;  // a second special on its own button (Wesker's burst)
     [[nodiscard]] const SkinSpecial& Special(int slot) const { return slot == 1 ? special_2 : special; }

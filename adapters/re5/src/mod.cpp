@@ -2216,6 +2216,10 @@ void TraceDirectorArena(double now, const std::optional<std::array<double, 3>>& 
     }
 }
 
+// Bosses that fight from where they are and move themselves (the giant Uroboros of the capsule
+// dome: its Shift takes it around the dome); the mod never moves them.
+bool BossHoldsGround(const std::string& cls) { return cls == "uEm43"; }
+
 // Enemies that cannot reach the player (behind a door the story opens, on a ledge, a boss at a
 // door) are moved: one far from the player that has not moved 1.5 m in 12 s (8 s for a boss), and
 // the last few when nothing has died for a while and they are far. The director gives each one
@@ -2225,7 +2229,6 @@ struct StuckTrack {
     float anchor[3] = {};
     double anchorAt = 0.0;
     double lastRescue = -1.0e9;
-    float bestAway = 1.0e9f;  // a boss: the closest it has come to the player since anchorAt
     bool seenNoted = false;   // "in the player's sight" logged since anchorAt
 };
 
@@ -2271,7 +2274,6 @@ double g_stuckRemainingSince = 0.0;
 constexpr double kStuckCheckEvery = 0.5;
 constexpr double kStuckSeconds = 12.0;
 constexpr double kBossStuckSeconds = 8.0;
-constexpr float kBossCloser = 150.0f;          // a boss closing in by this much is coming for the player
 constexpr double kBossLogEvery = 5.0;
 constexpr float kStuckMove = 150.0f;           // moved less than this ...
 constexpr float kStuckFar = 900.0f;            // ... while farther than this from the player
@@ -2304,8 +2306,6 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
         const float away = static_cast<float>(std::sqrt(std::pow(pos[0] - (*player)[0], 2.0) + std::pow(pos[2] - (*player)[2], 2.0)));
         const bool boss = unit == g->boss.unit;
         if (boss) {
-            // A boss walking anywhere but at the player is as lost as one standing still: only
-            // closing in counts as progress.
             static double loggedAt = -1.0e9;
             if (now - loggedAt >= kBossLogEvery) {
                 loggedAt = now;
@@ -2313,14 +2313,13 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
                         pos[0], pos[1], pos[2], away / 100.0f, (pos[1] - static_cast<float>((*player)[1])) / 100.0f,
                         engine::CurrentActionName(unit).c_str());
             }
-            if (fresh || away < t.bestAway - kBossCloser) {
-                for (int k = 0; k < 3; ++k) t.anchor[k] = pos[k];
-                t.anchorAt = now;
-                t.bestAway = away;
-                t.seenNoted = false;
-                if (!lastFew) continue;
-            }
-        } else if (fresh || moved > kStuckMove) {
+            // The giant Uroboros holds its dome and moves around it itself (cEm43ActShift); moved
+            // every 8 s it did not close in, it seemed to teleport all around (user playtest
+            // 2026-11-04). It is never moved. Other bosses only when they stand stuck, like any
+            // enemy (the Uroboros walks at the player now, DriveBoss).
+            if (BossHoldsGround(engine::ClassName(unit))) continue;
+        }
+        if (fresh || moved > kStuckMove) {
             for (int k = 0; k < 3; ++k) t.anchor[k] = pos[k];
             t.anchorAt = now;
             t.seenNoted = false;
@@ -2357,7 +2356,6 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
         for (int k = 0; k < 3; ++k) t.anchor[k] = dest[k];
         t.anchorAt = now;
         t.lastRescue = now;
-        t.bestAway = static_cast<float>(std::sqrt(std::pow(dest[0] - (*player)[0], 2.0) + std::pow(dest[2] - (*player)[2], 2.0)));
     }
 }
 
@@ -2371,6 +2369,8 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
 struct BossDrive {
     std::uintptr_t unit = 0;
     int walk = -1, nearGrab = -1, farGrab = -1;
+    double nextLookup = 0.0;
+    int lookups = 0;
     double nextGrab = 0.0;
     double nextWalk = 0.0;
     std::string lastAction;
@@ -2395,6 +2395,13 @@ void DriveBoss(double now, const std::optional<std::array<double, 3>>& player) {
     if (b.unit != unit) {
         b = {};
         b.unit = unit;
+        b.nextGrab = now + 2.0;
+    }
+    // Its actions, once it has them: on its first frame the table was empty (user playtest
+    // 2026-11-04: "walk -1, near grab -1 (of 0)", no grab all fight). Asked again every second.
+    if (b.walk < 0 && b.nearGrab < 0 && b.farGrab < 0 && now >= b.nextLookup && b.lookups < 30) {
+        b.nextLookup = now + 1.0;
+        ++b.lookups;
         const auto first = [unit](const char* cls) {
             const auto ids = engine::ActionIdsOf(unit, cls);
             return ids.empty() ? -1 : ids.front();
@@ -2404,8 +2411,11 @@ void DriveBoss(double now, const std::optional<std::array<double, 3>>& player) {
         const auto nearIds = engine::ActionIdsOf(unit, "cEm40ActNearCatch");
         b.nearGrab = std::find(nearIds.begin(), nearIds.end(), 0x26) != nearIds.end() ? 0x26 : nearIds.empty() ? -1 : nearIds.front();
         b.farGrab = first("cEm40ActFarCatch");
-        b.nextGrab = now + 2.0;
-        RM_LOGI("boss drive: uEm40 actions walk %d, near grab %d (of %zu), far grab %d", b.walk, b.nearGrab, nearIds.size(), b.farGrab);
+        const bool found = b.walk >= 0 || b.nearGrab >= 0 || b.farGrab >= 0;
+        if (found || b.lookups == 30) {
+            RM_LOGI("boss drive: uEm40 actions walk %d, near grab %d (of %zu), far grab %d (lookup %d, %u actions)", b.walk,
+                    b.nearGrab, nearIds.size(), b.farGrab, b.lookups, ReadOr<std::uint32_t>(unit + re5::off::kCharActionCount, 0));
+        }
     }
     const auto hp = engine::ReadHp(unit);
     if (!hp || hp->hp <= 0) return;

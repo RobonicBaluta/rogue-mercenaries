@@ -798,7 +798,12 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                      "starting_weapon_rarity", "max_health_mult", "stack_max", "ammo_stack_mult", "extra_weapons",
                      "melee_damage", "melee_kill_stats", "melee_kill_caps", "heal_mult", "heal_buff_fraction", "heal_invulnerable_seconds",
                      "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "extra_chests", "special",
-                     "special_2", "stack_mult", "never_offered", "drops_as_held_ammo", "pickup_as", "break_grabs"});
+                     "special_2", "stack_mult", "never_offered", "drops_as_held_ammo", "pickup_as", "break_grabs",
+                     "shop_weapon", "shop_weapon_price"});
+    GetString(d, b, "shop_weapon", out.shop_weapon, false);
+    if (GetInt(d, b, "shop_weapon_price", out.shop_weapon_price, false)) {
+        CheckRange(d, "shop_weapon_price", static_cast<double>(out.shop_weapon_price), 0, 10000);
+    }
     GetString(d, b, "name", out.name, false);
     if (GetString(d, b, "icon", out.icon, false) && !IsValidId(out.icon)) d.Error("icon " + Q(out.icon) + " is not a valid name");
     if (GetNumber(d, b, "ammo_stack_mult", out.ammo_stack_mult, false)) CheckRange(d, "ammo_stack_mult", out.ammo_stack_mult, 1.0, 20.0);
@@ -1797,6 +1802,14 @@ private:
                     d.Error("extra_weapons references unknown weapon " + Q(id));
                 } else if (!w->build_only) {
                     d.Error("extra_weapons lists " + Q(id) + ", which is not build_only (every build is offered it)");
+                }
+            }
+            if (!b.shop_weapon.empty()) {
+                const WeaponBaseDef* w = c.FindWeapon(b.shop_weapon);
+                if (w == nullptr) {
+                    d.Error("shop_weapon references unknown weapon " + Q(b.shop_weapon));
+                } else if (w->build_only && std::find(b.extra_weapons.begin(), b.extra_weapons.end(), w->id) == b.extra_weapons.end()) {
+                    d.Error("shop_weapon " + Q(w->id) + " is build_only and not in the build's extra_weapons");
                 }
             }
             if (b.drops_as >= 0) {
