@@ -97,10 +97,13 @@ struct ExtraGun {
     std::uint16_t picture;
     const char* model;
 };
+// The flamethrower is a campaign area's item, never stored: none either; it takes the Gatling's
+// picture (the nearest heavy weapon) until one of its own is found.
 constexpr ExtraGun kExtraGuns[] = {
     {0x011F, 0x13E, "pawn\\wp\\wp1f\\model\\wp1f00"},  // Px4
     {0x0129, 0x124, "pawn\\wp\\wp29\\model\\wp2900"},  // Samurai Edge (S.T.A.R.S. Wesker's)
     {0x0112, 0x124, "pawn\\wp\\wp12\\model\\wp1200"},  // Samurai Edge (the other record)
+    {0x0121, 0x135, "pawn\\wp\\wp21\\model\\wp2100"},  // flamethrower
 };
 constexpr std::uint16_t kInsertAfter = 0x011E;  // M93R
 constexpr std::uint16_t kFirstTreasure = 0x0400;

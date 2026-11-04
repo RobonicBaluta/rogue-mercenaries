@@ -541,3 +541,143 @@ TEST_CASE("melee kills raise run stats up to their caps, and the new stats work"
     meleeKills(supplies);
     CHECK(supplies.rc.state().stats.supplies == Catch::Approx(0.5));
 }
+
+namespace {
+
+// Alpha's build skin (`build`) plus a free style perk for Alpha (`perk`, its id "trait").
+ContentSources PerkBuildSources(const json& build, const json& perk) {
+    return test::EditFixture([&build, &perk](json& perks, json& weapons, json& characters, json&, json&) {
+        for (json& w : weapons["weapons"]) {
+            if (w["id"] == "shotgun") w["game_item"] = 0x0104;
+        }
+        json p = perk;
+        p["id"] = "trait";
+        p["name"] = "Trait";
+        p["category"] = "style";
+        p["rarity"] = "common";
+        p["characters"] = json::array({"alpha"});
+        if (!p.contains("effects")) p["effects"] = json::array();
+        perks["perks"].push_back(p);
+        characters["characters"][0]["skins"] = json::array({
+            json{{"id", "alpha_base"}, {"name", "Base"}, {"costume_index", 0}},
+            json{{"id", "alpha_build"}, {"name", "Build"}, {"costume_index", 1}, {"build", build}},
+        });
+    });
+}
+
+}  // namespace
+
+TEST_CASE("a style perk's build adds to the skin's (a rule with its cost)", "[builds]") {
+    const json build = {{"category_damage", {{"handgun", 0.1}}}, {"max_health_mult", 1.5}, {"drops_as", 262}};
+    const json perk = {{"build", {{"melee_damage", 1.5}, {"category_damage", {{"handgun", -0.25}}}, {"max_health_mult", 1.2},
+                                   {"heal_mult", 0.75}, {"supplies_mult", 0.8}, {"stack_mult", {{"0x0204", 2}}},
+                                   {"never_offered", {{"categories", {"shotgun"}}}}, {"drops_as_held_ammo", true},
+                                   {"pickup_as", {{"0x0301", "0x0309"}}}, {"break_grabs", true}}}};
+    const auto content = test::Load(PerkBuildSources(build, perk));
+    int weapons_seen = 0;
+    for (std::uint64_t seed = 1; seed <= 30; ++seed) {
+        test::Harness h(content);
+        REQUIRE(h.rc.EquipPerk("alpha", "trait").ok());
+        REQUIRE(h.rc.StartRun("alpha", seed, "alpha_build").ok());
+        const SkinBuild& b = h.rc.state().character.build;
+        CHECK(b.melee_damage == Catch::Approx(1.5));
+        CHECK(b.category_damage.at("handgun") == Catch::Approx(-0.15));
+        CHECK(b.max_health_mult == Catch::Approx(1.8));
+        CHECK(b.heal_mult == Catch::Approx(0.75));
+        CHECK(b.supplies_mult == Catch::Approx(0.8));
+        REQUIRE(b.stack_mult.size() == 1);
+        CHECK(b.stack_mult[0] == std::pair<std::int64_t, double>{0x0204, 2.0});
+        CHECK_FALSE(b.drops_as_held_ammo);  // the skin's own drops (mines) win
+        REQUIRE(b.pickup_as.size() == 1);
+        CHECK(b.pickup_as[0] == std::pair<std::int64_t, std::int64_t>{0x0301, 0x0309});
+        CHECK(b.break_grabs);
+        // Never offered: rewards and the shop leave the shotgun out.
+        test::ClearArena(h.rc, 0.0);
+        REQUIRE(h.rc.ContinueToRewards().ok());
+        for (const RewardChoice& c : h.rc.RewardOffer()) {
+            if (c.kind != RewardKind::Weapon) continue;
+            CHECK(c.weapon.base_id != "shotgun");
+            ++weapons_seen;
+        }
+        REQUIRE(h.rc.ChooseReward(0).ok());
+        for (const ShopOffer& o : h.rc.ShopOffers()) {
+            if (o.kind == ShopOfferKind::Weapon) CHECK(o.weapon.base_id != "shotgun");
+        }
+    }
+    CHECK(weapons_seen == 0);  // the rifle is locked and the pistol held: nothing else to offer
+    // Without the perk the skin's build is as it was, and the shotgun is offered.
+    test::Harness plain(content);
+    REQUIRE(plain.rc.StartRun("alpha", 1, "alpha_build").ok());
+    CHECK(plain.rc.state().character.build.max_health_mult == Catch::Approx(1.5));
+    CHECK(plain.rc.state().character.build.melee_damage == Catch::Approx(0.0));
+    CHECK_FALSE(plain.rc.state().character.build.break_grabs);
+    int shotguns = 0;
+    for (std::uint64_t seed = 1; seed <= 30; ++seed) {
+        test::Harness h(content);
+        REQUIRE(h.rc.StartRun("alpha", seed, "alpha_build").ok());
+        test::ClearArena(h.rc, 0.0);
+        REQUIRE(h.rc.ContinueToRewards().ok());
+        for (const RewardChoice& c : h.rc.RewardOffer()) shotguns += c.kind == RewardKind::Weapon && c.weapon.base_id == "shotgun";
+    }
+    CHECK(shotguns > 0);
+}
+
+TEST_CASE("a perk's build is limited to what adds into a run's", "[builds]") {
+    const auto errors = [](const json& perk) {
+        const auto loaded = Content::LoadFromStrings(PerkBuildSources(json{{"summary", "ok"}}, perk));
+        for (const std::string& e : loaded.errors) UNSCOPED_INFO("got: " << e);
+        return loaded.errors;
+    };
+    CHECK(errors(json{{"build", {{"melee_damage", 1.0}}}}).empty());
+    CHECK(HasError(errors(json{{"build", {{"special", {{"kind", "dash"}}}}}}), "special"));
+    CHECK(HasError(errors(json{{"build", {{"never_offered", {{"ids", {"bazooka"}}}}}}}), "unknown weapon"));
+    CHECK(HasError(errors(json{{"build", {{"stack_mult", {{"0x0204", 0.5}}}}}}), "stack_mult"));
+    CHECK(HasError(errors(json{{"build", {{"pickup_as", {{"0x0301", "0x0301"}}}}}}), "pickup_as"));
+    CHECK(HasError(errors(json{{"effects", json::array()}}), "non-empty"));
+}
+
+TEST_CASE("a melee-only kill effect pays for melee kills alone", "[builds]") {
+    const json perk = {{"effects", {{{"kind", "supplies_on_kill"}, {"amount", 15}, {"melee_only", true}}}}};
+    const auto content = test::Load(PerkBuildSources(json{{"summary", "ok"}}, perk));
+    test::Harness h(content);
+    REQUIRE(h.rc.EquipPerk("alpha", "trait").ok());
+    REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    auto kill = [&](std::optional<bool> melee, double t) {
+        KillEvent k;
+        k.now = t;
+        k.by_player = true;
+        k.weapon_id = std::string("pistol");
+        k.was_melee = melee;
+        return h.rc.OnEnemyKilled(k).supplies_awarded;
+    };
+    const std::int64_t shot = kill(false, 1.0);
+    const std::int64_t unknown = kill(std::nullopt, 2.0);
+    const std::int64_t melee = kill(true, 3.0);
+    CHECK(shot == unknown);
+    CHECK(melee == shot + 15);
+}
+
+TEST_CASE("a launcher's rounds are offered only while the run holds the launcher", "[builds]") {
+    // Rounds for the shotgun only: the run holds the pistol, so no offer has them, and the
+    // starting loadout never rolls them.
+    ContentSources src = test::FixtureSources();
+    json loadouts = json::parse(src.loadouts);
+    loadouts["equipment"].push_back(json{{"id", "rounds"}, {"name", "Rounds"}, {"cost", 1}, {"max", 3}, {"game_item", 0x0206},
+                                         {"price", 1}, {"bundle", 2}, {"for_weapons", {"shotgun"}}});
+    src.loadouts = loadouts.dump();
+    const auto content = test::Load(src);
+    for (std::uint64_t seed = 1; seed <= 40; ++seed) {
+        test::Harness h(content);
+        REQUIRE(h.rc.StartRun("beta", seed).ok());
+        for (const LoadoutItem& item : h.rc.state().loadout.items) CHECK(item.id != "rounds");
+        test::ClearArena(h.rc, 0.0);
+        REQUIRE(h.rc.ContinueToRewards().ok());
+        for (const RewardChoice& c : h.rc.RewardOffer()) CHECK(c.item_id != "rounds");
+    }
+    json bad = loadouts;
+    bad["equipment"].back()["for_weapons"] = json::array({"bazooka"});
+    src.loadouts = bad.dump();
+    const auto loaded = Content::LoadFromStrings(src);
+    CHECK(HasError(loaded.errors, "for_weapons references unknown weapon"));
+}

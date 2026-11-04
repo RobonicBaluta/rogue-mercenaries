@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "rm/capabilities.h"
+#include "rm/characters.h"
 #include "rm/common.h"
 #include "rm/rarity.h"
 
@@ -80,6 +81,7 @@ struct EffectDef {
     /// Added once per stack beyond the first ("per_stack" object in JSON; omitted keys don't scale).
     EffectParams per_stack;
     bool require_no_damage = false;
+    bool melee_only = false;  // supplies_on_kill, item_on_kill: melee kills only (needs melee_detect)
 
     /// Parameters at the given stack count (stacks < 1 is treated as 1).
     [[nodiscard]] EffectParams AtStacks(int stacks) const;
@@ -104,6 +106,10 @@ struct PerkDef {
     /// Declared plus implied capabilities (sorted union).
     std::vector<std::string> requires_capabilities;
     std::vector<EffectDef> effects;
+    /// The perk's changes to the run's build (perks.json "build", ApplyPerkBuild): category
+    /// damage, melee damage, rarity shift add; health, heals, supplies, stacks multiply; the
+    /// filters, conversions and flags join the skin's.
+    std::optional<SkinBuild> build;
     bool enabled = true;
     /// Icon name (a-z, 0-9, '_'): the adapter shows icons/<icon>.png next to the perk; empty = none.
     std::string icon;

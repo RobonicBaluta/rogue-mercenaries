@@ -7,7 +7,7 @@ M92F, ITHACA, MP5, LHAWK, SHELLS, MG_AMMO, MAGNUM_AMMO = 0x0102, 0x0104, 0x0113,
 VZ61, M500, M29, PSG1, DRAGUNOV, RIFLE_AMMO = 0x0103, 0x011B, 0x010B, 0x011C, 0x0120, 0x0204
 
 
-def perk(pid, name, desc, category, effects, characters=None, cost=0, rarity='common', tags=None, enabled=True):
+def perk(pid, name, desc, category, effects, characters=None, cost=0, rarity='common', tags=None, enabled=True, build=None):
     p = {'id': pid, 'name': name, 'description': desc, 'category': category, 'rarity': rarity,
          'tags': tags or [], 'max_stacks': 1, 'effects': effects}
     if characters:
@@ -16,6 +16,8 @@ def perk(pid, name, desc, category, effects, characters=None, cost=0, rarity='co
         p['unlock_cost_credits'] = cost
     if not enabled:
         p['enabled'] = False
+    if build:
+        p['build'] = build
     return p
 
 
@@ -48,6 +50,57 @@ perks += [
           {'kind': 'item_on_arena_clear', 'game_item': SPRAY, 'amount': 1}], ['rebecca'], tags=['heal', 'items']),
     perk('excella_executive_bonus', 'Executive Bonus', 'Excella. 25 extra supplies for every arena cleared.', 'style',
          [{'kind': 'supplies_on_arena_clear', 'amount': 25, 'require_no_damage': False}], ['excella'], tags=['supplies']),
+]
+# Two more per character (2026-11-04, the user's go): each a rule with its cost, made of what the
+# builds already do in game ('build' adds into the run's build) or the perk effects.
+GUNS = ['handgun', 'shotgun', 'smg', 'machine_gun', 'rifle', 'magnum', 'bow', 'launcher', 'flamethrower']
+HANDGUN_AMMO_ITEM, MG_AMMO_ITEM, RIFLE_AMMO_ITEM, MAGNUM_AMMO_ITEM = 0x0201, 0x0202, 0x0204, 0x0209
+PROXIMITY, GREEN_HERB_GROUND, GREEN_HERB, MIXED_HERB = 0x010A, 0x0301, 0x0305, 0x0309
+perks += [
+    perk('chris_boulder_puncher', 'Boulder Puncher', 'Chris. Melee hits deal two and a half times the damage, handguns 25 percent less.', 'style',
+         [], ['chris'], cost=150, rarity='rare', tags=['melee'], build={'melee_damage': 1.5, 'category_damage': {'handgun': -0.25}}),
+    perk('chris_iron_grip', 'Iron Grip', 'Chris. Throws off a Majini that grabs him at once, but every heal is 25 percent smaller.', 'style',
+         [], ['chris'], cost=200, rarity='epic', tags=['survival'], build={'break_grabs': True, 'heal_mult': 0.75}),
+    perk('sheva_scavenger', 'Scavenger', 'Sheva. Ammo and herbs she picks up become ammo for the gun in her hands.', 'style',
+         [], ['sheva'], cost=150, rarity='rare', tags=['items'], build={'drops_as_held_ammo': True}),
+    perk('sheva_sharpshooter', 'Sharpshooter', 'Sheva. Rifles hit 35 percent harder, rifle rounds stack twice as high. Machine guns 20 percent less.', 'style',
+         [], ['sheva'], cost=150, rarity='rare', tags=['weapon'],
+         build={'category_damage': {'rifle': 0.35, 'smg': -0.2, 'machine_gun': -0.2}, 'stack_mult': {hex(RIFLE_AMMO_ITEM): 2}}),
+    perk('jill_weapon_expert', 'Weapon Expert', 'Jill. Handguns hit 30 percent harder, handgun rounds stack twice as high. Shotguns 20 percent less.', 'style',
+         [], ['jill'], cost=150, rarity='rare', tags=['weapon'],
+         build={'category_damage': {'handgun': 0.3, 'shotgun': -0.2}, 'stack_mult': {hex(HANDGUN_AMMO_ITEM): 2}}),
+    perk('jill_finisher', 'Finisher', 'Jill. Shots deal 60 percent more to enemies under a third of their health, 10 percent less otherwise.', 'style',
+         [{'kind': 'outgoing_damage_mult', 'value': 0.7, 'condition': {'type': 'target_hp_below', 'fraction': 0.34}},
+          {'kind': 'outgoing_damage_mult', 'value': -0.1}], ['jill'], cost=150, rarity='rare', tags=['damage']),
+    perk('wesker_superior_being', 'Superior Being', 'Wesker. He takes 30 percent less damage, but heals are half as strong.', 'style',
+         [{'kind': 'incoming_damage_mult', 'value': -0.3}], ['wesker'], cost=200, rarity='epic', tags=['defense'], build={'heal_mult': 0.5}),
+    perk('wesker_predator', 'Predator', 'Wesker. Each kill within 5 seconds of the last adds 10 percent damage, up to 50. 85 percent health.', 'style',
+         [{'kind': 'outgoing_damage_mult', 'value': 0.0,
+           'condition': {'type': 'kill_streak', 'window_seconds': 5, 'per_kill': 0.1, 'max_bonus': 0.5}}],
+         ['wesker'], cost=180, rarity='rare', tags=['damage'], build={'max_health_mult': 0.85}),
+    perk('josh_field_commander', 'Field Commander', 'Josh. Every arena clear hands him a hand grenade and a flash grenade. 20 percent fewer supplies.', 'style',
+         [{'kind': 'item_on_arena_clear', 'game_item': HAND, 'amount': 1}, {'kind': 'item_on_arena_clear', 'game_item': FLASH, 'amount': 1}],
+         ['josh'], cost=150, rarity='rare', tags=['items'], build={'supplies_mult': 0.8}),
+    perk('josh_point_man', 'Point Man', 'Josh. Machine guns hit 25 percent harder, their rounds stack 50 percent higher. No magnums offered.', 'style',
+         [], ['josh'], cost=150, rarity='rare', tags=['weapon'],
+         build={'category_damage': {'smg': 0.25, 'machine_gun': 0.25}, 'stack_mult': {hex(MG_AMMO_ITEM): 1.5},
+                'never_offered': {'categories': ['magnum']}}),
+    perk('barry_magnum_specialist', 'Magnum Specialist', 'Barry. Magnums hit 30 percent harder, magnum rounds stack twice as high. Machine guns 25 percent less.', 'style',
+         [], ['barry'], cost=150, rarity='rare', tags=['weapon'],
+         build={'category_damage': {'magnum': 0.3, 'smg': -0.25, 'machine_gun': -0.25}, 'stack_mult': {hex(MAGNUM_AMMO_ITEM): 2}}),
+    perk('barry_trap_setter', 'Trap Setter', 'Barry. Every 4 kills hand him a proximity bomb.', 'style',
+         [{'kind': 'item_on_kill', 'game_item': PROXIMITY, 'amount': 1, 'every_kills': 4}], ['barry'], cost=150, rarity='rare', tags=['items']),
+    perk('rebecca_chemist', 'Chemist', 'Rebecca. Green herbs she picks up become mixed herbs. Every heal is 20 percent smaller.', 'style',
+         [], ['rebecca'], cost=180, rarity='rare', tags=['heal'],
+         build={'pickup_as': {hex(GREEN_HERB_GROUND): hex(MIXED_HERB), hex(GREEN_HERB): hex(MIXED_HERB)}, 'heal_mult': 0.8}),
+    perk('rebecca_steady_nerves', 'Steady Nerves', 'Rebecca. Rifles hit 30 percent harder, shotguns 20 percent less.', 'style',
+         [], ['rebecca'], cost=120, rarity='uncommon', tags=['weapon'], build={'category_damage': {'rifle': 0.3, 'shotgun': -0.2}}),
+    perk('excella_hostile_takeover', 'Hostile Takeover', 'Excella. Every melee kill pays 15 supplies, but guns deal 15 percent less.', 'style',
+         [{'kind': 'supplies_on_kill', 'amount': 15, 'melee_only': True}], ['excella'], cost=150, rarity='rare', tags=['supplies'],
+         build={'category_damage': {g: -0.15 for g in GUNS}}),
+    perk('excella_golden_parachute', 'Golden Parachute', 'Excella. Once per arena she survives a lethal hit with 25 percent health. 20 percent fewer supplies.', 'style',
+         [{'kind': 'cheat_death', 'per_arena': 1, 'leave_hp_fraction': 0.25}], ['excella'], cost=200, rarity='epic', tags=['survival'],
+         build={'supplies_mult': 0.8}),
 ]
 # ---- Supply: what you start with. Generic ones for everyone, one per character. ----
 perks += [
@@ -198,6 +251,11 @@ ICONS = {
     'sheva_smg': 'smg', 'jill_smg': 'smg', 'wesker_magnum': 'magnum', 'josh_magnum': 'magnum', 'barry_smg': 'smg',
     'rebecca_rifle': 'rifle', 'excella_rifle': 'rifle', 'second_wind': 'second_wind', 'last_stand': 'last_stand',
     'adrenaline_shield': 'shield', 'field_medic': 'heal', 'clean_sweep': 'supplies',
+    'chris_boulder_puncher': 'fist', 'chris_iron_grip': 'chain', 'sheva_scavenger': 'ammo', 'sheva_sharpshooter': 'rifle',
+    'jill_weapon_expert': 'handgun', 'jill_finisher': 'skull', 'wesker_superior_being': 'shades', 'wesker_predator': 'lunge',
+    'josh_field_commander': 'flag', 'josh_point_man': 'smg', 'barry_magnum_specialist': 'magnum', 'barry_trap_setter': 'mine',
+    'rebecca_chemist': 'herb', 'rebecca_steady_nerves': 'rifle', 'excella_hostile_takeover': 'credits',
+    'excella_golden_parachute': 'parachute',
 }
 for p in perks:
     if p['id'] in ICONS:
@@ -207,8 +265,10 @@ doc = {
     '_comment': ("Perks are per character and come only from the mod menu. category: style = the character's way of playing "
                  "(no plain stat perks), supply = what you start with (item_on_start puts game_item into the inventory at the first "
                  "arena; generic ones plus one per character), support = bad situations (low health, lethal hits), skin = a perk a "
-                 "skin grants through its starting_passive (never listed; most skins are builds, see characters.json), curse = route modifiers. Not yet "
-                 "possible (engine work pending): grab immunity, move speed (damage by weapon type is a skin build rule). Item ids: 0x0106 hand grenade, "
+                 "skin grants through its starting_passive (never listed; most skins are builds, see characters.json), curse = route modifiers. "
+                 "A menu perk's 'build' adds into the run's build (characters.h ApplyPerkBuild: damage by weapon category, melee damage, "
+                 "health, heals, supplies, stack sizes, weapons never offered, drops as ammo for the gun in hand, items swapped on pickup, "
+                 "grabs broken). Not yet possible: move speed. Item ids: 0x0106 hand grenade, "
                  "0x0107 incendiary, 0x0108 flash, 0x0304 first aid spray, 0x0201 handgun ammo, 0x0102 M92F, 0x0104 Ithaca M37, "
                  "0x0113 MP5, 0x011A L.Hawk."),
     'schema_version': 1,
@@ -220,9 +280,14 @@ open('configs/perks.json', 'a').write('\n')
 # characters.json: a pistol first for everyone, skins carry only their trait, skill pools list the character's perks.
 c = json.load(open('configs/characters.json'))
 pools = {
-    'chris': ['chris_pocket_grenades', 'chris_shotgun'], 'sheva': ['sheva_flash_tactics', 'sheva_smg'],
-    'jill': ['jill_smg'], 'wesker': ['wesker_magnum'], 'josh': ['josh_magnum'], 'barry': ['barry_smg'],
-    'rebecca': ['rebecca_rifle'], 'excella': ['excella_rifle'],
+    'chris': ['chris_pocket_grenades', 'chris_boulder_puncher', 'chris_iron_grip', 'chris_shotgun'],
+    'sheva': ['sheva_flash_tactics', 'sheva_scavenger', 'sheva_sharpshooter', 'sheva_smg'],
+    'jill': ['jill_weapon_expert', 'jill_finisher', 'jill_smg'],
+    'wesker': ['wesker_superior_being', 'wesker_predator', 'wesker_magnum'],
+    'josh': ['josh_field_commander', 'josh_point_man', 'josh_magnum'],
+    'barry': ['barry_magnum_specialist', 'barry_trap_setter', 'barry_smg'],
+    'rebecca': ['rebecca_chemist', 'rebecca_steady_nerves', 'rebecca_rifle'],
+    'excella': ['excella_hostile_takeover', 'excella_golden_parachute', 'excella_rifle'],
 }
 passives = {'chris': 'chris_veteran', 'sheva': 'sheva_field_training', 'jill': 'jill_battle_instinct', 'wesker': 'wesker_firestarter',
             'josh': 'josh_squad_tactics', 'barry': 'barry_demolition_man', 'rebecca': 'rebecca_combat_medic', 'excella': 'excella_executive_bonus'}
@@ -241,6 +306,12 @@ def help_lines(text, width=54):
 
 for key, build in BUILDS.items():
     assert len(help_lines(build['summary'])) <= 2, (key, help_lines(build['summary']))
+# The PERKS menu shows a perk's description as its help, in the game font (letters, digits,
+# space, comma, period, hyphen: no percent sign, plus, colon or slash).
+for p in perks:
+    if p['category'] in ('style', 'supply', 'support'):
+        assert len(help_lines(p['description'])) <= 2, (p['id'], help_lines(p['description']))
+        assert all(ch.isalnum() or ch in ' ,.-' for ch in p['description']), (p['id'], p['description'])
 
 for ch in c['characters']:
     ch['starting_passive'] = passives[ch['id']]
@@ -274,6 +345,10 @@ l['budget'] = 0
 CATALOG_EXTRA = [
     {'id': 'proximity_bomb', 'name': 'Proximity Bomb', 'cost': 15, 'max': 2, 'game_item': 0x010A, 'price': 20, 'bundle': 2},
     {'id': 'arrows', 'name': 'Arrows', 'cost': 5, 'max': 1, 'game_item': 0x020B, 'price': 0, 'bundle': 10},
+    # The grenade launcher's explosive rounds, offered while the run holds it (the launcher is one
+    # game item per round type loaded; acid and nitrogen rounds would change it).
+    {'id': 'explosive_rounds', 'name': 'Explosive Rounds', 'cost': 10, 'max': 2, 'game_item': 0x0206, 'price': 25, 'bundle': 3,
+     'for_weapons': ['grenade_launcher']},
 ]
 for extra in CATALOG_EXTRA:
     if not any(e['id'] == extra['id'] for e in l['equipment']):
@@ -290,11 +365,20 @@ w = json.load(open('configs/weapons.json'))
 ids = {'m92f': 0x0102, 'vz61': 0x0103, 'ithaca_m37': 0x0104, 's75': 0x0105, 'sig556': 0x0109, 'm29': 0x010B,
        'h_and_k_p8': 0x0110, 'sig_p226': 0x0111, 'h_and_k_mp5': 0x0113, 'm3': 0x0116, 'jail_breaker': 0x0117,
        'hydra': 0x0119, 'l_hawk': 0x011A, 'm500': 0x011B, 'psg1': 0x011C, 'ak74': 0x011D, 'px4': 0x011F,
-       'dragunov': 0x0120, 'samurai_edge': 0x0129, 'gatling': 0x0115, 'longbow': 0x010F}
+       'dragunov': 0x0120, 'samurai_edge': 0x0129, 'gatling': 0x0115, 'longbow': 0x010F,
+       'm93r': 0x011E, 'stun_rod': 0x0122, 'grenade_launcher': 0x0125, 'rocket_launcher': 0x010D, 'flamethrower': 0x0121}
 WEAPON_EXTRA = [
     {'id': 'gatling', 'name': 'Gatling Gun', 'category': 'machine_gun', 'base_damage_mult': 1.0, 'unlock_cost_credits': 600,
      'build_only': True},
     {'id': 'longbow', 'name': 'Longbow', 'category': 'bow', 'base_damage_mult': 1.0, 'build_only': True},
+    # The rest of RE5's arsenal (2026-11-04, the user's go), unlocked in CREDITS. The grenade
+    # launcher is its explosive-round item (0x0125); the rocket launcher holds one rocket and the
+    # game has no rockets to sell; the flamethrower is a campaign area's item (no Organize record).
+    {'id': 'm93r', 'name': 'M93R', 'category': 'handgun', 'base_damage_mult': 1.0, 'unlock_cost_credits': 150},
+    {'id': 'stun_rod', 'name': 'Stun Rod', 'category': 'melee', 'base_damage_mult': 1.0, 'unlock_cost_credits': 100},
+    {'id': 'grenade_launcher', 'name': 'Grenade Launcher', 'category': 'launcher', 'base_damage_mult': 1.0, 'unlock_cost_credits': 350},
+    {'id': 'rocket_launcher', 'name': 'Rocket Launcher', 'category': 'launcher', 'base_damage_mult': 1.0, 'unlock_cost_credits': 400},
+    {'id': 'flamethrower', 'name': 'Flamethrower', 'category': 'flamethrower', 'base_damage_mult': 1.0, 'unlock_cost_credits': 300},
 ]
 for extra in WEAPON_EXTRA:
     if not any(wd['id'] == extra['id'] for wd in w['weapons']):

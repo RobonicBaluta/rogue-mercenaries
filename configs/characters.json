@@ -13,6 +13,8 @@
       "starting_passive": "chris_veteran",
       "skill_pool": [
         "chris_pocket_grenades",
+        "chris_boulder_puncher",
+        "chris_iron_grip",
         "chris_shotgun"
       ],
       "exclusive_mechanic": "",
@@ -99,6 +101,8 @@
       "starting_passive": "sheva_field_training",
       "skill_pool": [
         "sheva_flash_tactics",
+        "sheva_scavenger",
+        "sheva_sharpshooter",
         "sheva_smg"
       ],
       "exclusive_mechanic": "",
@@ -188,6 +192,8 @@
       ],
       "starting_passive": "jill_battle_instinct",
       "skill_pool": [
+        "jill_weapon_expert",
+        "jill_finisher",
         "jill_smg"
       ],
       "exclusive_mechanic": "",
@@ -236,6 +242,8 @@
       ],
       "starting_passive": "josh_squad_tactics",
       "skill_pool": [
+        "josh_field_commander",
+        "josh_point_man",
         "josh_magnum"
       ],
       "exclusive_mechanic": "",
@@ -270,6 +278,8 @@
       ],
       "starting_passive": "barry_demolition_man",
       "skill_pool": [
+        "barry_magnum_specialist",
+        "barry_trap_setter",
         "barry_smg"
       ],
       "exclusive_mechanic": "",
@@ -305,6 +315,8 @@
       ],
       "starting_passive": "rebecca_combat_medic",
       "skill_pool": [
+        "rebecca_chemist",
+        "rebecca_steady_nerves",
         "rebecca_rifle"
       ],
       "exclusive_mechanic": "",
@@ -338,6 +350,8 @@
       ],
       "starting_passive": "excella_executive_bonus",
       "skill_pool": [
+        "excella_hostile_takeover",
+        "excella_golden_parachute",
         "excella_rifle"
       ],
       "exclusive_mechanic": "",
@@ -384,6 +398,8 @@
       ],
       "starting_passive": "wesker_firestarter",
       "skill_pool": [
+        "wesker_superior_being",
+        "wesker_predator",
         "wesker_magnum"
       ],
       "exclusive_mechanic": "",

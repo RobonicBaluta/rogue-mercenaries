@@ -451,6 +451,7 @@ bool ParseEffect(const Diag& d, const json& obj, EffectDef& effect) {
     // Allowed keys at the effect level: kind, condition, per_stack, the kind's own params.
     std::vector<std::string_view> keys = {"kind", "condition", "per_stack"};
     if (effect.kind == EffectKind::SuppliesOnArenaClear) keys.push_back("require_no_damage");
+    if (effect.kind == EffectKind::SuppliesOnKill || effect.kind == EffectKind::ItemOnKill) keys.push_back("melee_only");
     for (const ParamRule& r : effect_rules) keys.push_back(r.name);
     for (const auto& item : obj.items()) {
         const std::string& key = item.key();
@@ -503,6 +504,9 @@ bool ParseEffect(const Diag& d, const json& obj, EffectDef& effect) {
     if (effect.kind == EffectKind::SuppliesOnArenaClear) {
         GetBool(d, obj, "require_no_damage", effect.require_no_damage, false);
     }
+    if (effect.kind == EffectKind::SuppliesOnKill || effect.kind == EffectKind::ItemOnKill) {
+        GetBool(d, obj, "melee_only", effect.melee_only, false);
+    }
 
     if (const json* ps = Get(obj, "per_stack")) {
         if (!ps->is_object()) {
@@ -528,6 +532,8 @@ bool ParseEffect(const Diag& d, const json& obj, EffectDef& effect) {
     return true;
 }
 
+void ParseBuild(const Diag& d, const json& b, SkinBuild& out);
+
 void ParsePerks(const Diag& file, const json& doc, std::vector<PerkDef>& out) {
     CheckKeys(file, doc, {"schema_version", "perks"});
     const json* list = ListField(file, doc, "perks");
@@ -544,7 +550,7 @@ void ParsePerks(const Diag& file, const json& doc, std::vector<PerkDef>& out) {
         d = file.Sub(": perk " + Q(p.id));
         CheckKeys(d, e, {"id", "name", "description", "category", "rarity", "tags", "max_stacks",
                          "exclusive_with", "characters", "unlock_cost_credits",
-                         "requires_capabilities", "enabled", "effects", "icon"});
+                         "requires_capabilities", "enabled", "effects", "icon", "build"});
         GetString(d, e, "name", p.name, true);
         if (GetString(d, e, "icon", p.icon, false) && !IsValidId(p.icon)) {
             d.Error("field 'icon' " + Q(p.icon) + " must use only a-z, 0-9 and '_'");
@@ -562,10 +568,24 @@ void ParsePerks(const Diag& file, const json& doc, std::vector<PerkDef>& out) {
         }
         ReadCapabilities(d, e, p.requires_capabilities);
         GetBool(d, e, "enabled", p.enabled, false);
+        // Build changes (a style perk's rule with its cost): only what adds into a run's build.
+        if (const json* b = Get(e, "build")) {
+            const Diag bd = d.Sub(": build");
+            if (!b->is_object()) {
+                bd.Error("must be an object");
+            } else {
+                CheckKeys(bd, *b, {"category_damage", "melee_damage", "rarity_shift", "max_health_mult", "heal_mult",
+                                   "supplies_mult", "ammo_stack_mult", "stack_mult", "never_offered", "drops_as_held_ammo",
+                                   "pickup_as", "break_grabs"});
+                SkinBuild build;
+                ParseBuild(bd, *b, build);
+                p.build = std::move(build);
+            }
+        }
 
         const json* effects = Get(e, "effects");
-        if (effects == nullptr || !effects->is_array() || effects->empty()) {
-            d.Error("field 'effects' must be a non-empty array");
+        if (effects == nullptr || !effects->is_array() || (effects->empty() && !p.build)) {
+            d.Error("field 'effects' must be a non-empty array (or empty with a 'build')");
         } else {
             for (std::size_t j = 0; j < effects->size(); ++j) {
                 const Diag ed = d.Sub(": effect[" + std::to_string(j) + "]");
@@ -778,7 +798,7 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                      "starting_weapon_rarity", "max_health_mult", "stack_max", "ammo_stack_mult", "extra_weapons",
                      "melee_damage", "melee_kill_stats", "melee_kill_caps", "heal_mult", "heal_buff_fraction", "heal_invulnerable_seconds",
                      "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "extra_chests", "special",
-                     "special_2"});
+                     "special_2", "stack_mult", "never_offered", "drops_as_held_ammo", "pickup_as", "break_grabs"});
     GetString(d, b, "name", out.name, false);
     if (GetString(d, b, "icon", out.icon, false) && !IsValidId(out.icon)) d.Error("icon " + Q(out.icon) + " is not a valid name");
     if (GetNumber(d, b, "ammo_stack_mult", out.ammo_stack_mult, false)) CheckRange(d, "ammo_stack_mult", out.ammo_stack_mult, 1.0, 20.0);
@@ -839,6 +859,53 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
     }
     GetBool(d, b, "chest_keys_exempt", out.chest_keys_exempt, false);
     GetIntRange(d, b, "extra_chests", out.extra_chests, false, 0, 6);
+    GetBool(d, b, "drops_as_held_ammo", out.drops_as_held_ammo, false);
+    GetBool(d, b, "break_grabs", out.break_grabs, false);
+    if (out.drops_as_held_ammo && out.drops_as >= 0) d.Error("drops_as and drops_as_held_ammo exclude each other");
+    // Objects keyed by game item id (hex strings allowed).
+    const auto itemKey = [](const std::string& key) {
+        try {
+            std::size_t used = 0;
+            const std::int64_t item = std::stoll(key, &used, 0);
+            return used == key.size() && item >= 0 && item <= 0xFFFF ? item : std::int64_t{-1};
+        } catch (...) {
+            return std::int64_t{-1};
+        }
+    };
+    if (const json* sm = Get(b, "stack_mult")) {
+        if (!sm->is_object()) {
+            d.Error("field 'stack_mult' must be an object");
+        } else {
+            for (const auto& [key, v] : sm->items()) {
+                const std::int64_t item = itemKey(key);
+                if (item < 0) {
+                    d.Error("stack_mult key " + Q(key) + " is not a game item id");
+                } else if (!v.is_number() || v.get<double>() < 1.0 || v.get<double>() > 10.0) {
+                    d.Error("stack_mult " + Q(key) + " must be a number in [1, 10]");
+                } else {
+                    out.stack_mult.emplace_back(item, v.get<double>());
+                }
+            }
+        }
+    }
+    if (const json* pa = Get(b, "pickup_as")) {
+        if (!pa->is_object()) {
+            d.Error("field 'pickup_as' must be an object");
+        } else {
+            for (const auto& [key, v] : pa->items()) {
+                const std::int64_t from = itemKey(key);
+                const std::int64_t to = ItemIdValue(v);
+                if (from < 0) {
+                    d.Error("pickup_as key " + Q(key) + " is not a game item id");
+                } else if (to < 0 || to > 0xFFFF || to == from) {
+                    d.Error("pickup_as " + Q(key) + " must name another game item id");
+                } else {
+                    out.pickup_as.emplace_back(from, to);
+                }
+            }
+        }
+    }
+    ParseWeaponFilter(d, b, "never_offered", out.never_offered);
     if (const json* sp = Get(b, "special")) {
         if (sp->is_object()) {
             ParseSpecial(d.Sub(" special"), *sp, out.special);
@@ -1256,8 +1323,9 @@ void ParseLoadouts(const Diag& file, const json& doc, LoadoutConfig& out) {
         EquipmentDef item;
         if (!ReadId(d, e, item.id)) continue;
         d = file.Sub(": equipment " + Q(item.id));
-        CheckKeys(d, e, {"id", "name", "cost", "max", "game_item", "price", "bundle"});
+        CheckKeys(d, e, {"id", "name", "cost", "max", "game_item", "price", "bundle", "for_weapons"});
         GetString(d, e, "name", item.name, true);
+        GetStringList(d, e, "for_weapons", item.for_weapons, false);
         if (GetInt(d, e, "cost", item.cost, true) && item.cost < 0) d.Error("field 'cost' must be >= 0");
         if (GetInt(d, e, "price", item.price, false) && item.price < 0) d.Error("field 'price' must be >= 0");
         std::int64_t bundle = 1;
@@ -1646,6 +1714,21 @@ private:
             for (const std::string& ch : p.characters) {
                 if (c.FindCharacter(ch) == nullptr) d.Error("characters references unknown character " + Q(ch));
             }
+            if (p.build) {
+                for (const std::string& id : p.build->never_offered.ids) {
+                    if (c.FindWeapon(id) == nullptr) d.Error("build never_offered references unknown weapon " + Q(id));
+                }
+                if (p.category == PerkCategory::Curse || p.category == PerkCategory::Skin) {
+                    d.Error("a build is for perks chosen in the menu (style, supply, support)");
+                }
+            }
+        }
+        for (const EquipmentDef& e : c.loadouts_.equipment) {
+            for (const std::string& id : e.for_weapons) {
+                if (c.FindWeapon(id) == nullptr) {
+                    Diag{&errors, &warnings, "loadouts.json"}.Sub(": equipment " + Q(e.id)).Error("for_weapons references unknown weapon " + Q(id));
+                }
+            }
         }
         for (PerkDef& p : c.perks_) {
             for (const std::string& ex : p.exclusive_with) {
@@ -1703,7 +1786,7 @@ private:
           for (const SkinDef& s : base.skins) {
             const Diag d = chars_d.Sub(": character " + Q(base.id) + " skin " + Q(s.id) + ": build");
             const SkinBuild& b = s.build;
-            for (const WeaponFilter* f : {&b.offered_weapons, &b.usable_weapons, &b.uncapped_upgrades}) {
+            for (const WeaponFilter* f : {&b.offered_weapons, &b.usable_weapons, &b.uncapped_upgrades, &b.never_offered}) {
                 for (const std::string& id : f->ids) {
                     if (c.FindWeapon(id) == nullptr) d.Error("references unknown weapon " + Q(id));
                 }

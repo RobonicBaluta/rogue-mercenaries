@@ -1,5 +1,5 @@
 {
-  "_comment": "Perks are per character and come only from the mod menu. category: style = the character's way of playing (no plain stat perks), supply = what you start with (item_on_start puts game_item into the inventory at the first arena; generic ones plus one per character), support = bad situations (low health, lethal hits), skin = a perk a skin grants through its starting_passive (never listed; most skins are builds, see characters.json), curse = route modifiers. Not yet possible (engine work pending): grab immunity, move speed (damage by weapon type is a skin build rule). Item ids: 0x0106 hand grenade, 0x0107 incendiary, 0x0108 flash, 0x0304 first aid spray, 0x0201 handgun ammo, 0x0102 M92F, 0x0104 Ithaca M37, 0x0113 MP5, 0x011A L.Hawk.",
+  "_comment": "Perks are per character and come only from the mod menu. category: style = the character's way of playing (no plain stat perks), supply = what you start with (item_on_start puts game_item into the inventory at the first arena; generic ones plus one per character), support = bad situations (low health, lethal hits), skin = a perk a skin grants through its starting_passive (never listed; most skins are builds, see characters.json), curse = route modifiers. A menu perk's 'build' adds into the run's build (characters.h ApplyPerkBuild: damage by weapon category, melee damage, health, heals, supplies, stack sizes, weapons never offered, drops as ammo for the gun in hand, items swapped on pickup, grabs broken). Not yet possible: move speed. Item ids: 0x0106 hand grenade, 0x0107 incendiary, 0x0108 flash, 0x0304 first aid spray, 0x0201 handgun ammo, 0x0102 M92F, 0x0104 Ithaca M37, 0x0113 MP5, 0x011A L.Hawk.",
   "schema_version": 1,
   "perks": [
     {
@@ -236,6 +236,431 @@
         "excella"
       ],
       "icon": "supplies"
+    },
+    {
+      "id": "chris_boulder_puncher",
+      "name": "Boulder Puncher",
+      "description": "Chris. Melee hits deal two and a half times the damage, handguns 25 percent less.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "melee"
+      ],
+      "max_stacks": 1,
+      "effects": [],
+      "characters": [
+        "chris"
+      ],
+      "unlock_cost_credits": 150,
+      "build": {
+        "melee_damage": 1.5,
+        "category_damage": {
+          "handgun": -0.25
+        }
+      },
+      "icon": "fist"
+    },
+    {
+      "id": "chris_iron_grip",
+      "name": "Iron Grip",
+      "description": "Chris. Throws off a Majini that grabs him at once, but every heal is 25 percent smaller.",
+      "category": "style",
+      "rarity": "epic",
+      "tags": [
+        "survival"
+      ],
+      "max_stacks": 1,
+      "effects": [],
+      "characters": [
+        "chris"
+      ],
+      "unlock_cost_credits": 200,
+      "build": {
+        "break_grabs": true,
+        "heal_mult": 0.75
+      },
+      "icon": "chain"
+    },
+    {
+      "id": "sheva_scavenger",
+      "name": "Scavenger",
+      "description": "Sheva. Ammo and herbs she picks up become ammo for the gun in her hands.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "items"
+      ],
+      "max_stacks": 1,
+      "effects": [],
+      "characters": [
+        "sheva"
+      ],
+      "unlock_cost_credits": 150,
+      "build": {
+        "drops_as_held_ammo": true
+      },
+      "icon": "ammo"
+    },
+    {
+      "id": "sheva_sharpshooter",
+      "name": "Sharpshooter",
+      "description": "Sheva. Rifles hit 35 percent harder, rifle rounds stack twice as high. Machine guns 20 percent less.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [],
+      "characters": [
+        "sheva"
+      ],
+      "unlock_cost_credits": 150,
+      "build": {
+        "category_damage": {
+          "rifle": 0.35,
+          "smg": -0.2,
+          "machine_gun": -0.2
+        },
+        "stack_mult": {
+          "0x204": 2
+        }
+      },
+      "icon": "rifle"
+    },
+    {
+      "id": "jill_weapon_expert",
+      "name": "Weapon Expert",
+      "description": "Jill. Handguns hit 30 percent harder, handgun rounds stack twice as high. Shotguns 20 percent less.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [],
+      "characters": [
+        "jill"
+      ],
+      "unlock_cost_credits": 150,
+      "build": {
+        "category_damage": {
+          "handgun": 0.3,
+          "shotgun": -0.2
+        },
+        "stack_mult": {
+          "0x201": 2
+        }
+      },
+      "icon": "handgun"
+    },
+    {
+      "id": "jill_finisher",
+      "name": "Finisher",
+      "description": "Jill. Shots deal 60 percent more to enemies under a third of their health, 10 percent less otherwise.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "damage"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.7,
+          "condition": {
+            "type": "target_hp_below",
+            "fraction": 0.34
+          }
+        },
+        {
+          "kind": "outgoing_damage_mult",
+          "value": -0.1
+        }
+      ],
+      "characters": [
+        "jill"
+      ],
+      "unlock_cost_credits": 150,
+      "icon": "skull"
+    },
+    {
+      "id": "wesker_superior_being",
+      "name": "Superior Being",
+      "description": "Wesker. He takes 30 percent less damage, but heals are half as strong.",
+      "category": "style",
+      "rarity": "epic",
+      "tags": [
+        "defense"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "incoming_damage_mult",
+          "value": -0.3
+        }
+      ],
+      "characters": [
+        "wesker"
+      ],
+      "unlock_cost_credits": 200,
+      "build": {
+        "heal_mult": 0.5
+      },
+      "icon": "shades"
+    },
+    {
+      "id": "wesker_predator",
+      "name": "Predator",
+      "description": "Wesker. Each kill within 5 seconds of the last adds 10 percent damage, up to 50. 85 percent health.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "damage"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.0,
+          "condition": {
+            "type": "kill_streak",
+            "window_seconds": 5,
+            "per_kill": 0.1,
+            "max_bonus": 0.5
+          }
+        }
+      ],
+      "characters": [
+        "wesker"
+      ],
+      "unlock_cost_credits": 180,
+      "build": {
+        "max_health_mult": 0.85
+      },
+      "icon": "lunge"
+    },
+    {
+      "id": "josh_field_commander",
+      "name": "Field Commander",
+      "description": "Josh. Every arena clear hands him a hand grenade and a flash grenade. 20 percent fewer supplies.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "items"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_arena_clear",
+          "game_item": 262,
+          "amount": 1
+        },
+        {
+          "kind": "item_on_arena_clear",
+          "game_item": 264,
+          "amount": 1
+        }
+      ],
+      "characters": [
+        "josh"
+      ],
+      "unlock_cost_credits": 150,
+      "build": {
+        "supplies_mult": 0.8
+      },
+      "icon": "flag"
+    },
+    {
+      "id": "josh_point_man",
+      "name": "Point Man",
+      "description": "Josh. Machine guns hit 25 percent harder, their rounds stack 50 percent higher. No magnums offered.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [],
+      "characters": [
+        "josh"
+      ],
+      "unlock_cost_credits": 150,
+      "build": {
+        "category_damage": {
+          "smg": 0.25,
+          "machine_gun": 0.25
+        },
+        "stack_mult": {
+          "0x202": 1.5
+        },
+        "never_offered": {
+          "categories": [
+            "magnum"
+          ]
+        }
+      },
+      "icon": "smg"
+    },
+    {
+      "id": "barry_magnum_specialist",
+      "name": "Magnum Specialist",
+      "description": "Barry. Magnums hit 30 percent harder, magnum rounds stack twice as high. Machine guns 25 percent less.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [],
+      "characters": [
+        "barry"
+      ],
+      "unlock_cost_credits": 150,
+      "build": {
+        "category_damage": {
+          "magnum": 0.3,
+          "smg": -0.25,
+          "machine_gun": -0.25
+        },
+        "stack_mult": {
+          "0x209": 2
+        }
+      },
+      "icon": "magnum"
+    },
+    {
+      "id": "barry_trap_setter",
+      "name": "Trap Setter",
+      "description": "Barry. Every 4 kills hand him a proximity bomb.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "items"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_kill",
+          "game_item": 266,
+          "amount": 1,
+          "every_kills": 4
+        }
+      ],
+      "characters": [
+        "barry"
+      ],
+      "unlock_cost_credits": 150,
+      "icon": "mine"
+    },
+    {
+      "id": "rebecca_chemist",
+      "name": "Chemist",
+      "description": "Rebecca. Green herbs she picks up become mixed herbs. Every heal is 20 percent smaller.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "heal"
+      ],
+      "max_stacks": 1,
+      "effects": [],
+      "characters": [
+        "rebecca"
+      ],
+      "unlock_cost_credits": 180,
+      "build": {
+        "pickup_as": {
+          "0x301": "0x309",
+          "0x305": "0x309"
+        },
+        "heal_mult": 0.8
+      },
+      "icon": "herb"
+    },
+    {
+      "id": "rebecca_steady_nerves",
+      "name": "Steady Nerves",
+      "description": "Rebecca. Rifles hit 30 percent harder, shotguns 20 percent less.",
+      "category": "style",
+      "rarity": "uncommon",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [],
+      "characters": [
+        "rebecca"
+      ],
+      "unlock_cost_credits": 120,
+      "build": {
+        "category_damage": {
+          "rifle": 0.3,
+          "shotgun": -0.2
+        }
+      },
+      "icon": "rifle"
+    },
+    {
+      "id": "excella_hostile_takeover",
+      "name": "Hostile Takeover",
+      "description": "Excella. Every melee kill pays 15 supplies, but guns deal 15 percent less.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "supplies"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "supplies_on_kill",
+          "amount": 15,
+          "melee_only": true
+        }
+      ],
+      "characters": [
+        "excella"
+      ],
+      "unlock_cost_credits": 150,
+      "build": {
+        "category_damage": {
+          "handgun": -0.15,
+          "shotgun": -0.15,
+          "smg": -0.15,
+          "machine_gun": -0.15,
+          "rifle": -0.15,
+          "magnum": -0.15,
+          "bow": -0.15,
+          "launcher": -0.15,
+          "flamethrower": -0.15
+        }
+      },
+      "icon": "credits"
+    },
+    {
+      "id": "excella_golden_parachute",
+      "name": "Golden Parachute",
+      "description": "Excella. Once per arena she survives a lethal hit with 25 percent health. 20 percent fewer supplies.",
+      "category": "style",
+      "rarity": "epic",
+      "tags": [
+        "survival"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "cheat_death",
+          "per_arena": 1,
+          "leave_hp_fraction": 0.25
+        }
+      ],
+      "characters": [
+        "excella"
+      ],
+      "unlock_cost_credits": 200,
+      "build": {
+        "supplies_mult": 0.8
+      },
+      "icon": "parachute"
     },
     {
       "id": "supply_grenades",

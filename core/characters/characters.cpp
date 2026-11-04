@@ -113,6 +113,27 @@ CharacterDef ApplySkin(const CharacterDef& def, const SkinDef& skin) {
     return out;
 }
 
+void ApplyPerkBuild(SkinBuild& build, const SkinBuild& perk) {
+    for (const auto& [category, value] : perk.category_damage) build.category_damage[category] += value;
+    build.melee_damage += perk.melee_damage;
+    build.rarity_shift += perk.rarity_shift;
+    build.max_health_mult *= perk.max_health_mult;
+    build.heal_mult *= perk.heal_mult;
+    build.supplies_mult *= perk.supplies_mult;
+    build.ammo_stack_mult *= perk.ammo_stack_mult;
+    for (const auto& [item, mult] : perk.stack_mult) {
+        const auto it = std::find_if(build.stack_mult.begin(), build.stack_mult.end(), [item = item](const auto& s) { return s.first == item; });
+        if (it == build.stack_mult.end()) build.stack_mult.emplace_back(item, mult);
+        else it->second *= mult;
+    }
+    for (const std::string& c : perk.never_offered.categories) build.never_offered.categories.push_back(c);
+    for (const std::string& id : perk.never_offered.ids) build.never_offered.ids.push_back(id);
+    // One conversion of drops at a time: a skin's own (Safari's mines) wins over the perk's.
+    if (build.drops_as < 0) build.drops_as_held_ammo = build.drops_as_held_ammo || perk.drops_as_held_ammo;
+    for (const auto& pick : perk.pickup_as) build.pickup_as.push_back(pick);
+    build.break_grabs = build.break_grabs || perk.break_grabs;
+}
+
 bool WeaponFilter::Allows(std::string_view base_id, std::string_view category) const {
     if (Empty()) return true;
     return std::find(categories.begin(), categories.end(), category) != categories.end() ||

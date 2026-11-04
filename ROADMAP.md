@@ -294,6 +294,8 @@ Balance pass, round 1 (2026-11-03, `research/sim/balance-2026-11-03.md`): `rm_si
 
 Sixth playtest (2026-11-04, TASKS.md "Playtest 6"): Wesker's moves now play the boss Wesker's own motions by their actions (his shift's stop as the dash arrives, the shift knee for the lunge), Twin Fury's hits stagger and its kills blow Majini away, the Organize screen's result is applied cell by cell, enemies are never moved in the player's sight, the Uroboros is driven (target, turn, its own grabs) since it has no state machine here, and the last arena offers no reward. Open: Jill's second SMG and real bullets (the boss's two guns are units of her own that her code fires; E16).
 
+Style perks, round 2 (2026-11-04, TASKS.md): sixteen character perks with a rule and a cost, built from what the builds already do (a menu perk's `build` adds into the run's), plus pickup swaps, drops as ammo for the gun in hand and Majini grabs broken; and the rest of RE5's guns (M93R, stun rod, grenade and rocket launchers, flamethrower) in CREDITS. Not yet played.
+
 Order: B1 to B7 with the builds that need no engine work (Warrior, Clubbin', Business, Fairy Tale,
 S.T.A.R.S. Chris, Barry), then E19/E20/E21 (Wesker S.T.A.R.S., Excella, Rebecca), E13/E14 and item
 ids (Safari, Heavy Metal, Tribal), B8/E15 (keys, Jill BSAA), then E16 with E17/E18/E22 (Battle

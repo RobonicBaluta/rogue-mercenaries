@@ -76,6 +76,10 @@ std::vector<const WeaponBaseDef*> OfferableWeapons(const OfferContext& ctx) {
         if (ctx.character != nullptr && !ctx.character->build.offered_weapons.Allows(w.id, WeaponCategoryName(w.category))) {
             continue;
         }
+        if (ctx.character != nullptr && !ctx.character->build.never_offered.Empty() &&
+            ctx.character->build.never_offered.Allows(w.id, WeaponCategoryName(w.category))) {
+            continue;
+        }
         if (w.build_only &&
             (ctx.character == nullptr || std::find(ctx.character->build.extra_weapons.begin(),
                                                    ctx.character->build.extra_weapons.end(), w.id) == ctx.character->build.extra_weapons.end())) {
@@ -91,7 +95,16 @@ std::vector<const EquipmentDef*> OfferableItems(const OfferContext& ctx) {
     if (ctx.content == nullptr) return out;
     if (ctx.capabilities != nullptr && !ctx.capabilities->Has(cap::kInventory)) return out;
     for (const EquipmentDef& e : ctx.content->loadouts().equipment) {
-        if (e.Offerable()) out.push_back(&e);
+        if (!e.Offerable()) continue;
+        // A launcher's rounds only while the run holds the launcher.
+        if (!e.for_weapons.empty() &&
+            (ctx.owned_weapons == nullptr ||
+             std::none_of(ctx.owned_weapons->begin(), ctx.owned_weapons->end(), [&e](const WeaponInstance& w) {
+                 return std::find(e.for_weapons.begin(), e.for_weapons.end(), w.base_id) != e.for_weapons.end();
+             }))) {
+            continue;
+        }
+        out.push_back(&e);
     }
     return out;
 }

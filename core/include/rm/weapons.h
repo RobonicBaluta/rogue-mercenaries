@@ -14,7 +14,8 @@ namespace rm {
 
 class Content;
 
-enum class WeaponCategory { Handgun, Shotgun, Smg, Rifle, MachineGun, Magnum, Bow };
+/// Launcher: the grenade and rocket launchers; melee: the stun rod.
+enum class WeaponCategory { Handgun, Shotgun, Smg, Rifle, MachineGun, Magnum, Bow, Launcher, Melee, Flamethrower };
 std::string_view WeaponCategoryName(WeaponCategory c);
 std::optional<WeaponCategory> ParseWeaponCategory(std::string_view name);
 

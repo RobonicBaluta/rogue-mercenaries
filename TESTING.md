@@ -70,6 +70,10 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | Twin Fury hits | `special: dual_smg over (done): N pulses, N hits, N staggered` |
 | Wesker's moves | `special: boss motion pawn\em\em80\motion\em80 20` (the dash's arrival), `... 24` (the lunge's knee), `... C9` (the burst's kick), each `N of N body tracks ...` then `boss motion NN done: N frames in N s` |
 | last arena | `phase arena_results -> run_complete` (no `reward_selection` after the boss) |
+| Iron Grip (Chris) | `iron grip: cEm10ActNeckHang_PL by uEm10 thrown off (cEm10ActDmgFlyoff)`; another grabber: `... kept its grab (no known reaction)` or `no grabber found` |
+| Scavenger, Chemist | at the arena's start `world: drops: the game's own, ammo and recovery items as ammo for the gun in hand` / `, swaps 0301->0309 0305->0309`; on a pickup `world: picked up 0305, given as 0203 (ammo for the gun in hand)` / `given as 0309 (a perk's swap)` |
+| stack perks | `build: item 0204 stacks to N (was M)` (Sharpshooter rifle, Weapon Expert handgun, Point Man machine gun, Magnum Specialist magnum rounds) |
+| new weapons | from a reward or the shop `shop: weapon 011E created ...` (M93R), `0122` stun rod, `0125` grenade launcher, `010D` rocket launcher, `0121` flamethrower; in ORGANIZE `itembox pictures: 0121 gets item_135` (the flamethrower takes the Gatling's picture); a missing model would end the game with `Failed open file ... wpNN00.mod` |
 | Twin Fury, Backup | `enemy XXXXXXXX died (health reached zero): counted, N remain (by the special)` |
 | health | `build: maximum health A -> B (xM)` |
 | specials refused | `special: slot N pressed while <action or paused / the item screen / a mod screen / down>; not used` |

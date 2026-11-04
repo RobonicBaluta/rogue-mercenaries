@@ -93,6 +93,13 @@ struct SkinBuild {
     std::int64_t drops_as = -1;      // enemy drops and chest items become this game item (-1 = no)
     bool chest_keys_exempt = false;  // opens chests without keys
     int extra_chests = 0;            // chests placed in each arena besides economy chests.per_arena
+    /// Game item id -> its stack size times this (after stack_max; JSON keys may be hex).
+    std::vector<std::pair<std::int64_t, double>> stack_mult;
+    WeaponFilter never_offered;      // rewards, the shop and chests never offer these
+    bool drops_as_held_ammo = false; // ammo and recovery items picked up become ammo for the gun in hand
+    /// Game item picked up -> the item given instead (JSON keys and values may be hex).
+    std::vector<std::pair<std::int64_t, std::int64_t>> pickup_as;
+    bool break_grabs = false;        // a grab is broken at once: the grabber is thrown off (Majini)
     SkinSpecial special;
     SkinSpecial special_2;  // a second special on its own button (Wesker's burst)
     [[nodiscard]] const SkinSpecial& Special(int slot) const { return slot == 1 ? special_2 : special; }
@@ -165,5 +172,9 @@ ChallengeProgress CheckChallenge(const CharacterDef& def, const ProfileStats& st
 const SkinDef* FindSkin(const CharacterDef& def, std::string_view skin_id);
 /// The character with the skin's overrides applied (what a run plays).
 CharacterDef ApplySkin(const CharacterDef& def, const SkinDef& skin);
+/// A perk's build changes on top of the run's (a style perk with a cost: Boulder Puncher, Superior
+/// Being): category damage, melee damage and rarity shift add; health, heals, supplies and stack
+/// sizes multiply; filters, conversions and flags join. Name, icon, specials and weapons stay.
+void ApplyPerkBuild(SkinBuild& build, const SkinBuild& perk);
 
 }  // namespace rm

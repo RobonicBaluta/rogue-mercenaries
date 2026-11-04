@@ -44,6 +44,9 @@ struct EquipmentDef {
     std::int64_t price = 0;
     /// Units handed out by one reward pick.
     int bundle = 1;
+    /// Ammo for these weapons only (base ids): offered while the run holds one of them, never
+    /// in the starting loadout (empty = always).
+    std::vector<std::string> for_weapons;
     /// Items the shop and the rewards can hand out: priced and backed by a game item.
     [[nodiscard]] bool Offerable() const { return price > 0 && game_item >= 0; }
 };

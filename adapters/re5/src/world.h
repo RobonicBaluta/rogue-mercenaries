@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 // World objects (ROADMAP.md, milestone M4): the stage's map objects (uOm..., children of
 // uObjModel) are created by the object manager sObjModel ([0x011B2720], vtable 0x00F65240)
@@ -25,9 +27,17 @@ std::uintptr_t PlaceChest(const float pos[3], int seconds);
 /// a run places its chests itself.
 void BlockNativeChests(bool blocked);
 
-/// A build's drops (M8): ammo, recovery items and grenades the player picks up from the ground
-/// become this game item, one per pickup (-1: the game's own).
-void SetDropReplacement(int gameItem);
+/// What the player gets for the items they pick up from the ground (M8 builds, style perks):
+/// `swaps` first (Rebecca's Chemist: a green herb is a mixed herb), then `all` (Safari Chris:
+/// ammo, recovery items and grenades are one mine each), else with `heldAmmo` set ammo and
+/// recovery items become `heldAmmo()`'s item (Sheva's Scavenger: ammo for the gun in hand; 0
+/// leaves the item as it is). A changed item comes in the new item's own pickup amount.
+struct DropRules {
+    int all = -1;
+    std::uint32_t (*heldAmmo)() = nullptr;
+    std::vector<std::pair<std::uint16_t, std::uint16_t>> swaps;
+};
+void SetDropRules(const DropRules& rules);
 
 /// Developer: logs every set record of the stage (enemies, objects, items: class, descriptor
 /// class and position), whether or not it was ever spawned. Returns the records logged.

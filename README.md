@@ -66,7 +66,7 @@ empty: the mod's profile lives in `%LOCALAPPDATA%`, which the package never ship
    - **START RUN**: Solo, a random arena (one of the eight Mercenaries stages or one of the campaign areas in `configs/maps.json`) and your character and skin are handed to the game's own menu script, so no setup screen appears; the screen fades to black and the match loads about 1.5 s later. The run starts with it.
    - **CHARACTERS**: pick who you play. All eight characters and every skin are available for now (the challenge unlocks come back once the roster is settled), whatever the game's own Mercenaries unlocks: the run starts the match with the costume directly. The character under the cursor is shown on the left, with the bust portrait the game's own character select uses (read from your game's files at runtime). Choosing a character opens its **SKINS**, each skin with its own portrait: most skins are a *build*, a strong rule with a cost (see **Skin builds** below), named in the row with its icon; the line below says what it does.
    - **PERKS**: three slots for the selected character, one per kind. *Style* defines how the character plays (Chris restocks a spray per arena, Sheva heals on kills); *Supply* is what a run starts with (grenade pouch, medkit, a shotgun for Chris); *Support* helps in bad situations (Second Wind, Last Stand below 30% health). Each slot opens its list, every perk with its icon: pick one (it shows SELECTED), press it again to clear the slot, and buy locked ones with Credits. The style slot falls back to the character's own trait. The fourth row, **SKIN**, names the selected skin's build and opens SKINS.
-   - **CREDITS**: your balance, lifetime records, the last run's results and weapon unlocks.
+   - **CREDITS**: your balance, lifetime records, the last run's results and weapon unlocks. Every RE5 gun is in the pool; the M93R (150), stun rod (100), grenade launcher (350, its explosive rounds then turn up in the shop and rewards), rocket launcher (400, one rocket) and flamethrower (300) are bought here first (added 2026-11-04, not yet played).
    Every row of the main screen, CREDITS and the run's results has its icon next to it.
    Esc goes back one screen; locked entries are red, like the game's own disabled rows.
 3. Every run starts with one gun: the game's Mercenaries loadout is cut down to the weapon in your hands, its ammo and the knife when the first arena starts (for most costumes that is the pistol; Sheva keeps her VZ61), and your Supply perks then add their items and weapons (a weapon arrives with a full magazine). Everything else comes from rewards and the shop, which can offer any gun of `configs/weapons.json`: during a run every stage loads all of their models along with yours (about 20 MB), and what you buy comes with you to the next stage. The game's grid has nine slots; the number keys 1 to 4 pick its first four cells. (`configs/loadouts.json` still holds the item catalog and an optional point-budget roll, off by default.)
@@ -88,6 +88,40 @@ About the Play menu row:
 - it appears only with Latin-alphabet game languages; with Japanese, Chinese or Russian text use F7;
 - reach it with the keyboard or a gamepad, because mouse hover does not select it;
 - set `"native_menu": false` in `adapter.json` to turn it off.
+
+### Style perks
+
+The PERKS menu's first slot is the character's way of playing: one free trait each, and more to buy with Credits. Most
+of the newer ones are a rule with a cost. Written 2026-11-04 and waiting for a playtest (all but the defaults).
+
+| Character | Perk | What it does | Cost |
+|---|---|---|---|
+| Chris | B.S.A.A. Veteran | Clearing an arena restocks a first aid spray. | free, the default |
+| Chris | Pocket Grenades | Every 4 kills put a hand grenade in your pocket. | 120 credits |
+| Chris | Boulder Puncher | Melee hits deal two and a half times the damage, handguns 25 percent less. | 150 credits |
+| Chris | Iron Grip | Throws off a Majini that grabs him at once, but every heal is 25 percent smaller. | 200 credits |
+| Sheva | Field Training | Each kill heals 2 percent of max health. | free, the default |
+| Sheva | Flash Tactics | Every 3 kills hand you a flash grenade. | 120 credits |
+| Sheva | Scavenger | Ammo and herbs she picks up become ammo for the gun in her hands. | 150 credits |
+| Sheva | Sharpshooter | Rifles hit 35 percent harder, rifle rounds stack twice as high. Machine guns 20 percent less. | 150 credits |
+| Jill | Battle Instinct | 15 percent of hits are critical and deal double damage. | free, the default |
+| Jill | Weapon Expert | Handguns hit 30 percent harder, handgun rounds stack twice as high. Shotguns 20 percent less. | 150 credits |
+| Jill | Finisher | Shots deal 60 percent more to enemies under a third of their health, 10 percent less otherwise. | 150 credits |
+| Albert | Firestarter | Wesker. Every 5 kills hand you an incendiary grenade. | free, the default |
+| Albert | Superior Being | Wesker. He takes 30 percent less damage, but heals are half as strong. | 200 credits |
+| Albert | Predator | Wesker. Each kill within 5 seconds of the last adds 10 percent damage, up to 50. 85 percent health. | 180 credits |
+| Josh | Squad Tactics | Every kill gives 2 extra supplies. | free, the default |
+| Josh | Field Commander | Every arena clear hands him a hand grenade and a flash grenade. 20 percent fewer supplies. | 150 credits |
+| Josh | Point Man | Machine guns hit 25 percent harder, their rounds stack 50 percent higher. No magnums offered. | 150 credits |
+| Barry | Demolition Man | Every 5 kills hand you a grenade, and an arena clear two more. | free, the default |
+| Barry | Magnum Specialist | Magnums hit 30 percent harder, magnum rounds stack twice as high. Machine guns 25 percent less. | 150 credits |
+| Barry | Trap Setter | Every 4 kills hand him a proximity bomb. | 150 credits |
+| Rebecca | Combat Medic | Each kill heals 2 percent of max health, an arena clear restocks a spray. | free, the default |
+| Rebecca | Chemist | Green herbs she picks up become mixed herbs. Every heal is 20 percent smaller. | 180 credits |
+| Rebecca | Steady Nerves | Rifles hit 30 percent harder, shotguns 20 percent less. | 120 credits |
+| Excella | Executive Bonus | 25 extra supplies for every arena cleared. | free, the default |
+| Excella | Hostile Takeover | Every melee kill pays 15 supplies, but guns deal 15 percent less. | 150 credits |
+| Excella | Golden Parachute | Once per arena she survives a lethal hit with 25 percent health. 20 percent fewer supplies. | 200 credits |
 
 ### Skin builds
 

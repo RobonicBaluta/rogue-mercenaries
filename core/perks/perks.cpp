@@ -136,7 +136,10 @@ std::vector<std::string> ImpliedCapabilities(const EffectDef& effect) {
             add(cap::kKillEvents);
             add(cap::kHeal);
             break;
-        case EffectKind::SuppliesOnKill: add(cap::kKillEvents); break;
+        case EffectKind::SuppliesOnKill:
+            add(cap::kKillEvents);
+            if (effect.melee_only) add(cap::kMeleeDetect);
+            break;
         case EffectKind::SuppliesOnArenaClear:
             if (effect.require_no_damage) add(cap::kIncomingDamage);
             break;
@@ -144,6 +147,7 @@ std::vector<std::string> ImpliedCapabilities(const EffectDef& effect) {
         case EffectKind::ItemOnKill:
             add(cap::kKillEvents);
             add(cap::kInventory);
+            if (effect.melee_only) add(cap::kMeleeDetect);
             break;
         case EffectKind::ItemOnArenaClear: add(cap::kInventory); break;
         case EffectKind::ItemOnRunStart: add(cap::kInventory); break;

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
+#include <mutex>
 #include <string>
 
 #include "engine.h"
@@ -167,12 +168,13 @@ std::uintptr_t __fastcall CreateDetour(std::uintptr_t self, void*, std::uintptr_
     return unit;
 }
 
-// A build's drops (M8, Safari Chris: mines): every ammo, recovery item or grenade the player
-// picks up from the ground becomes one of the build's item, through the game's own pickup.
+// A build's drops (M8, Safari Chris: mines; style perks): what the player picks up from the
+// ground is changed before the game's own pickup takes it (DropRules).
 using PickUpFn = int(__thiscall*)(std::uintptr_t self, std::uintptr_t player, int handle);
 using ItemFromHandleFn = std::uintptr_t(__thiscall*)(std::uintptr_t itemManager, int handle);
 PickUpFn g_origPickUp = nullptr;
-std::atomic<int> g_dropItem{-1};
+std::mutex g_dropMutex;
+DropRules g_drops;
 constexpr std::size_t kGroundItemId = 0x76;     // uint16
 constexpr std::size_t kGroundItemCount = 0x78;  // int32 (-1: the item record's pickup amount)
 
@@ -187,16 +189,41 @@ std::uintptr_t GroundItem(int handle) {
 }
 
 int __fastcall PickUpDetour(std::uintptr_t self, void*, std::uintptr_t player, int handle) {
-    const int replacement = g_dropItem.load();
-    if (replacement >= 0 && player && player == engine::LocalPlayer()) {
+    DropRules rules;
+    {
+        std::lock_guard<std::mutex> lock(g_dropMutex);
+        rules = g_drops;
+    }
+    const bool any = rules.all >= 0 || rules.heldAmmo != nullptr || !rules.swaps.empty();
+    if (any && player && player == engine::LocalPlayer()) {
         if (const std::uintptr_t item = GroundItem(handle)) {
             const std::uint16_t id = ReadOr<std::uint16_t>(item + kGroundItemId, 0xFFFF);
             const int category = id >> 8;
-            const bool convert = id != 0xFFFF && id != replacement &&
-                                 (category == 2 || category == 3 || (id >= 0x0106 && id <= 0x0108));
-            if (convert && SafeStore<std::uint16_t>(item + kGroundItemId, static_cast<std::uint16_t>(replacement))) {
-                SafeStore<std::int32_t>(item + kGroundItemCount, 1);
-                RM_LOGI("world: picked up %04X, given as %04X (the build's drops)", id, static_cast<unsigned>(replacement));
+            int to = -1;
+            int count = -1;  // the new item's own pickup amount
+            const char* why = "";
+            for (const auto& [from, swapped] : rules.swaps) {
+                if (from == id) {
+                    to = swapped;
+                    why = "a perk's swap";
+                }
+            }
+            if (to < 0 && rules.all >= 0 && id != 0xFFFF && id != rules.all &&
+                (category == 2 || category == 3 || (id >= 0x0106 && id <= 0x0108))) {
+                to = rules.all;
+                count = 1;
+                why = "the build's drops";
+            }
+            if (to < 0 && rules.heldAmmo != nullptr && id != 0xFFFF && (category == 2 || category == 3)) {
+                const std::uint32_t ammo = rules.heldAmmo();
+                if (ammo != 0 && ammo != id) {
+                    to = static_cast<int>(ammo);
+                    why = "ammo for the gun in hand";
+                }
+            }
+            if (to >= 0 && SafeStore<std::uint16_t>(item + kGroundItemId, static_cast<std::uint16_t>(to))) {
+                SafeStore<std::int32_t>(item + kGroundItemCount, count);
+                RM_LOGI("world: picked up %04X, given as %04X (%s)", id, static_cast<unsigned>(to), why);
             }
         }
     }
@@ -268,10 +295,20 @@ bool Install() {
 
 bool Available() { return g_available.load(); }
 
-void SetDropReplacement(int gameItem) {
-    if (g_dropItem.exchange(gameItem) != gameItem) {
-        RM_LOGI("world: drops %s", gameItem >= 0 ? ("become item " + std::to_string(gameItem)).c_str() : "are the game's own");
+void SetDropRules(const DropRules& rules) {
+    std::lock_guard<std::mutex> lock(g_dropMutex);
+    const bool changed = rules.all != g_drops.all || rules.heldAmmo != g_drops.heldAmmo || rules.swaps != g_drops.swaps;
+    g_drops = rules;
+    if (!changed) return;
+    std::string swaps;
+    for (const auto& [from, to] : rules.swaps) {
+        char buf[24];
+        std::snprintf(buf, sizeof(buf), " %04X->%04X", from, to);
+        swaps += buf;
     }
+    RM_LOGI("world: drops: %s%s%s", rules.all >= 0 ? ("every one item " + std::to_string(rules.all)).c_str() : "the game's own",
+            rules.heldAmmo != nullptr ? ", ammo and recovery items as ammo for the gun in hand" : "",
+            swaps.empty() ? "" : (", swaps" + swaps).c_str());
 }
 
 void SetSurvey(bool on) { g_survey = on; }

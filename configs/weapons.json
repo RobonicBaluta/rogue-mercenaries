@@ -154,6 +154,46 @@
       "base_damage_mult": 1.0,
       "build_only": true,
       "game_item": 271
+    },
+    {
+      "id": "m93r",
+      "name": "M93R",
+      "category": "handgun",
+      "base_damage_mult": 1.0,
+      "unlock_cost_credits": 150,
+      "game_item": 286
+    },
+    {
+      "id": "stun_rod",
+      "name": "Stun Rod",
+      "category": "melee",
+      "base_damage_mult": 1.0,
+      "unlock_cost_credits": 100,
+      "game_item": 290
+    },
+    {
+      "id": "grenade_launcher",
+      "name": "Grenade Launcher",
+      "category": "launcher",
+      "base_damage_mult": 1.0,
+      "unlock_cost_credits": 350,
+      "game_item": 293
+    },
+    {
+      "id": "rocket_launcher",
+      "name": "Rocket Launcher",
+      "category": "launcher",
+      "base_damage_mult": 1.0,
+      "unlock_cost_credits": 400,
+      "game_item": 269
+    },
+    {
+      "id": "flamethrower",
+      "name": "Flamethrower",
+      "category": "flamethrower",
+      "base_damage_mult": 1.0,
+      "unlock_cost_credits": 300,
+      "game_item": 289
     }
   ],
   "affixes": [

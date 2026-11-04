@@ -137,6 +137,18 @@
       "game_item": 523,
       "price": 0,
       "bundle": 10
+    },
+    {
+      "id": "explosive_rounds",
+      "name": "Explosive Rounds",
+      "cost": 10,
+      "max": 2,
+      "game_item": 518,
+      "price": 25,
+      "bundle": 3,
+      "for_weapons": [
+        "grenade_launcher"
+      ]
     }
   ],
   "max_items": 2

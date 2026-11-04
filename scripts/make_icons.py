@@ -526,7 +526,77 @@ def explosion():
     return s
 
 
+def oval(cx, cy, rx, ry, angle=0.0, steps=48):
+    pts = [(cx + rx * math.cos(2 * math.pi * i / steps), cy + ry * math.sin(2 * math.pi * i / steps)) for i in range(steps)]
+    return rotate(pts, angle, cx, cy)
+
+
+def chain():
+    """Iron Grip: two chain links pulled apart, the break between them."""
+    s = Shape()
+    for cx, cy in ((31, 67), (69, 33)):
+        s.poly(oval(cx, cy, 23, 12.5, -45))
+        s.poly(oval(cx, cy, 14.5, 5, -45), cut=True)
+    for a in (-20, 45, 110):  # the snap
+        r = math.radians(a)
+        s.line([(50 + 7 * math.cos(r), 50 + 7 * math.sin(r)), (50 + 15 * math.cos(r), 50 + 15 * math.sin(r))], 3.6)
+    return s
+
+
+def skull():
+    """Finisher."""
+    s = Shape()
+    s.ellipse(50, 42, 31, 30)
+    s.rect(34, 58, 66, 86, 6)
+    s.ellipse(38, 46, 8, 9, cut=True)
+    s.ellipse(62, 46, 8, 9, cut=True)
+    s.poly([(50, 55), (45, 65), (55, 65)], cut=True)
+    for x in (43, 50, 57):
+        s.line([(x, 74), (x, 86)], 2.6, cut=True)
+    return s
+
+
+def shades():
+    """Superior Being: Wesker's sunglasses."""
+    s = Shape()
+    s.poly(spline([(12, 40), (46, 40), (45, 54), (38, 64), (22, 64), (13, 54)], 6))
+    s.poly(spline([(54, 40), (88, 40), (87, 54), (78, 64), (62, 64), (55, 54)], 6))
+    s.line([(42, 43), (58, 43)], 5)
+    s.line([(14, 42), (4, 34)], 4)
+    s.line([(86, 42), (96, 34)], 4)
+    s.line([(20, 47), (30, 47)], 2.4, cut=True)
+    s.line([(62, 47), (72, 47)], 2.4, cut=True)
+    return s
+
+
+def herb():
+    """Chemist: a herb sprig."""
+    s = Shape()
+    leaf = [(50, 10), (59, 24), (60, 42), (50, 58), (40, 42), (41, 24)]
+    vein = [(50, 18), (50, 52)]
+    s.line([(50, 56), (50, 92)], 5)
+    for angle in (-52, 0, 52):
+        s.poly(rotate(spline(leaf, 8), angle, 50, 60))
+        s.line(rotate(vein, angle, 50, 60), 2.0, cut=True)
+    return s
+
+
+def parachute():
+    """Golden Parachute."""
+    s = Shape()
+    canopy = [(50 + 40 * math.cos(math.radians(a)), 46 - 30 * math.sin(math.radians(a))) for a in range(0, 181, 6)]
+    scallops = [(10 + 80 * i / 4 + 10, 50) for i in range(4)]
+    s.poly(canopy + [(10, 46)] + [p for x, y in scallops for p in ((x - 10, 46), (x, y))] + [(90, 46)])
+    for x in (30, 50, 70):
+        s.line([(x, 20 if x == 50 else 24), (x, 46)], 2.2, cut=True)
+    for x in (12, 31, 50, 69, 88):
+        s.line([(x, 48), (50, 80)], 2.4)
+    s.rect(42, 78, 58, 94, 3)
+    return s
+
+
 ICONS = {
+    'chain': chain, 'skull': skull, 'shades': shades, 'herb': herb, 'parachute': parachute,
     'grenade': grenade, 'flash': flash, 'fire': fire, 'medkit': medkit, 'heal': heal, 'second_wind': second_wind,
     'ammo': ammo, 'shotgun': shotgun, 'smg': smg, 'magnum': magnum, 'rifle': rifle, 'crosshair': crosshair,
     'supplies': supplies, 'last_stand': last_stand, 'shield': shield, 'medal': medal, 'explosion': explosion,

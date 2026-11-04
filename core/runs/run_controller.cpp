@@ -410,6 +410,7 @@ Loadout RollLoadout(const CharacterDef& ch, const Content& content, Rng& rng) {
         for (std::size_t i = 0; i < cfg.equipment.size(); ++i) {
             const EquipmentDef& e = cfg.equipment[i];
             if (counts[i] >= e.max_count || out.spent + e.cost > out.budget) continue;
+            if (!e.for_weapons.empty()) continue;  // a launcher's rounds: no launcher at the start
             // The inventory has few free slots: past the cap only top up what was already picked.
             if (cfg.max_items > 0 && counts[i] == 0 && distinct >= cfg.max_items) continue;
             options.push_back(i);
@@ -558,6 +559,11 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
             w.Add("operation", "starting_passive").Add("code", ErrorCodeName(s.code)).Add("message", s.message);
             Emit(std::move(w));
         }
+    }
+    // A perk's rule with its cost changes the run's build (Boulder Puncher, Superior Being).
+    for (const auto& [id, stacks] : run_.perks) {
+        const PerkDef* def = content_->FindPerk(id);
+        if (def != nullptr && def->build) ApplyPerkBuild(run_.character.build, *def->build);
     }
     UpdateCheckpoint();
     (void)SaveProfile("start_run");
@@ -767,6 +773,7 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
                         out.heal_fraction_queued += p.amount_fraction_of_max;
                         out.triggered.push_back(id);
                     } else if (ef.kind == EffectKind::SuppliesOnKill) {
+                        if (ef.melee_only && !kill.was_melee.value_or(false)) continue;
                         const bool hit = p.chance >= 1.0 || streams_->loot.NextDouble() < p.chance;
                         if (!hit) continue;
                         const std::int64_t amount = RoundAmount(p.amount);
@@ -775,6 +782,7 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
                             out.triggered.push_back(id);
                         }
                     } else if (ef.kind == EffectKind::ItemOnKill && caps_.Has(cap::kInventory)) {
+                        if (ef.melee_only && !kill.was_melee.value_or(false)) continue;
                         const int every = std::max(1, static_cast<int>(std::lround(p.every_kills)));
                         int& kills = run_.perk_kill_counts[id];
                         if (++kills % every != 0) continue;

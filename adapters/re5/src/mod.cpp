@@ -396,6 +396,12 @@ void ApplyBuildStacks() {
             apply(id, [&build](int original) { return static_cast<int>(std::lround(original * build.ammo_stack_mult)); });
         }
     }
+    // One item's stack times a factor (a style perk's: Sharpshooter's rifle rounds).
+    for (const auto& [item, mult] : build.stack_mult) {
+        const bool ammo = item >= 0x0201 && item <= 0x0211;
+        const double factor = mult * (ammo ? std::max(1.0, build.ammo_stack_mult) : 1.0);
+        apply(static_cast<std::uint32_t>(item), [factor](int original) { return static_cast<int>(std::lround(original * factor)); });
+    }
 }
 
 void RestoreBuildStacks() {
@@ -693,6 +699,10 @@ const char* WeaponIcon(rm::WeaponCategory c) {
         case rm::WeaponCategory::MachineGun: return "smg";
         case rm::WeaponCategory::Rifle: return "rifle";
         case rm::WeaponCategory::Magnum: return "magnum";
+        case rm::WeaponCategory::Bow: return "bow";
+        case rm::WeaponCategory::Launcher: return "explosion";
+        case rm::WeaponCategory::Melee: return "shockwave";
+        case rm::WeaponCategory::Flamethrower: return "fire";
         default: return "handgun";
     }
 }
@@ -1586,8 +1596,37 @@ std::uint32_t AmmoItemFor(rm::WeaponCategory category) {
         case rm::WeaponCategory::MachineGun: return 0x0202;
         case rm::WeaponCategory::Rifle: return 0x0204;
         case rm::WeaponCategory::Magnum: return 0x0209;
+        case rm::WeaponCategory::Bow: return 0x020B;
+        case rm::WeaponCategory::Launcher: return 0x0206;  // the grenade launcher's explosive rounds
+        case rm::WeaponCategory::Melee:
+        case rm::WeaponCategory::Flamethrower: return 0;  // none
         default: return re5::addr::kItemHandgunAmmo;
     }
+}
+
+// The ammo for the gun in the player's hands (Sheva's Scavenger: drops become it); 0 for one
+// without (knife, stun rod, flamethrower, the rocket launcher's single rocket). The grenade
+// launcher is one item per round type loaded (0x0125.., the Organize table), its rounds 0x0206..
+std::uint32_t HeldAmmoItem() {
+    const auto player = engine::LocalPlayer();
+    if (!engine::Caps().inventory || !player) return 0;
+    const auto inv = player + re5::off::kPlayerInventory;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1 || ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) != 1) continue;
+        const auto id = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
+        static const std::pair<std::uint32_t, std::uint32_t> kLauncherRounds[] = {
+            {0x0125, 0x0206}, {0x0126, 0x0207}, {0x0127, 0x0208}, {0x0139, 0x020E}, {0x013A, 0x020F}, {0x013B, 0x0210}};
+        for (const auto& [launcher, rounds] : kLauncherRounds) {
+            if (id == launcher) return rounds;
+        }
+        if (id == 0x010D) return 0;  // the rocket launcher: one rocket, never reloaded
+        for (const rm::WeaponBaseDef& w : g->content->weapons()) {
+            if (w.game_item == static_cast<std::int64_t>(id)) return AmmoItemFor(w.category);
+        }
+        return 0;
+    }
+    return 0;
 }
 
 // Clears an inventory record the way the game discards an item: the record's weapon object
@@ -2048,7 +2087,16 @@ void ArenaBegan(double now) {
     g->boss = {};
     ApplyBuildHealth();
     ApplyBuildStacks();
-    world::SetDropReplacement(static_cast<int>(g->run->state().character.build.drops_as));
+    {
+        const rm::SkinBuild& build = g->run->state().character.build;
+        world::DropRules drops;
+        drops.all = static_cast<int>(build.drops_as);
+        if (build.drops_as_held_ammo) drops.heldAmmo = &HeldAmmoItem;
+        for (const auto& [from, to] : build.pickup_as) {
+            drops.swaps.emplace_back(static_cast<std::uint16_t>(from), static_cast<std::uint16_t>(to));
+        }
+        world::SetDropRules(drops);
+    }
     const rm::RunSnapshot s = g->run->Snapshot(now);
     const rm::MapDef* map = CurrentMap();
     MoveToMapStart("arena start");
@@ -3890,6 +3938,46 @@ void StepSpecial(double now) {
     }
 }
 
+// Chris's Iron Grip (a build's break_grabs): a grab is broken at once. In a grab the player's
+// action is the grabber's hold of him (cEm10ActNeckHang_PL, cEm10ActBackHold_PL, ...: the
+// grabber at the action's +0xC, the player at +8, 0x00C29370); the hold lets him go itself when
+// the grabber leaves its grab (a Majini's action 0x99, the hold's move 0x00C26FB0), so the
+// grabber is thrown off with the game's own reaction. Only Majini (uEm10's family) have the
+// reactions known; any other grabber is logged and left to the game.
+constexpr std::size_t kHoldGrabber = 0x0C;
+std::uintptr_t g_grabBroken = 0;  // the hold action handled last (one try per grab)
+
+void DriveGrabBreak(double now) {
+    rm::RunController& run = *g->run;
+    if (!run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || !run.state().character.build.break_grabs) return;
+    const auto local = engine::LocalPlayer();
+    if (!local) return;
+    const auto action = ReadOr<std::uintptr_t>(local + re5::off::kPlayerAction, 0);
+    const std::string name = action ? engine::ClassName(action) : std::string();
+    const bool hold = name.size() > 3 && name.compare(name.size() - 3, 3, "_PL") == 0 && name.find("Escape") == std::string::npos;
+    if (!hold) {
+        g_grabBroken = 0;
+        return;
+    }
+    if (action == g_grabBroken) return;
+    g_grabBroken = action;
+    const auto grabber = ReadOr<std::uintptr_t>(action + kHoldGrabber, 0);
+    const std::string cls = grabber ? engine::ClassName(grabber) : std::string();
+    const auto hp = grabber ? engine::ReadHp(grabber) : std::nullopt;
+    if (cls.rfind("uEm", 0) != 0 || !hp || hp->hp <= 0) {
+        RM_LOGI("iron grip: %s, no grabber found (%s); left to the game", name.c_str(), cls.empty() ? "none" : cls.c_str());
+        return;
+    }
+    const bool thrown = engine::StartAction(grabber, re5::off::kEm10DmgFlyoff, ReactionClass(re5::off::kEm10DmgFlyoff)) ||
+                        engine::StartAction(grabber, re5::off::kEm10DmgYoroke, ReactionClass(re5::off::kEm10DmgYoroke));
+    RM_LOGI("iron grip: %s by %s %s", name.c_str(), cls.c_str(),
+            thrown ? ("thrown off (" + engine::CurrentActionName(grabber) + ")").c_str() : "kept its grab (no known reaction)");
+    if (thrown) {
+        g->notice = "IRON GRIP";
+        g->noticeUntil = now + 1.2;
+    }
+}
+
 // Game tick: each special's combo starts it during an arena; the move runs its course. While a
 // build with specials fights, their bindings are the mod's (hidden from the game).
 void DriveSpecial(double now) {
@@ -4224,7 +4312,7 @@ void SettleFinishedRun() {
             g_enemyTracks.clear();
             autopilot::Disarm("run over");
             RestoreBuildStacks();
-            world::SetDropReplacement(-1);
+            world::SetDropRules({});
             // M7.3: the last match's Mercenaries results are skipped (they would write a record
             // into the game's save) and the game goes back to its Play menu, where the mod menu
             // opens on the run's results.
@@ -5572,6 +5660,7 @@ private:
         OpenChests(now);
         ApplyHeals();
         DriveSpecial(now);
+        DriveGrabBreak(now);
         DrivePartner(now);
         WatchEquippedWeapon(now);
         SampleHitStates(now);
