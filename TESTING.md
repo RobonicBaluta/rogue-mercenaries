@@ -154,6 +154,8 @@ and `$ctest` to `ctest.exe` in the same folder.
     (a foreign enemy and a gun outside the loadout, preloaded, spawned, created, equipped and fired), `STAGE=<n> bash scripts/test_shopgun.sh`
     (a gun bought in the shop is carried to the next stage and fired there), `bash scripts/test_chest.sh` (a placed chest opens when shot),
     `STAGE=<n> bash scripts/test_chests.sh` (a run blocks the stage's statues and places its own chests in arenas 1 and 2);
+    `bash scripts/test_twinguns.sh` (E16 spike, Jill Battle Suit: dev `twinguns`, `twinfire N`, `twinguns off`; the log's
+    `dev twinguns: gun N ... attached`, `dev twinfire N: N shots fired`, and `enemy_hit ...` lines for the shots);
     surveys: `STAGE=<n> bash scripts/survey_objects.sh`, `bash scripts/survey_chests.sh` (all stages, writes `research/chest_survey.json`).
   - Campaign areas (M5): `NUMBER=<n> bash scripts/test_stage.sh` (does stage n load and keep running), `bash scripts/survey_campaign.sh`
     (several stages: captures, own spawns, objects), `NUMBER=<n> bash scripts/dump_stage_sets.sh` (set records), `python scripts/campaign_maps.py <n>...`

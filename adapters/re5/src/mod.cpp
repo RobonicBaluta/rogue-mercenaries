@@ -2661,6 +2661,8 @@ void UpdatePreloads() {
         // The boss whose moves the build's specials borrow (M8: its motion lists; nothing of it is
         // created). As a class, so its own weapons come along.
         if (bossArchive != nullptr) extras.enemyClasses.push_back(bossArchive);
+        // The boss Jill's SMG (uWp76, arm 0x70176) for the twin guns spike (E16, dev "twinguns").
+        if (bossArchive != nullptr && std::string_view(bossArchive) == "uEm84") addWeapon(0x70176);
         // The partner the build's backup calls in (E22): her class with its effects (0x007D5820
         // adds the uPl01 archive); her gear is among the run's guns and knives.
         if (partnerClass != nullptr) extras.enemyClasses.push_back(partnerClass);
@@ -4818,6 +4820,70 @@ void PollItemBox() {
     if (g->run->phase() == rm::Phase::Shop) g->shopUiRequested = true;
 }
 
+// E16 spike: the boss Jill's two SMGs on the player (developer commands; research/re5-engine-map.md
+// "Twin guns"). "twinguns" makes two uWp76 units and attaches them as she holds hers in her sweep
+// (pose 1 of her table: gun 0 joint 13, gun 1 joint 8, with her offsets and rotations), "twinfire
+// [n]" fires each n times along the player's facing, "twinguns off" deletes them. Their archive
+// loads with every stage of a Jill Battle Suit run (else dev "preload 70176", then a new match).
+std::uintptr_t g_twinGuns[2] = {0, 0};
+
+void TwinGunsCommand(const std::string& command) {
+    const auto local = engine::LocalPlayer();
+    if (command == "twinguns off") {
+        for (std::uintptr_t& gun : g_twinGuns) {
+            if (gun) RM_LOGW("dev twinguns: %08X deleted: %s", static_cast<unsigned>(gun), engine::DeleteUnit(gun) ? "yes" : "no");
+            gun = 0;
+        }
+        return;
+    }
+    if (!engine::Caps().twinGuns || !local) {
+        RM_LOGW("dev twinguns: %s", local ? "signatures missing" : "no player");
+        return;
+    }
+    if (command == "twinguns") {
+        if (resources::Available() && !resources::ArchiveLoaded("uWp76")) {
+            RM_LOGW("dev twinguns: uWp76 is not loaded here (a Jill Battle Suit run, or dev preload 70176 and a new match)");
+            return;
+        }
+        for (int g = 0; g < 2; ++g) {
+            if (g_twinGuns[g]) continue;
+            const std::uintptr_t entry = re5::addr::kItemJointTable + static_cast<std::uintptr_t>(1 + g * 2) * 0x30;
+            const int joint = ReadOr<std::int32_t>(entry, -1);
+            float offset[3], euler[3];
+            for (int k = 0; k < 3; ++k) {
+                offset[k] = ReadOr<float>(entry + 0x10 + k * 4, 0.0f);
+                euler[k] = ReadOr<float>(entry + 0x20 + k * 4, 0.0f);
+            }
+            const std::uintptr_t gun = engine::CreateTwinGun();
+            const bool attached = gun && joint >= 0 && engine::AttachTwinGun(gun, local, joint, offset, euler);
+            RM_LOGW("dev twinguns: gun %d %08X (%s) joint %d offset %.2f %.2f %.2f euler %.2f %.2f %.2f: %s", g, static_cast<unsigned>(gun),
+                    gun ? engine::ClassName(gun).c_str() : "-", joint, offset[0], offset[1], offset[2], euler[0], euler[1], euler[2],
+                    attached ? "attached" : "not attached");
+            if (gun && !attached) engine::DeleteUnit(gun);
+            g_twinGuns[g] = attached ? gun : 0;
+        }
+        return;
+    }
+    // "twinfire [n]": from beside her hands along her facing; the hit log names who scored.
+    int shots = 1;
+    std::sscanf(command.c_str() + 8, "%d", &shots);
+    shots = std::clamp(shots, 1, 20);
+    float fx = 0.0f, fz = 1.0f;
+    PlayerFacing(local, fx, fz);
+    const float dir[3] = {fx, 0.0f, fz};
+    int fired = 0;
+    for (int g = 0; g < 2; ++g) {
+        if (!g_twinGuns[g]) continue;
+        const float side = g == 0 ? 25.0f : -25.0f;  // right and left of her
+        const float muzzle[3] = {ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) + fx * 50.0f + fz * side,
+                                 ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f) + 130.0f,
+                                 ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) + fz * 50.0f - fx * side};
+        for (int s = 0; s < shots; ++s) fired += engine::FireTwinGun(g_twinGuns[g], muzzle, dir) ? 1 : 0;
+    }
+    RM_LOGW("dev twinfire %d: %d shots fired (guns %08X %08X) facing %.2f %.2f", shots, fired, static_cast<unsigned>(g_twinGuns[0]),
+            static_cast<unsigned>(g_twinGuns[1]), fx, fz);
+}
+
 // Developer automation: <data>\dev.command holds one command per file drop.
 // Only in developer mode; every command is logged.
 void PollDevCommand(double now) {
@@ -5099,6 +5165,8 @@ void PollDevCommand(double now) {
             RM_LOGW("dev spawn %s (weapon %X) at %.0f %.0f %.0f -> %08X %s", cls.c_str(), weapon, spawnAt[0], spawnAt[1], spawnAt[2],
                     static_cast<unsigned>(unit), unit ? engine::ClassName(unit).c_str() : "failed");
         }
+    } else if (command == "twinguns" || command == "twinguns off" || command.rfind("twinfire", 0) == 0) {
+        TwinGunsCommand(command);
     } else if (command.rfind("partnerhp ", 0) == 0) {
         // "partnerhp <hp>": the partner's health (what does her death do to a run's match?).
         const int hp = std::atoi(command.c_str() + 10);

@@ -95,6 +95,17 @@ constexpr std::uintptr_t kDtiMotionList = 0x0124B574;  // rMotionList
 // +0x2D9C) and sets the slot's bit in game work +0x478. The Port stage's own code (0x00741690)
 // adds Josh this way: (2, 4, 0, 0), then sets +0x2DAC |= 1 and his position (+0x30).
 constexpr std::uintptr_t kFnPlayerAdd = 0x007E9A50;
+// Twin guns (E16 spike): the boss Jill (uEm84) makes two uWp76 units with sItem's create of a uItem
+// class (thiscall on [kItemManager]: dti, 0; 0x007BD750, from 0x009398E0), sets their rotation
+// (thiscall: float euler[3], 0x00489CE0) and fires them with their +0x1C0 (0x00BB2B20 for uWp76:
+// muzzle, direction, a value it returns, mode 3; a shot unit (7, 0x186) owned by the gun, which must
+// be attached to a uPawn: the gun's +0x34 (0x00489860) stores parent +0x18 and joint +0x1C).
+constexpr std::uintptr_t kFnItemUnitCreate = 0x007BD750;
+constexpr std::uintptr_t kFnUnitSetEuler = 0x00489CE0;
+constexpr std::uintptr_t kFnUnitAttach = 0x00489860;
+constexpr std::uintptr_t kFnWp76Fire = 0x00BB2B20;
+constexpr std::uintptr_t kDtiWp76 = 0x01204DE8;    // uWp76, the boss Jill's SMG
+constexpr std::uintptr_t kItemJointTable = 0x0111C1F0;  // her guns' joints and offsets: 0x30 per (gun * 2 + pose)
 // cEm10ActDeadArmyBomb (Majini action 0x93), its update 0x00C10BA0, step 0: the effect of the
 // body's end. In game mode 5 (Reunion) any of uEm10/11/12/14/21/92 (0x00C00770) gets uEm14's
 // em140a, which Excella's own archive carries; in mode 2 only uEm14 does and the others ask for
@@ -560,6 +571,10 @@ inline constexpr Signature kSignatures[] = {
     // `push esi; mov esi, [esp+8]; cmp esi, -1; push edi; mov edi, ecx; jle; cmp esi, 4; jge;
     // cmp [edi+esi*4+0x24], 0; jz; pop edi; xor eax, eax`.
     {"player_add", addr::kFnPlayerAdd, "56 8B 74 24 08 83 FE FF 57 8B F9 7E 13 83 FE 04 7D 0E 83 7C B7 24 00 74 07 5F 33 C0"},
+    {"item_unit_create", addr::kFnItemUnitCreate, "8B 54 24 04 56 8B 35 90 60 1F 01 39 72 04 74 19 8B 42 10 85"},
+    {"unit_set_euler", addr::kFnUnitSetEuler, "55 8B EC 83 E4 F0 83 EC 74 0F 57 C0 F3 0F 10 25 34 34 0A 01"},
+    {"unit_attach", addr::kFnUnitAttach, "8B 44 24 04 8B 54 24 08 89 41 18 89 51 1C C2 08 00"},
+    {"wp76_fire", addr::kFnWp76Fire, "55 8B EC 83 E4 F0 81 EC 84 00 00 00 53 56 8B F1 57 8B 7E 18"},
     {"char_set_motion", addr::kFnCharSetMotion, "53 56 8B F1 8B 8E 74 19 00 00 85 C9 57 74 05 E8 7C 1B 40 00 8B 7C 24 10 85 FF 8B 5C"},
     // `mov edx, [kGameRoot]; mov eax, [edx+0x1042C]; cmp [eax+0x58], 5; mov ecx, [esi+0x1C]; jnz +0B;
     // push ecx; call 0x00C00770; add esp, 4; jmp +0A; push uEm14 DTI; call IsKindOf`.

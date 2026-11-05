@@ -162,6 +162,8 @@ bool VerifySignatures(unsigned timeoutMs) {
                      SignatureOk("motion_list_set") && SignatureOk("char_set_motion") && motionListName &&
                      ReadCString(motionListName, 16) == "rMotionList";
     g_caps.partner = g_caps.players && g_caps.gameWork && SignatureOk("player_add") && SignatureOk("class_by_id");
+    g_caps.twinGuns = SignatureOk("item_unit_create") && SignatureOk("unit_set_euler") && SignatureOk("unit_attach") &&
+                      SignatureOk("wp76_fire") && DtiName(re5::addr::kDtiWp76) == "uWp76";
     return all;
 }
 
@@ -619,6 +621,90 @@ std::uintptr_t PlayerAreaBase() {
 }
 
 }  // namespace
+
+namespace {
+
+using ItemUnitCreateFn = std::uintptr_t(__thiscall*)(std::uintptr_t manager, std::uintptr_t dti, int arg);
+using UnitAttachFn = void(__thiscall*)(std::uintptr_t unit, std::uintptr_t parent, int joint);
+using UnitSetEulerFn = void(__thiscall*)(std::uintptr_t unit, const float* euler);
+using GunFireFn = int(__thiscall*)(std::uintptr_t gun, const float* muzzle, const float* dir, int value, unsigned mode);
+using UnitVoidFn = void(__thiscall*)(std::uintptr_t unit);
+using UnitIntFn = void(__thiscall*)(std::uintptr_t unit, int value);
+constexpr std::size_t kUnitOwner = 0xFDC;      // the boss's guns and their shots: who they belong to
+constexpr std::size_t kVtableUnitAttach = 0x34;
+constexpr std::size_t kVtableUnitEnable = 0x88;  // the boss calls it with 1 after the create
+constexpr std::size_t kVtableUnitDelete = 0x30;
+constexpr std::size_t kVtableGunFire = 0x1C0;
+constexpr unsigned kGunFireMode = 3;           // the boss's ordinary shot (4: another aim mode)
+
+std::uintptr_t VtableSlot(std::uintptr_t object, std::size_t slot) {
+    const auto vtable = ReadOr<std::uintptr_t>(object, 0);
+    return vtable ? ReadOr<std::uintptr_t>(vtable + slot, 0) : 0;
+}
+
+}  // namespace
+
+std::uintptr_t CreateTwinGun() {
+    if (!g_caps.twinGuns) return 0;
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kItemManager, 0);
+    if (!manager) return 0;
+    std::uintptr_t gun = 0;
+    __try {
+        gun = reinterpret_cast<ItemUnitCreateFn>(re5::addr::kFnItemUnitCreate)(manager, re5::addr::kDtiWp76, 0);
+        if (gun) {
+            const auto enable = VtableSlot(gun, kVtableUnitEnable);
+            if (enable) reinterpret_cast<UnitIntFn>(enable)(gun, 1);
+            *reinterpret_cast<std::uint32_t*>(gun + 4) &= ~0x2000u;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        RM_LOGW("twin guns: the create faulted; off");
+        g_caps.twinGuns = false;
+        return 0;
+    }
+    return gun;
+}
+
+bool AttachTwinGun(std::uintptr_t gun, std::uintptr_t parent, int joint, const float offset[3], const float euler[3]) {
+    if (!g_caps.twinGuns || !gun || !parent || VtableSlot(gun, kVtableUnitAttach) != re5::addr::kFnUnitAttach) return false;
+    __try {
+        reinterpret_cast<UnitAttachFn>(re5::addr::kFnUnitAttach)(gun, parent, joint);
+        *reinterpret_cast<std::uintptr_t*>(gun + kUnitOwner) = parent;
+        for (int k = 0; k < 3; ++k) *reinterpret_cast<float*>(gun + re5::off::kUnitPosition + k * 4) = offset[k];
+        reinterpret_cast<UnitSetEulerFn>(re5::addr::kFnUnitSetEuler)(gun, euler);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        RM_LOGW("twin guns: the attach faulted; off");
+        g_caps.twinGuns = false;
+        return false;
+    }
+    return true;
+}
+
+bool FireTwinGun(std::uintptr_t gun, const float muzzle[3], const float dir[3]) {
+    if (!g_caps.twinGuns || !gun || VtableSlot(gun, kVtableGunFire) != re5::addr::kFnWp76Fire) return false;
+    // As the boss fires hers (0x0093C2E0): the gun's own fire action (10, 1, 0, -1), then the shot.
+    const auto change = VtableSlot(gun, re5::off::kVtableChangeAction);
+    __try {
+        if (change == re5::addr::kFnChangeAction) reinterpret_cast<ChangeActionFn>(change)(gun, 10, 1, 0, -1, 0);
+        reinterpret_cast<GunFireFn>(re5::addr::kFnWp76Fire)(gun, muzzle, dir, 0, kGunFireMode);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        RM_LOGW("twin guns: the shot faulted; off");
+        g_caps.twinGuns = false;
+        return false;
+    }
+    return true;
+}
+
+bool DeleteUnit(std::uintptr_t unit) {
+    const auto del = unit ? VtableSlot(unit, kVtableUnitDelete) : 0;
+    if (!del) return false;
+    __try {
+        *reinterpret_cast<std::uint32_t*>(unit + 4) &= ~0x2000u;
+        reinterpret_cast<UnitVoidFn>(del)(unit);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
 
 std::uintptr_t AddPlayer(int slot, int character, int costume) {
     if (!g_caps.partner || slot < 1 || slot > 3 || character < 0 || character > 0x20 || costume < 0 || costume > 0x10) return 0;

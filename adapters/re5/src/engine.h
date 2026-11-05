@@ -30,6 +30,7 @@ struct Verified {
     bool turn = false;          // a character turned the game's way (M8: Wesker faces his lunge's target)
     bool motions = false;       // motion lists looked up, bound to a model and played (M8: boss moves)
     bool partner = false;       // a computer player added the game's way (E22: Josh's backup)
+    bool twinGuns = false;      // the boss Jill's SMG units on the player (E16 spike, developer commands)
     bool hitAttacker = false;
     bool gameWork = false;   // mode/stage/merc timer layout
     bool mercCountdown = false;
@@ -142,6 +143,16 @@ std::vector<std::uint8_t> SavePlayerArea();
 bool RestorePlayerArea(const std::vector<std::uint8_t>& copy);
 /// The player class the add creates for (character, costume): the class lookup by id (category 1).
 std::string PlayerClassName(int character, int costume);
+
+/// The boss Jill's SMG units on the player (E16 spike; re5::addr::kFnItemUnitCreate): a uWp76 unit
+/// from sItem (its archive must be loaded, else the game ends), attached to `parent`'s `joint` with a
+/// local offset and rotation as the boss attaches hers (the gun's owner at +0xFDC), fired from
+/// `muzzle` along `dir` (a shot unit the gun owns; whether it hurts enemies is what the spike is
+/// for), deleted the MT way (+4 &= ~0x2000, +0x30). 0 / false when refused or faulted.
+std::uintptr_t CreateTwinGun();
+bool AttachTwinGun(std::uintptr_t gun, std::uintptr_t parent, int joint, const float offset[3], const float euler[3]);
+bool FireTwinGun(std::uintptr_t gun, const float muzzle[3], const float dir[3]);
+bool DeleteUnit(std::uintptr_t unit);
 
 /// Fixes of the game's own code for what Mercenaries mode 2 never met before the mod (in memory,
 /// each behind its signature): Excella's finisher on a Majini (re5::addr::kDeadBombModeJump).
