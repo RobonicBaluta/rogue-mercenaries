@@ -57,6 +57,13 @@ constexpr std::uintptr_t kCollision = 0x01249C64;  // the collision singleton th
 // (id, 0, 0, -1, 0) and the co-op sync replays any action by id the same way.
 constexpr std::uintptr_t kFnChangeAction = 0x00B59030;
 constexpr std::uintptr_t kFnPlayerChangeAction = 0x00B5C900;
+// The player's hold, cPlAction_pl_act_test (off::kPlActHold): its vtable and the functions in its
+// slots 6 (start, a thunk to 0x00C8B1E0), 7 (update, empty) and 10 (the default that sets the done
+// bit). See off::kPlActHold.
+constexpr std::uintptr_t kVtablePlActTest = 0x01045CF8;
+constexpr std::uintptr_t kFnPlActTestStart = 0x00C91600;
+constexpr std::uintptr_t kFnPlActTestUpdate = 0x00C76EA0;
+constexpr std::uintptr_t kFnActionDefaultDone = 0x00C71510;
 constexpr std::uintptr_t kFnEnemyChangeAction = 0x009D9DC0;
 // Action tables ({DTI, 0} per id; vtable slots 0xE8 table, 0xEC count): uPlayer 0x0113AF80 (177),
 // uEm10 0x01115950 (157).
@@ -366,6 +373,10 @@ constexpr std::size_t kPlayerAction = 0x10F8;
 constexpr std::size_t kCharActionCount = 0x10D0;
 constexpr std::size_t kCharActionData = 0x10DC;
 constexpr std::size_t kCharActionRequest = 0x10E0;
+// The request store (0x00B59340): a request while none is pending moves the last one to +0x10E4,
+// and +0x10EC (byte) is set until the action step (0x00B56480) takes it.
+constexpr std::size_t kCharActionPrevRequest = 0x10E4;
+constexpr std::size_t kCharActionPending = 0x10EC;
 constexpr std::size_t kCharYaw = 0x1904;
 // uEnemy: its target (a player; cleared by uEm40's update 0x008AE2B0 when it is no unit, read by
 // uEm40's far grab 0x008A85E0 to pick its attack). Majini code sets it widely (their search).
@@ -383,6 +394,15 @@ constexpr int kPlActAvoidFront = 0x51;  // cPlAction_pl_act_avoid_front (toward 
 // done, so a motion played over it plays out. (setEventAct_wait, 0x84, marks itself done on its
 // second update and the player drops back to wait: user playtest 2026-11-03.)
 constexpr int kPlActHold = 0xA8;
+// Its vtable (11 slots): slot 6 (+0x18) the start (the thunk 0x00C91600 to 0x00C8B1E0), slot 7
+// (+0x1C) the update 0x00C76EA0, slot 8 (+0x20) the end (the default 0x00C71490, which runs slot 10
+// until the done bit is set), slot 10 (+0x28) the default 0x00C71510 (sets the done bit). The
+// action step 0x00B56480 ends the old action (its slot 8: the done bit set) before it starts the
+// new one; other starts clear the flag word (0x00B7A240), the hold's does not, so it began "done"
+// and the game asked for wait again the same frame (the mod's runs, 2026-11-05: the request taken,
+// wait asked for, before the next tick). Addresses: addr::kVtablePlActTest and the slots' functions.
+constexpr std::size_t kActionSlotStart = 0x18;
+constexpr std::size_t kActionPlayer = 0x18;  // an action's player
 // uPlayer: the current action's flag word. Bit 28 = the action may be left for the next one (set
 // when an action is done; hundreds of input checks test it, the action's step loop 0x00C71490
 // runs until it is set).

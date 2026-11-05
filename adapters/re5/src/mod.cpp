@@ -3020,13 +3020,86 @@ struct SpecialMove {
     bool borrowed = false;  // a boss's own moves play it (dual_smg: the shots land during the sweep)
     double seconds = 0.0;   // dual_smg: how long it fires without them
     std::set<std::uintptr_t> staggered;  // dual_smg: enemies its shots have staggered
+    bool twinGuns = false;  // dual_smg: the boss Jill's two SMGs in her hands, firing
+    bool twinWanted = false;  // dual_smg: they come once the hold runs (or the sweep fires without it)
+    double nextTwinShot = 0.0;
+    int twinShots = 0;
 };
 SpecialMove g_move;
+
+// The boss Jill's two SMGs on the player (E16; research/re5-engine-map.md "Twin guns"). Seen in game
+// 2026-11-05 (the mod's own runs, scripts/test_twinguns.sh): two uWp76 units sit in her hands
+// (joints 13 and 8, her table's pose 1) and fire with the game's own effects (casings, smoke,
+// sound); their shots (uWp86 shells) fly but hurt no enemy whatever their attack id (eight tried),
+// and a player's gun builds the shot's attack group from the player (static), so every shot's
+// attack is turned off (-1: the shell's update skips it) and Twin Fury's own pulses do the damage.
+// Their archive loads with every stage of a Jill Battle Suit run.
+std::uintptr_t g_twinGuns[2] = {0, 0};
+int g_twinGunsGeneration = -1;  // the match they were made in (gone with it)
+bool g_twinGunsInSpecial = true;  // dev "twinguns special off": Twin Fury without them (a control)
+
+bool ArmTwinGuns(std::uintptr_t local, const char* why) {
+    if (g_twinGunsGeneration != g->matchGeneration) g_twinGuns[0] = g_twinGuns[1] = 0;
+    if (g_twinGuns[0] && g_twinGuns[1]) return true;
+    if (!engine::Caps().twinGuns || !local) return false;
+    if (resources::Available() && !resources::ArchiveLoaded("uWp76")) {
+        static int said = 0;
+        if (said++ < 2) RM_LOGI("twin guns: uWp76 is not loaded here (%s)", why);
+        return false;
+    }
+    for (int n = 0; n < 2; ++n) {
+        if (g_twinGuns[n]) continue;
+        const std::uintptr_t entry = re5::addr::kItemJointTable + static_cast<std::uintptr_t>(1 + n * 2) * 0x30;
+        const int joint = ReadOr<std::int32_t>(entry, -1);
+        float offset[3], euler[3];
+        for (int k = 0; k < 3; ++k) {
+            offset[k] = ReadOr<float>(entry + 0x10 + k * 4, 0.0f);
+            euler[k] = ReadOr<float>(entry + 0x20 + k * 4, 0.0f);
+        }
+        const std::uintptr_t gun = engine::CreateTwinGun();
+        const bool attached = gun && joint >= 0 && engine::AttachTwinGun(gun, local, joint, offset, euler);
+        if (gun && !attached) engine::DeleteUnit(gun);
+        g_twinGuns[n] = attached ? gun : 0;
+    }
+    g_twinGunsGeneration = g->matchGeneration;
+    RM_LOGI("twin guns: %08X %08X in her hands (%s)", static_cast<unsigned>(g_twinGuns[0]), static_cast<unsigned>(g_twinGuns[1]), why);
+    return g_twinGuns[0] && g_twinGuns[1];
+}
+
+void DisarmTwinGuns(const char* why) {
+    if (g_twinGunsGeneration != g->matchGeneration) g_twinGuns[0] = g_twinGuns[1] = 0;  // gone with their match
+    bool any = false;
+    for (std::uintptr_t& gun : g_twinGuns) {
+        if (gun) any = engine::DeleteUnit(gun) || any;
+        gun = 0;
+    }
+    if (any) RM_LOGI("twin guns: put away (%s)", why);
+}
+
+// Both guns fire once along (fx, fz) from beside her hands; their shots hurt nobody. Returns the shots.
+int FireTwinGunsOnce(std::uintptr_t local, float fx, float fz) {
+    if (!local || g_twinGunsGeneration != g->matchGeneration) return 0;
+    const float dir[3] = {fx, 0.0f, fz};
+    world::WatchCreated("uWp86");
+    int fired = 0;
+    for (int n = 0; n < 2; ++n) {
+        if (!g_twinGuns[n]) continue;
+        const float side = n == 0 ? 25.0f : -25.0f;  // her right and left hands
+        const float muzzle[3] = {ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) + fx * 60.0f + fz * side,
+                                 ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f) + 130.0f,
+                                 ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) + fz * 60.0f - fx * side};
+        fired += engine::FireTwinGun(g_twinGuns[n], muzzle, dir) ? 1 : 0;
+    }
+    for (const std::uintptr_t s : world::TakeCreated()) SafeStore<std::uint32_t>(s + 0x1CA0, 0xFFFFFFFFu);
+    world::WatchCreated("");
+    return fired;
+}
 bool g_comboHeld[2] = {false, false};
 double g_specialDeniedUntil = 0.0;
 double g_burstUntil = -1.0;  // the burst's ring shows it acting until then
 
 constexpr double kSmgPulse = 0.15;
+constexpr double kTwinShotEvery = 0.08;  // the twin guns' fire rate (the boss's: every 3 frames)
 constexpr float kSmgRange = 1400.0f;     // 14 m
 constexpr float kSmgCone = 0.766f;       // cos 40 degrees
 constexpr double kBackupPulse = 1.2;
@@ -3035,9 +3108,11 @@ constexpr int kBackupDamage = 150;
 
 void EndSpecialMove(const char* why) {
     if (g_move.kind.empty()) return;
-    RM_LOGI("special: %s%s%s over (%s): %d pulses, %d hits%s", g_move.kind.c_str(), g_move.move.empty() ? "" : " ",
+    RM_LOGI("special: %s%s%s over (%s): %d pulses, %d hits%s%s", g_move.kind.c_str(), g_move.move.empty() ? "" : " ",
             g_move.move.c_str(), why, g_move.pulses, g_move.hits,
-            g_move.staggered.empty() ? "" : (", " + std::to_string(g_move.staggered.size()) + " staggered").c_str());
+            g_move.staggered.empty() ? "" : (", " + std::to_string(g_move.staggered.size()) + " staggered").c_str(),
+            g_move.twinGuns ? (", " + std::to_string(g_move.twinShots) + " twin gun shots").c_str() : "");
+    if (g_move.twinGuns) DisarmTwinGuns("the sweep is over");
     g_move = {};
 }
 
@@ -3495,12 +3570,19 @@ constexpr BossMotionSource kBossMotions[] = {
     {"wesker", "uEm80", "pawn\\em\\em80\\motion\\em80"},
 };
 const char* const kHoldClass = "cPlAction_pl_act_test";
+// A hit the game gives no reaction (its player hit dispatcher 0x00B7B730: the hit record at
+// +0x129C, flag 0x40000000 at its +0x3C, with +0x2D7C bit 8 clear) starts setEventAct_wait (0x84),
+// which ends itself at once. It cut Twin Fury's sweep twice in the mod's own runs (2026-11-05, no
+// damage logged); a move in progress plays on through it.
+const char* const kHitBlipClass = "cPlAction_pl_act_setEventAct_wait";
 constexpr float kBossMotionBlend = 10.0f;    // frames, the bosses' own blend
 // The body's tracks (bone ids under 64: spine, limbs, head) must reach the model's joints; the
 // rest are clothing a costume may not have (Midnight Wesker: 141 of the dash's 200 tracks map,
 // user playtest 2026-11-03), which the game skips for his own motions too.
 constexpr float kBossMotionMinFit = 0.95f;
 constexpr double kBossHoldWait = 0.4;        // seconds for the hold to start
+constexpr double kBossHoldRetry = 0.05;      // seconds between its requests while it has not
+constexpr int kBossBlipLimit = 3;            // no-reaction hits a boss move plays on through
 constexpr double kBossMoveLimit = 8.0;       // seconds: a sequence never holds the player longer
 
 struct BossStep {
@@ -3536,6 +3618,12 @@ struct BossMove {
     int slot = -1;
     std::uintptr_t list = 0;  // what the slot must still hold (the game may give it another list)
     bool playing = false;  // the hold is on and a step plays
+    std::string from;      // the player's action when the hold was asked for
+    int requests = 0;      // the hold's requests until it ran
+    double requestedAt = 0.0;
+    const char* retry = "not asked again yet";  // developer trace: the last retry
+    double blipAt = 0.0;   // playing: when a no-reaction hit took the hold away (0: it has not)
+    int blips = 0;
     double start = 0.0;
     double stepAt = 0.0;
     float lastFrame = 0.0f;
@@ -3567,6 +3655,12 @@ const char* BossArchiveForRun() {
 
 bool BossMoveFiring() { return g_boss.playing && g_boss.step == kSweepFireStep && g_boss.move == "dual_smg"; }
 bool BossMoveActive() { return !g_boss.move.empty(); }
+
+// Clears the player's "action done" bit (+0x2D7C bit 28).
+void ClearActionDone(std::uintptr_t local) {
+    const auto flags = ReadOr<std::uint32_t>(local + re5::off::kPlayerActionFlags, 0);
+    if (flags & re5::off::kActionDone) SafeStore<std::uint32_t>(local + re5::off::kPlayerActionFlags, flags & ~re5::off::kActionDone);
+}
 
 void EndBossMove(std::uintptr_t local, const char* why) {
     if (g_boss.move.empty()) return;
@@ -3617,14 +3711,31 @@ bool StartBossMove(std::uintptr_t local, const std::string& move, double now) {
         }
         if (share < kBossMotionMinFit) return refuse("motion " + std::to_string(s.index) + " does not fit the model");
     }
+    engine::EnsureHoldStartClearsDone(local);
+    const std::string from = engine::CurrentActionName(local);
+    const auto requestBefore = ReadOr<std::int32_t>(local + re5::off::kCharActionRequest, 0);
+    const auto pendingBefore = ReadOr<std::uint8_t>(local + re5::off::kCharActionPending, 0);
     if (!engine::StartAction(local, re5::off::kPlActHold, kHoldClass)) {
-        return refuse("the hold was refused (current action " + engine::CurrentActionName(local) + ")");
+        return refuse("the hold was refused (current action " + from + ")");
     }
+    if (g->settings.developerMode) {
+        RM_LOGI("special: the hold asked for from %s: request %d (pending %d) -> %d, previous %d, pending %d, now %s", from.c_str(),
+                requestBefore, pendingBefore, ReadOr<std::int32_t>(local + re5::off::kCharActionRequest, 0),
+                ReadOr<std::int32_t>(local + re5::off::kCharActionPrevRequest, 0),
+                ReadOr<std::uint8_t>(local + re5::off::kCharActionPending, 0), engine::CurrentActionName(local).c_str());
+    }
+    // Standing still, her wait action is done (+0x2D7C bit 28) and the game asks for wait again every
+    // frame (the mod's own runs, 2026-11-05: request 0, flags 10001000; the hold never started):
+    // the bit is cleared until the hold runs.
+    ClearActionDone(local);
     EndBossMove(0, "replaced");
     g_boss.move = move;
     g_boss.steps = *steps;
     g_boss.slot = slot;
     g_boss.list = list;
+    g_boss.from = from;
+    g_boss.requests = 1;
+    g_boss.requestedAt = now;
     g_boss.start = now;
     g_boss.stepAt = now;
     for (int k = 0; k < 3; ++k) g_boss.origin[k] = ReadOr<float>(local + re5::off::kUnitPosition + k * 4, 0.0f);
@@ -3641,9 +3752,65 @@ void StepBossMove(double now) {
         return;
     }
     const std::string action = engine::CurrentActionName(local);
+    if (g_boss.playing && action == kHoldClass && g_boss.blipAt > 0.0) {
+        RM_LOGI("special: the hold is back after a no-reaction hit, %.2f s", now - g_boss.blipAt);
+        g_boss.blipAt = 0.0;
+    }
+    if (g_boss.playing && action != kHoldClass && (action == kHitBlipClass || (g_boss.blipAt > 0.0 && action == "cPlAction_pl_act_wait"))) {
+        // A no-reaction hit (kHitBlipClass), or the wait it drops to: the hold is asked for again
+        // for a little while and the step plays on (its motion is checked once the hold is back).
+        if (g_boss.blipAt <= 0.0) {
+            g_boss.blipAt = now;
+            g_boss.requestedAt = 0.0;
+            ++g_boss.blips;
+            RM_LOGI("special: a no-reaction hit (%s) during %s step %zu; the hold is asked for again", action.c_str(),
+                    g_boss.move.c_str(), g_boss.step + 1);
+        }
+        if (now - g_boss.blipAt <= kBossHoldWait && g_boss.blips <= kBossBlipLimit) {
+            if (now - g_boss.requestedAt >= kBossHoldRetry && engine::StartAction(local, re5::off::kPlActHold, kHoldClass)) {
+                g_boss.requestedAt = now;
+            }
+            ClearActionDone(local);
+            return;
+        }
+    }
     if (action != kHoldClass) {
+        // Until the hold runs, the bit that makes the game ask for wait again stays clear, and while
+        // she is still in the action she was in (or the wait the game dropped her to), the hold is
+        // asked for again every 0.05 s. The game took the request, started the hold and asked for
+        // wait the same frame (2026-11-05: the hold in +0x10E4, nothing pending); the hold's start
+        // now clears the done bit itself (engine::EnsureHoldStartClearsDone). Another action (a
+        // hit) is never cut.
+        if (!g_boss.playing) {
+            ClearActionDone(local);
+            g_boss.retry = "not asked this tick";
+            if (now - g_boss.requestedAt >= kBossHoldRetry) {
+                g_boss.requestedAt = now;
+                if (action != g_boss.from && action != "cPlAction_pl_act_wait") {
+                    g_boss.retry = "not asked again (another action)";
+                } else if (engine::StartAction(local, re5::off::kPlActHold, kHoldClass)) {
+                    ++g_boss.requests;
+                    g_boss.retry = "asked again";
+                    ClearActionDone(local);
+                } else {
+                    g_boss.retry = "asked again, refused";
+                }
+            }
+        }
+        if (!g_boss.playing && g->settings.developerMode) {
+            // Developer: what stands in the hold's way (it never started in the mod's own runs,
+            // 2026-11-05, while it did in the user's).
+            // Every tick: a request the step took moves to the previous one and clears pending; one
+            // written over before the step leaves both.
+            RM_LOGI("special: waiting for the hold: action %s (asked from %s; %s), request %d, previous %d, pending %d, flags %08X, %.3f s",
+                    action.c_str(), g_boss.from.c_str(), g_boss.retry, ReadOr<std::int32_t>(local + re5::off::kCharActionRequest, 0),
+                    ReadOr<std::int32_t>(local + re5::off::kCharActionPrevRequest, 0),
+                    ReadOr<std::uint8_t>(local + re5::off::kCharActionPending, 0),
+                    ReadOr<std::uint32_t>(local + re5::off::kPlayerActionFlags, 0), now - g_boss.start);
+        }
         if (g_boss.playing || now - g_boss.start > kBossHoldWait) {
-            EndBossMove(local, g_boss.playing ? ("interrupted: " + action).c_str() : ("the hold never started: " + action).c_str());
+            EndBossMove(local, g_boss.playing ? ("interrupted: " + action).c_str()
+                                              : ("the hold never started: " + action + ", " + std::to_string(g_boss.requests) + " requests").c_str());
         }
         return;
     }
@@ -3653,8 +3820,7 @@ void StepBossMove(double now) {
     }
     // The hold is never done by itself; a "done" bit left from the action before would let the
     // stick end it.
-    const auto flags = ReadOr<std::uint32_t>(local + re5::off::kPlayerActionFlags, 0);
-    if (flags & re5::off::kActionDone) SafeStore<std::uint32_t>(local + re5::off::kPlayerActionFlags, flags & ~re5::off::kActionDone);
+    ClearActionDone(local);
     const BossStep& s = g_boss.steps[g_boss.step];
     const unsigned id = static_cast<unsigned>(g_boss.slot) << 8 | static_cast<unsigned>(s.index);
     if (ReadOr<std::uintptr_t>(local + re5::off::kMotionLists + static_cast<std::size_t>(g_boss.slot) * 4, 0) != g_boss.list) {
@@ -3669,6 +3835,9 @@ void StepBossMove(double now) {
         g_boss.playing = true;
         g_boss.stepAt = now;
         g_boss.lastFrame = 0.0f;
+        if (g_boss.requests > 1) {
+            RM_LOGI("special: the hold ran after %d requests, %.2f s", g_boss.requests, now - g_boss.start);
+        }
         return;
     }
     const auto body = engine::ReadBodyMotion(local);
@@ -3820,6 +3989,8 @@ void StartSpecial(double now, int slot, const char* source) {
         // as long as it plays (the move ends with it).
         g_move.borrowed = StartBossMove(local, "dual_smg", now);
         if (g_move.borrowed) g_move.until = now + kBossMoveLimit;
+        // Her two SMGs in her hands for it (they fire while the shots land), once the hold runs.
+        g_move.twinWanted = g_twinGunsInSpecial;
     } else if (sp.kind == "backup") {
         // Sheva comes as a computer partner for the arena: the game's own partner, who follows,
         // shoots, reloads and heals herself (E22, seen in game 2026-11-03 with a Chris partner).
@@ -3891,6 +4062,11 @@ void StepSpecial(double now) {
         EndSpecialMove("done");
         return;
     }
+    // Her two SMGs: made while the hold was asked for, they could stand in its way.
+    if (g_move.twinWanted && !g_move.twinGuns && (!g_move.borrowed || g_boss.playing)) {
+        g_move.twinWanted = false;
+        g_move.twinGuns = ArmTwinGuns(local, "Twin Fury");
+    }
     // Her borrowed sweep: no shots while she readies, and the move ends with the sweep. A sweep
     // cut short before it fired (a hit, the hold refused) still fires, without the animation.
     if (g_move.kind == "dual_smg" && g_move.borrowed) {
@@ -3910,6 +4086,13 @@ void StepSpecial(double now) {
     if (now >= g_move.until) {
         EndSpecialMove("done");
         return;
+    }
+    // Her two SMGs fire as fast as the boss's (every few frames) while the shots land.
+    if (g_move.kind == "dual_smg" && g_move.twinGuns && now >= g_move.nextTwinShot) {
+        g_move.nextTwinShot = now + kTwinShotEvery;
+        float tx = g_move.dirX, tz = g_move.dirZ;
+        PlayerFacing(local, tx, tz);
+        g_move.twinShots += FireTwinGunsOnce(local, tx, tz);
     }
     if (now < g_move.nextPulse) return;
     if (g_move.kind == "dual_smg") {
@@ -4031,9 +4214,10 @@ void DriveSpecial(double now) {
         }
         g_comboHeld[slot] = down;
     }
-    // A move in progress stops when he is grabbed, hit or down (not while it plays its own dodge
-    // or a boss move's hold).
-    if (!g_move.kind.empty() && !blocked.empty() && blocked.rfind("cPlAction_pl_act_avoid", 0) != 0 && blocked != kHoldClass) {
+    // A move in progress stops when he is grabbed, hit or down (not while it plays its own dodge,
+    // a boss move's hold, or a hit the game gives no reaction).
+    if (!g_move.kind.empty() && !blocked.empty() && blocked.rfind("cPlAction_pl_act_avoid", 0) != 0 && blocked != kHoldClass &&
+        blocked != kHitBlipClass) {
         EndSpecialMove(("interrupted: " + blocked).c_str());
     }
     StepSpecial(now);
@@ -4820,20 +5004,17 @@ void PollItemBox() {
     if (g->run->phase() == rm::Phase::Shop) g->shopUiRequested = true;
 }
 
-// E16 spike: the boss Jill's two SMGs on the player (developer commands; research/re5-engine-map.md
-// "Twin guns"). "twinguns" makes two uWp76 units and attaches them as she holds hers in her sweep
-// (pose 1 of her table: gun 0 joint 13, gun 1 joint 8, with her offsets and rotations), "twinfire
-// [n]" fires each n times along the player's facing, "twinguns off" deletes them. Their archive
-// loads with every stage of a Jill Battle Suit run (else dev "preload 70176", then a new match).
-std::uintptr_t g_twinGuns[2] = {0, 0};
+// E16 research (developer commands, research/re5-engine-map.md "Twin guns"): "twinguns" puts the
+// boss Jill's two SMGs in the player's hands (ArmTwinGuns), "twinguns off" deletes them; "twinfire
+// [n] [at] [attack=<hex>]" fires each n times along her facing or at the nearest enemy and follows
+// the shots, "twinstream <s> [attack=<hex>]" fires both every 0.1 s for a while.
+std::vector<std::uintptr_t> g_twinShots;
+double g_twinTraceUntil = 0.0;
 
 void TwinGunsCommand(const std::string& command) {
     const auto local = engine::LocalPlayer();
     if (command == "twinguns off") {
-        for (std::uintptr_t& gun : g_twinGuns) {
-            if (gun) RM_LOGW("dev twinguns: %08X deleted: %s", static_cast<unsigned>(gun), engine::DeleteUnit(gun) ? "yes" : "no");
-            gun = 0;
-        }
+        DisarmTwinGuns("dev");
         return;
     }
     if (!engine::Caps().twinGuns || !local) {
@@ -4841,47 +5022,128 @@ void TwinGunsCommand(const std::string& command) {
         return;
     }
     if (command == "twinguns") {
-        if (resources::Available() && !resources::ArchiveLoaded("uWp76")) {
-            RM_LOGW("dev twinguns: uWp76 is not loaded here (a Jill Battle Suit run, or dev preload 70176 and a new match)");
-            return;
-        }
-        for (int g = 0; g < 2; ++g) {
-            if (g_twinGuns[g]) continue;
-            const std::uintptr_t entry = re5::addr::kItemJointTable + static_cast<std::uintptr_t>(1 + g * 2) * 0x30;
-            const int joint = ReadOr<std::int32_t>(entry, -1);
-            float offset[3], euler[3];
-            for (int k = 0; k < 3; ++k) {
-                offset[k] = ReadOr<float>(entry + 0x10 + k * 4, 0.0f);
-                euler[k] = ReadOr<float>(entry + 0x20 + k * 4, 0.0f);
-            }
-            const std::uintptr_t gun = engine::CreateTwinGun();
-            const bool attached = gun && joint >= 0 && engine::AttachTwinGun(gun, local, joint, offset, euler);
-            RM_LOGW("dev twinguns: gun %d %08X (%s) joint %d offset %.2f %.2f %.2f euler %.2f %.2f %.2f: %s", g, static_cast<unsigned>(gun),
-                    gun ? engine::ClassName(gun).c_str() : "-", joint, offset[0], offset[1], offset[2], euler[0], euler[1], euler[2],
-                    attached ? "attached" : "not attached");
-            if (gun && !attached) engine::DeleteUnit(gun);
-            g_twinGuns[g] = attached ? gun : 0;
-        }
+        RM_LOGW("dev twinguns: %s", ArmTwinGuns(local, "dev") ? "in her hands" : "not made (see the line above)");
         return;
     }
-    // "twinfire [n]": from beside her hands along her facing; the hit log names who scored.
+    // "twinfire [n] [at]": from in front of her hands along her facing, or with "at" from 0.8 m in
+    // front of the nearest enemy at it (does a shot hurt one at all?); the hit log names who scored.
     int shots = 1;
     std::sscanf(command.c_str() + 8, "%d", &shots);
     shots = std::clamp(shots, 1, 20);
+    const bool at = command.find(" at") != std::string::npos;
+    float fx = 0.0f, fz = 1.0f;
+    PlayerFacing(local, fx, fz);
+    float base[3] = {ReadOr<float>(local + re5::off::kUnitPosition, 0.0f), ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f),
+                     ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f)};
+    float ahead = 120.0f;
+    if (at) {
+        std::uintptr_t nearest = 0;
+        float best = 2500.0f;
+        for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
+            if (e.hp <= 0) continue;
+            const float ex = ReadOr<float>(e.object + re5::off::kUnitPosition, 0.0f) - base[0];
+            const float ez = ReadOr<float>(e.object + re5::off::kUnitPosition + 8, 0.0f) - base[2];
+            const float d = std::sqrt(ex * ex + ez * ez);
+            if (d < best && d > 1.0f) {
+                best = d;
+                nearest = e.object;
+                fx = ex / d;
+                fz = ez / d;
+            }
+        }
+        if (!nearest) {
+            RM_LOGW("dev twinfire: no enemy within 25 m");
+            return;
+        }
+        ahead = best - 80.0f;
+        RM_LOGW("dev twinfire: at %s %08X, %.1f m away (hp %d)", engine::ClassName(nearest).c_str(), static_cast<unsigned>(nearest),
+                best / 100.0f, engine::ReadHp(nearest) ? engine::ReadHp(nearest)->hp : -1);
+    }
+    const float dir[3] = {fx, 0.0f, fz};
+    world::WatchCreated("uWp86");
+    int fired = 0;
+    for (int n = 0; n < 2; ++n) {
+        if (!g_twinGuns[n]) continue;
+        const float side = n == 0 ? 25.0f : -25.0f;  // right and left of her
+        const float muzzle[3] = {base[0] + fx * ahead + fz * side, base[1] + 130.0f, base[2] + fz * ahead - fx * side};
+        const std::uintptr_t gun = g_twinGuns[n];
+        RM_LOGW("dev twinfire: gun %d at %.0f %.0f %.0f; +0x90 %.2f %.2f %.2f +0xA0 %.2f %.2f %.2f +0xB0 %.2f %.2f %.2f +0xC0 %.2f %.2f %.2f",
+                n, ReadOr<float>(gun + 0x30, 0.0f), ReadOr<float>(gun + 0x34, 0.0f), ReadOr<float>(gun + 0x38, 0.0f),
+                ReadOr<float>(gun + 0x90, 0.0f), ReadOr<float>(gun + 0x94, 0.0f), ReadOr<float>(gun + 0x98, 0.0f),
+                ReadOr<float>(gun + 0xA0, 0.0f), ReadOr<float>(gun + 0xA4, 0.0f), ReadOr<float>(gun + 0xA8, 0.0f),
+                ReadOr<float>(gun + 0xB0, 0.0f), ReadOr<float>(gun + 0xB4, 0.0f), ReadOr<float>(gun + 0xB8, 0.0f),
+                ReadOr<float>(gun + 0xC0, 0.0f), ReadOr<float>(gun + 0xC4, 0.0f), ReadOr<float>(gun + 0xC8, 0.0f));
+        for (int s = 0; s < shots; ++s) fired += engine::FireTwinGun(gun, muzzle, dir) ? 1 : 0;
+    }
+    // The shots made (the uWp86 units sItem created meanwhile) are followed for a moment.
+    g_twinShots = world::TakeCreated();
+    world::WatchCreated("");
+    // "attack=<hex>": the shots' attack id (+0x1CA0, read every frame by the shell's update
+    // 0x00BB9570; the boss's gun gives 0x190003, the shell factories 0x10018, 0x10021, 0x16000E ...).
+    if (const auto pos = command.find("attack="); pos != std::string::npos) {
+        const auto attack = static_cast<std::uint32_t>(std::strtoul(command.c_str() + pos + 7, nullptr, 16));
+        for (const std::uintptr_t s : g_twinShots) SafeStore<std::uint32_t>(s + 0x1CA0, attack);
+        RM_LOGW("dev twinfire: the shots' attack id set to %X", attack);
+    }
+    g_twinTraceUntil = Now() + 1.5;
+    RM_LOGW("dev twinfire %d: %d shots fired (guns %08X %08X) facing %.2f %.2f; %zu shot units found", shots, fired,
+            static_cast<unsigned>(g_twinGuns[0]), static_cast<unsigned>(g_twinGuns[1]), fx, fz, g_twinShots.size());
+}
+
+// "twinstream <seconds> [attack=<hex>]": both guns fire every 0.1 s along her facing for that long
+// (to see the shots: flashes, tracers), the shots' attack id set (FFFFFFFF: none, the shell's
+// update skips its attack, so they hurt nobody).
+double g_twinStreamUntil = 0.0;
+double g_twinStreamNext = 0.0;
+std::uint32_t g_twinStreamAttack = 0xFFFFFFFFu;
+int g_twinStreamShots = 0;
+
+void StreamTwinShots(double now) {
+    const auto local = engine::LocalPlayer();
+    if (now > g_twinStreamUntil || now < g_twinStreamNext || !local) {
+        if (g_twinStreamShots > 0 && now > g_twinStreamUntil) {
+            RM_LOGW("dev twinstream: %d shots fired, attack %X", g_twinStreamShots, g_twinStreamAttack);
+            g_twinStreamShots = 0;
+        }
+        return;
+    }
+    g_twinStreamNext = now + 0.1;
     float fx = 0.0f, fz = 1.0f;
     PlayerFacing(local, fx, fz);
     const float dir[3] = {fx, 0.0f, fz};
-    int fired = 0;
-    for (int g = 0; g < 2; ++g) {
-        if (!g_twinGuns[g]) continue;
-        const float side = g == 0 ? 25.0f : -25.0f;  // right and left of her
-        const float muzzle[3] = {ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) + fx * 50.0f + fz * side,
+    world::WatchCreated("uWp86");
+    for (int n = 0; n < 2; ++n) {
+        if (!g_twinGuns[n]) continue;
+        const float side = n == 0 ? 25.0f : -25.0f;
+        const float muzzle[3] = {ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) + fx * 60.0f + fz * side,
                                  ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f) + 130.0f,
-                                 ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) + fz * 50.0f - fx * side};
-        for (int s = 0; s < shots; ++s) fired += engine::FireTwinGun(g_twinGuns[g], muzzle, dir) ? 1 : 0;
+                                 ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) + fz * 60.0f - fx * side};
+        g_twinStreamShots += engine::FireTwinGun(g_twinGuns[n], muzzle, dir) ? 1 : 0;
     }
-    RM_LOGW("dev twinfire %d: %d shots fired (guns %08X %08X) facing %.2f %.2f", shots, fired, static_cast<unsigned>(g_twinGuns[0]),
-            static_cast<unsigned>(g_twinGuns[1]), fx, fz);
+    for (const std::uintptr_t s : world::TakeCreated()) SafeStore<std::uint32_t>(s + 0x1CA0, g_twinStreamAttack);
+    world::WatchCreated("");
+}
+
+// Each tick after a twinfire: where its shots are, how they move (velocity in their own space at
+// +0x1CE0, in the world at +0x1CF0, their time factor +0xFD4) and their attack ids (+0x1CA0/4).
+void TraceTwinShots(double now) {
+    StreamTwinShots(now);
+    static double nextAt = 0.0;
+    if (g_twinShots.empty() || now > g_twinTraceUntil || now < nextAt) return;
+    nextAt = now + 0.15;
+    for (std::size_t i = 0; i < g_twinShots.size() && i < 4; ++i) {
+        const std::uintptr_t s = g_twinShots[i];
+        if (engine::ClassName(s) != "uWp86") {
+            RM_LOGW("twin shot %zu %08X: gone", i, static_cast<unsigned>(s));
+            continue;
+        }
+        RM_LOGW("twin shot %zu %08X at %.0f %.0f %.0f; local v %.1f %.1f %.1f, world v %.1f %.1f %.1f, time %.2f, attack %X %X, owner %08X",
+                i, static_cast<unsigned>(s), ReadOr<float>(s + 0x30, 0.0f), ReadOr<float>(s + 0x34, 0.0f), ReadOr<float>(s + 0x38, 0.0f),
+                ReadOr<float>(s + 0x1CE0, 0.0f), ReadOr<float>(s + 0x1CE4, 0.0f), ReadOr<float>(s + 0x1CE8, 0.0f),
+                ReadOr<float>(s + 0x1CF0, 0.0f), ReadOr<float>(s + 0x1CF4, 0.0f), ReadOr<float>(s + 0x1CF8, 0.0f),
+                ReadOr<float>(s + 0xFD4, 0.0f), ReadOr<std::uint32_t>(s + 0x1CA0, 0), ReadOr<std::uint32_t>(s + 0x1CA4, 0),
+                ReadOr<std::uint32_t>(s + 0xFDC, 0));
+    }
 }
 
 // Developer automation: <data>\dev.command holds one command per file drop.
@@ -5165,8 +5427,27 @@ void PollDevCommand(double now) {
             RM_LOGW("dev spawn %s (weapon %X) at %.0f %.0f %.0f -> %08X %s", cls.c_str(), weapon, spawnAt[0], spawnAt[1], spawnAt[2],
                     static_cast<unsigned>(unit), unit ? engine::ClassName(unit).c_str() : "failed");
         }
+    } else if (command == "special" || command.rfind("special ", 0) == 0) {
+        // "special [slot]": the build's special without any key or button (input ruled out).
+        int slot = 0;
+        std::sscanf(command.c_str() + 7, "%d", &slot);
+        StartSpecial(now, std::clamp(slot, 0, 1), "dev");
+        RM_LOGW("dev special %d: asked", slot);
+    } else if (command == "twinguns special off" || command == "twinguns special on") {
+        g_twinGunsInSpecial = command == "twinguns special on";
+        RM_LOGW("dev twinguns: Twin Fury %s them", g_twinGunsInSpecial ? "uses" : "does without");
     } else if (command == "twinguns" || command == "twinguns off" || command.rfind("twinfire", 0) == 0) {
         TwinGunsCommand(command);
+    } else if (command.rfind("twinstream", 0) == 0) {
+        double seconds = 3.0;
+        std::sscanf(command.c_str() + 10, "%lf", &seconds);
+        g_twinStreamAttack = 0xFFFFFFFFu;
+        if (const auto pos = command.find("attack="); pos != std::string::npos) {
+            g_twinStreamAttack = static_cast<std::uint32_t>(std::strtoul(command.c_str() + pos + 7, nullptr, 16));
+        }
+        g_twinStreamUntil = now + std::clamp(seconds, 0.5, 10.0);
+        g_twinStreamNext = now;
+        RM_LOGW("dev twinstream %.1f s, attack %X", seconds, g_twinStreamAttack);
     } else if (command.rfind("partnerhp ", 0) == 0) {
         // "partnerhp <hp>": the partner's health (what does her death do to a run's match?).
         const int hp = std::atoi(command.c_str() + 10);
@@ -5739,6 +6020,7 @@ private:
         ApplyHeals();
         DriveSpecial(now);
         DriveGrabBreak(now);
+        TraceTwinShots(now);
         DrivePartner(now);
         WatchEquippedWeapon(now);
         SampleHitStates(now);

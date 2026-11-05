@@ -331,6 +331,64 @@ std::vector<int> ActionIdsOf(std::uintptr_t character, const char* cls) {
 
 namespace {
 
+using ActionStartFn = std::uintptr_t(__fastcall*)(std::uintptr_t action);
+bool g_holdStartTried = false;
+bool g_holdStartIn = false;
+
+// The hold's start: the game's own, then the done bit the old action's end left is cleared (the
+// game's other starts clear the whole word, 0x00B7A240).
+std::uintptr_t __fastcall HoldStart(std::uintptr_t action) {
+    const auto result = reinterpret_cast<ActionStartFn>(re5::addr::kFnPlActTestStart)(action);
+    const auto player = ReadOr<std::uintptr_t>(action + re5::off::kActionPlayer, 0);
+    if (player) {
+        const auto flags = ReadOr<std::uint32_t>(player + re5::off::kPlayerActionFlags, 0);
+        if (flags & re5::off::kActionDone) SafeStore<std::uint32_t>(player + re5::off::kPlayerActionFlags, flags & ~re5::off::kActionDone);
+    }
+    return result;
+}
+
+}  // namespace
+
+bool EnsureHoldStartClearsDone(std::uintptr_t player) {
+    if (g_holdStartIn) return true;
+    if (g_holdStartTried || !player) return false;
+    const auto count = ReadOr<std::uint32_t>(player + re5::off::kCharActionCount, 0);
+    const auto data = ReadOr<std::uintptr_t>(player + re5::off::kCharActionData, 0);
+    if (!data || count <= static_cast<std::uint32_t>(re5::off::kPlActHold) || count > 512) return false;
+    g_holdStartTried = true;
+    const auto action = ReadOr<std::uintptr_t>(data + static_cast<std::size_t>(re5::off::kPlActHold) * 4, 0);
+    const auto vtable = action ? ReadOr<std::uintptr_t>(action, 0) : 0;
+    const std::uintptr_t slotAt = re5::addr::kVtablePlActTest + re5::off::kActionSlotStart;
+    const auto start = ReadOr<std::uintptr_t>(slotAt, 0);
+    const auto update = ReadOr<std::uintptr_t>(slotAt + 4, 0);
+    const auto done = ReadOr<std::uintptr_t>(slotAt + 0x10, 0);  // slot 10
+    const std::string cls = action ? ClassName(action) : "";
+    const bool expected = cls == "cPlAction_pl_act_test" && vtable == re5::addr::kVtablePlActTest &&
+                          start == re5::addr::kFnPlActTestStart && update == re5::addr::kFnPlActTestUpdate &&
+                          done == re5::addr::kFnActionDefaultDone;
+    if (!expected) {
+        RM_LOGW("actions: the hold's start left as it is: action 0xA8 %s, vtable %08X, start %08X, update %08X, slot 10 %08X",
+                cls.c_str(), static_cast<unsigned>(vtable), static_cast<unsigned>(start), static_cast<unsigned>(update),
+                static_cast<unsigned>(done));
+        return false;
+    }
+    const auto ours = reinterpret_cast<std::uintptr_t>(&HoldStart);
+    auto* p = reinterpret_cast<void*>(slotAt);
+    DWORD old = 0;
+    if (!VirtualProtect(p, sizeof(ours), PAGE_READWRITE, &old)) {
+        RM_LOGW("actions: the hold's start left as it is (its vtable is not writable)");
+        return false;
+    }
+    const bool ok = SafeStore<std::uintptr_t>(slotAt, ours);
+    VirtualProtect(p, sizeof(ours), old, &old);
+    g_holdStartIn = ok && ReadOr<std::uintptr_t>(slotAt, 0) == ours;
+    RM_LOGI("actions: the hold's start (vtable %08X slot 6) %s", static_cast<unsigned>(re5::addr::kVtablePlActTest),
+            g_holdStartIn ? "now clears the done bit after its own" : "could not be replaced");
+    return g_holdStartIn;
+}
+
+namespace {
+
 using DodgePrepFn = void(__thiscall*)(std::uintptr_t self, std::uintptr_t player);
 
 bool CallDodgePrep(std::uintptr_t self, std::uintptr_t player) {

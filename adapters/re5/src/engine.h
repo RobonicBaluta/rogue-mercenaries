@@ -88,6 +88,11 @@ std::optional<SegmentResult> CastSegment(const float from[3], const float to[3])
 /// known implementations), with the arguments the game's dodges and co-op sync use. Only when
 /// the action instance at that id is of class `expectedClass`. False when refused or unsafe.
 bool StartAction(std::uintptr_t character, int id, const char* expectedClass);
+/// The player's hold (cPlAction_pl_act_test, re5_layout.h kVtablePlActTest) gets a start that
+/// clears the "action done" bit after its own, like the game's other starts do. Applied once, in
+/// game memory only, when `player`'s action 0xA8 is that class with the vtable and slots expected;
+/// logs what it found. True when the start is in place.
+bool EnsureHoldStartClearsDone(std::uintptr_t player);
 /// The ids in a character's action table whose action is of class `cls`, lowest first.
 std::vector<int> ActionIdsOf(std::uintptr_t character, const char* cls);
 /// The player's own forward dodge toward `toward`, started the way the game's dodge picker

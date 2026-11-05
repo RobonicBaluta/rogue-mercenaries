@@ -2,7 +2,7 @@
 # Developer check (ROADMAP E16 spike): the boss Jill's two SMGs (uWp76) on the player. The game is
 # restarted at the Play menu with configs/adapter.builds.json (invulnerable, muted, debug log), Jill
 # Battle Suit is selected (her runs load uWp76) and START RUN chosen; in arena 1 dev "twinguns"
-# attaches the guns to her hands, dev "twinfire N" fires them along her facing a few times, and the
+# attaches the guns to her hands, dev "twinfire N" fires them along her facing, then "twinfire N at" from just in front of the nearest enemy, and the
 # log shows whether the shots hit enemies and whom the game credits (enemy_hit ... by=). Captures in
 # build/runs/<time>-twinguns. Saves and restores the profile, checks the save file's hash; closes the
 # game at the end.
@@ -48,16 +48,51 @@ if wait_for "opened on screen 0 by itself" 1 30; then
         wait_for "director: uEm" 1 30
         sleep 2
         cap 01-before
+        if [ -n "$SPECIAL" ]; then
+            # SPECIAL=1: Twin Fury itself (Q) USES times (default 2), 27 s apart (its cooldown): her
+            # two SMGs in her hands for the sweep, firing; captures during it.
+            [ -n "$NOGUNS" ] && dev "twinguns special off"  # NOGUNS=1: the same without them (a control)
+            for r in $(seq 1 "${USES:-2}"); do
+                if [ -n "$DEVSPECIAL" ]; then dev special; else keys "q+300"; fi  # DEVSPECIAL=1: no key press
+                cap "02-special-$r-a"
+                cap "02-special-$r-b"
+                cap "02-special-$r-c"
+                [ "$r" -lt "${USES:-2}" ] && sleep 24
+            done
+            sleep 3
+        else
         dev twinguns
         sleep 2
         cap 02-guns
-        if alive && [ "$(count "game fatal")" -eq 0 ]; then
-            for r in $(seq 1 "$ROUNDS"); do
-                dev "twinfire $SHOTS"
-                sleep 2
-                cap "03-fire-$r"
-                keys "a:600+300"  # turn a little between bursts, toward other enemies
-            done
+        fi
+        if [ -z "$SPECIAL" ] && alive && [ "$(count "game fatal")" -eq 0 ]; then
+            # ATTACKS="190003 10018 ...": one burst at the nearest enemy per attack id (the shots'
+            # +0x1CA0); without, the first burst along her facing and the rest at the nearest enemy.
+            if [ -n "$STREAM" ]; then
+                # STREAM=1: both guns fire every 0.1 s for 6 s with no attack (to see the shots);
+                # captures during it.
+                dev "twinstream 6"
+                cap 03-stream-1
+                cap 03-stream-2
+                keys "a:400+200"
+                cap 03-stream-3
+                sleep 3
+            elif [ -n "$ATTACKS" ]; then
+                r=0
+                for a in $ATTACKS; do
+                    r=$((r + 1))
+                    dev "twinfire $SHOTS at attack=$a"
+                    sleep 2
+                    cap "03-fire-$r-$a"
+                done
+            else
+                for r in $(seq 1 "$ROUNDS"); do
+                    if [ "$r" -eq 1 ]; then dev "twinfire $SHOTS"; else dev "twinfire $SHOTS at"; fi
+                    sleep 2
+                    cap "03-fire-$r"
+                    keys "a:600+300"  # turn a little between bursts, toward other enemies
+                done
+            fi
             sleep 4
             dev "twinguns off"
             sleep 2
@@ -69,7 +104,7 @@ if wait_for "opened on screen 0 by itself" 1 30; then
 else
     echo "the mod menu did not open"
 fi
-since | grep -E "dev select|start run \(|twin|uWp76|extras queued|enemy_hit|kill counted|arena [0-9]:|game fatal|UNHANDLED|exception" |
+since | grep -E "dev select|start run \(|twin|special: |boss motion|uWp76|extras queued|enemy_hit|player_hit|kill counted|arena [0-9]:|game fatal|UNHANDLED|exception" |
     sed -E 's/^.{24}//' | cut -c1-240 > "$OUT/twinguns.txt"
 cat "$OUT/twinguns.txt" | head -80
 alive || echo "THE GAME CLOSED"

@@ -67,7 +67,8 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | ORGANIZE result | after the screen closes: `organize: XXXX cell N xA -> xB` (a stack as the screen left it) and `organize: XXXX xN left cell N (not there in the layout)` (moved to the storage); the next `itembox: the run is in the screen (... grid ...)` must match the last `the run's grid from the screen` |
 | enemies moved | `director: <class> stuck N s ... moved to ...` only out of the player's sight; one in sight: `director: <class> still N s at x y z, N m from the player, in his sight; left there` |
 | the Uroboros | `boss drive: uEm40 actions walk N, near grab N (of N), far grab N`; `boss drive: uEm40 had no target; the player is its target now`; `boss drive: uEm40 near grab (action N) at N m` / `far grab`; `boss drive: uEm40 cEm40ActWalk -> cEm40ActNearCatch, N m from the player, N degrees off` (its actions besides walking and standing); the 5 s `director: boss uEm40 at ...` lines should show the distance falling |
-| Twin Fury hits | `special: dual_smg over (done): N pulses, N hits, N staggered` |
+| Twin Fury hits | `special: dual_smg over (done): N pulses, N hits, N staggered, N twin gun shots` (`over (the sweep is over)` when the borrowed sweep played) |
+| Twin Fury's two SMGs (Jill Battle Suit) | `twin guns: XXXXXXXX YYYYYYYY in her hands (Twin Fury)` once the hold runs; `twin guns: put away (the sweep is over)` at the end; none when `uWp76` is missing (the capability `twinGuns`) |
 | Wesker's moves | `special: boss motion pawn\em\em80\motion\em80 20` (the dash's arrival), `... 24` (the lunge's knee), `... C9` (the burst's kick), each `N of N body tracks ...` then `boss motion NN done: N frames in N s` |
 | last arena | `phase arena_results -> run_complete` (no `reward_selection` after the boss) |
 | bosses | the Uroboros: `boss drive: uEm40 actions walk N, near grab N (of N), far grab N (lookup N, N actions)` with ids found (not -1), then `near grab (action N)` lines; the giant Uroboros (uEm43): no `director: uEm43 stuck ... moved to` lines (only its own `cEm43ActShift`) |
@@ -99,7 +100,7 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | quitting a run | `autopilot: a run's match quits; Mercenaries phase N cleared (no save screen, no save)` |
 | enemy threat | `arena N: <MAP>   <ROUTE> (stage S, enemy threat L)`; the director's spawn lines show each class and weapon (`arm 70150`: the weapon class uWp50, graded in `economy.json` `enemy_threat` `weapons`) |
 | kills not by the player | `enemy_hit ... killed=1 by=<class>` |
-| borrowed boss moves | `resources: list 4 (enemies) extras queued: ... uEm84` (Jill) or `uEm80` (Wesker); `special: boss motion pawn\em\em84\motion\em84atk 0A: N of M body tracks and N of M in all reach uPl02JillCos2's joints, 91 frames (slot 15)`; while it plays the player's action is `cPlAction_pl_act_test`; `special: boss motion 0A done: 91 frames in X s at speed 2.0`; `special: boss move dual_smg over (done) after X s, step 2 of 2, N m from where it began; back to relax`; when not: `special: no boss move for <move> (<why>)` |
+| borrowed boss moves | `resources: list 4 (enemies) extras queued: ... uEm84` (Jill) or `uEm80` (Wesker); `special: boss motion pawn\em\em84\motion\em84atk 0A: N of M body tracks and N of M in all reach uPl02JillCos2's joints, 91 frames (slot 15)`; while it plays the player's action is `cPlAction_pl_act_test`; `special: boss motion 0A done: 91 frames in X s at speed 2.0`; `special: boss move dual_smg over (done) after X s, step 2 of 2, N m from where it began; back to relax`; `special: the hold ran after N requests, X s` when it took more than one; a hit with no reaction during it: `special: a no-reaction hit (cPlAction_pl_act_setEventAct_wait) during dual_smg step N; the hold is asked for again`, then `special: the hold is back after a no-reaction hit, X s`; when not: `special: no boss move for <move> (<why>)`, `special: boss move <move> over (the hold never started: <action>, N requests)` |
 | boss arena | `director: boss uEm40 at x y z, N m from the player (N m above), cEm40Act...` every 5 s; `director: uEm40 stuck 8 s at ...; moved to ...` when it stops closing in |
 | specials while dying | `special: slot N pressed while dying; not used` |
 | start move | `match start: the player is not placed yet (0 0 0); moving to the map's start later`; `warp: N places hold the unit's position ..., more than a unit has; not moved` |
@@ -155,7 +156,8 @@ and `$ctest` to `ctest.exe` in the same folder.
     (a gun bought in the shop is carried to the next stage and fired there), `bash scripts/test_chest.sh` (a placed chest opens when shot),
     `STAGE=<n> bash scripts/test_chests.sh` (a run blocks the stage's statues and places its own chests in arenas 1 and 2);
     `bash scripts/test_twinguns.sh` (E16 spike, Jill Battle Suit: dev `twinguns`, `twinfire N`, `twinguns off`; the log's
-    `dev twinguns: gun N ... attached`, `dev twinfire N: N shots fired`, and `enemy_hit ...` lines for the shots);
+    `dev twinguns: gun N ... attached`, `dev twinfire N: N shots fired`, and `enemy_hit ...` lines for the shots;
+    `SPECIAL=1 [DEVSPECIAL=1] [USES=n] [NOGUNS=1]`: Twin Fury itself n times, with or without the guns);
     surveys: `STAGE=<n> bash scripts/survey_objects.sh`, `bash scripts/survey_chests.sh` (all stages, writes `research/chest_survey.json`).
   - Campaign areas (M5): `NUMBER=<n> bash scripts/test_stage.sh` (does stage n load and keep running), `bash scripts/survey_campaign.sh`
     (several stages: captures, own spawns, objects), `NUMBER=<n> bash scripts/dump_stage_sets.sh` (set records), `python scripts/campaign_maps.py <n>...`

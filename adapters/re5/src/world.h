@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -46,5 +47,10 @@ int DumpSetRecords();
 /// Developer survey: logs every object the stage creates (class, set record, position, the
 /// fields the spawn sets, the descriptor's class and contents).
 void SetSurvey(bool on);
+
+/// Developer: units of class `cls` sItem creates from now on are collected (empty: none);
+/// TakeCreated returns them and starts over (the twin guns spike's shots).
+void WatchCreated(const std::string& cls);
+std::vector<std::uintptr_t> TakeCreated();
 
 }  // namespace rmre5::world

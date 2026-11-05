@@ -158,9 +158,20 @@ std::uintptr_t __fastcall SetSpawnDetour(std::uintptr_t self, void*, int group, 
     return unit;
 }
 
+// Developer: units of one class sItem creates are collected (the twin guns spike's shots).
+std::mutex g_watchMutex;
+std::string g_watchClass;
+std::vector<std::uintptr_t> g_watched;
+
 template <int M>
 std::uintptr_t __fastcall CreateDetour(std::uintptr_t self, void*, std::uintptr_t dti, int group, int mode, int flag) {
     const std::uintptr_t unit = g_origCreate[M](self, dti, group, mode, flag);
+    if constexpr (M == 1) {
+        if (unit) {
+            std::lock_guard<std::mutex> lock(g_watchMutex);
+            if (!g_watchClass.empty() && g_watched.size() < 256 && DtiName(dti) == g_watchClass) g_watched.push_back(unit);
+        }
+    }
     if (g_survey.load()) {
         RM_LOGI("world create: %s (%s) group %d mode %d flag %d -> %08X", DtiName(dti).c_str(), kManagerNames[M], group,
                 mode, flag, static_cast<unsigned>(unit));
@@ -312,6 +323,19 @@ void SetDropRules(const DropRules& rules) {
 }
 
 void SetSurvey(bool on) { g_survey = on; }
+
+void WatchCreated(const std::string& cls) {
+    std::lock_guard<std::mutex> lock(g_watchMutex);
+    g_watchClass = cls;
+    g_watched.clear();
+}
+
+std::vector<std::uintptr_t> TakeCreated() {
+    std::lock_guard<std::mutex> lock(g_watchMutex);
+    std::vector<std::uintptr_t> out;
+    out.swap(g_watched);
+    return out;
+}
 
 int DumpSetRecords() {
     if (!g_available.load()) return 0;
