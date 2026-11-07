@@ -111,6 +111,11 @@ constexpr std::uintptr_t kFnItemUnitCreate = 0x007BD750;
 constexpr std::uintptr_t kFnUnitSetEuler = 0x00489CE0;
 constexpr std::uintptr_t kFnUnitAttach = 0x00489860;
 constexpr std::uintptr_t kFnWp76Fire = 0x00BB2B20;
+// A model's bone in the world (thiscall: out, bone id, offset): the bone id through the byte map at
+// +0x31C to a joint of 0x90 bytes at +0x318 (its world matrix at +0x50), the offset transformed by
+// it; a negative id takes the unit's own matrix (+0xA0). The boss Jill's fire (0x0093C2E0) puts
+// her shots at her bones 11 and 6 (her hands) with the offset 0x01249CF0 (zero).
+constexpr std::uintptr_t kFnJointPosition = 0x00B56650;
 constexpr std::uintptr_t kDtiWp76 = 0x01204DE8;    // uWp76, the boss Jill's SMG
 constexpr std::uintptr_t kItemJointTable = 0x0111C1F0;  // her guns' joints and offsets: 0x30 per (gun * 2 + pose)
 // cEm10ActDeadArmyBomb (Majini action 0x93), its update 0x00C10BA0, step 0: the effect of the
@@ -595,6 +600,7 @@ inline constexpr Signature kSignatures[] = {
     {"unit_set_euler", addr::kFnUnitSetEuler, "55 8B EC 83 E4 F0 83 EC 74 0F 57 C0 F3 0F 10 25 34 34 0A 01"},
     {"unit_attach", addr::kFnUnitAttach, "8B 44 24 04 8B 54 24 08 89 41 18 89 51 1C C2 08 00"},
     {"wp76_fire", addr::kFnWp76Fire, "55 8B EC 83 E4 F0 81 EC 84 00 00 00 53 56 8B F1 57 8B 7E 18"},
+    {"joint_position", addr::kFnJointPosition, "55 8B EC 83 E4 F0 8B 45 0C 83 EC 40 83 F8 FF 0F 8F C7 00 00 00 F3 0F 10 81 A4 00 00 00"},
     {"char_set_motion", addr::kFnCharSetMotion, "53 56 8B F1 8B 8E 74 19 00 00 85 C9 57 74 05 E8 7C 1B 40 00 8B 7C 24 10 85 FF 8B 5C"},
     // `mov edx, [kGameRoot]; mov eax, [edx+0x1042C]; cmp [eax+0x58], 5; mov ecx, [esi+0x1C]; jnz +0B;
     // push ecx; call 0x00C00770; add esp, 4; jmp +0A; push uEm14 DTI; call IsKindOf`.

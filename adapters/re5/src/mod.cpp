@@ -455,6 +455,9 @@ void ApplyWeaponLevels() {
     }
 }
 
+// Every character's knife: 0x0101, Excella's 0x010E, Wesker's 0x0123, the others' 0x0124.
+bool IsKnifeItem(std::uint32_t id) { return id == re5::addr::kItemKnife || id == 0x010E || id == 0x0123 || id == 0x0124; }
+
 // Name of an inventory item for the game font: the run's weapons and catalog first.
 std::string GridItemName(std::uint32_t id) {
     for (const rm::WeaponBaseDef& w : g->content->weapons()) {
@@ -463,8 +466,8 @@ std::string GridItemName(std::uint32_t id) {
     for (const rm::EquipmentDef& e : g->content->loadouts().equipment) {
         if (e.game_item == static_cast<std::int64_t>(id)) return e.name;
     }
+    if (IsKnifeItem(id)) return "Knife";
     switch (id) {
-        case 0x0101: case 0x010E: case 0x0123: case 0x0124: return "Knife";
         case 0x010A: return "Proximity Bomb";
         case 0x010C: return "Grenade Launcher";
         case 0x010D: return "Rocket Launcher";
@@ -1655,14 +1658,20 @@ void StripToPistol() {
     const auto inv = player + re5::off::kPlayerInventory;
     // The gun in the player's hands stays whatever it is (removing the equipped weapon's
     // record hangs the game: S.T.A.R.S. Chris and his Samurai Edge); every other weapon,
-    // ammo (except handgun rounds), grenade and spray goes.
-    std::uint32_t equipped = 0;
+    // ammo (except the pistol's rounds), grenade and spray goes. A knife in hand is no gun:
+    // S.T.A.R.S. Wesker starts with his (0x0123) and kept only it, his Samurai Edge removed (user
+    // playtest 2026-11-07).
+    std::uint32_t equipped = 0;  // the gun in hand, if one is
+    std::uint32_t held = 0;      // whatever is in hand
     std::string loaded;
     for (int i = 0; i < re5::off::kInventorySlots; ++i) {
         const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
         if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
         const auto id = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
-        if (ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1) equipped = id;
+        if (ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1) {
+            held = id;
+            if ((id >> 8) == 1 && id != re5::addr::kItemUnarmed && !IsKnifeItem(id)) equipped = id;
+        }
         // Every weapon the game put here has its model loaded for this stage.
         if ((id >> 8) == 1 && id != re5::addr::kItemUnarmed && id != re5::addr::kItemKnife &&
             ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0) > 0 && (id < 0x0106 || id > 0x0108)) {
@@ -1675,11 +1684,14 @@ void StripToPistol() {
     RM_LOGI("inventory: weapons loaded for this character:%s", loaded.c_str());
     RefreshPlaceableWeapons();
     std::int64_t pistol = re5::addr::kItemM92F;
-    if (const rm::WeaponBaseDef* w = g->content->FindWeapon(g->run->state().loadout.weapon_id)) {
-        if (w->game_item >= 0) pistol = w->game_item;
-    }
     std::uint32_t ammo = re5::addr::kItemHandgunAmmo;
-    if (equipped != 0 && (equipped >> 8) == 1) {
+    if (const rm::WeaponBaseDef* w = g->content->FindWeapon(g->run->state().loadout.weapon_id)) {
+        if (w->game_item >= 0) {
+            pistol = w->game_item;
+            ammo = AmmoItemFor(w->category);
+        }
+    }
+    if (equipped != 0) {
         pistol = equipped;  // the hands win over the roll
         for (const rm::WeaponBaseDef& w : g->content->weapons()) {
             if (w.game_item != static_cast<std::int64_t>(equipped)) continue;
@@ -1697,21 +1709,20 @@ void StripToPistol() {
         const auto id = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
         const bool isEquipped = ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1;
         if (id == static_cast<std::uint32_t>(pistol)) havePistol = true;
-        const bool knife = id == re5::addr::kItemKnife || id == 0x010E || id == 0x0123 || id == 0x0124;  // every character's knife
-        const bool keep = isEquipped || id == re5::addr::kItemUnarmed || knife || id == ammo ||
+        const bool keep = isEquipped || id == re5::addr::kItemUnarmed || IsKnifeItem(id) || id == ammo ||
                           id == static_cast<std::uint32_t>(pistol);
         if (keep) continue;
         ClearSlot(slot);
         ++removed;
     }
     if (!havePistol && equipped == 0) {
-        // Nothing in hand and no pistol: give the rolled one (magazine from the item record).
+        // No gun in hand and no pistol: give the rolled one (magazine from the item record).
         const auto table = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + ((pistol >> 8) & 0xFF) * 4, 0);
         const int magazine = table ? std::max(1, ReadOr<std::int32_t>(table + (pistol & 0xFF) * 0x48 + 8, 1)) : 1;
         GiveItem("pistol", pistol, magazine);
     }
-    RM_LOGI("inventory: stripped to the pistol %04X (equipped %04X, %d record(s) removed%s)", static_cast<unsigned>(pistol),
-            equipped, removed, havePistol || equipped ? "" : ", pistol created");
+    RM_LOGI("inventory: stripped to the pistol %04X (in hand %04X%s, %d record(s) removed%s)", static_cast<unsigned>(pistol), held,
+            held != 0 && equipped == 0 ? ", no gun" : "", removed, havePistol || equipped ? "" : ", pistol created");
 }
 
 // The rolled loadout's equipment, at the first arena. Items without a game id stay run-only.
@@ -3077,6 +3088,7 @@ void DisarmTwinGuns(const char* why) {
 }
 
 // Both guns fire once along (fx, fz) from beside her hands; their shots hurt nobody. Returns the shots.
+constexpr int kTwinMuzzleBones[2] = {11, 6};  // the boss's: gun 0 at bone 11, gun 1 at bone 6
 int FireTwinGunsOnce(std::uintptr_t local, float fx, float fz) {
     if (!local || g_twinGunsGeneration != g->matchGeneration) return 0;
     const float dir[3] = {fx, 0.0f, fz};
@@ -3084,10 +3096,22 @@ int FireTwinGunsOnce(std::uintptr_t local, float fx, float fz) {
     int fired = 0;
     for (int n = 0; n < 2; ++n) {
         if (!g_twinGuns[n]) continue;
-        const float side = n == 0 ? 25.0f : -25.0f;  // her right and left hands
-        const float muzzle[3] = {ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) + fx * 60.0f + fz * side,
-                                 ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f) + 130.0f,
-                                 ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) + fz * 60.0f - fx * side};
+        // From her hands, as the boss's leave hers (0x0093C2E0: bones 11 and 6). A point 0.6 m in
+        // front of her looked wrong: the shots came from in front of her (user playtest 2026-11-07).
+        float muzzle[3];
+        if (!engine::JointPosition(local, kTwinMuzzleBones[n], muzzle)) {
+            const float side = n == 0 ? 25.0f : -25.0f;  // her right and left hands
+            muzzle[0] = ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) + fx * 30.0f + fz * side;
+            muzzle[1] = ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f) + 120.0f;
+            muzzle[2] = ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) + fz * 30.0f - fx * side;
+        }
+        static int traced = 0;
+        if (traced < 4 && g->settings.developerMode) {
+            ++traced;
+            RM_LOGI("twin guns: gun %d shot from %.0f %.0f %.0f (her feet at %.0f %.0f %.0f)", n, muzzle[0], muzzle[1], muzzle[2],
+                    ReadOr<float>(local + re5::off::kUnitPosition, 0.0f), ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f),
+                    ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f));
+        }
         fired += engine::FireTwinGun(g_twinGuns[n], muzzle, dir) ? 1 : 0;
     }
     for (const std::uintptr_t s : world::TakeCreated()) SafeStore<std::uint32_t>(s + 0x1CA0, 0xFFFFFFFFu);

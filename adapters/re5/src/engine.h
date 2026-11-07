@@ -31,6 +31,7 @@ struct Verified {
     bool motions = false;       // motion lists looked up, bound to a model and played (M8: boss moves)
     bool partner = false;       // a computer player added the game's way (E22: Josh's backup)
     bool twinGuns = false;      // the boss Jill's SMG units on the player (E16 spike, developer commands)
+    bool jointPosition = false; // a character's bone in the world (E16: the twin guns' shots leave her hands)
     bool hitAttacker = false;
     bool gameWork = false;   // mode/stage/merc timer layout
     bool mercCountdown = false;
@@ -157,6 +158,10 @@ std::string PlayerClassName(int character, int costume);
 std::uintptr_t CreateTwinGun();
 bool AttachTwinGun(std::uintptr_t gun, std::uintptr_t parent, int joint, const float offset[3], const float euler[3]);
 bool FireTwinGun(std::uintptr_t gun, const float muzzle[3], const float dir[3]);
+/// Where bone `bone` of `unit`'s model is in the world, the game's way (0x00B56650, which the
+/// boss Jill's guns use for their muzzles: her bones 11 and 6, the hands); a bone the model lacks
+/// gives the origin offset. False without the capability `jointPosition` or on a fault.
+bool JointPosition(std::uintptr_t unit, int bone, float out[3]);
 bool DeleteUnit(std::uintptr_t unit);
 
 /// Fixes of the game's own code for what Mercenaries mode 2 never met before the mod (in memory,

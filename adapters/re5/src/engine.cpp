@@ -164,6 +164,7 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.partner = g_caps.players && g_caps.gameWork && SignatureOk("player_add") && SignatureOk("class_by_id");
     g_caps.twinGuns = SignatureOk("item_unit_create") && SignatureOk("unit_set_euler") && SignatureOk("unit_attach") &&
                       SignatureOk("wp76_fire") && DtiName(re5::addr::kDtiWp76) == "uWp76";
+    g_caps.jointPosition = SignatureOk("joint_position");
     return all;
 }
 
@@ -748,6 +749,25 @@ bool FireTwinGun(std::uintptr_t gun, const float muzzle[3], const float dir[3]) 
         RM_LOGW("twin guns: the shot faulted; off");
         g_caps.twinGuns = false;
         return false;
+    }
+    return true;
+}
+
+bool JointPosition(std::uintptr_t unit, int bone, float out[3]) {
+    if (!g_caps.jointPosition || !unit || bone < 0 || !out) return false;
+    using JointPositionFn = void(__thiscall*)(std::uintptr_t unit, float* out, int bone, const float* offset);
+    alignas(16) static const float kNoOffset[4] = {0.0f, 0.0f, 0.0f, 0.0f};  // the boss's (0x01249CF0)
+    alignas(16) float at[4] = {};
+    __try {
+        reinterpret_cast<JointPositionFn>(re5::addr::kFnJointPosition)(unit, at, bone, kNoOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        RM_LOGW("joint position faulted; off");
+        g_caps.jointPosition = false;
+        return false;
+    }
+    for (int k = 0; k < 3; ++k) {
+        if (!(at[k] == at[k]) || at[k] < -1.0e7f || at[k] > 1.0e7f) return false;
+        out[k] = at[k];
     }
     return true;
 }
