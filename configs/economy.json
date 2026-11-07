@@ -131,7 +131,7 @@
   },
   "keys": {
     "enabled": true,
-    "drop_chance": 0.15,
+    "drop_chance": 0.08,
     "classes": [
       "uEm1"
     ],

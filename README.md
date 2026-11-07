@@ -147,7 +147,7 @@ the others are written and wait for a playtest (2026-11-03).
 | Wesker | Midnight | Uroboros Speed | Special: a dash, or a lunge at an enemy ahead (below); a second special, the burst. Untouchable while they act. 70 percent of his health. |
 | Wesker | S.T.A.R.S. | Iron Fist | Melee hits three times as hard. Only his own Samurai Edge, Lightning Hawk and Hydra can be bought or used. |
 
-**Keys.** Chests need a key (Jill's BSAA outfit excepted). A kill of a Majini drops one 15 percent of the time; you
+**Keys.** Chests need a key (Jill's BSAA outfit excepted). A kill of a Majini drops one 8 percent of the time; you
 hold up to 9 and the HUD's right side shows how many. A chest opened without a key says *LOCKED* and stands again at
 the same spot a moment later.
 

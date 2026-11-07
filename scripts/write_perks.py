@@ -196,8 +196,10 @@ BUILDS = {
     'excella_dress': {
         'name': 'Ambition', 'icon': 'crown',
         'summary': 'Every melee kill raises one of seven stats for the run, each to a cap: damage, speed, healing and more.',
-        'melee_kill_stats': {'damage': 0.04, 'defense': 0.03, 'max_health': 0.05, 'crit': 0.02, 'move_speed': 0.03,
-                             'heal': 0.05, 'supplies': 0.04},
+        # x1.5 (the user, 2026-11-07: 49 melee kills gave +20 percent damage, +60 percent health and
+        # felt weak; with these about +30 and +90).
+        'melee_kill_stats': {'damage': 0.06, 'defense': 0.045, 'max_health': 0.075, 'crit': 0.03, 'move_speed': 0.045,
+                             'heal': 0.075, 'supplies': 0.06},
         'melee_kill_caps': {'damage': 1.0, 'defense': 0.7, 'max_health': 1.0, 'crit': 0.3, 'move_speed': 0.6,
                             'heal': 0.5, 'supplies': 0.5},
     },
@@ -394,9 +396,10 @@ for wd in w['weapons']:
         wd['game_item'] = ids[wd['id']]
 json.dump(w, open('configs/weapons.json', 'w'), indent=2)
 open('configs/weapons.json', 'a').write('\n')
-# economy.json: chest keys (M8; Jill BSAA's build opens chests without them).
+# economy.json: chest keys (M8; Jill BSAA's build opens chests without them). 8 percent of Majini
+# kills: at 15 two sessions dropped 50 keys for 17 chests (the user, 2026-11-07: too many).
 e = json.load(open('configs/economy.json'))
-e['keys'] = {'enabled': True, 'drop_chance': 0.15, 'classes': ['uEm1'], 'start': 0, 'max': 9}
+e['keys'] = {'enabled': True, 'drop_chance': 0.08, 'classes': ['uEm1'], 'start': 0, 'max': 9}
 json.dump(e, open('configs/economy.json', 'w'), indent=2)
 open('configs/economy.json', 'a').write('\n')
 print('perks', len(perks), 'written; characters, loadouts, weapons, economy aligned')

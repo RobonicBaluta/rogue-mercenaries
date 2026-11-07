@@ -369,13 +369,13 @@
             "icon": "crown",
             "summary": "Every melee kill raises one of seven stats for the run, each to a cap: damage, speed, healing and more.",
             "melee_kill_stats": {
-              "damage": 0.04,
-              "defense": 0.03,
-              "max_health": 0.05,
-              "crit": 0.02,
-              "move_speed": 0.03,
-              "heal": 0.05,
-              "supplies": 0.04
+              "damage": 0.06,
+              "defense": 0.045,
+              "max_health": 0.075,
+              "crit": 0.03,
+              "move_speed": 0.045,
+              "heal": 0.075,
+              "supplies": 0.06
             },
             "melee_kill_caps": {
               "damage": 1.0,
