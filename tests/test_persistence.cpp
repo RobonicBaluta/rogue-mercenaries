@@ -302,3 +302,93 @@ TEST_CASE("a crash-interrupted run is banked once at the death rate", "[persiste
     CHECK(auto_settle.rc.profile().credits.balance() == pending / 2);
     CHECK(auto_settle.rc.state().run_id == "run_0002");
 }
+
+TEST_CASE("a run saved between arenas goes on there after a restart", "[persistence]") {
+    test::TempDir dir("resume");
+    const fs::path main = dir.path() / "profile.json";
+    std::string run_id;
+    std::int64_t supplies = 0;
+    std::size_t weapons = 0, results = 0;
+    int arena_index = 0, keys = 0;
+    StringMap<int> perks;
+    {
+        ProfileStore store(main);
+        test::Harness h(test::LoadFixture(), store.Load().profile, Capabilities::All(), &store);
+        REQUIRE(h.rc.StartRun("alpha", 42).ok());
+        // Not in the middle of an arena.
+        test::ClearArena(h.rc, 0.0);
+        CHECK(h.rc.SaveResumePoint("{}").code == ErrorCode::WrongPhase);
+        REQUIRE(h.rc.ContinueToRewards().ok());
+        REQUIRE(h.rc.ChooseReward(0).ok());
+        REQUIRE(h.rc.LeaveShop().ok());
+        REQUIRE(h.rc.ChooseRoute(0).ok());
+        REQUIRE(h.rc.SaveResumePoint(R"({"carry":[[258,1]]})").ok());
+        run_id = h.rc.state().run_id;
+        supplies = h.rc.state().supplies.balance();
+        weapons = h.rc.state().weapons.size();
+        results = h.rc.state().results.size();
+        arena_index = h.rc.state().arena_index;
+        keys = h.rc.state().keys;
+        perks = h.rc.state().perks;
+        // The game crashes: no EndRun.
+    }
+    ProfileStore store(main);
+    ProfileLoadResult loaded = store.Load();
+    REQUIRE(loaded.profile.active_run.has_value());
+    CHECK_FALSE(loaded.profile.active_run->resume.empty());
+    test::Harness h(test::LoadFixture(), loaded.profile, Capabilities::All(), &store);
+    REQUIRE(h.rc.CanResumeRun());
+    Result<std::string> adapter = h.rc.ResumeRun();
+    INFO(adapter.status().message);
+    REQUIRE(adapter.ok());
+    CHECK(*adapter == R"({"carry":[[258,1]]})");
+    const RunState& r = h.rc.state();
+    CHECK(r.active);
+    CHECK(r.run_id == run_id);
+    CHECK(r.phase == Phase::RouteSelection);
+    CHECK(r.route_chosen);
+    CHECK(r.arena_index == arena_index);
+    CHECK(r.supplies.balance() == supplies);
+    CHECK(r.weapons.size() == weapons);
+    CHECK(r.results.size() == results);
+    CHECK(r.keys == keys);
+    CHECK(r.perks == perks);
+    CHECK_FALSE(r.character.id.empty());
+    CHECK_FALSE(h.rc.CanResumeRun());
+    // It plays on: the next arena begins and clears.
+    REQUIRE(h.rc.BeginArena(500.0).ok());
+    CHECK(h.rc.state().arena_index == arena_index + 1);
+    test::KillN(h.rc, h.rc.RemainingEnemies(), 501.0);
+    CHECK(h.rc.IsArenaComplete());
+}
+
+TEST_CASE("a suspended run goes on from its resume point, the arena played again", "[persistence]") {
+    test::Harness h(test::LoadFixture());
+    REQUIRE(h.rc.StartRun("alpha", 7).ok());
+    // Without a resume point it cannot be suspended (the adapter abandons it then).
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    CHECK(h.rc.SuspendRun(1.0).code == ErrorCode::NotEligible);
+    test::KillN(h.rc, h.rc.RemainingEnemies(), 2.0);
+    REQUIRE(h.rc.CompleteArena(3.0).ok());
+    REQUIRE(h.rc.ContinueToRewards().ok());
+    REQUIRE(h.rc.ChooseReward(0).ok());
+    REQUIRE(h.rc.LeaveShop().ok());
+    REQUIRE(h.rc.ChooseRoute(0).ok());
+    REQUIRE(h.rc.SaveResumePoint("{}").ok());
+    const int before = h.rc.state().arena_index;
+    const std::int64_t supplies = h.rc.state().supplies.balance();
+    REQUIRE(h.rc.BeginArena(10.0).ok());
+    test::KillN(h.rc, h.rc.RemainingEnemies(), 11.0);  // kills in the arena that is then left
+    REQUIRE(h.rc.SuspendRun(12.0).ok());
+    CHECK_FALSE(h.rc.HasActiveRun());
+    REQUIRE(h.rc.CanResumeRun());
+    REQUIRE(h.rc.ResumeRun().ok());
+    CHECK(h.rc.state().arena_index == before);
+    CHECK(h.rc.state().supplies.balance() == supplies);
+    REQUIRE(h.rc.BeginArena(20.0).ok());
+    CHECK(h.rc.state().arena_index == before + 1);
+    // Starting another run instead banks the old one (as an interrupted run).
+    REQUIRE(h.rc.SuspendRun(21.0).ok());
+    REQUIRE(h.rc.StartRun("alpha", 8).ok());
+    CHECK_FALSE(h.rc.CanResumeRun());
+}

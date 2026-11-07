@@ -119,6 +119,17 @@ int __fastcall FlowStepDetour(std::uintptr_t ctx, void*, int kind) {
         RM_LOGI("autopilot: flow stage screen answered with back");
         return -1;
     }
+    // A run left by a quit is noticed once its match is gone, when the stage screen is up already
+    // (the script waits on it, step state 1): the screen is told it was left with "back" (its
+    // +0x3E, then done +0x3C), which the script's Step (0x00BF2CF0) reads as -1 and the same way
+    // leads to the title (it stayed on the stage screen, 2026-11-07).
+    if (g_toTitle.load() && !g_armed.load() && kind == 0 && ReadOr<std::uint8_t>(ctx + re5::off::kFlowStepState, 0) == 1) {
+        const auto screen = ReadOr<std::uintptr_t>(ctx + re5::off::kFlowScreen, 0);
+        if (screen && ReadOr<std::uint8_t>(screen + re5::off::kScreenDone, 1) == 0 &&
+            SafeStore<std::uint8_t>(screen + re5::off::kScreenBack, 1) && SafeStore<std::uint8_t>(screen + re5::off::kScreenDone, 1)) {
+            RM_LOGI("autopilot: the stage screen was up; answered with back");
+        }
+    }
     if (g_armed.load() && (kind == 0 || kind == 1) && ReadOr<std::uint8_t>(ctx + re5::off::kFlowStepState, 1) == 0) {
         if (const auto gw = GameWork()) {
             if (kind == 0) {

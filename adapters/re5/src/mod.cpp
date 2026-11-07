@@ -25,6 +25,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "engine.h"
 #include "imgui.h"
 #include "icons.h"
@@ -322,6 +324,8 @@ void ObserveMatch(double now) {
 // --- native mod menu content -------------------------------------------------
 
 std::string Plain(const std::string& s);
+// CONTINUE RUN (defined with the resume point's adapter state).
+bool ContinueRun();
 bool NativeItemBoxReady();
 // ---- ORGANIZE: the inventory grid ------------------------------------------------------
 // The game's item grid has nine cells (record +0x18 = 0..8); the in-match inventory and the
@@ -862,6 +866,16 @@ private:
                     {"PERKS", "Permanent perks. Locked ones are bought with credits.", false, 0, "medal"},
                     {"CREDITS", "Your credits, lifetime records and weapon unlocks.", false, 0, "credits"},
                 };
+                if (run.CanResumeRun()) {
+                    const rm::ActiveRunCheckpoint& cp = *run.interrupted_run();
+                    const rm::CharacterDef* who = g->content->FindCharacter(cp.character_id);
+                    screen.items.insert(screen.items.begin(),
+                                        Item{"CONTINUE RUN",
+                                             (who ? Plain(who->name) : std::string("Your run")) + ", " +
+                                                 Plural(cp.arenas_cleared, "arena") + " cleared.\nThe arena you left starts again.",
+                                             false, 0, "flag"});
+                    screen.items[1].help = "A new run. The one you can continue\nis banked as interrupted.";
+                }
                 break;
             case ScreenId::RunResults:
                 screen = RunResultsScreen(run);
@@ -1164,6 +1178,18 @@ private:
         };
         switch (id) {
             case ScreenId::Main:
+                // CONTINUE RUN comes first while a run can go on; the other rows follow it.
+                if (run.CanResumeRun()) {
+                    if (index == 0) {
+                        if (!ContinueRun()) {
+                            d.outcome = Outcome::Denied;
+                            break;
+                        }
+                        d.outcome = Outcome::StartRun;
+                        break;
+                    }
+                    --index;
+                }
                 if (index == 0) {
                     if (g->settings.directStart && autopilot::Available() && !autopilot::Armed()) {
                         const auto characters = run.Characters();
@@ -1938,6 +1964,9 @@ void SnapshotInventory() {
 }
 
 int KeepInRunStash(std::uint32_t id, int count, const char* why);
+// The adapter's part of a run's resume point (defined with the run's storage).
+std::string AdapterResumeState();
+bool RestoreAdapterResumeState(const std::string& text);
 
 // After the cells are in place: each stack as the layout had it. ORGANIZE splits and merges
 // stacks and moves some to the storage, so an item's cells take their counts and its records in
@@ -2057,6 +2086,9 @@ void StartStageTransition(double now) {
     if (const auto local = engine::LocalPlayer()) {
         if (const auto hp = engine::ReadHp(local)) g->transition.hp = hp->hp;
     }
+    // The point the run goes on from after a crash or a quit (2026-11-07): the run between arenas
+    // and what the next arena starts with.
+    Report(g->run->SaveResumePoint(AdapterResumeState()), "resume point");
     const auto gw = GameWorkPtr();
     const int costume = gw ? std::max(0, ReadOr<std::int32_t>(gw + re5::off::kGameWorkCharacter, 0)) : 0;
     // The chosen run map node's arena (M5.3); a random one without (or with dev "nextmap").
@@ -2275,9 +2307,28 @@ void WatchArenaMatch(double now) {
     const bool restarted = g->match.inMatch && g->matchGeneration != g_arenaGeneration;
     const bool left = g_arenaMatchGoneSince >= 0.0 && now - g_arenaMatchGoneSince > kArenaMatchGoneSeconds;
     if (!restarted && !left) return;
-    RM_LOGI("run: arena %d's match %s without the mod (the pause menu's %s?); the run is abandoned", run.state().arena_index,
-            restarted ? "started over" : "was left", restarted ? "retry" : "quit");
     g_arenaGeneration = -1;
+    // Suspended when it has a point to go on from (CONTINUE RUN plays this arena again), else
+    // abandoned (its first arena: nothing to go back to).
+    const int arena = run.state().arena_index;
+    const rm::Status suspended = run.SuspendRun(now);
+    if (suspended.ok()) {
+        RM_LOGI("run: arena %d's match %s without the mod (the pause menu's %s?); the run is suspended (CONTINUE RUN)", arena,
+                restarted ? "started over" : "was left", restarted ? "retry" : "quit");
+        g->transition = {};
+        g->matchUiOpenRequested = false;
+        g_enemyTracks.clear();
+        autopilot::Disarm("run suspended");
+        RestoreBuildStacks();
+        world::SetDropRules({});
+        autopilot::ReturnToTitle(true);
+        nativemenu::OpenOnPlayMenu(nativemenu::ScreenId::Main);  // CONTINUE RUN at its top
+        host::SetStageOverride(-1);
+        g->toasts.Push("Run suspended: CONTINUE RUN goes on from arena " + std::to_string(arena));
+        return;
+    }
+    RM_LOGI("run: arena %d's match %s without the mod (the pause menu's %s?); the run is abandoned (%s)", arena,
+            restarted ? "started over" : "was left", restarted ? "retry" : "quit", suspended.message.c_str());
     Report(run.AbandonRun(now), "abandon run (its match was left)");
     g->toasts.Push("Run abandoned: its match was quit or restarted");
 }
@@ -5012,6 +5063,98 @@ int KeepInRunStash(std::uint32_t id, int count, const char* why) {
     return kept;
 }
 
+// The adapter's part of a run's resume point (rm::RunController::SaveResumePoint), taken at a
+// stage change after the inventory snapshot: what the next arena starts with (the carried items,
+// their grid cells, health) plus the run's storage, the gold short of a supply and the guns' levels.
+std::string AdapterResumeState() {
+    nlohmann::json j;
+    nlohmann::json carry = nlohmann::json::array();
+    for (const auto& [id, count] : g->transition.carry) carry.push_back({id, count});
+    j["carry"] = std::move(carry);
+    j["cells"] = g->transition.cells;
+    j["counts"] = g->transition.counts;
+    j["hp"] = g->transition.hp;
+    nlohmann::json stash = nlohmann::json::array();
+    for (const auto& record : g_runInBox.stash) {
+        std::string hex;
+        for (const std::uint8_t b : record) {
+            char buf[3];
+            std::snprintf(buf, sizeof(buf), "%02X", b);
+            hex += buf;
+        }
+        stash.push_back(hex);
+    }
+    j["stash"] = std::move(stash);
+    j["remainder"] = g_runInBox.runId == g->run->state().run_id ? g_runInBox.remainder : 0;
+    nlohmann::json levels = nlohmann::json::object();
+    for (const auto& [id, l] : RunLevels()) levels[std::to_string(id)] = {l[0], l[1]};
+    j["levels"] = std::move(levels);
+    return j.dump();
+}
+
+bool RestoreAdapterResumeState(const std::string& text) {
+    const nlohmann::json j = nlohmann::json::parse(text, nullptr, false);
+    if (!j.is_object()) return false;
+    try {
+        g->transition = {};
+        for (const auto& e : j.value("carry", nlohmann::json::array())) {
+            g->transition.carry.emplace_back(e.at(0).get<std::uint32_t>(), e.at(1).get<int>());
+        }
+        if (j.contains("cells")) g->transition.cells = j.at("cells").get<std::array<std::uint32_t, 9>>();
+        if (j.contains("counts")) g->transition.counts = j.at("counts").get<std::array<int, 9>>();
+        g->transition.hp = j.value("hp", -1);
+        g_runInBox.runId = g->run->state().run_id;
+        g_runInBox.remainder = j.value("remainder", std::int64_t{0});
+        g_runInBox.stash.clear();
+        for (const auto& hexValue : j.value("stash", nlohmann::json::array())) {
+            const std::string hex = hexValue.get<std::string>();
+            std::array<std::uint8_t, 12> record{};
+            for (std::size_t i = 0; i < record.size() && i * 2 + 1 < hex.size(); ++i) {
+                record[i] = static_cast<std::uint8_t>(std::strtoul(hex.substr(i * 2, 2).c_str(), nullptr, 16));
+            }
+            g_runInBox.stash.push_back(record);
+        }
+        RunLevels().clear();
+        const nlohmann::json levels = j.value("levels", nlohmann::json::object());  // kept: items() of a temporary dangles
+        for (const auto& [key, l] : levels.items()) {
+            RunLevels()[static_cast<std::uint32_t>(std::stoul(key))] = {l.at(0).get<std::uint32_t>(), l.at(1).get<std::uint32_t>()};
+        }
+    } catch (const std::exception& e) {
+        RM_LOGW("resume: the adapter's state could not be read (%s)", e.what());
+        return false;
+    }
+    RM_LOGI("resume: %zu carried records, %zu in the storage, health %d", g->transition.carry.size(), g_runInBox.stash.size(),
+            g->transition.hp);
+    return true;
+}
+
+void LogRunMap();
+
+// CONTINUE RUN: the profile's run again, before the arena it was saved before. The game's flow
+// then starts that arena's match on the run map's next map, and TryBeginArena begins it with the
+// carried inventory as after any stage change.
+bool ContinueRun() {
+    rm::RunController& run = *g->run;
+    const auto resumed = run.ResumeRun();
+    if (!resumed.ok()) {
+        RM_LOGW("resume: %s", resumed.status().message.c_str());
+        g->toasts.Push("The run cannot go on: " + resumed.status().message);
+        return false;
+    }
+    if (!RestoreAdapterResumeState(*resumed)) RM_LOGW("resume: going on without the carried inventory");
+    const int costume = static_cast<int>(std::max<std::int64_t>(0, run.state().character.costume_index));
+    const int planned = run.PlannedMapKey();
+    const int stage = planned >= 0 ? planned : PickMap(-1);
+    if (g->settings.directStart && autopilot::Available() && !autopilot::Armed()) ArmMap(stage, costume);
+    g->transition.pending = true;
+    g->transition.generation = g->matchGeneration;
+    g->transition.startedAt = Now();
+    LogRunMap();
+    RM_LOGI("resume: run %s goes on at arena %d on stage %d (costume slot %d)", run.state().run_id.c_str(),
+            run.state().arena_index + 1, stage, costume);
+    return true;
+}
+
 
 void WriteSaveGrid(std::uintptr_t block, const std::array<GridCell, kGridCells>* grid) {
     for (int r = 0; r < kSaveGridRecords; ++r) {
@@ -5948,6 +6091,18 @@ void PollDevCommand(double now) {
             reinterpret_cast<FadeFn>(fn)(fader, 1.0f, frames);
         }
         RM_LOGW("dev fadein %d frames -> %s", frames, fn >= re5::kImageBase ? "called" : "no fader");
+    } else if (command == "quitmatch") {
+        // "quitmatch": the game's own request to leave a running match for the menus (app
+        // request 0x10000: main state 2 turns it into its exit state 0xC), as a quit from the
+        // pause menu leaves it (test of a run's suspend, scripts/test_resume.sh).
+        const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+        if (!app || !engine::Caps().appRequest) {
+            RM_LOGW("dev quitmatch: no application object or its request function");
+        } else {
+            using RequestFn = void(__thiscall*)(std::uintptr_t app, unsigned flags);
+            reinterpret_cast<RequestFn>(re5::addr::kFnAppRequest)(app, 0x10000);
+            RM_LOGW("dev quitmatch: the match is asked to leave for the menus");
+        }
     } else if (command == "gomenu") {
         // "gomenu": leave the match for the Mercenaries menu scene the way the results
         // screen does (FUN_00794F30 on the game-flow object); the title-flow script then
@@ -6725,7 +6880,10 @@ void ModInit(const Paths& paths, const Settings& settings) {
     options.sink = g->fanout.get();
     options.store = g->store.get();
     g->run = std::make_unique<rm::RunController>(g->content, std::move(profile.profile), options);
-    if (g->run->interrupted_run()) {
+    if (g->run->CanResumeRun()) {
+        // A run with a point to go on from waits for CONTINUE RUN (START RUN settles it instead).
+        RM_LOGI("interrupted run %s kept: CONTINUE RUN goes on with it", g->run->interrupted_run()->run_id.c_str());
+    } else if (g->run->interrupted_run()) {
         const auto recovered = g->run->RecoverInterruptedRun();
         RM_LOGI("interrupted run settled: %s", recovered.ok() ? recovered->run_id.c_str() : "failed");
     }

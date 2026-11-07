@@ -155,6 +155,7 @@ bool VerifySignatures(unsigned timeoutMs) {
     // 2026-11-03).
     g_caps.matchQuit = g_caps.gameWork && SignatureOk("match_quit_state");
     g_caps.saveGuard = SignatureOk("save_file_write");
+    g_caps.appRequest = SignatureOk("app_request");
     g_caps.itemBoxGuard = g_caps.itemBox && SignatureOk("itembox_panel_update") && SignatureOk("itembox_panel_tab");
     g_caps.itemBoxPictures = g_caps.itemBox && SignatureOk("itembox_picture_name");
     // The motion list type is data: its name is checked too.

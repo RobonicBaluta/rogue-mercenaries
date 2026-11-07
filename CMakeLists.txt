@@ -56,6 +56,7 @@ add_library(rm_core STATIC
     core/encounters/rosters.cpp
     core/rewards/rewards.cpp
     core/runs/run_controller.cpp
+    core/runs/run_resume.cpp
     core/director/director.cpp
     core/runs/combat.cpp
     core/runs/snapshot.cpp

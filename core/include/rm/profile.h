@@ -38,6 +38,11 @@ struct ActiveRunCheckpoint {
     int arenas_cleared = 0;
     std::int64_t kills = 0;
     std::int64_t credits_pending = 0;
+    /// Where the run goes on from (RunController::SaveResumePoint): the run before its next arena
+    /// (JSON, rm::SerializeRunResume) and the adapter's own part (JSON it writes and reads back:
+    /// the inventory it carries over, its storage). Empty: the run cannot go on, only be settled.
+    std::string resume;
+    std::string resume_adapter;
 };
 
 /// Persistent meta-progression; the only state that survives a run. Mod-owned file, never

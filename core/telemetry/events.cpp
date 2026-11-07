@@ -38,6 +38,8 @@ std::string_view EventTypeName(EventType type) {
         case EventType::ItemGranted: return "item_granted";
         case EventType::PerkEquipped: return "perk_equipped";
         case EventType::ChestOpened: return "chest_opened";
+        case EventType::RunSuspended: return "run_suspended";
+        case EventType::RunResumed: return "run_resumed";
     }
     return "unknown";
 }

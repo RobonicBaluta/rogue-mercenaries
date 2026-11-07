@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "rm/rosters.h"
+#include "rm/run_resume.h"
 
 namespace rm {
 namespace {
@@ -232,7 +233,80 @@ void RunController::UpdateCheckpoint() {
     cp.arenas_cleared = static_cast<int>(run_.results.size());
     for (const ArenaMetrics& a : run_.arenas) cp.kills += a.player_kills;
     cp.credits_pending = run_.credits_pending;
+    // The run's resume point stays until a newer one is saved (SaveResumePoint).
+    if (profile_.active_run && profile_.active_run->run_id == run_.run_id) {
+        cp.resume = std::move(profile_.active_run->resume);
+        cp.resume_adapter = std::move(profile_.active_run->resume_adapter);
+    }
     profile_.active_run = std::move(cp);
+}
+
+Status RunController::SaveResumePoint(std::string adapter_state) {
+    constexpr std::string_view op = "save_resume_point";
+    if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    const bool beforeFirst = run_.phase == Phase::Idle && run_.arena_index == 0;
+    const bool beforeNext = run_.phase == Phase::RouteSelection && run_.route_chosen;
+    if (!beforeFirst && !beforeNext) {
+        return Fail(op, ErrorCode::WrongPhase, std::string("a resume point is saved between arenas, not in ") + std::string(PhaseName(run_.phase)));
+    }
+    UpdateCheckpoint();
+    profile_.active_run->resume = SerializeRunResume(run_);
+    profile_.active_run->resume_adapter = std::move(adapter_state);
+    return SaveProfile("resume_point");
+}
+
+bool RunController::CanResumeRun() const {
+    return !run_.active && profile_.active_run && !profile_.active_run->resume.empty();
+}
+
+Result<std::string> RunController::ResumeRun() {
+    constexpr std::string_view op = "resume_run";
+    if (run_.active) return Fail(op, ErrorCode::RunInProgress, "run " + run_.run_id + " is active");
+    if (!CanResumeRun()) return Fail(op, ErrorCode::NoActiveRun, "no run to go on with");
+    RunState r;
+    const Status parsed = ParseRunResume(profile_.active_run->resume, r);
+    if (!parsed.ok()) return Fail(op, parsed.code, parsed.message);
+    const CharacterDef* ch = content_->FindCharacter(r.character_id);
+    const SkinDef* skin = ch != nullptr ? FindSkin(*ch, r.skin_id) : nullptr;
+    if (ch == nullptr || skin == nullptr) {
+        return Fail(op, ErrorCode::UnknownId, "the run's character '" + r.character_id + "' or skin '" + r.skin_id + "' is gone");
+    }
+    // The character as StartRun made it: the skin, then the builds of the run's perks.
+    r.character = ApplySkin(*ch, *skin);
+    for (const auto& [id, stacks] : r.perks) {
+        const PerkDef* def = content_->FindPerk(id);
+        if (def != nullptr && def->build) ApplyPerkBuild(r.character.build, *def->build);
+    }
+    r.active = true;
+    r.phase = r.arena_index == 0 ? Phase::Idle : Phase::RouteSelection;
+    r.route_chosen = true;
+    run_ = std::move(r);
+    // Streams for the arena it goes on at: drawn anew (an arena played again rolls anew).
+    const std::string at = "@" + std::to_string(run_.arena_index);
+    auto derive = [&](std::string_view stream) { return Rng::Derive(run_.seed, std::string(stream) + at); };
+    streams_.emplace(Streams{derive(streams::kReward), derive(streams::kRoute), derive(streams::kLoot), derive(streams::kShop),
+                             derive(streams::kCombat), derive(streams::kLoadout), derive(streams::kDirector)});
+    last_summary_.reset();
+    Event e = MakeEvent(EventType::RunResumed);
+    e.Add("character", run_.character_id).Add("arena_index", run_.arena_index).Add("arenas_cleared", static_cast<std::int64_t>(run_.results.size()));
+    Emit(std::move(e));
+    return profile_.active_run->resume_adapter;
+}
+
+Status RunController::SuspendRun(double now) {
+    constexpr std::string_view op = "suspend_run";
+    if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    if (!profile_.active_run || profile_.active_run->run_id != run_.run_id || profile_.active_run->resume.empty()) {
+        return Fail(op, ErrorCode::NotEligible, "run " + run_.run_id + " has no resume point");
+    }
+    Event e = MakeEvent(EventType::RunSuspended);
+    e.Add("phase", PhaseName(run_.phase)).Add("arena_index", run_.arena_index).Add("time", now);
+    Emit(std::move(e));
+    // The run as it was at its resume point; this arena is played again.
+    run_ = RunState{};
+    streams_.reset();
+    director_.reset();
+    return SaveProfile("run_suspended");
 }
 
 // ---- meta progression ----------------------------------------------------------------------

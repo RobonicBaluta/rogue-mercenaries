@@ -268,6 +268,23 @@ public:
     Status StartRun(std::string_view character_id, std::uint64_t seed, std::string_view skin_id);
     /// Marks the active run failed ("abandoned"); call EndRun afterwards to bank.
     Status AbandonRun(double now);
+
+    // --- going on with a run (2026-11-07: long runs must survive a crash or a quit) ----------
+    /// Between arenas (route chosen, before the next arena begins): the run is written into the
+    /// profile's active run as the point it goes on from, with `adapter_state` (JSON the adapter
+    /// reads back: what it carries into the next arena). Saves the profile.
+    Status SaveResumePoint(std::string adapter_state);
+    /// No run active and the profile holds one with a resume point.
+    [[nodiscard]] bool CanResumeRun() const;
+    /// The profile's run again, before the arena it was saved before (route selection with its
+    /// route chosen; the first arena from Idle): the character rebuilt from content (skin and
+    /// perk builds), the random streams drawn anew for that arena, cooldowns ready. Returns the
+    /// adapter's state saved with it. Fails when the content no longer has its character or skin.
+    Result<std::string> ResumeRun();
+    /// The active run's match was left (a quit, a crash's aftermath): the run stops without being
+    /// settled and goes on later from its resume point (the arena it was in is played again).
+    /// Fails without a resume point (the caller abandons it instead).
+    Status SuspendRun(double now);
     /// Valid from Idle with a fresh run (first arena) or RouteSelection after ChooseRoute.
     Status BeginArena(double now);
     KillOutcome OnEnemyKilled(const KillEvent& kill);

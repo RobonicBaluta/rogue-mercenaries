@@ -83,6 +83,14 @@ json Body(const Profile& p) {
             {"kills", a.kills},
             {"credits_pending", a.credits_pending},
         };
+        // The resume point as nested objects (readable in the file); text that is no JSON object
+        // is dropped (the run is then only settled, as before).
+        for (const auto& [key, text] : {std::pair<const char*, const std::string*>{"resume", &a.resume},
+                                        std::pair<const char*, const std::string*>{"resume_adapter", &a.resume_adapter}}) {
+            if (text->empty()) continue;
+            json parsed = json::parse(*text, nullptr, false);
+            if (parsed.is_object()) j["active_run"][key] = std::move(parsed);
+        }
     } else {
         j["active_run"] = nullptr;
     }
@@ -248,6 +256,11 @@ Result<ParsedProfile> ParseV1(const json& doc) {
             return fail();
         }
         a.arenas_cleared = static_cast<int>(cleared);
+        for (const auto& [key, text] : {std::pair<const char*, std::string*>{"resume", &a.resume},
+                                        std::pair<const char*, std::string*>{"resume_adapter", &a.resume_adapter}}) {
+            const auto it = active->find(key);
+            if (it != active->end() && it->is_object()) *text = it->dump();
+        }
         p.active_run = std::move(a);
     }
     return out;

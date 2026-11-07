@@ -39,6 +39,8 @@ enum class EventType {
     ItemGranted,        // an inventory item was queued for the adapter (reward, shop)
     PerkEquipped,       // the menu changed a character's equipped perk
     ChestOpened,        // a chest (time-bonus pickup) paid out
+    RunSuspended,       // its match was left; the run goes on later from its resume point
+    RunResumed,         // a suspended or interrupted run goes on
 };
 std::string_view EventTypeName(EventType type);
 

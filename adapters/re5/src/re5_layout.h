@@ -353,6 +353,10 @@ constexpr std::uintptr_t kFnMatchQuitState = 0x00720A50;
 // A pause menu quit of a run wrote the save with no quit state (0x00720A50) on the way (user
 // playtests 2026-11-03, 2026-11-04, 2026-11-05).
 constexpr std::uintptr_t kFnSaveFileWrite = 0x007D4510;
+// The application's request word (thiscall on [kGameRoot]: flags ORed into +0x10438 under its
+// lock). 0x10000 makes the running match (main state 2, 0x00724A20) leave for the menus through
+// state 0xC, as the pause menu's forced exit does (developer "quitmatch").
+constexpr std::uintptr_t kFnAppRequest = 0x00726120;
 constexpr std::uintptr_t kFnGameoverDecide = 0x00A00550;
 constexpr std::uintptr_t kGameoverDecideDelay = 0x00FF02FC;
 // void aGame::NotifyItemGet(int item, int count): the game's "item acquired"
@@ -565,6 +569,11 @@ constexpr std::size_t kGameWorkStage = 0x5D4;      // int32 stage index (0..7)
 constexpr std::size_t kGameWorkCharacter = 0x600;  // int32[4] costume slot per player
 constexpr std::size_t kGameWorkMercFlag = 0x79E;   // uint8 set by the Solo/Duo page's 4th option
 constexpr std::size_t kFlowStepState = 0x25;       // script ctx: 0 create, 1 wait, 2 done
+constexpr std::size_t kFlowScreen = 0x18;          // script ctx: the screen it waits on
+// A setup screen's result bytes (the script's Step reads them once +0x3C is set): +0x3E back
+// (-1), +0x3F the other way out (-2), neither: accepted (+1).
+constexpr std::size_t kScreenDone = 0x3C;
+constexpr std::size_t kScreenBack = 0x3E;
 // Pad singleton: decide/cancel button masks for the menu input bits.
 constexpr std::size_t kPadDecideMask = 0x5B4;
 constexpr std::size_t kPadCancelMask = 0x5B8;
@@ -676,6 +685,7 @@ inline constexpr Signature kSignatures[] = {
     {"itembox_picture_name", addr::kFnItemBoxPictureName, "8B 54 24 08 56 33 C9 57 BE 94 00 00 00 33 C0 90 0F B7 B8 70 8C 12 01"},
     {"match_quit_state", addr::kFnMatchQuitState, "57 8B F9 8A 47 05 0F B6 C8 83 F9 0C 0F 87 A1 00 00 00"},
     {"save_file_write", addr::kFnSaveFileWrite, "81 EC 04 02 00 00 53 55 56 8B F1 0F B6 46 21 32 DB BD 08 00 00 00 3B C5"},
+    {"app_request", addr::kFnAppRequest, "56 8B F1 80 7E 1C 00 75 09 80 3D 2E 9C 24 01 00 74 0A 8D 46 04 50 FF 15 F8 A0 F4 00"},
     {"pause_move", addr::kFnPauseMove, "A1 A4 40 23 01 F7 80 34 04 01 00 00 05 00 00 56"},
     {"inventory_slot_clear", addr::kFnInventorySlotClear, "8B 44 24 04 53 56 57 50 8B F1 E8 B1 EE FF FF 6A 2C 33 DB 8D"},
     {"enemy_create", addr::kFnEnemyCreate, "8B 15 50 4F 1F 01 56 8B F1 8B 4C 24 08 39 51 04 74 20 8B 41"},
