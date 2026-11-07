@@ -224,8 +224,11 @@ BUILDS = {
     },
     'wesker_stars': {
         'name': 'Iron Fist', 'icon': 'fist',
-        'summary': 'His melee hits three times as hard. Only his Samurai Edge, magnums and the Hydra are for him.',
-        'usable_weapons': {'categories': ['magnum'], 'ids': ['samurai_edge', 'hydra']}, 'melee_damage': 2.0,
+        # Only his own three guns: the S and W M500 (Midnight Wesker's) sat sideways on his body
+        # and fired from there, never in his hand (user playtest 2026-11-07); his model holds
+        # what the game gives him.
+        'summary': 'His melee hits three times as hard. Only his own Samurai Edge, Lightning Hawk and Hydra are for him.',
+        'usable_weapons': {'ids': ['samurai_edge', 'l_hawk', 'hydra']}, 'melee_damage': 2.0,
     },
     'barry_stars': {
         'name': 'Old Reliable', 'icon': 'magnum',

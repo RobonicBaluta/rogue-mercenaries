@@ -145,7 +145,7 @@ the others are written and wait for a playtest (2026-11-03).
 | Rebecca | S.T.A.R.S. | Field Surgeon | Heals x1.3. A big heal (at least 60 percent of her health: a spray, a mixed herb) makes her untouchable for 4 s and 30 percent stronger for 12 s. |
 | Excella | Dress | Ambition | Every melee kill raises one stat for the rest of the run, up to its cap: damage (+4 percent, to +100), defence (+3, to +70), health (+5, to +100), critical chance (+2, to +30), movement speed (+3, to +60), healing (+5, to +50) or supplies (+4, to +50). |
 | Wesker | Midnight | Uroboros Speed | Special: a dash, or a lunge at an enemy ahead (below); a second special, the burst. Untouchable while they act. 70 percent of his health. |
-| Wesker | S.T.A.R.S. | Iron Fist | Melee hits three times as hard. Only his Samurai Edge, magnums and the Hydra can be bought or used. |
+| Wesker | S.T.A.R.S. | Iron Fist | Melee hits three times as hard. Only his own Samurai Edge, Lightning Hawk and Hydra can be bought or used. |
 
 **Keys.** Chests need a key (Jill's BSAA outfit excepted). A kill of a Majini drops one 15 percent of the time; you
 hold up to 9 and the HUD's right side shows how many. A chest opened without a key says *LOCKED* and stands again at
