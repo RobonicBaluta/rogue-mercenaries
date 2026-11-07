@@ -23,6 +23,7 @@ struct Verified {
     bool pickupItem = false;    // ground item pickups (M8: a build's drops)
     bool collision = false;     // segment casts against the world (M8: Wesker's moves)
     bool matchQuit = false;     // the match's quit state (a run's quit writes no save)
+    bool saveGuard = false;     // the game's save file write (none while a run is on)
     bool itemBoxGuard = false;  // the Organize screen's panels (no Buy or Upgrade with a run in it)
     bool itemBoxPictures = false;  // the Organize screen's item table (pictures for the run's guns)
     bool actions = false;       // character actions by id (M8: staggers)

@@ -345,6 +345,14 @@ constexpr int kItemBoxTableRecords = 105;
 // Mercenaries phase (game work +0x67C) is set. The game over's "No" and the pause menu's quit
 // both end here (2026-11-03: a run quit from the pause menu wrote the save).
 constexpr std::uintptr_t kFnMatchQuitState = 0x00720A50;
+// The game's save file write: the resource loader's ([0x011B26C4]) step for a request of type 4
+// (thiscall: request; the dispatcher 0x007D53E0 calls it while the request's +0x48 lacks bit 4).
+// It names the file "savedata.bin" (0x007A5C90), copies 0x5D50 bytes (the file's size) from
+// [0x011B1DD8]+0x110, writes, reads back and compares; a write that went through ends with the
+// request's +0x48 = 4 and 1 returned. Its step is the loader's byte +0x21 (0 = not begun).
+// A pause menu quit of a run wrote the save with no quit state (0x00720A50) on the way (user
+// playtests 2026-11-03, 2026-11-04, 2026-11-05).
+constexpr std::uintptr_t kFnSaveFileWrite = 0x007D4510;
 constexpr std::uintptr_t kFnGameoverDecide = 0x00A00550;
 constexpr std::uintptr_t kGameoverDecideDelay = 0x00FF02FC;
 // void aGame::NotifyItemGet(int item, int count): the game's "item acquired"
@@ -534,6 +542,9 @@ constexpr std::uint8_t kResultsExitState = 0x5A;
 constexpr std::uint8_t kGameoverInputState = 2;
 constexpr std::uint8_t kGameoverDecidedState = 3;
 constexpr std::size_t kMatchQuitStep = 0x05;  // uint8, kFnMatchQuitState's step
+constexpr std::size_t kLoaderStep = 0x21;           // uint8, addr::kFnSaveFileWrite's step (0 = not begun)
+constexpr std::size_t kLoaderRequestState = 0x48;   // int32, a loader request's state (bit 4 = done)
+constexpr std::int32_t kLoaderRequestDone = 4;
 constexpr std::size_t kGameoverCursor = 0x190;   // int32: 0 yes (retry), 1 no (quit)
 constexpr std::size_t kGameoverDecided = 0x196;  // uint8
 constexpr std::size_t kGameoverDelay = 0x198;    // float: frames until the exit states
@@ -664,6 +675,7 @@ inline constexpr Signature kSignatures[] = {
     // The picture lookup's scan of the item table (`movzx edi, word [eax + 0x01128C70]`).
     {"itembox_picture_name", addr::kFnItemBoxPictureName, "8B 54 24 08 56 33 C9 57 BE 94 00 00 00 33 C0 90 0F B7 B8 70 8C 12 01"},
     {"match_quit_state", addr::kFnMatchQuitState, "57 8B F9 8A 47 05 0F B6 C8 83 F9 0C 0F 87 A1 00 00 00"},
+    {"save_file_write", addr::kFnSaveFileWrite, "81 EC 04 02 00 00 53 55 56 8B F1 0F B6 46 21 32 DB BD 08 00 00 00 3B C5"},
     {"pause_move", addr::kFnPauseMove, "A1 A4 40 23 01 F7 80 34 04 01 00 00 05 00 00 56"},
     {"inventory_slot_clear", addr::kFnInventorySlotClear, "8B 44 24 04 53 56 57 50 8B F1 E8 B1 EE FF FF 6A 2C 33 DB 8D"},
     {"enemy_create", addr::kFnEnemyCreate, "8B 15 50 4F 1F 01 56 8B F1 8B 4C 24 08 39 51 04 74 20 8B 41"},

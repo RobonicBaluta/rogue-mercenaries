@@ -30,6 +30,10 @@ bool ReturningToTitle();
 /// A run's match is on (the mod sets it every tick): if it is quit (the pause menu, the game
 /// over), the match's quit state finds the Mercenaries phase cleared and writes no save.
 void SetRunMatch(bool on);
+/// While on, the game's save file write finishes without writing (re5::addr::kFnSaveFileWrite):
+/// the mod sets it while a run is on and for a while after its match, so no way of leaving a
+/// run's match (the pause menu's quit among them) changes savedata.bin.
+void SetSaveGuard(bool on);
 // Game thread: times out an autopilot that could not finish.
 void OnGameTick();
 

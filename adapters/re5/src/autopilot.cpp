@@ -279,6 +279,24 @@ void __fastcall QuitStateDetour(std::uintptr_t self, void*) {
     g_origQuitState(self);
 }
 
+// The game's save file write (re5::addr::kFnSaveFileWrite). While a run is on (and a little after
+// its match), the write is finished the way one that went through is (the request's state 4) and
+// the file is never opened: the game goes on as if it saved and savedata.bin stays as it was,
+// whichever way the game came to save (a pause menu quit wrote it with no quit state on the way).
+using SaveWriteFn = std::uint8_t(__fastcall*)(std::uintptr_t self, void*, std::uintptr_t request);
+SaveWriteFn g_origSaveWrite = nullptr;
+std::atomic<bool> g_saveGuard{false};
+
+std::uint8_t __fastcall SaveWriteDetour(std::uintptr_t self, void* edx, std::uintptr_t request) {
+    if (g_saveGuard.load() && request && ReadOr<std::uint8_t>(self + re5::off::kLoaderStep, 0xFF) == 0) {
+        if (SafeStore<std::int32_t>(request + re5::off::kLoaderRequestState, re5::off::kLoaderRequestDone)) {
+            RM_LOGW("save: the game's save write skipped (a run is on); savedata.bin stays as it was");
+            return 1;
+        }
+    }
+    return g_origSaveWrite(self, edx, request);
+}
+
 using GameoverDecideFn = void(__fastcall*)(std::uintptr_t self, void*);
 MoveFn g_origGameoverMove = nullptr;
 std::atomic<bool> g_gameoverHook{false};
@@ -359,6 +377,10 @@ bool Install() {
         g_quitHook = true;
         RM_LOGI("autopilot: match quit hook queued (a run's quit writes no save)");
     }
+    if (engine::Caps().saveGuard &&
+        QueueHook(re5::addr::kFnSaveFileWrite, reinterpret_cast<void*>(&SaveWriteDetour), reinterpret_cast<void**>(&g_origSaveWrite))) {
+        RM_LOGI("autopilot: save file write hook queued (no save while a run is on)");
+    }
     return true;
 }
 
@@ -367,6 +389,10 @@ bool CanChangeStage() { return g_enabled.load() && g_flowHooks.load() && g_resul
 bool Available() { return g_enabled.load(); }
 
 void SetRunMatch(bool on) { g_runMatch = on; }
+
+void SetSaveGuard(bool on) {
+    if (g_saveGuard.exchange(on) != on) RM_LOGI("save: the game's save file write %s", on ? "held while a run is on" : "allowed again");
+}
 
 void Arm(const Plan& plan) {
     // Skip stages the game refused earlier this session.

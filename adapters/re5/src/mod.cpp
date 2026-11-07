@@ -2093,8 +2093,13 @@ int g_startMovedGeneration = -1;
 
 // An arena began: the director's grace starts, and the HUD names the map and the route (or the
 // boss) for a few seconds (M5.3).
+int g_arenaGeneration = -1;        // the match the arena began in (-1: none watched)
+double g_arenaMatchGoneSince = -1.0;
+
 void ArenaBegan(double now) {
     g->arenaBeganAt = now;
+    g_arenaGeneration = g->matchGeneration;
+    g_arenaMatchGoneSince = -1.0;
     g->boss = {};
     ApplyBuildHealth();
     ApplyBuildStacks();
@@ -2131,6 +2136,37 @@ void ArenaBegan(double now) {
     g->noticeUntil = now + 5.0;
     RM_LOGI("arena %d: %s (stage %d, enemy threat %d%s)", s.arena, line.c_str(), CurrentMapKey(), g->run->ArenaThreatLevel(),
             guestLog.c_str());
+}
+
+// An arena's match the mod did not end: left (the pause menu's quit) or started over (its
+// retry). The run is abandoned and settled like any other end. Before, it stayed active and the
+// next START RUN went on with the same arena on another stage, with its enemies and chests from
+// the first (user playtest 2026-11-05: Chris's arena 3 on stages 505, 105 and 407, the last time
+// as Jill, whose death then ended Chris's run). A death, a cleared arena or a finished run leave
+// the arena phase before their match ends, and stage changes happen between arenas.
+constexpr double kArenaMatchGoneSeconds = 1.0;
+constexpr double kSaveGuardAfterMatch = 30.0;  // seconds the save stays held after a run's match
+
+void WatchArenaMatch(double now) {
+    rm::RunController& run = *g->run;
+    if (run.phase() != rm::Phase::ArenaActive) g_arenaGeneration = -1;  // set again by ArenaBegan
+    if (g_arenaGeneration < 0) {
+        g_arenaMatchGoneSince = -1.0;
+        return;
+    }
+    if (!g->match.inMatch) {
+        if (g_arenaMatchGoneSince < 0.0) g_arenaMatchGoneSince = now;
+    } else {
+        g_arenaMatchGoneSince = -1.0;
+    }
+    const bool restarted = g->match.inMatch && g->matchGeneration != g_arenaGeneration;
+    const bool left = g_arenaMatchGoneSince >= 0.0 && now - g_arenaMatchGoneSince > kArenaMatchGoneSeconds;
+    if (!restarted && !left) return;
+    RM_LOGI("run: arena %d's match %s without the mod (the pause menu's %s?); the run is abandoned", run.state().arena_index,
+            restarted ? "started over" : "was left", restarted ? "retry" : "quit");
+    g_arenaGeneration = -1;
+    Report(run.AbandonRun(now), "abandon run (its match was left)");
+    g->toasts.Push("Run abandoned: its match was quit or restarted");
 }
 
 void TryBeginArena(double now) {
@@ -6068,6 +6104,7 @@ private:
             DriveUiDemo(now);
         } else {
             HandleNativeMenu(now);
+            WatchArenaMatch(now);
             TryBeginArena(now);
         }
         DriveDirector(now);
@@ -6088,6 +6125,12 @@ private:
         if (!g->match.inMatch) runMatch = false;
         else if (g->run->HasActiveRun()) runMatch = true;
         autopilot::SetRunMatch(runMatch);
+        // The game's save file is never written in a run's match nor for a while after it (a
+        // pause menu quit wrote it with no quit state on the way); a run waiting at the menus
+        // holds nothing back (the campaign saves as ever).
+        static double runMatchSeenAt = -1.0e9;
+        if (runMatch) runMatchSeenAt = now;
+        autopilot::SetSaveGuard(now - runMatchSeenAt < kSaveGuardAfterMatch);
         if (g->run->phase() == rm::Phase::ArenaActive && g->match.inMatch) ApplyBuildHealth();  // gains mid-arena
         // Items earned by perks, rewards and the shop wait until the player is in a match.
         if (g->match.inMatch && engine::LocalPlayer() && g->run->phase() != rm::Phase::Idle && ReadMercTimer().recent) {
