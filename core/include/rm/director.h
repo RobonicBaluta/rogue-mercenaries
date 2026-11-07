@@ -104,6 +104,7 @@ struct ArenaThreat {
     int max_alive = 0;      // > 0: at most this many alive at once (within the map's own)
     int specials_from = 1;  // the stage's specials join from this level on
     ThreatTable table;
+    double boss_hp_mult = 1.0;  // a boss's health times this (its ladder length's, EconomyConfig::Ladder)
 };
 
 /// What the adapter must create now. `ticket` identifies the request until it is answered.

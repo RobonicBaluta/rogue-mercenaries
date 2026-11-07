@@ -729,11 +729,14 @@ void ParseChallenge(const Diag& d, const json& e, Challenge& out) {
     }
     if (GetInt(d, e, "unlock_count", out.count, false) && out.count < 0) d.Error("field 'unlock_count' must be >= 0");
     GetString(d, e, "unlock_character", out.character, false);
+    GetString(d, e, "unlock_boss", out.boss, false);
     GetString(d, e, "unlock_text", out.text, false);
+    if (out.kind == ChallengeKind::BossBeaten && out.count < 1) out.count = 1;  // a boss is beaten or not
     if (out.kind != ChallengeKind::None && out.count < 1) d.Error("unlock_count must be >= 1 with an unlock_kind");
     if (out.kind == ChallengeKind::RunsCompletedAs && out.character.empty()) {
         d.Error("unlock_kind runs_completed_as needs unlock_character");
     }
+    if (out.kind == ChallengeKind::BossBeaten && out.boss.empty()) d.Error("unlock_kind boss_beaten needs unlock_boss");
 }
 
 void CheckChallengeTarget(const Diag& d, const Challenge& c, const std::set<std::string>& character_ids) {
@@ -1007,7 +1010,7 @@ void ParseSkins(const Diag& file, const json& e, CharacterDef& c) {
         if (!ReadId(d, s, skin.id)) continue;
         d = file.Sub(" skin " + Q(skin.id));
         CheckKeys(d, s, {"id", "name", "costume_index", "starting_weapons", "starting_passive", "skill_pool",
-                         "unlock_kind", "unlock_count", "unlock_character", "unlock_text", "build"});
+                         "unlock_kind", "unlock_count", "unlock_character", "unlock_boss", "unlock_text", "build"});
         if (const json* b = Get(s, "build")) {
             if (b->is_object()) {
                 ParseBuild(d.Sub(": build"), *b, skin.build);
@@ -1043,7 +1046,7 @@ void ParseCharacters(const Diag& file, const json& doc, std::vector<CharacterDef
         d = file.Sub(": character " + Q(c.id));
         CheckKeys(d, e, {"id", "name", "enabled", "starting_weapons", "starting_passive", "skill_pool",
                          "exclusive_mechanic", "unlock_cost_credits", "unlock_kind", "unlock_count",
-                         "unlock_character", "unlock_text", "costume_index", "skins"});
+                         "unlock_character", "unlock_boss", "unlock_text", "costume_index", "skins"});
         GetString(d, e, "name", c.name, true);
         GetBool(d, e, "enabled", c.enabled, false);
         GetStringList(d, e, "starting_weapons", c.starting_weapons, true);
@@ -1354,7 +1357,7 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     const Diag d = file.Sub("");
     CheckKeys(d, doc, {"schema_version", "run", "rewards", "weapon_rarity", "upgrades", "supplies",
                        "credits", "rating", "damage", "shop", "run_map", "chests", "keys", "enemy_threat",
-                       "run_rosters"});
+                       "run_rosters", "ladder"});
     if (const json* s = Section(d, doc, "run")) {
         const Diag sd = d.Sub(": run");
         CheckKeys(sd, *s, {"arena_count", "starting_route", "starting_supplies",
@@ -1634,6 +1637,55 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
             if (r.enabled && r.guests.empty()) rd.Error("enabled run_rosters need at least one guest class");
         }
     }
+    if (Get(doc, "ladder") != nullptr) {
+        if (const json* s = Section(d, doc, "ladder")) {
+            const Diag ld = d.Sub(": ladder");
+            CheckKeys(ld, *s, {"enabled", "lengths", "finale", "growth_from_arena", "incoming_per_arena", "toughness_per_arena",
+                               "budget_per_arena"});
+            EconomyConfig::Ladder& l = eco.ladder;
+            GetBool(ld, *s, "enabled", l.enabled, false);
+            GetIntRange(ld, *s, "growth_from_arena", l.growth_from_arena, false, 2, 20);
+            if (GetNumber(ld, *s, "incoming_per_arena", l.incoming_per_arena, false)) CheckRange(ld, "incoming_per_arena", l.incoming_per_arena, 0.0, 1.0);
+            if (GetNumber(ld, *s, "toughness_per_arena", l.toughness_per_arena, false)) CheckRange(ld, "toughness_per_arena", l.toughness_per_arena, 0.0, 1.0);
+            GetIntRange(ld, *s, "budget_per_arena", l.budget_per_arena, false, 0, 20);
+            if (const json* lengths = Get(*s, "lengths")) {
+                if (!lengths->is_array()) ld.Error("lengths must be an array");
+                else {
+                    for (const json& e : *lengths) {
+                        const Diag ed = ld.Sub(": lengths");
+                        CheckKeys(ed, e, {"id", "name", "arenas", "easy_boss", "hard_boss", "unlocked_by", "boss_hp_mult"});
+                        EconomyConfig::Ladder::Length len;
+                        GetString(ed, e, "id", len.id, true);
+                        GetString(ed, e, "name", len.name, true);
+                        GetIntRange(ed, e, "arenas", len.arenas, true, 2, 20);
+                        GetIntRange(ed, e, "easy_boss", len.easy_boss, true, 0, 9999);
+                        GetIntRange(ed, e, "hard_boss", len.hard_boss, false, -1, 9999);
+                        GetString(ed, e, "unlocked_by", len.unlocked_by, false);
+                        if (GetNumber(ed, e, "boss_hp_mult", len.boss_hp_mult, false)) CheckRange(ed, "boss_hp_mult", len.boss_hp_mult, 0.1, 10.0);
+                        if (l.Find(len.id) != nullptr) ed.Error("duplicate length " + Q(len.id));
+                        l.lengths.push_back(std::move(len));
+                    }
+                }
+            }
+            if (const json* f = Get(*s, "finale")) {
+                const Diag fd = ld.Sub(": finale");
+                CheckKeys(fd, *f, {"boss", "after", "unlocked_by", "boss_hp_mult"});
+                GetIntRange(fd, *f, "boss", l.finale.boss, false, -1, 9999);
+                GetString(fd, *f, "after", l.finale.after, false);
+                GetStringList(fd, *f, "unlocked_by", l.finale.unlocked_by, false);
+                if (GetNumber(fd, *f, "boss_hp_mult", l.finale.boss_hp_mult, false)) CheckRange(fd, "boss_hp_mult", l.finale.boss_hp_mult, 0.1, 10.0);
+            }
+            if (l.enabled && l.lengths.empty()) ld.Error("an enabled ladder needs at least one length");
+            if (!l.lengths.empty() && !l.lengths.front().unlocked_by.empty()) ld.Error("the first length must be open from the start (no unlocked_by)");
+            for (const auto& len : l.lengths) {
+                if (len.unlocked_by.empty()) continue;
+                const auto colon = len.unlocked_by.find(':');
+                const auto* base = colon == std::string::npos ? nullptr : l.Find(len.unlocked_by.substr(0, colon));
+                if (base == nullptr) ld.Error("length " + Q(len.id) + " is unlocked by unknown key " + Q(len.unlocked_by));
+            }
+            if (l.finale.boss >= 0 && l.Find(l.finale.after) == nullptr) ld.Error("finale.after names unknown length " + Q(l.finale.after));
+        }
+    }
     if (const json* s = Section(d, doc, "run_map")) {
         const Diag sd = d.Sub(": run_map");
         CheckKeys(sd, *s, {"width"});
@@ -1883,6 +1935,20 @@ private:
             } else if (std::none_of(m->roster.begin(), m->roster.end(), [&](const MapEnemy& e) { return e.unit_class == unit_class; })) {
                 eco_d.Error(what + ": map " + std::to_string(home) + " (" + m->name + ") has no " + unit_class + " in its roster");
             }
+        }
+        // The ladder's bosses are boss maps.
+        if (c.economy_.ladder.enabled) {
+            auto bossMap = [&](int key, const std::string& what) {
+                if (key < 0) return;
+                const MapDef* m = c.FindMapByStage(key);
+                if (m == nullptr) eco_d.Error("ladder " + what + " references unknown map " + std::to_string(key));
+                else if (!m->boss) eco_d.Error("ladder " + what + ": map " + std::to_string(key) + " (" + m->name + ") has no boss");
+            };
+            for (const auto& len : c.economy_.ladder.lengths) {
+                bossMap(len.easy_boss, len.id + ".easy_boss");
+                bossMap(len.hard_boss, len.id + ".hard_boss");
+            }
+            bossMap(c.economy_.ladder.finale.boss, "finale.boss");
         }
         if (c.weapons_.empty()) weapons_d.Error("at least one weapon is required");
         if (c.affixes_.empty()) weapons_d.Warn("no regular affixes defined; weapons above common rarity will be plain");

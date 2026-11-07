@@ -244,7 +244,7 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::ar
         r.pos = map_.points[static_cast<std::size_t>(point)];
         if (map_.boss) {
             r.boss = true;
-            r.hp = map_.boss->hp;
+            r.hp = static_cast<int>(std::lround(map_.boss->hp * std::max(0.1, threat_.boss_hp_mult)));
         }
         pending_.emplace_back(r.ticket, point);
         ticket_enemy_[r.ticket] = enemy;

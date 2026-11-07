@@ -159,6 +159,7 @@ std::string SerializeRunResume(const RunState& run) {
     j["seed"] = run.seed;
     j["character_id"] = run.character_id;
     j["skin_id"] = run.skin_id;
+    j["length_id"] = run.length_id;
     json items = json::array();
     for (const LoadoutItem& i : run.loadout.items) {
         items.push_back({{"id", i.id}, {"name", i.name}, {"count", i.count}, {"game_item", i.game_item}});
@@ -228,6 +229,7 @@ Status ParseRunResume(std::string_view text, RunState& out) {
         r.seed = j.at("seed").get<std::uint64_t>();
         r.character_id = j.at("character_id").get<std::string>();
         r.skin_id = Get(j, "skin_id", std::string());
+        r.length_id = Get(j, "length_id", std::string());
         const json& lo = Get(j, "loadout", json::object());
         r.loadout.weapon_id = Get(lo, "weapon_id", std::string());
         r.loadout.budget = Get(lo, "budget", std::int64_t{0});

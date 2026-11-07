@@ -23,6 +23,7 @@ enum class ChallengeKind {
     CreditsEarned,    // lifetime banked credits
     NoDamageArenas,   // arenas cleared without taking damage
     SRankArenas,      // arenas rated S
+    BossBeaten,       // "unlock_boss" in the profile's bosses beaten (a ladder key or boss:<class>)
 };
 std::optional<ChallengeKind> ParseChallengeKind(std::string_view name);
 std::string_view ChallengeKindName(ChallengeKind k);
@@ -32,6 +33,7 @@ struct Challenge {
     ChallengeKind kind = ChallengeKind::None;
     std::int64_t count = 0;  // target for the counted kind
     std::string character;   // for RunsCompletedAs
+    std::string boss;        // for BossBeaten (ProfileStats::bosses_beaten)
     std::string text;        // shown to the player while locked
 };
 

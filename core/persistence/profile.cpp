@@ -72,6 +72,7 @@ json Body(const Profile& p) {
     json by_character = json::object();
     for (const auto& [id, n] : p.stats.runs_completed_as) by_character[id] = n;
     j["stats"]["runs_completed_as"] = std::move(by_character);
+    j["stats"]["bosses_beaten"] = SetToJson(p.stats.bosses_beaten);
     j["next_run_number"] = p.next_run_number;
     if (p.active_run) {
         const ActiveRunCheckpoint& a = *p.active_run;
@@ -227,6 +228,7 @@ Result<ParsedProfile> ParseV1(const json& doc) {
             p.stats.runs_completed_as[item.key()] = item.value().get<std::int64_t>();
         }
     }
+    if (!StringSetField(*stats, "bosses_beaten", p.stats.bosses_beaten, err, false)) return fail();
     if (!NonNegInt(doc, "next_run_number", p.next_run_number, err)) return fail();
     if (p.next_run_number < 1) {
         err = "next_run_number must be >= 1";

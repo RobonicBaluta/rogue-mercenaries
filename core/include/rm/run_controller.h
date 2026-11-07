@@ -266,6 +266,21 @@ public:
     Status StartRun(std::string_view character_id, std::uint64_t seed);
     /// With a skin (empty id = the character's default skin). Locked skins are rejected.
     Status StartRun(std::string_view character_id, std::uint64_t seed, std::string_view skin_id);
+    /// With a ladder length (EconomyConfig::Ladder; empty = the first): locked lengths are refused.
+    Status StartRun(std::string_view character_id, std::uint64_t seed, std::string_view skin_id, std::string_view length_id);
+
+    /// The ladder for the menu: every length in order, with what the profile has opened.
+    struct LadderLengthView {
+        std::string id;
+        std::string name;
+        int arenas = 0;           // the finale's arena included when it is open
+        bool open = false;        // can be played
+        bool hard_open = false;   // its hard boss is offered (its easy one beaten)
+        bool finale_open = false; // it ends on the finale after its boss
+        bool easy_beaten = false;
+        bool hard_beaten = false;
+    };
+    [[nodiscard]] std::vector<LadderLengthView> LadderLengths() const;
     /// Marks the active run failed ("abandoned"); call EndRun afterwards to bank.
     Status AbandonRun(double now);
 
@@ -412,6 +427,13 @@ public:
     [[nodiscard]] const std::optional<RunSummary>& last_summary() const { return last_summary_; }
 
 private:
+    // The ladder (EconomyConfig::Ladder): what the profile has beaten and opened.
+    [[nodiscard]] bool Beaten(std::string_view key) const;
+    [[nodiscard]] bool LengthOpen(const EconomyConfig::Ladder::Length& length) const;
+    [[nodiscard]] bool FinaleOpen(const EconomyConfig::Ladder::Length& length) const;
+    [[nodiscard]] double BossHpMult(int map_key) const;
+    /// A boss arena cleared: its ladder key, and its class, into the profile's bosses beaten.
+    void RecordBossBeaten(int map_key);
     struct Streams {
         Rng reward;
         Rng route;

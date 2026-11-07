@@ -255,6 +255,67 @@ Status RunController::SaveResumePoint(std::string adapter_state) {
     return SaveProfile("resume_point");
 }
 
+// ---- the ladder (EconomyConfig::Ladder) ----------------------------------------------------
+
+bool RunController::Beaten(std::string_view key) const {
+    return profile_.stats.bosses_beaten.find(std::string(key)) != profile_.stats.bosses_beaten.end();
+}
+
+bool RunController::LengthOpen(const EconomyConfig::Ladder::Length& length) const {
+    return length.unlocked_by.empty() || Beaten(length.unlocked_by);
+}
+
+bool RunController::FinaleOpen(const EconomyConfig::Ladder::Length& length) const {
+    const auto& finale = content_->economy().ladder.finale;
+    if (finale.boss < 0 || finale.after != length.id) return false;
+    return std::all_of(finale.unlocked_by.begin(), finale.unlocked_by.end(), [this](const std::string& k) { return Beaten(k); });
+}
+
+double RunController::BossHpMult(int map_key) const {
+    const EconomyConfig::Ladder& ladder = content_->economy().ladder;
+    const auto* length = ladder.enabled ? ladder.Find(run_.length_id) : nullptr;
+    if (length == nullptr) return 1.0;
+    if (run_.arena_index > length->arenas && map_key == ladder.finale.boss) return ladder.finale.boss_hp_mult;
+    return map_key == length->easy_boss || map_key == length->hard_boss ? length->boss_hp_mult : 1.0;
+}
+
+void RunController::RecordBossBeaten(int map_key) {
+    const MapDef* map = content_->FindMapByStage(map_key);
+    if (map == nullptr || !map->boss) return;
+    std::vector<std::string> keys{"boss:" + map->boss->unit_class};
+    const EconomyConfig::Ladder& ladder = content_->economy().ladder;
+    if (const auto* length = ladder.enabled ? ladder.Find(run_.length_id) : nullptr) {
+        if (run_.arena_index > length->arenas && map_key == ladder.finale.boss) keys.push_back("finale");
+        else if (map_key == length->easy_boss) keys.push_back(length->id + ":easy");
+        else if (map_key == length->hard_boss) keys.push_back(length->id + ":hard");
+    }
+    for (const std::string& key : keys) {
+        if (!profile_.stats.bosses_beaten.insert(key).second) continue;
+        Event e = MakeEvent(EventType::PerkTriggered);
+        e.Add("source", "ladder").Add("trigger", "boss_beaten").Add("key", key).Add("map", map_key);
+        Emit(std::move(e));
+    }
+}
+
+std::vector<RunController::LadderLengthView> RunController::LadderLengths() const {
+    std::vector<LadderLengthView> out;
+    const EconomyConfig::Ladder& ladder = content_->economy().ladder;
+    if (!ladder.enabled) return out;
+    for (const auto& length : ladder.lengths) {
+        LadderLengthView v;
+        v.id = length.id;
+        v.name = length.name;
+        v.open = LengthOpen(length);
+        v.easy_beaten = Beaten(length.id + ":easy");
+        v.hard_beaten = Beaten(length.id + ":hard");
+        v.hard_open = length.hard_boss >= 0 && v.easy_beaten;
+        v.finale_open = FinaleOpen(length);
+        v.arenas = length.arenas + (v.finale_open ? 1 : 0);
+        out.push_back(std::move(v));
+    }
+    return out;
+}
+
 bool RunController::CanResumeRun() const {
     return !run_.active && profile_.active_run && !profile_.active_run->resume.empty();
 }
@@ -525,6 +586,11 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
 }
 
 Status RunController::StartRun(std::string_view character_id, std::uint64_t seed, std::string_view skin_id) {
+    return StartRun(character_id, seed, skin_id, std::string_view());
+}
+
+Status RunController::StartRun(std::string_view character_id, std::uint64_t seed, std::string_view skin_id,
+                               std::string_view length_id) {
     constexpr std::string_view op = "start_run";
     if (run_.active) return Fail(op, ErrorCode::RunInProgress, "run " + run_.run_id + " has not ended");
     const CharacterDef* ch = content_->FindCharacter(character_id);
@@ -545,6 +611,13 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         return Fail(op, ErrorCode::Locked, "skin '" + skin->id + "' is locked");
     }
     const EconomyConfig& eco = content_->economy();
+    // The ladder's length (EconomyConfig::Ladder): the first one unless named.
+    const EconomyConfig::Ladder::Length* length = nullptr;
+    if (eco.ladder.enabled) {
+        length = length_id.empty() ? &eco.ladder.lengths.front() : eco.ladder.Find(length_id);
+        if (length == nullptr) return Fail(op, ErrorCode::UnknownId, "unknown run length '" + std::string(length_id) + "'");
+        if (!LengthOpen(*length)) return Fail(op, ErrorCode::Locked, "run length '" + length->id + "' is locked");
+    }
     const RouteDef* start = content_->FindRoute(eco.run.starting_route);
     if (start == nullptr || !start->enabled || start->enemy_budget <= 0) {
         return Fail(op, ErrorCode::InvalidEncounter, "starting route '" + eco.run.starting_route + "' is not playable");
@@ -559,7 +632,8 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     fresh.skin_id = skin->id;
     fresh.character = ApplySkin(*ch, *skin);
     fresh.phase = Phase::Idle;
-    fresh.arena_count = eco.run.arena_count;
+    fresh.arena_count = length != nullptr ? length->arenas + (FinaleOpen(*length) ? 1 : 0) : eco.run.arena_count;
+    fresh.length_id = length != nullptr ? length->id : std::string();
     fresh.route_id = start->id;
     fresh.route_chosen = true;  // the first arena uses the starting route
     run_ = std::move(fresh);
@@ -574,7 +648,17 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     });
     run_.loadout = RollLoadout(run_.character, *content_, streams_->loadout);
     run_.keys = eco.keys.enabled ? eco.keys.start : 0;
-    run_.run_map = GenerateRunMap(*content_, streams_->route, arena_pool_, first_arena_);
+    if (length != nullptr) {
+        // Its easy boss, then its hard one once the easy one is beaten; the finale after them.
+        RunMapPlan plan;
+        plan.layers = run_.arena_count;
+        plan.bosses.push_back(length->easy_boss);
+        if (length->hard_boss >= 0 && Beaten(length->id + ":easy")) plan.bosses.push_back(length->hard_boss);
+        plan.finale = FinaleOpen(*length) ? eco.ladder.finale.boss : -1;
+        run_.run_map = GenerateRunMap(*content_, streams_->route, arena_pool_, first_arena_, plan);
+    } else {
+        run_.run_map = GenerateRunMap(*content_, streams_->route, arena_pool_, first_arena_);
+    }
     // Its own stream: planning the guests never shifts the run map or anything else.
     Rng rosters = Rng::Derive(seed, streams::kRoster);
     PlanRunRosters(*content_, rosters, run_.run_map);
@@ -587,7 +671,7 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         .Add("arena_count", run_.arena_count).Add("route", start->id).Add("map", PlannedMapKey())
         .Add("capabilities", caps_.ToString())
         .Add("weapon_mode", WeaponIdMode() ? std::string_view("by_weapon_id") : kSidearmSlot)
-        .Add("skin", skin->id).Add("loadout_weapon", run_.loadout.weapon_id)
+        .Add("skin", skin->id).Add("length", run_.length_id).Add("loadout_weapon", run_.loadout.weapon_id)
         .Add("loadout", FormatLoadout(run_.loadout, *content_)).Add("loadout_spent", run_.loadout.spent);
     Emit(std::move(e));
 
@@ -702,10 +786,12 @@ Status RunController::BeginArena(double now) {
         return Fail(op, ErrorCode::InvalidEncounter, "route '" + run_.route_id + "' is not playable");
     }
     ++run_.arena_index;
+    const EconomyConfig::Ladder& ladder = content_->economy().ladder;
+    const int budget = route->enemy_budget + ladder.budget_per_arena * ladder.Steps(run_.arena_index);
     ArenaMetrics m;
     m.arena = run_.arena_index;
     m.route_id = route->id;
-    m.budget = route->enemy_budget;
+    m.budget = budget;
     m.start_time = now;
     run_.arenas.push_back(std::move(m));
     run_.kill_records.clear();
@@ -727,8 +813,9 @@ Status RunController::BeginArena(double now) {
             for (const MapEnemy& e : map->roster) {
                 if (e.home >= 0) guests += (guests.empty() ? "" : ",") + e.unit_class;
             }
-            director_.emplace(*map, route->enemy_budget, route->difficulty_tier, streams_->director.Next(),
-                              content_->economy().enemy_threat.ForArena(run_.arena_index, route->difficulty_tier));
+            ArenaThreat threat = content_->economy().enemy_threat.ForArena(run_.arena_index, route->difficulty_tier);
+            threat.boss_hp_mult = BossHpMult(map_stage_);
+            director_.emplace(*map, budget, route->difficulty_tier, streams_->director.Next(), threat);
             director_->PickChests(content_->economy().chests.per_arena + run_.character.build.extra_chests);
             run_.arenas.back().budget = director_->budget();  // a boss arena: the boss alone
         }
@@ -1123,6 +1210,7 @@ Result<ArenaResult> RunController::CompleteArena(double now) {
     if (const MapDef* map = content_->FindMapByStage(map_stage_)) {
         result.arena_name = map->name;
         result.boss = map->boss.has_value();
+        if (result.boss) RecordBossBeaten(map_stage_);
     }
     run_.results.push_back(result);
 

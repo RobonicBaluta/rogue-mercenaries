@@ -20,6 +20,7 @@ constexpr struct {
     {ChallengeKind::CreditsEarned, "credits_earned"},
     {ChallengeKind::NoDamageArenas, "no_damage_arenas"},
     {ChallengeKind::SRankArenas, "s_rank_arenas"},
+    {ChallengeKind::BossBeaten, "boss_beaten"},
 };
 
 }  // namespace
@@ -83,6 +84,7 @@ ChallengeProgress CheckChallenge(const Challenge& challenge, const ProfileStats&
         case ChallengeKind::CreditsEarned: current = stats.credits_earned; break;
         case ChallengeKind::NoDamageArenas: current = stats.no_damage_arenas; break;
         case ChallengeKind::SRankArenas: current = stats.s_rank_arenas; break;
+        case ChallengeKind::BossBeaten: current = stats.bosses_beaten.count(challenge.boss) != 0 ? 1 : 0; break;
     }
     p.current = std::clamp<std::int64_t>(current, 0, p.target);
     return p;

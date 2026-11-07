@@ -23,6 +23,10 @@ int DrawArena(Rng& rng, const std::vector<int>& pool, const std::set<int>& avoid
 }  // namespace
 
 RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& arenas, int first) {
+    return GenerateRunMap(content, rng, arenas, first, RunMapPlan{std::max(1, content.economy().run.arena_count), {}, -1});
+}
+
+RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& arenas, int first, const RunMapPlan& plan) {
     const EconomyConfig& eco = content.economy();
     RunMap map;
     std::set<int> tier_set;
@@ -30,7 +34,7 @@ RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& 
         if (Playable(r)) tier_set.insert(r.difficulty_tier);
     }
     const std::vector<int> tiers(tier_set.begin(), tier_set.end());
-    const int layers = std::max(1, eco.run.arena_count);
+    const int layers = std::max(1, plan.layers);
     const int width = std::max(1, eco.run_map.width);
     // Boss arenas only end a run; the other layers draw from the rest.
     std::vector<int> bosses;
@@ -40,7 +44,12 @@ RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& 
         (m != nullptr && m->boss ? bosses : normal).push_back(key);
     }
     if (normal.empty()) normal = arenas;
-    const int fought = !bosses.empty() && layers >= 2 ? layers - 1 : layers;  // layers before the boss
+    // A ladder length names its bosses (in order) and maybe a finale after them.
+    const bool planned = !plan.bosses.empty();
+    if (planned) bosses = plan.bosses;
+    const bool finale = plan.finale >= 0 && !bosses.empty() && layers >= 3;
+    const bool bossLayer = !bosses.empty() && layers >= 2;
+    const int fought = layers - (bossLayer ? 1 : 0) - (finale ? 1 : 0);  // layers before the boss
     // With enemy threat levels a node only gets a map that can field enemies at its level (the
     // first arena: the mildest); failing that, any map.
     auto fitting = [&](int arena, const std::string& route_id) {
@@ -102,7 +111,7 @@ RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& 
         map.layers.push_back(std::move(layer));
     }
 
-    if (fought < layers) {
+    if (bossLayer) {
         // The last layer: distinct boss arenas, every node before leads to all of them, fought
         // as a route of the highest tier.
         std::vector<const RouteDef*> hardest;
@@ -110,7 +119,7 @@ RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& 
             if (Playable(r) && !tiers.empty() && r.difficulty_tier == tiers.back()) hardest.push_back(&r);
         }
         std::vector<int> pool = bosses;
-        rng.Shuffle(pool);
+        if (!planned) rng.Shuffle(pool);
         pool.resize(std::min(pool.size(), static_cast<std::size_t>(width)));
         std::vector<RunMapNode> layer;
         for (const int key : pool) {
@@ -124,6 +133,14 @@ RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& 
             for (std::size_t k = 0; k < layer.size(); ++k) p.next.push_back(static_cast<int>(k));
         }
         map.layers.push_back(std::move(layer));
+        if (finale) {
+            // One more arena after the boss: the finale's boss alone, reached from every boss.
+            RunMapNode node;
+            node.map_key = plan.finale;
+            node.route_id = hardest.empty() ? eco.run.starting_route : hardest[rng.Index(hardest.size())]->id;
+            for (RunMapNode& p : map.layers.back()) p.next = {0};
+            map.layers.push_back({node});
+        }
     }
     return map;
 }

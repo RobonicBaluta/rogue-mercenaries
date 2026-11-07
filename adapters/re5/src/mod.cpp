@@ -206,6 +206,7 @@ struct ModState {
     std::uint64_t seedInput = 0;
     int selectedCharacter = 0;
     std::string selectedSkin;  // skin id for the selected character (empty = default)
+    std::string selectedLength;  // the ladder length of the next run (empty = the first)
     rm::PerkCategory perkCategory = rm::PerkCategory::Style;  // slot opened from the PERKS screen
     std::string diagnosticsResult;
     // Set when any mod code threw; the game keeps running with vanilla rules.
@@ -756,6 +757,54 @@ std::string DurationText(double seconds) {
 
 // RUN RESULTS (M7.3): the last finished run, opened by itself when the game is back at the Play
 // menu and from CREDITS.
+// The ladder's boss of map `key` by its name (maps.json), for the menu.
+std::string LadderBossName(int key) {
+    const rm::MapDef* m = key >= 0 ? g->content->FindMapByStage(key) : nullptr;
+    return m && m->boss ? Plain(m->boss->name) : std::string("a boss");
+}
+
+// RUN LENGTH (the ladder): every length, the open ones to choose; a locked one says which boss
+// opens it.
+nativemenu::Screen RunLengthScreen(rm::RunController& run) {
+    nativemenu::Screen screen;
+    screen.header = "RUN LENGTH";
+    const rm::EconomyConfig::Ladder& ladder = g->content->economy().ladder;
+    for (const auto& v : run.LadderLengths()) {
+        const auto* def = ladder.Find(v.id);
+        nativemenu::Item item;
+        item.label = std::to_string(v.arenas) + " ARENAS   " + Upper(Plain(v.name));
+        item.icon = "flag";
+        if (!v.open || def == nullptr) {
+            item.locked = true;
+            const auto colon = def ? def->unlocked_by.find(':') : std::string::npos;
+            const auto* by = colon == std::string::npos ? nullptr : ladder.Find(def->unlocked_by.substr(0, colon));
+            item.help = by ? "Beat the hard boss of a " + std::to_string(by->arenas) + " arena run to open it." : "Locked.";
+        } else {
+            item.help = "Ends on the " + LadderBossName(def->easy_boss);
+            if (v.hard_open && def->hard_boss >= 0) item.help += " or the " + LadderBossName(def->hard_boss);
+            item.help += ".";
+            if (v.finale_open) item.help += "\nThen one more arena.";
+            else if (!v.hard_open && def->hard_boss >= 0) item.help += "\nBeat it to face a harder boss next time.";
+        }
+        screen.items.push_back(std::move(item));
+    }
+    return screen;
+}
+
+// START RUN: the first arena's map armed for the selected character (the game's flow then starts
+// its match and the run with it, HandleNativeMenu).
+void ArmFirstArena(rm::RunController& run) {
+    if (!g->settings.directStart || !autopilot::Available() || autopilot::Armed()) return;
+    const auto characters = run.Characters();
+    std::int64_t costume = 0;
+    if (g->selectedCharacter >= 0 && g->selectedCharacter < static_cast<int>(characters.size())) {
+        const auto& c = characters[g->selectedCharacter];
+        const rm::SkinAvailability* skin = SelectedSkin(c);
+        costume = std::max<std::int64_t>(skin && skin->costume_index >= 0 ? skin->costume_index : c.costume_index, 0);
+    }
+    ArmMap(PickMap(-1, FirstArenaLevel()), static_cast<int>(costume));
+}
+
 nativemenu::Screen RunResultsScreen(rm::RunController& run) {
     nativemenu::Screen screen;
     const auto& last = run.last_summary();
@@ -879,6 +928,9 @@ private:
                 break;
             case ScreenId::RunResults:
                 screen = RunResultsScreen(run);
+                break;
+            case ScreenId::RunLength:
+                screen = RunLengthScreen(run);
                 break;
             case ScreenId::Characters: {
                 screen.header = "CHARACTERS";
@@ -1191,22 +1243,35 @@ private:
                     --index;
                 }
                 if (index == 0) {
-                    if (g->settings.directStart && autopilot::Available() && !autopilot::Armed()) {
-                        const auto characters = run.Characters();
-                        std::int64_t costume = 0;
-                        if (g->selectedCharacter >= 0 && g->selectedCharacter < static_cast<int>(characters.size())) {
-                            const auto& c = characters[g->selectedCharacter];
-                            const rm::SkinAvailability* skin = SelectedSkin(c);
-                            costume = std::max<std::int64_t>(skin && skin->costume_index >= 0 ? skin->costume_index : c.costume_index, 0);
-                        }
-                        ArmMap(PickMap(-1, FirstArenaLevel()), static_cast<int>(costume));
+                    // The ladder: with more than one length open, RUN LENGTH picks it.
+                    const auto lengths = run.LadderLengths();
+                    const auto open = std::count_if(lengths.begin(), lengths.end(), [](const auto& l) { return l.open; });
+                    if (open > 1) {
+                        d.outcome = Outcome::Push;
+                        d.next = ScreenId::RunLength;
+                        break;
                     }
+                    const auto first = std::find_if(lengths.begin(), lengths.end(), [](const auto& l) { return l.open; });
+                    g->selectedLength = first == lengths.end() ? std::string() : first->id;
+                    ArmFirstArena(run);
                     d.outcome = Outcome::StartRun;
                 } else {
                     d.outcome = Outcome::Push;
                     d.next = index == 1 ? ScreenId::Characters : index == 2 ? ScreenId::Perks : ScreenId::Credits;
                 }
                 break;
+            case ScreenId::RunLength: {
+                const auto lengths = run.LadderLengths();
+                if (index < 0 || index >= static_cast<int>(lengths.size())) break;
+                if (!lengths[static_cast<std::size_t>(index)].open) {
+                    d.outcome = Outcome::Denied;
+                    break;
+                }
+                g->selectedLength = lengths[static_cast<std::size_t>(index)].id;
+                ArmFirstArena(run);
+                d.outcome = Outcome::StartRun;
+                break;
+            }
             case ScreenId::Characters: {
                 const auto characters = run.Characters();
                 if (index < 0 || index >= static_cast<int>(characters.size())) break;
@@ -1454,12 +1519,18 @@ void HandleNativeMenu(double now) {
     QueryPerformanceCounter(&counter);
     const auto seed = static_cast<std::uint64_t>(counter.QuadPart) ^ 0x9E3779B97F4A7C15ull;
     run.SetArenaPool(RotationMaps(), CurrentMapKey());  // the run map starts where the match is
-    const rm::Status status =
-        run.StartRun(g->match.localCharacter, seed, SkinForRun(run.Characters(), g->match.localCharacter));
+    const rm::Status status = run.StartRun(g->match.localCharacter, seed, SkinForRun(run.Characters(), g->match.localCharacter),
+                                           g->selectedLength);
     Report(status, ("start run (" + g->match.localCharacter + ")").c_str());
     if (!status.ok()) {
         g->toasts.Push("Rogue Mercenaries: " + status.message);
         return;
+    }
+    if (g->content->economy().ladder.enabled) {
+        std::string beaten;
+        for (const std::string& key : run.profile().stats.bosses_beaten) beaten += (beaten.empty() ? "" : ", ") + key;
+        RM_LOGI("ladder: %s run, %d arenas; bosses beaten: %s", run.state().length_id.c_str(), run.state().arena_count,
+                beaten.empty() ? "none" : beaten.c_str());
     }
     LogRunMap();
     for (const auto& perk : g->settings.devGrantPerks) {

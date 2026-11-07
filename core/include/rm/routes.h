@@ -70,6 +70,16 @@ struct RunMap {
 /// with a route of the highest tier.
 RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& arenas, int first);
 
+/// A run's shape from its ladder length (EconomyConfig::Ladder): `layers` arenas in all, its last
+/// fought layer exactly `bosses` (in this order: the easy one, then the hard one when open), and
+/// when `finale` >= 0 one more layer after them with that boss map alone.
+struct RunMapPlan {
+    int layers = 4;
+    std::vector<int> bosses;
+    int finale = -1;
+};
+RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& arenas, int first, const RunMapPlan& plan);
+
 /// Rolls the curses of route choices: a choice whose route has curse_chance may carry one curse
 /// accepted by `curse_allowed`, different from the other choices' curses.
 void RollRouteCurses(const Content& content, Rng& rng, std::vector<RouteChoice>& choices,

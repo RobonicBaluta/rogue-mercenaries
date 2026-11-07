@@ -181,6 +181,44 @@ struct EconomyConfig {
         int start = 0;
         int max = 9;
     } keys;
+
+    /// The run lengths a player climbs (the user's ladder, 2026-11-07). A length first ends on its
+    /// easy boss; beating it adds the hard one as a choice; beating the hard one unlocks the length
+    /// whose `unlocked_by` names it. The finale is one more arena after its `after` length, once every
+    /// key of its `unlocked_by` is beaten. Keys: "<length id>:easy", "<length id>:hard", "finale"
+    /// (ProfileStats::bosses_beaten). Arenas from `growth_from_arena` on get harder a step each.
+    /// Disabled: runs are run.arena_count long and end on any boss map.
+    struct Ladder {
+        bool enabled = false;
+        struct Length {
+            std::string id;
+            std::string name;
+            int arenas = 4;          // the boss arena included
+            int easy_boss = -1;      // boss map keys (maps.json "stage" of a map with a boss)
+            int hard_boss = -1;      // -1: none
+            std::string unlocked_by;  // a beaten key; empty: open from the start
+            double boss_hp_mult = 1.0;
+        };
+        std::vector<Length> lengths;
+        struct Finale {
+            int boss = -1;  // -1: none
+            std::string after;
+            std::vector<std::string> unlocked_by;
+            double boss_hp_mult = 1.0;
+        } finale;
+        int growth_from_arena = 5;
+        double incoming_per_arena = 0.0;   // enemies hit harder by this much a step
+        double toughness_per_arena = 0.0;  // the player's damage is divided by 1 + this a step
+        int budget_per_arena = 0;          // more enemies a step
+        [[nodiscard]] const Length* Find(std::string_view id) const {
+            for (const Length& l : lengths) {
+                if (l.id == id) return &l;
+            }
+            return nullptr;
+        }
+        /// Steps of growth at `arena` (1-based): 0 before growth_from_arena.
+        [[nodiscard]] int Steps(int arena) const { return enabled && arena >= growth_from_arena ? arena - growth_from_arena + 1 : 0; }
+    } ladder;
 };
 
 /// Grades an arena: time points (2/1/0 vs par) + damage points (2 no damage, 1 low, 0).

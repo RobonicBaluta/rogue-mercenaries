@@ -76,6 +76,8 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
     const RouteDef* route = Route();
     OutgoingBreakdown& b = out.breakdown;
     b.route_mult = route != nullptr ? route->modifiers.outgoing_damage_mult : 1.0;
+    // A long run's later arenas: tougher enemies (EconomyConfig::Ladder).
+    b.route_mult /= 1.0 + eco.ladder.toughness_per_arena * eco.ladder.Steps(run_.arena_index);
 
     std::optional<double> target_fraction;
     if (hit.target_hp && hit.target_hp_max && *hit.target_hp_max > 0.0) {
@@ -225,7 +227,8 @@ IncomingResult RunController::ComputeIncoming(const IncomingContext& incoming) {
         }
     }
     out.raw_multiplier =
-        (route != nullptr ? route->modifiers.incoming_damage_mult : 1.0) * std::max(0.0, 1.0 + bonus);
+        (route != nullptr ? route->modifiers.incoming_damage_mult : 1.0) * std::max(0.0, 1.0 + bonus) *
+        (1.0 + eco.ladder.incoming_per_arena * eco.ladder.Steps(run_.arena_index));  // a long run's later arenas
     out.multiplier = std::clamp(out.raw_multiplier, eco.damage.incoming_min, eco.damage.incoming_max);
 
     const double final_damage = incoming.amount * out.multiplier;

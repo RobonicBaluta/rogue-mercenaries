@@ -408,6 +408,23 @@ open('configs/weapons.json', 'a').write('\n')
 # kills: at 15 two sessions dropped 50 keys for 17 chests (the user, 2026-11-07: too many).
 e = json.load(open('configs/economy.json'))
 e['keys'] = {'enabled': True, 'drop_chance': 0.08, 'classes': ['uEm1'], 'start': 0, 'max': 9}
+# The ladder (the user, 2026-11-07): 4 arenas ending on Uroboros; beating him adds Giant Uroboros
+# as a choice; beating that opens 8 arenas (the same two bosses, tougher, until more bosses work),
+# its later arenas harder a step each from the fifth. The 12-arena length (Uroboros Wesker) and the
+# 13th arena (Midnight Wesker) wait for the Wesker fights (uEm82/uEm81 do not die at zero health).
+e['ladder'] = {
+    '_comment': 'Run lengths (EconomyConfig::Ladder, written by scripts/write_perks.py). A length ends on its easy boss until it is beaten, then on a choice of easy or hard; beating the hard one opens the length whose unlocked_by names it. From growth_from_arena on, each arena adds budget_per_arena enemies, incoming_per_arena damage taken and toughness_per_arena (the player\'s damage divided by 1 + it) per step.',
+    'enabled': True,
+    'lengths': [
+        {'id': 'short', 'name': 'Short', 'arenas': 4, 'easy_boss': 103, 'hard_boss': 304},
+        {'id': 'long', 'name': 'Long', 'arenas': 8, 'easy_boss': 103, 'hard_boss': 304,
+         'unlocked_by': 'short:hard', 'boss_hp_mult': 1.3},
+    ],
+    'growth_from_arena': 5,
+    'incoming_per_arena': 0.08,
+    'toughness_per_arena': 0.05,
+    'budget_per_arena': 3,
+}
 json.dump(e, open('configs/economy.json', 'w'), indent=2)
 open('configs/economy.json', 'a').write('\n')
 print('perks', len(perks), 'written; characters, loadouts, weapons, economy aligned')

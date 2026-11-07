@@ -27,6 +27,9 @@ struct ProfileStats {
     std::int64_t no_damage_arenas = 0;  // arenas cleared without taking damage
     std::int64_t s_rank_arenas = 0;     // arenas rated S
     StringMap<std::int64_t> runs_completed_as;  // completed runs per character id
+    /// Bosses beaten (the ladder, 2026-11-07): "<length id>:easy", "<length id>:hard", "finale",
+    /// and "boss:<class>" for the boss itself (challenges that unlock characters and skins).
+    StringSet bosses_beaten;
 };
 
 /// Snapshot of the run in progress, saved at StartRun and after each arena so earned credits

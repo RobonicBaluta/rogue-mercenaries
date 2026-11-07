@@ -147,6 +147,7 @@ struct RunState {
     std::uint64_t seed = 0;
     std::string character_id;
     std::string skin_id;
+    std::string length_id;   // the ladder length (EconomyConfig::Ladder; empty without one)
     CharacterDef character;  // the character with the skin applied
     Loadout loadout;
     std::vector<ItemGrant> item_grants;  // earned, not yet handed to the adapter
