@@ -540,6 +540,15 @@ TEST_CASE("melee kills raise run stats up to their caps, and the new stats work"
                                                         {"melee_kill_caps", {{"supplies", 0.5}}}})));
     meleeKills(supplies);
     CHECK(supplies.rc.state().stats.supplies == Catch::Approx(0.5));
+    // A stat that reached its cap is never rolled again, even when its steps add up to a hair
+    // under it (0.15 three times is 0.44999999999999996): a cap of 0.45 takes three gains, not a
+    // fourth of nothing (Excella's healing, 0.05 ten times, rolled once more for +0.00, user
+    // playtest 2026-11-07).
+    test::Harness exact(test::Load(BuildSources(json{{"melee_kill_stats", {{"defense", 0.15}}},
+                                                     {"melee_kill_caps", {{"defense", 0.45}}}})));
+    meleeKills(exact);
+    CHECK(exact.rc.state().stats.defense == Catch::Approx(0.45));
+    CHECK(exact.rc.state().stats.gains == 3);
 }
 
 namespace {

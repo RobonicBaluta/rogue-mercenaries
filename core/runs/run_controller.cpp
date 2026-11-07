@@ -1211,12 +1211,14 @@ double RunStats::Get(std::string_view stat) const {
 void RunController::ApplyBuildKill(const KillEvent& kill, KillOutcome& out) {
     const SkinBuild& build = run_.character.build;
     // A melee kill adds a random stat for the rest of the run (Excella): one below its cap (in a
-    // stable order, so a seed rolls the same), up to the cap.
+    // stable order, so a seed rolls the same), up to the cap. "Below" leaves out a hair under it:
+    // steps that add up just short of the cap (0.05 ten times) left a stat open for a gain of nothing.
+    constexpr double kCapTolerance = 1e-9;
     if (kill.was_melee.value_or(false) && !build.melee_kill_stats.empty()) {
         std::vector<std::pair<std::string, double>> open;
         for (const auto& [stat, amount] : build.melee_kill_stats) {
             const auto cap = build.melee_kill_caps.find(stat);
-            if (cap == build.melee_kill_caps.end() || run_.stats.Get(stat) < cap->second) open.emplace_back(stat, amount);
+            if (cap == build.melee_kill_caps.end() || run_.stats.Get(stat) < cap->second - kCapTolerance) open.emplace_back(stat, amount);
         }
         std::sort(open.begin(), open.end());
         if (!open.empty()) {
