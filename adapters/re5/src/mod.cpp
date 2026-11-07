@@ -2241,6 +2241,9 @@ struct StuckTrack {
     double anchorAt = 0.0;
     double lastRescue = -1.0e9;
     bool seenNoted = false;   // "in the player's sight" logged since anchorAt
+    bool warped = false;      // moved, and not yet seen leaving the point it was moved to
+    float warpedFrom[3] = {};
+    int failedWarps = 0;      // moves it came straight back from
 };
 
 bool PlayerFacing(std::uintptr_t player, float& fx, float& fz);
@@ -2291,6 +2294,7 @@ constexpr float kStuckFar = 900.0f;            // ... while farther than this fr
 constexpr int kLastEnemies = 3;
 constexpr double kLastEnemiesQuiet = 25.0;     // no kill for this long ...
 constexpr float kLastEnemiesFar = 1500.0f;     // ... and this far: pulled in
+constexpr int kFailedWarpsToFinish = 2;        // one of the last back where it was after this many moves: finished
 
 void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& player) {
     rm::RunController& run = *g->run;
@@ -2315,6 +2319,31 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
         const float moved = std::sqrt(std::pow(pos[0] - t.anchor[0], 2.0f) + std::pow(pos[1] - t.anchor[1], 2.0f) +
                                       std::pow(pos[2] - t.anchor[2], 2.0f));
         const float away = static_cast<float>(std::sqrt(std::pow(pos[0] - (*player)[0], 2.0) + std::pow(pos[2] - (*player)[2], 2.0)));
+        if (t.warped && moved > kStuckMove) {
+            // It left the point it was moved to: straight back where it was, the move did not
+            // take. A Licker (uEm32) in a campaign area went back to the same spot after every
+            // move (8 position copies written, 10 for a Majini), the last enemy 51 m away, and
+            // the arena never ended (user playtest 2026-11-05, stage 310).
+            t.warped = false;
+            const float back = std::sqrt(std::pow(pos[0] - t.warpedFrom[0], 2.0f) + std::pow(pos[1] - t.warpedFrom[1], 2.0f) +
+                                         std::pow(pos[2] - t.warpedFrom[2], 2.0f));
+            if (back < kStuckMove) {
+                ++t.failedWarps;
+                RM_LOGI("director: %s is back at %.0f %.0f %.0f after its move (%d)", engine::ClassName(unit).c_str(), pos[0], pos[1],
+                        pos[2], t.failedWarps);
+            }
+        }
+        if (t.failedWarps >= kFailedWarpsToFinish && remaining <= kLastEnemies && unit != g->boss.unit && now - t.lastRescue >= 5.0) {
+            // One of the last that cannot be moved and has not come to the player: finished, so
+            // the arena can end (counted like any death, DetectEnemyDeaths). Never a boss.
+            const bool done = director::Damage(unit, hp->hp);
+            RM_LOGI("director: %s cannot be moved (back at %.0f %.0f %.0f after %d moves), %.0f m from the player, %d left; %s",
+                    engine::ClassName(unit).c_str(), pos[0], pos[1], pos[2], t.failedWarps, away / 100.0f, remaining,
+                    done ? "finished so the arena can end" : "its damage was refused");
+            t.failedWarps = done ? 0 : t.failedWarps;
+            t.lastRescue = now;
+            continue;
+        }
         const bool boss = unit == g->boss.unit;
         if (boss) {
             static double loggedAt = -1.0e9;
@@ -2364,7 +2393,11 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
         RM_LOGI("director: %s %s %.0f s at %.0f %.0f %.0f, %.0f m from the player; moved to %.0f %.0f %.0f (%d copies)",
                 engine::ClassName(unit).c_str(), straggler && !stuck ? "one of the last, quiet" : "stuck", now - t.anchorAt,
                 pos[0], pos[1], pos[2], away / 100.0f, dest[0], dest[1], dest[2], copies);
-        for (int k = 0; k < 3; ++k) t.anchor[k] = dest[k];
+        for (int k = 0; k < 3; ++k) {
+            t.warpedFrom[k] = pos[k];
+            t.anchor[k] = dest[k];
+        }
+        t.warped = copies > 0;
         t.anchorAt = now;
         t.lastRescue = now;
     }
