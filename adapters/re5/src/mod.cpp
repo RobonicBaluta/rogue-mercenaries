@@ -500,15 +500,34 @@ std::vector<int> RotationMaps() {
 
 int g_forcedNextMap = -1;  // developer "nextmap": the next pick
 
+// The first arena's enemy threat level (economy enemy_threat; 0 without levels).
+int FirstArenaLevel() {
+    const rm::EconomyConfig& eco = g->content->economy();
+    const rm::RouteDef* route = g->content->FindRoute(eco.run.starting_route);
+    return eco.enemy_threat.Level(1, route != nullptr ? route->difficulty_tier : 1);
+}
+
 // A random map of the rotation other than `avoid`; never a boss arena (M6: those end a run's
-// map).
-int PickMap(int avoid) {
+// map). With `level` (> 0), only maps whose mildest normal enemy is at or under it, as the run
+// map draws its own (rm::GenerateRunMap); the run map takes the menu's first map as given, and
+// Experimental Facility (only uEm14 with level-3 arms) opened a run at level 1 with six of them
+// (user playtest 2026-11-07, Excella).
+int PickMap(int avoid, int level = 0) {
     if (g_forcedNextMap >= 0) return std::exchange(g_forcedNextMap, -1);
     std::vector<int> keys = RotationMaps();
     std::erase_if(keys, [](int key) {
         const rm::MapDef* m = g->content->FindMapByStage(key);
         return m != nullptr && m->boss.has_value();
     });
+    if (level > 0) {
+        const rm::ThreatTable& table = g->content->economy().enemy_threat.table;
+        std::vector<int> fitting;
+        for (const int key : keys) {
+            const rm::MapDef* m = g->content->FindMapByStage(key);
+            if (m == nullptr || table.Lowest(*m) <= level) fitting.push_back(key);
+        }
+        if (!fitting.empty()) keys = std::move(fitting);
+    }
     if (keys.size() > 1) std::erase(keys, avoid);
     LARGE_INTEGER counter{};
     QueryPerformanceCounter(&counter);
@@ -1140,7 +1159,7 @@ private:
                             const rm::SkinAvailability* skin = SelectedSkin(c);
                             costume = std::max<std::int64_t>(skin && skin->costume_index >= 0 ? skin->costume_index : c.costume_index, 0);
                         }
-                        ArmMap(PickMap(-1), static_cast<int>(costume));
+                        ArmMap(PickMap(-1, FirstArenaLevel()), static_cast<int>(costume));
                     }
                     d.outcome = Outcome::StartRun;
                 } else {
