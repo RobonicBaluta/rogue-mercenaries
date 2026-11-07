@@ -356,9 +356,18 @@ std::uintptr_t ItemRecord(std::uint32_t id) {
     return table ? table + (id & 0xFF) * 0x48 : 0;
 }
 
+// A gun's record: kind 3 (dword 12), or no stack maximum (dword 8 = -1) with a magazine (dword 2).
+// The flamethrower (0x0121) is kind 0 with a "magazine" of 100 (its fuel): as an item it was made
+// a stack of one, its fuel 1 and no grid cell (2026-11-07). The knife and bare hands are no guns.
+bool IsWeaponRecord(std::uintptr_t record, std::uint32_t id) {
+    if (!record || id == re5::addr::kItemUnarmed || id == re5::addr::kItemKnife) return false;
+    if (ReadOr<std::int32_t>(record + 0x30, 0) == 3) return true;
+    return (id >> 8) == 1 && ReadOr<std::int32_t>(record + 0x20, 0) == -1 && ReadOr<std::int32_t>(record + 8, 0) > 1;
+}
+
 int ItemStackMax(std::uint32_t id) {
     const auto record = ItemRecord(id);
-    if (!record || ReadOr<std::int32_t>(record + 0x30, 0) == 3) return 0;  // weapons do not stack
+    if (!record || IsWeaponRecord(record, id)) return 0;  // weapons do not stack
     return std::max(1, ReadOr<std::int32_t>(record + 0x20, 1));
 }
 
@@ -380,7 +389,7 @@ void ApplyBuildStacks() {
     const rm::SkinBuild& build = g->run->state().character.build;
     auto apply = [](std::uint32_t id, auto&& wanted) {
         const auto record = ItemRecord(id);
-        if (!record || ReadOr<std::int32_t>(record + 0x30, 0) == 3) return;
+        if (!record || IsWeaponRecord(record, id)) return;
         const auto current = ReadOr<std::int32_t>(record + 0x20, 0);
         if (!g_stackOriginal.count(id)) g_stackOriginal[id] = current;
         const int max = wanted(g_stackOriginal[id]);
@@ -1576,11 +1585,11 @@ int GiveItem(const char* source, std::int64_t gameItem, int count) {
                                                  int a8, int a9, std::uintptr_t player, int position, int zero);
     const auto addToStacks = reinterpret_cast<AddFn>(re5::addr::kFnInventoryAddToStacks);
     const auto create = reinterpret_cast<CreateFn>(re5::addr::kFnInventoryCreate);
-    // Weapons (item kind 3) do not stack: one record, loaded with a full magazine (the
-    // record's count is the ammo in the gun).
+    // Weapons (IsWeaponRecord: kind 3, or the flamethrower) do not stack: one record, loaded with
+    // a full magazine (the record's count is the ammo in the gun, the flamethrower's fuel).
     const auto table = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + ((id >> 8) & 0xFF) * 4, 0);
     const auto record = table ? table + (id & 0xFF) * 0x48 : 0;
-    if (record && ReadOr<std::int32_t>(record + 0x30, 0) == 3) {
+    if (IsWeaponRecord(record, static_cast<std::uint32_t>(id))) {
         if (stack) {
             // Already held (e.g. a build's starting gun the costume carries too): never a second one.
             RM_LOGI("%s: weapon %04X is already held, not created again", source, id);
@@ -1591,9 +1600,29 @@ int GiveItem(const char* source, std::int64_t gameItem, int count) {
             RM_LOGW("%s: weapon %04X is not loaded for this character, not created", source, id);
             return 0;
         }
+        // A gun needs a grid cell to be picked: the game files some (the flamethrower) in a cell of
+        // their own outside the grid (0xA; seen 2026-11-07: never selectable, its fuel untouched).
+        int freeCell = -1;
+        {
+            const auto grid = ReadGrid();
+            for (int c = 0; c < kGridCells && freeCell < 0; ++c) {
+                if (!grid[static_cast<std::size_t>(c)].record) freeCell = c;
+            }
+        }
+        if (freeCell < 0) {
+            RM_LOGI("%s: weapon %04X not created: no free cell in the grid", source, id);
+            return 0;
+        }
         const int magazine = std::max(1, ReadOr<std::int32_t>(record + 8, 1));
         const auto made = create(inventory, id, magazine, -1, -1, -1, 0xD, 0, 0, 0, 0, 0, 0, 0, 0, 0, player, 0, 0);
         RM_LOGI("%s: weapon %04X created with %d rounds -> %s", source, id, magazine, made ? "ok" : "no slot");
+        if (made) {
+            const int cell = ReadOr<std::int32_t>(made + kSlotCell, -1);
+            if (cell < 0 || cell >= kGridCells) {
+                SafeStore<std::int32_t>(made + kSlotCell, freeCell);
+                RM_LOGI("%s: weapon %04X came in cell %d, outside the grid; moved to cell %d", source, id, cell, freeCell + 1);
+            }
+        }
         return made ? 1 : 0;
     }
     // Top up existing stacks first; whatever does not fit goes into new slots (one unit each,
@@ -1826,9 +1855,50 @@ int RemoveItemRecords(std::uint32_t id) {
     return removed;
 }
 
-bool IsWeaponItem(std::uint32_t id) {
-    const auto record = ItemRecord(id);
-    return record && ReadOr<std::int32_t>(record + 0x30, 0) == 3;
+bool IsWeaponItem(std::uint32_t id) { return IsWeaponRecord(ItemRecord(id), id); }
+
+// The flamethrower's fuel (its record's count, up to its magazine of 100) comes back by itself in
+// a run: Mercenaries has no gas pumps to refill it at (the user, 2026-11-07). After it has not
+// been fired for kRefuelDelay, kRefuelPerSecond a second.
+constexpr std::uint32_t kItemFlamethrower = 0x0121;
+constexpr double kRefuelDelay = 1.5;
+constexpr double kRefuelPerSecond = 5.0;  // empty to full in 20 s
+
+void RefuelFlamethrower(double now) {
+    static int lastCount = -1;
+    static double lastFiredAt = 0.0, lastTickAt = 0.0, owed = 0.0;
+    const auto player = engine::LocalPlayer();
+    if (!player || !g->match.inMatch || !g->run->HasActiveRun() || g->run->phase() != rm::Phase::ArenaActive) {
+        lastCount = -1;
+        return;
+    }
+    if (now - lastTickAt < 0.5) return;
+    const double dt = std::min(1.0, now - lastTickAt);
+    lastTickAt = now;
+    const auto inv = player + re5::off::kPlayerInventory;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        if (ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != kItemFlamethrower) continue;
+        const int count = ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0);
+        const auto record = ItemRecord(kItemFlamethrower);
+        const int full = std::max(1, record ? ReadOr<std::int32_t>(record + 8, 100) : 100);
+        if (lastCount >= 0 && count < lastCount) {
+            lastFiredAt = now;
+            owed = 0.0;
+        }
+        lastCount = count;
+        if (count >= full || now - lastFiredAt < kRefuelDelay) return;
+        owed += kRefuelPerSecond * dt;
+        const int add = std::min(full - count, static_cast<int>(owed));
+        if (add <= 0) return;
+        owed -= add;
+        SafeStore<std::int32_t>(slot + re5::off::kSlotCount, count + add);
+        lastCount = count + add;
+        if (count + add >= full) RM_LOGI("flamethrower: fuel back to %d", full);
+        return;
+    }
+    lastCount = -1;
 }
 
 // The rounds in a held gun (its record's count).
@@ -5953,6 +6023,15 @@ void PollDevCommand(double now) {
             const int left = fn(player + re5::off::kPlayerInventory, item, count);
             RM_LOGW("dev %s item %04X x%d -> %d not placed", command[0] == 'g' ? "give" : "ammo", item, count, left);
         }
+    } else if (command.rfind("obtain ", 0) == 0) {
+        // "obtain <hex item> [count]": as a shop purchase or a reward hands it over (GiveOrStash:
+        // the grid, a gun in a grid cell, what does not fit to the run's storage).
+        std::istringstream words(command.substr(7));
+        std::string idText;
+        int count = 1;
+        words >> idText >> count;
+        const auto item = static_cast<std::int64_t>(std::strtoul(idText.c_str(), nullptr, 16));
+        RM_LOGW("dev obtain %04X x%d -> %d", static_cast<unsigned>(item), count, GiveOrStash("dev obtain", item, count));
     } else if (command.rfind("create ", 0) == 0) {
         // "create <hex item> <count> [position] [hex flags]": a new inventory slot through the
         // game's own creator, as PickUpItem calls it (flags 0xD = find a free slot).
@@ -6231,6 +6310,7 @@ private:
         WatchEquippedWeapon(now);
         SampleHitStates(now);
         ApplyMoveSpeed();
+        RefuelFlamethrower(now);
         // A match a run played in stays a run's match until it is gone, so quitting it writes no
         // save even if the run is settled first.
         static bool runMatch = false;

@@ -192,7 +192,8 @@
       "category": "flamethrower",
       "base_damage_mult": 1.0,
       "unlock_cost_credits": 300,
-      "game_item": 289
+      "game_item": 289,
+      "enabled": false
     }
   ],
   "affixes": [

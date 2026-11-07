@@ -391,6 +391,14 @@ for extra in WEAPON_EXTRA:
         w['weapons'].append(extra)
     elif 'unlock_cost_credits' not in extra:
         known[0].pop('unlock_cost_credits', None)
+# Off until its flame works on the run's stages: in game (2026-11-07, scripts/test_flamethrower.sh)
+# it aims and burns fuel but only its pilot light shows, no stream and no damage.
+WEAPON_OFF = {'flamethrower'}
+for wd in w['weapons']:
+    if wd['id'] in WEAPON_OFF:
+        wd['enabled'] = False
+    else:
+        wd.pop('enabled', None)
 for wd in w['weapons']:
     if wd['id'] in ids:
         wd['game_item'] = ids[wd['id']]
