@@ -2337,6 +2337,30 @@ bool OpenToPlayer(const std::array<double, 3>& player, const std::array<double, 
     return !hit || !hit->Blocked();
 }
 std::unordered_map<std::uintptr_t, StuckTrack> g_stuckTracks;
+// Spots where an enemy stood stuck this match. On the Port (stage 204, floors at about 1, 3.6,
+// 4.3 and 7 m) the same few dead ends caught one enemy after another, some of them right at a
+// director point, and some 94 moves in two arenas did not end it (user playtest 2026-11-07): no
+// enemy is moved to, nor preferably spawned at, a point near one.
+std::vector<std::array<double, 3>> g_trapSpots;
+constexpr double kTrapRadius = 400.0;  // 4 m
+constexpr double kSameFloor = 250.0;   // 2.5 m: the player's floor
+constexpr std::size_t kMaxTrapSpots = 64;
+
+bool NearTrap(const std::array<double, 3>& p) {
+    for (const auto& t : g_trapSpots) {
+        const double dx = p[0] - t[0], dy = p[1] - t[1], dz = p[2] - t[2];
+        if (dx * dx + dy * dy + dz * dz < kTrapRadius * kTrapRadius) return true;
+    }
+    return false;
+}
+
+void NoteTrap(const float pos[3], const std::string& cls) {
+    const std::array<double, 3> at = {pos[0], pos[1], pos[2]};
+    if (NearTrap(at) || g_trapSpots.size() >= kMaxTrapSpots) return;
+    g_trapSpots.push_back(at);
+    RM_LOGI("director: %s stuck at %.0f %.0f %.0f; no enemy goes within 4 m of it this match (%zu such spots)", cls.c_str(), pos[0],
+            pos[1], pos[2], g_trapSpots.size());
+}
 double g_stuckCheckAt = 0.0;
 int g_stuckRemaining = -1;
 double g_stuckRemainingSince = 0.0;
@@ -2435,10 +2459,21 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
             }
             continue;
         }
-        const auto to = run.DirectorRelocate(id, player, [&](const std::array<double, 3>& p) {
-            const float at[3] = {static_cast<float>(p[0]), static_cast<float>(p[1]), static_cast<float>(p[2])};
-            return !PlayerMaySee(local, *player, at) && (!boss || OpenToPlayer(*player, p));
-        });
+        if (stuck) NoteTrap(pos, engine::ClassName(unit));
+        // Out of his sight, never near a spot one stood stuck at, and his own floor first (as a
+        // boss's spawn): from another floor it often found no way down to him.
+        // Failing those, anywhere out of his sight, as before.
+        auto accept = [&](bool sameFloor, bool avoidTraps) {
+            return [&, sameFloor, avoidTraps](const std::array<double, 3>& p) {
+                const float at[3] = {static_cast<float>(p[0]), static_cast<float>(p[1]), static_cast<float>(p[2])};
+                if (PlayerMaySee(local, *player, at) || (avoidTraps && NearTrap(p))) return false;
+                if (boss && !OpenToPlayer(*player, p)) return false;
+                return !sameFloor || std::fabs(p[1] - (*player)[1]) <= kSameFloor;
+            };
+        };
+        auto to = run.DirectorRelocate(id, player, accept(true, true));
+        if (!to) to = run.DirectorRelocate(id, player, accept(false, true));
+        if (!to) to = run.DirectorRelocate(id, player, accept(false, false));
         if (!to) {
             t.lastRescue = now - 10.0;  // no point out of sight now: again in 5 s
             continue;
@@ -2575,6 +2610,7 @@ void DriveDirector(double now) {
         g->directorUnits.clear();
         g->boss = {};
         g_stuckTracks.clear();
+        g_trapSpots.clear();
         g_stuckRemaining = -1;
     }
     if (!run.DirectorActive() || run.phase() != rm::Phase::ArenaActive || g->devQuiet) return;
@@ -2609,8 +2645,9 @@ void DriveDirector(double now) {
                                        ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f)};
     }
     // A boss comes from a point with nothing between it and the player, when the map has one.
-    rm::Director::PointFilter prefer;
-    if (bossArena && player) prefer = [&](const std::array<double, 3>& p) { return OpenToPlayer(*player, p); };
+    // Never preferably near a spot an enemy stood stuck at this match (g_trapSpots).
+    rm::Director::PointFilter prefer = [](const std::array<double, 3>& p) { return !NearTrap(p); };
+    if (bossArena && player) prefer = [&](const std::array<double, 3>& p) { return OpenToPlayer(*player, p) && !NearTrap(p); };
     for (const rm::SpawnRequest& r : run.DirectorTick(now, player, prefer)) {
         director::SpawnSpec spec;
         spec.unitClass = r.unit_class;
