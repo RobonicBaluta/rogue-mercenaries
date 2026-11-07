@@ -431,6 +431,8 @@ private:
     [[nodiscard]] bool Beaten(std::string_view key) const;
     [[nodiscard]] bool LengthOpen(const EconomyConfig::Ladder::Length& length) const;
     [[nodiscard]] bool FinaleOpen(const EconomyConfig::Ladder::Length& length) const;
+    /// What these first-time ladder keys opened (the run's results).
+    [[nodiscard]] std::vector<LadderUnlock> LadderUnlocksFor(const std::vector<std::string>& fresh_keys) const;
     [[nodiscard]] double BossHpMult(int map_key) const;
     /// A boss arena cleared: its ladder key, and its class, into the profile's bosses beaten.
     void RecordBossBeaten(int map_key);

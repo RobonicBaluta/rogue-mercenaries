@@ -102,6 +102,19 @@ struct ArenaResult {
     bool boss = false;       // a boss arena
 };
 
+/// What a run's first win over a ladder boss opened (EconomyConfig::Ladder), for its results.
+struct LadderUnlock {
+    enum class Kind {
+        HardBoss,  // the length's hard boss is now a choice at its end
+        Length,    // a length opened
+        Finale,    // the finale arena follows its length now
+    };
+    Kind kind = Kind::HardBoss;
+    std::string length_id;  // the length it concerns
+    int arenas = 0;         // that length's arenas (without the finale)
+    int boss = -1;          // the boss map it brings: the hard boss, the length's easy boss, the finale's
+};
+
 struct RunSummary {
     std::string run_id;
     std::string character_id;
@@ -123,6 +136,7 @@ struct RunSummary {
     double time_seconds = 0.0;    // time spent in arenas, the one a failed run ended in included
     int previous_best_arena = 0;  // the profile's record before this run was banked
     std::vector<std::string> unlocked;  // characters and skins whose challenge this run met
+    std::vector<LadderUnlock> ladder_unlocks;  // what the run's boss wins opened, in ladder order
     std::string final_arena;  // the map the run ended on (where the player died), empty when unknown
 };
 
@@ -148,6 +162,7 @@ struct RunState {
     std::string character_id;
     std::string skin_id;
     std::string length_id;   // the ladder length (EconomyConfig::Ladder; empty without one)
+    std::vector<std::string> bosses_beaten_new;  // ladder keys this run beat for the first time
     CharacterDef character;  // the character with the skin applied
     Loadout loadout;
     std::vector<ItemGrant> item_grants;  // earned, not yet handed to the adapter

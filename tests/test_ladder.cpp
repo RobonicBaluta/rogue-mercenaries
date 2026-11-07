@@ -95,7 +95,14 @@ TEST_CASE("the ladder: easy boss first, then a choice, the hard one opening the 
     double t = 0.0;
     CHECK(PlayToBoss(h, 0, t) == "uEm40@200");
     REQUIRE(h.rc.ContinueToRewards().ok());
-    REQUIRE(h.rc.EndRun().ok());
+    const auto first = h.rc.EndRun();
+    REQUIRE(first.ok());
+    // The results say what opened: the giant as a choice at the end of a short run.
+    REQUIRE(first.value().ladder_unlocks.size() == 1);
+    CHECK(first.value().ladder_unlocks[0].kind == LadderUnlock::Kind::HardBoss);
+    CHECK(first.value().ladder_unlocks[0].length_id == "short");
+    CHECK(first.value().ladder_unlocks[0].arenas == 3);
+    CHECK(first.value().ladder_unlocks[0].boss == 201);
     CHECK(h.rc.profile().stats.bosses_beaten.count("short:easy") == 1);
     CHECK(h.rc.profile().stats.bosses_beaten.count("boss:uEm40") == 1);
     lengths = h.rc.LadderLengths();
@@ -109,7 +116,13 @@ TEST_CASE("the ladder: easy boss first, then a choice, the hard one opening the 
     CHECK(h.rc.state().run_map.layers.back()[1].map_key == 201);
     CHECK(PlayToBoss(h, 1, t) == "uEm43@201");
     REQUIRE(h.rc.ContinueToRewards().ok());
-    REQUIRE(h.rc.EndRun().ok());
+    const auto second = h.rc.EndRun();
+    REQUIRE(second.ok());
+    REQUIRE(second.value().ladder_unlocks.size() == 1);
+    CHECK(second.value().ladder_unlocks[0].kind == LadderUnlock::Kind::Length);
+    CHECK(second.value().ladder_unlocks[0].length_id == "long");
+    CHECK(second.value().ladder_unlocks[0].arenas == 4);
+    CHECK(second.value().ladder_unlocks[0].boss == 200);
     CHECK(h.rc.profile().stats.bosses_beaten.count("short:hard") == 1);
     lengths = h.rc.LadderLengths();
     CHECK(lengths[1].open);
@@ -138,6 +151,31 @@ TEST_CASE("the finale follows the last length once its bosses are beaten", "[lad
     REQUIRE(map.layers[4].size() == 1);
     CHECK(map.layers[4][0].map_key == 202);
     for (const RunMapNode& n : map.layers[3]) CHECK(n.next == std::vector<int>{0});
+}
+
+TEST_CASE("the last hard boss opens the finale, and the results say so", "[ladder]") {
+    Profile climbed;
+    climbed.stats.bosses_beaten = {"short:easy", "short:hard", "long:easy"};
+    test::Harness h(test::Load(LadderSources()), climbed);
+    h.rc.SetArenaPool({0, 1, 2, 103, 200, 201, 202}, 0);
+    REQUIRE(h.rc.StartRun("alpha", 6, "", "long").ok());
+    CHECK(h.rc.state().arena_count == 4);  // no finale yet
+    double t = 0.0;
+    CHECK(PlayToBoss(h, 1, t) == "uEm43@201");
+    REQUIRE(h.rc.ContinueToRewards().ok());
+    const auto summary = h.rc.EndRun();
+    REQUIRE(summary.ok());
+    REQUIRE(summary.value().ladder_unlocks.size() == 1);
+    CHECK(summary.value().ladder_unlocks[0].kind == LadderUnlock::Kind::Finale);
+    CHECK(summary.value().ladder_unlocks[0].length_id == "long");
+    CHECK(summary.value().ladder_unlocks[0].boss == 202);
+    // A boss already beaten opens nothing new.
+    REQUIRE(h.rc.StartRun("alpha", 7, "", "short").ok());
+    CHECK(PlayToBoss(h, 1, t) == "uEm43@201");
+    REQUIRE(h.rc.ContinueToRewards().ok());
+    const auto again = h.rc.EndRun();
+    REQUIRE(again.ok());
+    CHECK(again.value().ladder_unlocks.empty());
 }
 
 TEST_CASE("a long run's later arenas are harder, a boss's health by its length", "[ladder]") {

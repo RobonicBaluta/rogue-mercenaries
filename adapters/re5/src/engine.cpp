@@ -290,10 +290,10 @@ std::optional<SegmentResult> CastSegment(const float from[3], const float to[3])
     return r;
 }
 
-bool StartAction(std::uintptr_t character, int id, const char* expectedClass) {
+bool StartAction(std::uintptr_t character, int id, const char* expectedClass, bool atZeroHp) {
     if (!g_caps.actions || !character || id < 0) return false;
     const auto hp = ReadHp(character);
-    if (!hp || hp->hp <= 0) return false;
+    if (!hp || hp->hp < 0 || (hp->hp == 0 && !atZeroHp)) return false;
     const auto count = ReadOr<std::uint32_t>(character + re5::off::kCharActionCount, 0);
     const auto data = ReadOr<std::uintptr_t>(character + re5::off::kCharActionData, 0);
     if (static_cast<std::uint32_t>(id) >= count || count > 512 || !data) return false;
@@ -330,6 +330,31 @@ std::vector<int> ActionIdsOf(std::uintptr_t character, const char* cls) {
         if (action && ClassName(action) == cls) ids.push_back(static_cast<int>(id));
     }
     return ids;
+}
+
+std::vector<std::string> ActionNames(std::uintptr_t character) {
+    std::vector<std::string> names;
+    if (!character) return names;
+    const auto count = ReadOr<std::uint32_t>(character + re5::off::kCharActionCount, 0);
+    const auto data = ReadOr<std::uintptr_t>(character + re5::off::kCharActionData, 0);
+    if (count > 512 || !data) return names;
+    for (std::uint32_t id = 0; id < count; ++id) {
+        const auto action = ReadOr<std::uintptr_t>(data + static_cast<std::size_t>(id) * 4, 0);
+        names.push_back(action ? ClassName(action) : std::string());
+    }
+    return names;
+}
+
+int CurrentActionId(std::uintptr_t character) {
+    const auto current = character ? ReadOr<std::uintptr_t>(character + re5::off::kPlayerAction, 0) : 0;
+    if (!current) return -1;
+    const auto count = ReadOr<std::uint32_t>(character + re5::off::kCharActionCount, 0);
+    const auto data = ReadOr<std::uintptr_t>(character + re5::off::kCharActionData, 0);
+    if (count > 512 || !data) return -1;
+    for (std::uint32_t id = 0; id < count; ++id) {
+        if (ReadOr<std::uintptr_t>(data + static_cast<std::size_t>(id) * 4, 0) == current) return static_cast<int>(id);
+    }
+    return -1;
 }
 
 namespace {

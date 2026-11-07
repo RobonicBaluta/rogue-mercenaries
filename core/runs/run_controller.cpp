@@ -291,10 +291,35 @@ void RunController::RecordBossBeaten(int map_key) {
     }
     for (const std::string& key : keys) {
         if (!profile_.stats.bosses_beaten.insert(key).second) continue;
+        run_.bosses_beaten_new.push_back(key);
         Event e = MakeEvent(EventType::PerkTriggered);
         e.Add("source", "ladder").Add("trigger", "boss_beaten").Add("key", key).Add("map", map_key);
         Emit(std::move(e));
     }
+}
+
+std::vector<LadderUnlock> RunController::LadderUnlocksFor(const std::vector<std::string>& fresh_keys) const {
+    std::vector<LadderUnlock> out;
+    const EconomyConfig::Ladder& ladder = content_->economy().ladder;
+    if (!ladder.enabled || fresh_keys.empty()) return out;
+    const auto fresh = [&fresh_keys](std::string_view key) {
+        return std::find(fresh_keys.begin(), fresh_keys.end(), key) != fresh_keys.end();
+    };
+    for (const auto& length : ladder.lengths) {
+        // The easy boss beaten for the first time: the hard one is a choice from now on.
+        if (length.hard_boss >= 0 && fresh(length.id + ":easy")) {
+            out.push_back({LadderUnlock::Kind::HardBoss, length.id, length.arenas, length.hard_boss});
+        }
+        if (!length.unlocked_by.empty() && fresh(length.unlocked_by) && LengthOpen(length)) {
+            out.push_back({LadderUnlock::Kind::Length, length.id, length.arenas, length.easy_boss});
+        }
+    }
+    const auto* after = ladder.finale.boss >= 0 ? ladder.Find(ladder.finale.after) : nullptr;
+    if (after != nullptr && FinaleOpen(*after) &&
+        std::any_of(ladder.finale.unlocked_by.begin(), ladder.finale.unlocked_by.end(), fresh)) {
+        out.push_back({LadderUnlock::Kind::Finale, after->id, after->arenas, ladder.finale.boss});
+    }
+    return out;
 }
 
 std::vector<RunController::LadderLengthView> RunController::LadderLengths() const {
@@ -1919,6 +1944,7 @@ Result<RunSummary> RunController::EndRun() {
     }
     profile_.active_run.reset();
     s.unlocked = EvaluateCharacterUnlocks();
+    s.ladder_unlocks = LadderUnlocksFor(run_.bosses_beaten_new);
     (void)SaveProfile("end_run");
 
     Event e = MakeEvent(EventType::RunEnded);

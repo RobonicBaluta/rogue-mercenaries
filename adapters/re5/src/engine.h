@@ -90,7 +90,8 @@ std::optional<SegmentResult> CastSegment(const float from[3], const float to[3])
 /// Starts a character's action by id through its own ChangeAction (vtable 0xDC, one of the
 /// known implementations), with the arguments the game's dodges and co-op sync use. Only when
 /// the action instance at that id is of class `expectedClass`. False when refused or unsafe.
-bool StartAction(std::uintptr_t character, int id, const char* expectedClass);
+/// A character at zero health is refused unless `atZeroHp` (the Wesker bosses fight on there).
+bool StartAction(std::uintptr_t character, int id, const char* expectedClass, bool atZeroHp = false);
 /// The player's hold (cPlAction_pl_act_test, re5_layout.h kVtablePlActTest) gets a start that
 /// clears the "action done" bit after its own, like the game's other starts do. Applied once, in
 /// game memory only, when `player`'s action 0xA8 is that class with the vtable and slots expected;
@@ -98,6 +99,10 @@ bool StartAction(std::uintptr_t character, int id, const char* expectedClass);
 bool EnsureHoldStartClearsDone(std::uintptr_t player);
 /// The ids in a character's action table whose action is of class `cls`, lowest first.
 std::vector<int> ActionIdsOf(std::uintptr_t character, const char* cls);
+/// The class of every action in a character's table, by id ("" for an empty slot).
+std::vector<std::string> ActionNames(std::uintptr_t character);
+/// The id of the character's current action in its table (-1: none or not in the table).
+int CurrentActionId(std::uintptr_t character);
 /// The player's own forward dodge toward `toward`, started the way the game's dodge picker
 /// starts one (threat point, prep, avoid_front). False when refused (another action holds).
 bool StartDodge(std::uintptr_t player, const float toward[3]);

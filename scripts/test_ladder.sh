@@ -64,13 +64,20 @@ open_menu() {
 save_before=$(sha256sum "$SAVE" | cut -c1-16)
 BACKUP="build/backups/savedata-$(date +%Y%m%d-%H%M%S).bin"
 cp "$SAVE" "$BACKUP" || exit 1
-cp "$D/profile.json" "$D/profile.ladder-backup.json" || exit 1
-cp "$D/profile.json" "$OUT/profile-before.json"
+# The profile and its .bak are put back at the end; with none before, none is left.
+mkdir -p "$OUT/profile-before" || exit 1
+for f in profile.json profile.json.bak; do
+    [ -f "$D/$f" ] && { cp "$D/$f" "$OUT/profile-before/$f" || exit 1; }
+done
 close_game
 
 if [ "$PART" != 2 ]; then
     echo "== 1. no boss beaten"
-    python scripts/profile_edit.py "$D/profile.json" --bosses "" --no-active-run || exit 1
+    if [ -f "$D/profile.json" ]; then
+        python scripts/profile_edit.py "$D/profile.json" --bosses "" --no-active-run || exit 1
+    else
+        rm -f "$D/profile.json.bak"  # a new profile: no boss beaten
+    fi
     start_game
     if open_menu; then
         keys "enter+2500"
@@ -102,7 +109,12 @@ if [ "$PART" != 2 ]; then
                 keys "enter+1500"; sleep 3
             done
             echo "end: $(since | grep -E 'run ended|-> run_complete' | tail -2 | cut -c25-200 | tr '\n' ' ')"
-            wait_for "native menu: opened on screen" 2 90 && { sleep 2; cap 04-results; } || echo "the mod menu did not open on the results"
+            if wait_for "native menu: opened on screen" 2 90; then
+                sleep 2; cap 04-results
+                keys "down+600"; sleep 1; cap 04b-results-unlock  # the unlock row's help (NEW BOSS ...)
+            else
+                echo "the mod menu did not open on the results"
+            fi
         else
             echo "arena 1 did not start"
         fi
@@ -114,10 +126,12 @@ fi
 
 if [ "$PART" != 1 ]; then
     echo "== 2. the short hard boss beaten"
-    cp "$D/profile.ladder-backup.json" "$D/profile.json"
-    python scripts/profile_edit.py "$D/profile.json" --bosses "short:easy,short:hard" --no-active-run || exit 1
-    start_game
-    if open_menu; then
+    [ -f "$OUT/profile-before/profile.json" ] && cp "$OUT/profile-before/profile.json" "$D/profile.json"
+    # With no profile before, part 1's is used; with none at all, there is nothing to mark.
+    [ -f "$D/profile.json" ] || echo "PART 2 SKIPPED: no profile to mark (run part 1 first)"
+    [ -f "$D/profile.json" ] && { python scripts/profile_edit.py "$D/profile.json" --bosses "short:easy,short:hard" --no-active-run || exit 1; }
+    [ -f "$D/profile.json" ] && start_game
+    if [ -f "$D/profile.json" ] && open_menu; then
         keys "enter+2500"
         sleep 2
         [ "$(count 'start run \(')" -eq 0 ] && echo "START RUN did not start a run (RUN LENGTH expected)" || echo "A RUN STARTED WITHOUT RUN LENGTH"
@@ -136,8 +150,15 @@ if [ "$PART" != 1 ]; then
     close_game
 fi
 
-cp "$D/profile.ladder-backup.json" "$D/profile.json" && rm -f "$D/profile.ladder-backup.json"
-echo "profile restored: $(sha256sum "$D/profile.json" | cut -c1-16) (before $(sha256sum "$OUT/profile-before.json" | cut -c1-16))"
+for f in profile.json profile.json.bak; do
+    if [ -f "$OUT/profile-before/$f" ]; then
+        cp "$OUT/profile-before/$f" "$D/$f"
+        echo "$f restored: $(sha256sum < "$D/$f" | cut -c1-16) (before $(sha256sum < "$OUT/profile-before/$f" | cut -c1-16))"
+    else
+        rm -f "$D/$f"
+        echo "$f: none before, none left"
+    fi
+done
 save_after=$(sha256sum "$SAVE" | cut -c1-16)
 echo "save before $save_before after $save_after"
 if [ "$save_after" != "$save_before" ]; then

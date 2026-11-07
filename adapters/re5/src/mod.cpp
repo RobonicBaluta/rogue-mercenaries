@@ -190,6 +190,8 @@ struct ModState {
         int hp = 0;
         double spawnedAt = 0.0;
         bool dead = false;
+        std::uintptr_t fallen = 0;  // the unit once dead, for its fall (DriveBossFall)
+        double diedAt = 0.0;
     } boss;
     struct StageTransition {
         bool pending = false;
@@ -841,6 +843,25 @@ nativemenu::Screen RunResultsScreen(rm::RunController& run) {
             std::string(s.end_reason == "died" ? "Killed" : "Ended") + " in arena " + std::to_string(reached) +
                 (s.final_arena.empty() ? "." : ", " + Plain(s.final_arena) + "."),
             "last_stand");
+    }
+    // What the run's boss wins opened on the ladder: right under the first row, seen without scrolling.
+    for (const rm::LadderUnlock& u : s.ladder_unlocks) {
+        const std::string boss = LadderBossName(u.boss);
+        const std::string arenas = std::to_string(u.arenas);
+        switch (u.kind) {
+            case rm::LadderUnlock::Kind::HardBoss:
+                add("NEW BOSS   " + Upper(boss),
+                    "A " + arenas + "-arena run can now end on the " + boss + ".\nChoose it in the last NEXT ROUTE.", "explosion");
+                break;
+            case rm::LadderUnlock::Kind::Length:
+                add(arenas + " ARENAS OPEN",
+                    arenas + " arenas, ending on the " + boss + ".\nSTART RUN now asks how long the run is.", "flag");
+                break;
+            case rm::LadderUnlock::Kind::Finale:
+                add("ONE MORE ARENA", "A " + arenas + "-arena run now goes on after its boss:\none more arena, the " + boss + ".",
+                    "explosion");
+                break;
+        }
     }
     add(Upper(Plural(s.total_kills, "kill")), "Enemies killed in this run.", "crosshair");
     add("TIME " + Upper(DurationText(s.time_seconds)), "Time spent fighting in the run's arenas.", "clock");
@@ -1581,6 +1602,8 @@ std::string EnemyKillId(std::uintptr_t enemy, int maxHp) {
         if (enemy == g->boss.unit) {
             g->boss.unit = 0;
             g->boss.dead = true;
+            g->boss.fallen = enemy;
+            g->boss.diedAt = Now();
         }
         return id;
     }
@@ -2733,6 +2756,89 @@ constexpr float kBossGrabCone = 0.6f;      // radians off its facing at most
 constexpr double kBossGrabEvery = 4.0;
 constexpr double kBossWalkAgain = 1.5;
 
+constexpr double kBossFallSeconds = 3.0;  // a dead boss's fall before the arena's screens (DriveArena)
+
+// A boss whose death the campaign scripts fights on at zero health (Wesker, uEm81: kicks, shots,
+// shifts at 0 of 8500; build/runs/20261107-233420-boss-uEm81-s506). Once the mod has counted it
+// dead, its own stagger plays through the fall before the arena's screens (DriveArena): Wesker's
+// Shrink, the weakened stagger the campaign's injection follows, held 6 s
+// (build/runs/20261107-233900-boss-uEm81-s506).
+struct ScriptedFall {
+    const char* cls;
+    const char* action;
+};
+constexpr ScriptedFall kScriptedFalls[] = {{"uEm81", "cEm80ActShrink"}, {"uEm80", "cEm80ActShrink"}};
+std::uintptr_t g_fallStarted = 0;
+
+void DriveBossFall(double now) {
+    const std::uintptr_t unit = g->boss.fallen;
+    if (!g->boss.dead || !unit || unit == g_fallStarted || now - g->boss.diedAt > kBossFallSeconds) return;
+    const std::string cls = engine::ClassName(unit);
+    for (const ScriptedFall& f : kScriptedFalls) {
+        if (cls != f.cls) continue;
+        const auto ids = engine::ActionIdsOf(unit, f.action);
+        if (!ids.empty() && engine::StartAction(unit, ids.front(), f.action, true)) {
+            g_fallStarted = unit;
+            RM_LOGI("boss fall: %s %s (action %d) %.2f s after its death", cls.c_str(), f.action, ids.front(), now - g->boss.diedAt);
+        }
+        return;
+    }
+    g_fallStarted = unit;  // a boss that falls by itself (the Uroboros' death sequence)
+}
+
+// Developer "watch <class>": the first enemy of that class, its action and health logged on every
+// change, at zero health too (the Wesker bosses do not die there: what do they do instead).
+struct UnitWatch {
+    std::string cls;
+    std::uintptr_t unit = 0;
+    int hp = -1;
+    int action = -2;
+    std::uint64_t guard = 0;
+    double since = 0.0;
+};
+UnitWatch g_watch;
+
+std::uintptr_t FirstEnemyOf(const std::string& cls) {
+    for (const auto& e : engine::ReadEnemyStates()) {
+        if (engine::ClassName(e.object) == cls) return e.object;
+    }
+    return 0;
+}
+
+void WatchUnit(double now) {
+    UnitWatch& w = g_watch;
+    if (w.cls.empty()) return;
+    const std::uintptr_t unit = FirstEnemyOf(w.cls);
+    if (unit != w.unit) {
+        RM_LOGW("watch: %s %08X %s", w.cls.c_str(), static_cast<unsigned>(unit), unit ? "found" : "gone");
+        w.unit = unit;
+        w.hp = -1;
+        w.action = -2;
+        w.since = now;
+    }
+    if (!unit) return;
+    const auto hp = engine::ReadHp(unit);
+    const int h = hp ? hp->hp : -1;
+    const int action = engine::CurrentActionId(unit);
+    // What the enemy hit check (0x009E0700, its collector 0x00963C90) turns a hit away by: the
+    // gate +0x10E0 == 0x80000000, the byte +0x1E24, bit 0x80 of +0x18DC; its hit record +0x129C.
+    const auto gate = ReadOr<std::uint32_t>(unit + 0x10E0, 0);
+    const auto block = ReadOr<std::uint8_t>(unit + 0x1E24, 0);
+    const auto flags = ReadOr<std::uint32_t>(unit + 0x18DC, 0);
+    const auto record = ReadOr<std::uintptr_t>(unit + 0x129C, 0);
+    const std::uint64_t guard = (static_cast<std::uint64_t>(gate) << 32) ^ (static_cast<std::uint64_t>(block) << 24) ^ (flags & 0x80) ^ (record ? 1 : 0);
+    if (h == w.hp && action == w.action && guard == w.guard) return;
+    float pos[3];
+    for (int k = 0; k < 3; ++k) pos[k] = ReadOr<float>(unit + re5::off::kUnitPosition + k * 4, 0.0f);
+    RM_LOGW("watch: %s hp %d/%d action %d %s at %.0f %.0f %.0f (%.2f s since the last change); gate %08X block %u flags %08X record %08X",
+            w.cls.c_str(), h, hp ? hp->max : -1, action, engine::CurrentActionName(unit).c_str(), pos[0], pos[1], pos[2],
+            now - w.since, gate, block, flags, static_cast<unsigned>(record));
+    w.hp = h;
+    w.action = action;
+    w.guard = guard;
+    w.since = now;
+}
+
 bool UroborosIdle(const std::string& action) {
     return action == "cEm40ActWalk" || action == "cEm40ActRun" || action == "cEm40ActWait";
 }
@@ -2817,6 +2923,7 @@ void DriveBoss(double now, const std::optional<std::array<double, 3>>& player) {
 // stay off for the whole match (also between arenas), and the core's director decides what
 // to spawn where; the adapter spawns it and reports which unit became which ticket.
 void DriveDirector(double now) {
+    WatchUnit(now);  // a developer watch, quiet or not
     rm::RunController& run = *g->run;
     const bool directorStage = g->match.inMatch && run.HasActiveRun() && run.capabilities().Has(rm::cap::kDirector) &&
                                CurrentMap() != nullptr;
@@ -2916,13 +3023,17 @@ void DriveArena(double now) {
     rm::RunController& run = *g->run;
     if (run.phase() != rm::Phase::ArenaActive) return;
 
+    // A boss's fall plays before the world stops for the results (the Uroboros' death, Wesker's
+    // stagger: DriveBossFall); nothing ends the arena meanwhile, and a boss beaten stays beaten.
+    const bool bossDown = g->boss.dead && run.IsArenaComplete();
+    if (bossDown && now - g->boss.diedAt < kBossFallSeconds) return;
     // Player death: HP held at zero (Mercenaries solo has no revive).
-    if (g->match.zeroHpSince >= 0 && now - g->match.zeroHpSince >= 2.0) {
+    if (!bossDown && g->match.zeroHpSince >= 0 && now - g->match.zeroHpSince >= 2.0) {
         Report(run.OnPlayerDied(now), "player died");
         return;
     }
     if (run.IsArenaComplete()) {
-        const auto result = run.CompleteArena(now);
+        const auto result = run.CompleteArena(bossDown ? g->boss.diedAt : now);
         if (result.ok()) {
             SetStatus("arena cleared in " + std::to_string(static_cast<int>(result->time_seconds)) + " s");
             if (g->settings.endMatchOnClear && g->match.inMatch) {
@@ -6041,6 +6152,62 @@ void PollDevCommand(double now) {
                     ReadOr<float>(e.object + re5::off::kUnitPosition, 0.0f), ReadOr<float>(e.object + re5::off::kUnitPosition + 4, 0.0f),
                     ReadOr<float>(e.object + re5::off::kUnitPosition + 8, 0.0f));
         }
+    } else if (command.rfind("watch ", 0) == 0) {
+        // "watch <class>|off": that enemy's action and health on every change.
+        g_watch = {};
+        if (command.substr(6) != "off") g_watch.cls = command.substr(6);
+        RM_LOGW("dev watch %s", g_watch.cls.empty() ? "off" : g_watch.cls.c_str());
+    } else if (command.rfind("actions ", 0) == 0) {
+        // "actions <class>": the action table of the first enemy of that class.
+        const std::uintptr_t unit = FirstEnemyOf(command.substr(8));
+        const auto names = engine::ActionNames(unit);
+        RM_LOGW("dev actions %s %08X: %zu, now %d", command.substr(8).c_str(), static_cast<unsigned>(unit), names.size(),
+                engine::CurrentActionId(unit));
+        std::string line;
+        for (std::size_t id = 0; id < names.size(); ++id) {
+            if (names[id].empty()) continue;
+            line += (line.empty() ? "" : ", ") + std::to_string(id) + " " + names[id];
+            if (line.size() > 160) {
+                RM_LOGW("  %s", line.c_str());
+                line.clear();
+            }
+        }
+        if (!line.empty()) RM_LOGW("  %s", line.c_str());
+    } else if (command.rfind("bring ", 0) == 0) {
+        // "bring <class> <distance>": the first enemy of the class moved that far straight ahead
+        // of the player as he faces now (aiming turns him to the camera: into the line of fire).
+        const auto space = command.find(' ', 6);
+        const std::string cls = command.substr(6, space == std::string::npos ? std::string::npos : space - 6);
+        const float distance = space == std::string::npos ? 500.0f : static_cast<float>(std::atof(command.c_str() + space + 1));
+        const std::uintptr_t unit = FirstEnemyOf(cls);
+        const auto player = engine::LocalPlayer();
+        if (unit && player) {
+            const float qx = ReadOr<float>(player + re5::off::kUnitRotation, 0.0f), qy = ReadOr<float>(player + re5::off::kUnitRotation + 4, 0.0f);
+            const float qz = ReadOr<float>(player + re5::off::kUnitRotation + 8, 0.0f), qw = ReadOr<float>(player + re5::off::kUnitRotation + 12, 0.0f);
+            float fx = 2.0f * (qx * qz + qw * qy), fz = 1.0f - 2.0f * (qx * qx + qy * qy);
+            const float len = std::sqrt(fx * fx + fz * fz);
+            if (len > 0.01f) {
+                fx /= len;
+                fz /= len;
+            }
+            const float dest[3] = {ReadOr<float>(player + re5::off::kUnitPosition, 0.0f) + fx * distance,
+                                   ReadOr<float>(player + re5::off::kUnitPosition + 4, 0.0f),
+                                   ReadOr<float>(player + re5::off::kUnitPosition + 8, 0.0f) + fz * distance};
+            const int copies = engine::WarpUnit(unit, dest);
+            RM_LOGW("dev bring %s %.0f: to %.0f %.0f %.0f (%d copies)", cls.c_str(), distance, dest[0], dest[1], dest[2], copies);
+        } else {
+            RM_LOGW("dev bring %s: no such enemy or no player", cls.c_str());
+        }
+    } else if (command.rfind("act ", 0) == 0) {
+        // "act <class> <id>": starts that action of the first enemy of the class (StartAction's checks).
+        const auto space = command.find(' ', 4);
+        const std::string cls = command.substr(4, space == std::string::npos ? std::string::npos : space - 4);
+        const int id = space == std::string::npos ? -1 : std::atoi(command.c_str() + space + 1);
+        const std::uintptr_t unit = FirstEnemyOf(cls);
+        const auto names = engine::ActionNames(unit);
+        const std::string name = id >= 0 && id < static_cast<int>(names.size()) ? names[static_cast<std::size_t>(id)] : std::string();
+        const bool started = !name.empty() && engine::StartAction(unit, id, name.c_str(), true);
+        RM_LOGW("dev act %s %d (%s): %s", cls.c_str(), id, name.c_str(), started ? "started" : "refused");
     } else if (command == "abandon" && run.HasActiveRun()) {
         // Ends the run as the overlay's "Abandon run" does; the match goes on as plain Mercenaries.
         Report(run.AbandonRun(now), "dev abandon run");
@@ -6525,6 +6692,7 @@ private:
             TryBeginArena(now);
         }
         DriveDirector(now);
+        DriveBossFall(now);
         DriveArena(now);
         DetectEnemyDeaths(now);
         OpenChests(now);
