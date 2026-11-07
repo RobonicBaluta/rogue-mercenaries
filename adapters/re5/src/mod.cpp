@@ -458,6 +458,11 @@ void ApplyWeaponLevels() {
 // Every character's knife: 0x0101, Excella's 0x010E, Wesker's 0x0123, the others' 0x0124.
 bool IsKnifeItem(std::uint32_t id) { return id == re5::addr::kItemKnife || id == 0x010E || id == 0x0123 || id == 0x0124; }
 
+// The last item that went to the run's storage, for the shop's and rewards' header line.
+std::string g_stashNote;
+double g_stashNoteAt = -1.0e9;
+std::string StashNote() { return Now() - g_stashNoteAt < 10.0 ? "   " + g_stashNote : std::string(); }
+
 // Name of an inventory item for the game font: the run's weapons and catalog first.
 std::string GridItemName(std::uint32_t id) {
     for (const rm::WeaponBaseDef& w : g->content->weapons()) {
@@ -950,7 +955,7 @@ private:
             }
             case ScreenId::MatchRewards: {
                 const rm::RunSnapshot s = run.Snapshot(Now());
-                screen.header = "CHOOSE A REWARD";
+                screen.header = "CHOOSE A REWARD" + StashNote();
                 screen.empty_help = "Nothing to choose. Press to continue.";
                 for (const auto& o : s.reward_offers) {
                     Item item;
@@ -969,7 +974,7 @@ private:
             }
             case ScreenId::MatchShop: {
                 const rm::RunSnapshot s = run.Snapshot(Now());
-                screen.header = "SHOP   " + std::to_string(s.supplies) + " SUPPLIES";
+                screen.header = "SHOP   " + std::to_string(s.supplies) + " SUPPLIES" + StashNote();
                 for (const auto& o : s.shop_offers) {
                     Item item;
                     item.label = Upper(Plain(o.title)) + (o.purchased ? "   BOUGHT" : "");
@@ -1862,7 +1867,7 @@ void SnapshotInventory() {
     RM_LOGI("stage change: inventory snapshot (%zu records): %s", g->transition.carry.size(), text.c_str());
 }
 
-void KeepInRunStash(std::uint32_t id, int count, const char* why);
+int KeepInRunStash(std::uint32_t id, int count, const char* why);
 
 // After the cells are in place: each stack as the layout had it. ORGANIZE splits and merges
 // stacks and moves some to the storage, so an item's cells take their counts and its records in
@@ -1997,23 +2002,42 @@ void StartStageTransition(double now) {
     RequestMercMatchEnd();
 }
 
+// Into the grid, and what does not fit into the run's storage (ORGANIZE), to be taken out at a
+// later shop on any stage: the shop refunded a Flash Grenade, a gun and Magnum Ammo with no room
+// for them and a reward herb was paid out as supplies (user playtests 2026-11-05 and 11-07; the
+// user's wish: what does not fit waits in the storage). A gun goes in with a full magazine.
+// Returns how many the player has now, in the grid or the storage.
+int GiveOrStash(const char* source, std::int64_t id, int count) {
+    if (id <= 0 || count <= 0) return 0;
+    const int placed = GiveItem(source, id, count);
+    if (placed >= count) return placed;
+    const auto item = static_cast<std::uint32_t>(id);
+    if (IsWeaponItem(item)) {
+        if (placed > 0) return placed;
+        const auto record = ItemRecord(item);
+        const int magazine = record ? std::max(1, ReadOr<std::int32_t>(record + 8, 1)) : 1;
+        return KeepInRunStash(item, magazine, "did not fit") > 0 ? 1 : 0;
+    }
+    return placed + KeepInRunStash(item, count - placed, "did not fit");
+}
+
 void ApplyItemGrants() {
     for (const rm::ItemGrant& grant : g->run->ConsumeItemGrants()) {
         const bool fromPerk = grant.source != "reward" && grant.source != "shop";
         const std::string label = (fromPerk ? "perk " : "") + grant.source;
-        if (GiveItem(label.c_str(), grant.game_item, grant.count) == 0) {
-            g->toasts.Push(label + ": inventory full");
+        if (GiveOrStash(label.c_str(), grant.game_item, grant.count) == 0) {
+            g->toasts.Push(label + ": inventory and storage full");
         }
     }
 }
 
-// Rewards and shop purchases place their item at once; the core fails the purchase
-// (and refunds it) when nothing fits.
+// Rewards and shop purchases place their item at once, in the grid or the run's storage; the
+// core fails the purchase (and refunds it) only when neither has room.
 class InventoryBridge final : public rm::InventoryPort {
 public:
     int Give(std::int64_t gameItem, int count, std::string_view source) override {
         if (!g->match.inMatch) return 0;
-        return GiveItem(std::string(source).c_str(), gameItem, count);
+        return GiveOrStash(std::string(source).c_str(), gameItem, count);
     }
 };
 InventoryBridge g_inventoryBridge;
@@ -4868,22 +4892,54 @@ struct RunInBox {
 RunInBox g_runInBox;
 
 // An item the match cannot take now (a full grid, a gun whose model is not loaded here) goes to
-// the run's storage, the one the ORGANIZE screen shows, instead of being lost.
-void KeepInRunStash(std::uint32_t id, int count, const char* why) {
-    if (id == 0 || count <= 0) return;
+// the run's storage, the one the ORGANIZE screen shows, instead of being lost: the player takes
+// it out at a later shop, on any stage of the run. Stacks join an earlier record of the same item
+// up to its stack size; a gun's count is its rounds. Returns how many it kept (the storage holds
+// 54 records).
+constexpr std::size_t kStashRecords = (kSaveStorageTo - kSaveStorageFrom) / 12;
+
+int KeepInRunStash(std::uint32_t id, int count, const char* why) {
+    if (id == 0 || count <= 0) return 0;
     if (g_runInBox.runId != g->run->state().run_id) {
         g_runInBox.runId = g->run->state().run_id;
         g_runInBox.remainder = 0;
         g_runInBox.stash.clear();
     }
-    std::array<std::uint8_t, 12> record{};
-    record[0] = static_cast<std::uint8_t>(id & 0xFF);
-    record[1] = static_cast<std::uint8_t>(id >> 8);
-    record[2] = static_cast<std::uint8_t>(count & 0xFF);
-    record[3] = static_cast<std::uint8_t>((count >> 8) & 0xFF);
-    g_runInBox.stash.push_back(record);
-    RM_LOGW("inventory: %04X x%d %s; kept in the run's storage (ORGANIZE)", id, count, why);
+    const int total = count;
+    if (!IsWeaponItem(id)) {
+        const int stackMax = std::max(1, ItemStackMax(id));
+        for (auto& record : g_runInBox.stash) {
+            if (count <= 0) break;
+            if ((record[0] | (record[1] << 8)) != static_cast<int>(id)) continue;
+            const int have = record[2] | (record[3] << 8);
+            const int add = std::min(count, stackMax - have);
+            if (add <= 0) continue;
+            record[2] = static_cast<std::uint8_t>((have + add) & 0xFF);
+            record[3] = static_cast<std::uint8_t>(((have + add) >> 8) & 0xFF);
+            count -= add;
+        }
+    }
+    while (count > 0) {
+        if (g_runInBox.stash.size() >= kStashRecords) {
+            RM_LOGW("inventory: %04X x%d %s; the run's storage is full", id, count, why);
+            break;
+        }
+        const int put = IsWeaponItem(id) ? count : std::min(count, std::max(1, ItemStackMax(id)));
+        std::array<std::uint8_t, 12> record{};
+        record[0] = static_cast<std::uint8_t>(id & 0xFF);
+        record[1] = static_cast<std::uint8_t>(id >> 8);
+        record[2] = static_cast<std::uint8_t>(put & 0xFF);
+        record[3] = static_cast<std::uint8_t>((put >> 8) & 0xFF);
+        g_runInBox.stash.push_back(record);
+        count -= put;
+    }
+    const int kept = total - count;
+    if (kept <= 0) return 0;
+    RM_LOGW("inventory: %04X x%d %s; kept in the run's storage (ORGANIZE)", id, kept, why);
     g->toasts.Push(GridItemName(id) + " is in the storage (ORGANIZE)");
+    g_stashNote = Upper(Plain(GridItemName(id))) + " IN STORAGE";
+    g_stashNoteAt = Now();
+    return kept;
 }
 
 
