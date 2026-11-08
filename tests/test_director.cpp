@@ -490,6 +490,21 @@ TEST_CASE("a boss with a story spot appears there once the player comes near", "
     const auto l = late.Tick(90.0, far);
     REQUIRE(l.size() == 1);
     CHECK(l[0].pos == std::array<double, 3>{5000, 0, 5000});
+    // A box: only with the player inside it, on every axis (the Uroboros' story room).
+    MapDef boxed = map;
+    boxed.boss->trigger = 0;
+    boxed.boss->trigger_box = std::array<double, 6>{1000, -100, 1000, 2000, 300, 2000};
+    Director room(boxed, 1, 3, 9);
+    const std::array<double, 3> beside{2500, 0, 1500}, above{1500, 400, 1500}, inside{1500, 0, 1500};
+    CHECK(room.Tick(0.0, beside).empty());
+    CHECK(room.WaitingForPlayer());
+    CHECK(room.Tick(1.0, above).empty());  // the floor above does not count
+    const auto entered = room.Tick(2.0, inside);
+    REQUIRE(entered.size() == 1);
+    CHECK(entered[0].pos == std::array<double, 3>{5000, 0, 5000});
+    Director roomLate(boxed, 1, 3, 9);
+    CHECK(roomLate.Tick(0.0, beside).empty());
+    CHECK(roomLate.Tick(90.0, beside).size() == 1);  // its wait still runs out
     // No trigger: at once, at its spot (Uroboros Mkono rises beside the deck).
     map.boss->trigger = 0;
     Director now(map, 1, 3, 9);

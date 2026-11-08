@@ -266,9 +266,18 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::ar
 }
 
 bool Director::BossWaits(double now, const std::optional<std::array<double, 3>>& player) const {
-    if (!map_.boss || !map_.boss->spawn || map_.boss->trigger <= 0.0 || requested_ > 0 || !player) return false;
+    if (!map_.boss || !map_.boss->spawn || requested_ > 0 || !player) return false;
     const MapBoss& b = *map_.boss;
+    if (b.trigger <= 0.0 && !b.trigger_box) return false;
     if (b.trigger_wait > 0.0 && now - first_tick_ >= b.trigger_wait) return false;
+    if (b.trigger_box) {
+        const std::array<double, 6>& box = *b.trigger_box;
+        for (int k = 0; k < 3; ++k) {
+            const auto axis = static_cast<std::size_t>(k);
+            if ((*player)[axis] < box[axis] || (*player)[axis] > box[axis + 3]) return true;
+        }
+        return false;
+    }
     return DistanceSq(*b.spawn, *player) > b.trigger * b.trigger;
 }
 

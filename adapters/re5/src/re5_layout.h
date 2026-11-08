@@ -83,6 +83,8 @@ constexpr std::uintptr_t kFnEm82MayHurt = 0x009217E0;
 // Uroboros' update 0x008AE2B0, then its health set to its maximum (+0x1366) through vtable +0x10C
 // (hooks_combat.cpp: a run's boss skips that).
 constexpr std::uintptr_t kFnEm41Update = 0x008B6040;
+// uEm40 vtable +0x258: may it dive under the floor to reach the players (their rooms, its timers).
+constexpr std::uintptr_t kFnEm40CanDive = 0x008AA740;
 constexpr std::uintptr_t kFnEm40Update = 0x008AE2B0;
 // The flamethrower's unit, uWp21 (research/re5-engine-map.md, "The flamethrower").
 constexpr std::uintptr_t kVtableWp21 = 0x0102D0C8;
@@ -432,9 +434,17 @@ constexpr std::size_t kCharYaw = 0x1904;
 // uEnemy: its target (a player; cleared by uEm40's update 0x008AE2B0 when it is no unit, read by
 // uEm40's far grab 0x008A85E0 to pick its attack). Majini code sets it widely (their search).
 constexpr std::size_t kEnemyTarget = 0x1BA4;
-// uEm40: the yaw its walk still has to turn (radians, + = more yaw; the walk 0x008AB4A0 turns by it
-// through 0x008A79C0 and lowers it as it turns). Nothing sets it without the boss's state machine.
-constexpr std::size_t kEm40TurnLeft = 0x1B74;
+// uEm40: the story's waiting mode (byte, 1 from its constructor): its brain (uEmIntel40) walks it and
+// never attacks until story flag 9 clears it (0x0099C39F), and asks for a roar (kEm40WakeRoar) then.
+constexpr std::size_t kEm40StoryWait = 0x20C0;
+constexpr std::size_t kEm40WakeRoar = 0x1FE9;
+// uEm40's arms and head: int16 life, then its maximum (its descriptor's field + 200, 0x008AE1E0).
+constexpr std::size_t kEm40ArmLLife = 0x1F74;
+constexpr std::size_t kEm40ArmRLife = 0x1F7C;
+constexpr std::size_t kEm40HeadLife = 0x1F84;
+// uEm40 on s103: the room (0..5, -1 none) of player 0 and player 1, set by its update.
+constexpr std::size_t kEm40RoomPlayer1 = 0x20D8;
+constexpr std::size_t kEm40RoomPlayer2 = 0x20DC;
 constexpr std::size_t kEm41UpdateFlag = 0x2118;  // cleared first by Aheri's update
 constexpr std::size_t kPlayerThreatPoint = 0x2E10;  // float x, y, z: what a dodge is relative to
 constexpr std::size_t kPlayerDodgeOwner = 0x2D64;   // the dodge prep's object (+0x220)
@@ -829,6 +839,10 @@ inline constexpr Signature kSignatures[] = {
     {"em41_update", addr::kFnEm41Update, "56 8B F1 C6 86 18 21 00 00 00 E8 61 82 FF FF 0F B7 8E 66 13 00 00 8B 06 8B 90 0C 01 00 00 51 8B"},
     {"em40_update", addr::kFnEm40Update, "55 8B EC 83 E4 F0 83 EC 24 53 56 8B F1 8B 86 A4 1B 00 00 33"},
     {"uem41_get_dti", 0x008BA110, "B8 38 D4 1E 01 C3"},
+    {"em40_can_dive", addr::kFnEm40CanDive, "56 8B F1 80 BE C0 20 00 00 00 74 04 32 C0 5E C3 53 57 E8 29 F7 FF FF 8B F8 85 FF 0F 84 1C 01 00"},
+    {"em40_ctor_story_wait", 0x008AE09C, "C6 86 C0 20 00 00 01 88 9E C1 20 00 00"},
+    {"em40_intel_release", 0x0099C39F, "8B 86 80 02 00 00 88 98 C0 20 00 00 C6 80 E9 1F 00 00 01"},
+    {"em40_part_life_apply", 0x008AE1E0, "56 8B 74 24 08 85 F6 0F 84 B5 00 00 00 66 8B 86 E0 00 00 00 66 05 C8 00 66 85 C0 0F B7 D0 66 89 81 74 1F 00 00"},
     // s308's setup: `sub esp, 0x14; push ebp; mov ebp, ecx; call 0x0072D240`, `test [eax+0x10434], 0x500`;
     // its read of the flamethrower's fuel (`mov edx, [ebp+0x664]; mov eax, [edx+0x1AF8]`); the
     // model lookup; the base setup; aS308's getDTI.

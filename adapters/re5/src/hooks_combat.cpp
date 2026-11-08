@@ -82,6 +82,22 @@ using UpdateFn = void(__fastcall*)(std::uintptr_t self, void* edx);
 UpdateFn g_origEm41Update = nullptr;
 std::atomic<int> g_em41Logged{0};
 
+// The Uroboros goes under the floor and comes up nearer the players when they are out of its sight
+// in other rooms (its brain's own way past doors, the user's "maybe make that he can open doors"). The
+// check wants both players in those rooms; a run has one, and the second's room stays -1, so it could
+// never pass. For the run's boss the second player counts as standing with the first.
+using Em40CanDiveFn = std::uint32_t(__fastcall*)(std::uintptr_t self, void* edx);
+Em40CanDiveFn g_origEm40CanDive = nullptr;
+std::uint32_t __fastcall Em40CanDiveDetour(std::uintptr_t self, void* edx) {
+    if (self == 0 || self != g_gunfireBoss.load(std::memory_order_relaxed)) return g_origEm40CanDive(self, edx);
+    auto* second = reinterpret_cast<std::int32_t*>(self + re5::off::kEm40RoomPlayer2);
+    const std::int32_t own = *second;
+    if (own < 0) *second = *reinterpret_cast<std::int32_t*>(self + re5::off::kEm40RoomPlayer1);
+    const std::uint32_t answer = g_origEm40CanDive(self, edx);
+    *second = own;
+    return answer;
+}
+
 void __fastcall Em41UpdateDetour(std::uintptr_t self, void* edx) {
     if (self == 0 || self != g_gunfireBoss.load(std::memory_order_relaxed)) {
         g_origEm41Update(self, edx);
@@ -264,6 +280,10 @@ bool InstallCombatHooks() {
     if (ok && caps.bossNoRefill) {
         Hook(re5::addr::kFnEm41Update, reinterpret_cast<void*>(&Em41UpdateDetour), reinterpret_cast<void**>(&g_origEm41Update),
              "uEm41 update (a run's boss keeps the damage it takes)");
+    }
+    if (ok && caps.bossBrain) {
+        Hook(re5::addr::kFnEm40CanDive, reinterpret_cast<void*>(&Em40CanDiveDetour), reinterpret_cast<void**>(&g_origEm40CanDive),
+             "uEm40 may-dive (a run has one player)");
     }
     if (ok && caps.hitCheckProbe) {
         Hook(re5::addr::kFnEnemyHitCheck, reinterpret_cast<void*>(&HitCheckDetour), reinterpret_cast<void**>(&g_origHitCheck),

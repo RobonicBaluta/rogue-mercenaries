@@ -61,7 +61,12 @@ BELOW = {204: 90.0}
 # minute, user playtest 2026-11-03) and the
 # archives that come with its class. Their maps hold no roster; runs end on one.
 BOSSES = {
-    103: {'class': 'uEm40', 'name': 'Uroboros', 'hp': 15000, 'preload': ['uEm40Dummy', 'uEm40Parts']},
+    # Where the story sets it (s103_em00: its position and turn), and it appears when the player walks
+    # into the box the story's own script waits for (s103_fsm "uro shtuugen", about 9 by 11 m), or
+    # after 2 minutes (the user, 2026-11-08: it "teleports where you are at the start of the stage").
+    103: {'class': 'uEm40', 'name': 'Uroboros', 'hp': 15000, 'preload': ['uEm40Dummy', 'uEm40Parts'],
+          'spawn': (-3404.9, -1000.0, 962.0), 'facing': 0.0559,
+          'trigger_box': [-4162.4, -1023.2, 61.1, -3263.7, -695.9, 1149.5], 'trigger_wait': 120},
     304: {'class': 'uEm43', 'name': 'Giant Uroboros', 'hp': 15000, 'preload': []},
     # Wesker in his black coat (the user's Midnight Wesker): gunfire hurts him only while he winds
     # up an attack (his knee dash: 150, 100 a pistol hit), otherwise he shrugs it off (DmgNot); at
@@ -211,7 +216,7 @@ for stage in args.stages:
         # Its story spot (the director spawns it there, not at a waypoint) and when it appears.
         if 'spawn' in boss:
             entry['boss']['spawn'] = [round(c, 1) for c in boss['spawn']]
-        for key in ('facing', 'trigger', 'trigger_wait'):
+        for key in ('facing', 'trigger', 'trigger_box', 'trigger_wait'):
             if key in boss:
                 entry['boss'][key] = boss[key]
     # An area made again keeps its place in the list (the run map draws from it in order).

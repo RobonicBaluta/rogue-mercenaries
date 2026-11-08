@@ -139,6 +139,8 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.hitCheckProbe = g_caps.enemies && SignatureOk("enemy_hit_check");
     g_caps.bossGunfire = g_caps.enemies && SignatureOk("em82_may_hurt") && SignatureOk("uem82_get_dti");
     g_caps.bossNoRefill = g_caps.enemies && SignatureOk("em41_update") && SignatureOk("em40_update") && SignatureOk("uem41_get_dti");
+    g_caps.bossBrain = g_caps.enemies && SignatureOk("em40_can_dive") && SignatureOk("em40_ctor_story_wait") &&
+                       SignatureOk("em40_intel_release") && SignatureOk("em40_part_life_apply");
     g_caps.faderState = SignatureOk("fader_ctor");
     g_caps.stage308Setup = SignatureOk("s308_setup") && SignatureOk("s308_fuel_read") && SignatureOk("find_model") &&
                            SignatureOk("scene_base_setup") && SignatureOk("as308_get_dti");

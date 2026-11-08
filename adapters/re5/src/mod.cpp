@@ -3185,8 +3185,16 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
             // The giant Uroboros holds its dome and moves around it itself (cEm43ActShift); moved
             // every 8 s it did not close in, it seemed to teleport all around (user playtest
             // 2026-11-04). It is never moved. Other bosses only when they stand stuck, like any
-            // enemy (the Uroboros walks at the player now, DriveBoss).
+            // enemy.
             if (BossHoldsGround(engine::ClassName(unit))) continue;
+            // The Uroboros' own trip under the floor to reach the player (Dive, UnderGround, Float) is
+            // no being stuck: it stands parked until it comes up.
+            const std::string doing = engine::CurrentActionName(unit);
+            if (doing == "cEm40ActDive" || doing == "cEm40ActUnderGround" || doing == "cEm40ActFloat") {
+                for (int k = 0; k < 3; ++k) t.anchor[k] = pos[k];
+                t.anchorAt = now;
+                continue;
+            }
         }
         if (fresh || moved > kStuckMove) {
             for (int k = 0; k < 3; ++k) t.anchor[k] = pos[k];
@@ -3243,29 +3251,17 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
     }
 }
 
-// The Uroboros (uEm40) the director spawns has no will of its own: in the campaign the stage's
-// scenario boots its state machine (cScenarioArg_BootFSM, rAIFSM), and without one it walked
-// straight on and stood, at walls and doors, never at the player (user playtests 4 and 5:
-// cEm40ActWalk to the end, at 2.4 m too). Its own pieces drive it instead: the player as its
-// target (re5::off::kEnemyTarget, what its far grab reads), its walk's turn (kEm40TurnLeft)
-// aimed at him, its walk started again when it stands, and its own grabs when he is in reach
-// (research/re5-engine-map.md "Uroboros").
-struct BossDrive {
-    std::uintptr_t unit = 0;
-    int walk = -1, nearGrab = -1, farGrab = -1;
-    double nextLookup = 0.0;
-    int lookups = 0;
-    double nextGrab = 0.0;
-    double nextWalk = 0.0;
-    std::string lastAction;
-    bool targetNoted = false;
-};
-BossDrive g_bossDrive;
-constexpr float kBossNearReach = 300.0f;   // its near grab, under this
-constexpr float kBossFarReach = 700.0f;    // its far grab (the arm thrown out), under this
-constexpr float kBossGrabCone = 0.6f;      // radians off its facing at most
-constexpr double kBossGrabEvery = 4.0;
-constexpr double kBossWalkAgain = 1.5;
+// The Uroboros (uEm40) has a brain of its own (uEmIntel40: its near and far grabs, front and back
+// slams, roar, run, a path to the player, damage reactions and regeneration). Its constructor starts
+// it in the story's waiting mode (+0x20C0), where it only walks and never attacks, and the brain
+// leaves that mode when story flag 9 is set, which no run does: it walked straight on and stood
+// (user playtests 4 and 5), and the two moves the mod ordered in its place were all it ever did (user
+// playtest 2026-11-08: "he only uses grab and he spams that all the time"). A run's Uroboros is
+// released the way the brain releases it: waiting mode off, and its roar asked for. The story's
+// health for its arms and head comes with it, since they take damage from then on
+// (research/re5-engine-map.md "The Uroboros' brain").
+constexpr std::int16_t kEm40ArmLife = 420;   // s103_em00 ARM_L_LIFE, ARM_R_LIFE 220, + the 200 of its apply
+constexpr std::int16_t kEm40HeadLife = 375;  // HEAD_LIFE 175 + 200
 
 constexpr double kBossFallSeconds = 3.0;  // a dead boss's fall before the arena's screens (DriveArena)
 
@@ -3621,84 +3617,25 @@ void WatchUnit(double now) {
     w.since = now;
 }
 
-bool UroborosIdle(const std::string& action) {
-    return action == "cEm40ActWalk" || action == "cEm40ActRun" || action == "cEm40ActWait";
-}
-
-void DriveBoss(double now, const std::optional<std::array<double, 3>>& player) {
+void WakeUroboros() {
     const std::uintptr_t unit = g->boss.unit;
-    const auto local = engine::LocalPlayer();
-    if (!unit || g->boss.dead || !player || !local || engine::ClassName(unit) != "uEm40") return;
-    BossDrive& b = g_bossDrive;
-    if (b.unit != unit) {
-        b = {};
-        b.unit = unit;
-        b.nextGrab = now + 2.0;
+    if (!unit || g->boss.dead || engine::ClassName(unit) != "uEm40") return;
+    if (!engine::Caps().bossBrain) {
+        static bool warned = false;
+        if (!warned) RM_LOGW("boss: uEm40's brain cannot be released (signature check failed); it will only walk");
+        warned = true;
+        return;
     }
-    // Its actions, once it has them: on its first frame the table was empty (user playtest
-    // 2026-11-04: "walk -1, near grab -1 (of 0)", no grab all fight). Asked again every second.
-    if (b.walk < 0 && b.nearGrab < 0 && b.farGrab < 0 && now >= b.nextLookup && b.lookups < 30) {
-        b.nextLookup = now + 1.0;
-        ++b.lookups;
-        const auto first = [unit](const char* cls) {
-            const auto ids = engine::ActionIdsOf(unit, cls);
-            return ids.empty() ? -1 : ids.front();
-        };
-        b.walk = first("cEm40ActWalk");
-        // Its near grab at 0x26 is the one that reaches for each player (0x008ABC60).
-        const auto nearIds = engine::ActionIdsOf(unit, "cEm40ActNearCatch");
-        b.nearGrab = std::find(nearIds.begin(), nearIds.end(), 0x26) != nearIds.end() ? 0x26 : nearIds.empty() ? -1 : nearIds.front();
-        b.farGrab = first("cEm40ActFarCatch");
-        const bool found = b.walk >= 0 || b.nearGrab >= 0 || b.farGrab >= 0;
-        if (found || b.lookups == 30) {
-            RM_LOGI("boss drive: uEm40 actions walk %d, near grab %d (of %zu), far grab %d (lookup %d, %u actions)", b.walk,
-                    b.nearGrab, nearIds.size(), b.farGrab, b.lookups, ReadOr<std::uint32_t>(unit + re5::off::kCharActionCount, 0));
-        }
+    if (ReadOr<std::uint8_t>(unit + re5::off::kEm40StoryWait, 0) == 0) return;  // released already
+    SafeStore<std::uint8_t>(unit + re5::off::kEm40StoryWait, 0);
+    SafeStore<std::uint8_t>(unit + re5::off::kEm40WakeRoar, 1);
+    for (const auto& [offset, life] : {std::pair<std::size_t, std::int16_t>{re5::off::kEm40ArmLLife, kEm40ArmLife},
+                                       {re5::off::kEm40ArmRLife, kEm40ArmLife},
+                                       {re5::off::kEm40HeadLife, kEm40HeadLife}}) {
+        SafeStore<std::int16_t>(unit + offset, life);
+        SafeStore<std::int16_t>(unit + offset + 2, life);
     }
-    const auto hp = engine::ReadHp(unit);
-    if (!hp || hp->hp <= 0) return;
-    if (ReadOr<std::uintptr_t>(unit + re5::off::kEnemyTarget, 0) == 0) {
-        SafeStore<std::uintptr_t>(unit + re5::off::kEnemyTarget, local);
-        if (!b.targetNoted) RM_LOGI("boss drive: uEm40 had no target; the player is its target now");
-        b.targetNoted = true;
-    }
-    float pos[3];
-    for (int k = 0; k < 3; ++k) pos[k] = ReadOr<float>(unit + re5::off::kUnitPosition + k * 4, 0.0f);
-    const float dx = static_cast<float>((*player)[0]) - pos[0], dz = static_cast<float>((*player)[2]) - pos[2];
-    const float dist = std::sqrt(dx * dx + dz * dz);
-    float fx = 0.0f, fz = 0.0f;
-    if (!PlayerFacing(unit, fx, fz)) return;  // its own facing (any uCoord unit)
-    float turn = std::atan2(dx, dz) - std::atan2(fx, fz);
-    while (turn > 3.14159265f) turn -= 6.2831853f;
-    while (turn < -3.14159265f) turn += 6.2831853f;
-    const std::string action = engine::CurrentActionName(unit);
-    if (action != b.lastAction) {
-        // Its walking and standing are logged every 5 s by RescueStuckEnemies; the rest here.
-        if (!UroborosIdle(action) || !UroborosIdle(b.lastAction)) {
-            RM_LOGI("boss drive: uEm40 %s -> %s, %.1f m from the player, %.0f degrees off",
-                    b.lastAction.empty() ? "-" : b.lastAction.c_str(), action.c_str(), dist / 100.0f, turn * 57.29578f);
-        }
-        b.lastAction = action;
-    }
-    if (action == "cEm40ActWalk" || action == "cEm40ActRun") SafeStore<float>(unit + re5::off::kEm40TurnLeft, turn);
-    if (!UroborosIdle(action)) return;
-    if (now >= b.nextGrab && std::fabs(turn) < kBossGrabCone && dist < kBossFarReach) {
-        const bool nearGrab = dist < kBossNearReach;
-        const int id = nearGrab ? b.nearGrab : b.farGrab;
-        if (id >= 0 && engine::StartAction(unit, id, nearGrab ? "cEm40ActNearCatch" : "cEm40ActFarCatch")) {
-            b.nextGrab = now + kBossGrabEvery;
-            RM_LOGI("boss drive: uEm40 %s grab (action %d) at %.1f m", nearGrab ? "near" : "far", id, dist / 100.0f);
-            return;
-        }
-        b.nextGrab = now + 1.0;
-    }
-    if (action == "cEm40ActWait" && dist >= kBossNearReach && now >= b.nextWalk && b.walk >= 0) {
-        b.nextWalk = now + kBossWalkAgain;
-        static int walks = 0;
-        if (engine::StartAction(unit, b.walk, "cEm40ActWalk") && ++walks <= 3) {
-            RM_LOGI("boss drive: uEm40 walks again (action %d)%s", b.walk, walks == 3 ? "; not logged again" : "");
-        }
-    }
+    RM_LOGI("boss: uEm40's own brain released; arms %d, head %d", kEm40ArmLife, kEm40HeadLife);
 }
 
 // ROADMAP M1: on a stage listed in maps.json the run owns the arena. The game's own spawns
@@ -3812,7 +3749,7 @@ void DriveDirector(double now) {
     }
     TraceDirectorArena(now, player);
     RescueStuckEnemies(now, player);
-    DriveBoss(now, player);
+    WakeUroboros();
 }
 
 void DriveArena(double now) {

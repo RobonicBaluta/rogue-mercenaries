@@ -56,6 +56,9 @@ struct MapBoss {
     /// `trigger_wait` seconds after the director's first tick, whichever comes first (0: no limit).
     double trigger = 0.0;
     double trigger_wait = 0.0;
+    /// With a spawn, instead of `trigger`: it appears once the player is inside this box (min x, y,
+    /// z, max x, y, z): the story's own trigger for it (the Uroboros' s103 "uro shtuugen").
+    std::optional<std::array<double, 6>> trigger_box;
     /// Its name in a sentence: "the Uroboros", "Wesker".
     [[nodiscard]] std::string Phrase() const { return article.empty() ? name : article + " " + name; }
 };
