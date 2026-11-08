@@ -142,7 +142,7 @@ struct SkinModFile {
 /// The mod's own picture for the SKINS screen, read from the player's copy of the mod (never
 /// shipped): a texture entry of one of its archives, or a region of an image it comes with.
 struct SkinModPortrait {
-    std::string file;   // its name in the mod's folder ("Merce2Resource.arc", "A.jpg")
+    std::string file;   // its name in the mod's folder ("Merce2Resource.arc", "A.jpg"), or the end of its path ("Leon dsc\\kreedpic.jpg")
     std::string entry;  // an archive's texture entry ("id\jpn\merce_dc\versus_22_360_NOMIP_BM"); empty: an image
     std::vector<int> crop;  // an image's x, y, width, height (empty: all of it)
 };
@@ -152,6 +152,10 @@ struct SkinMod {
     std::string author;  // its creator (empty: unknown)
     std::string url;     // its page (https://www.nexusmods.com/...)
     std::vector<SkinModFile> files;
+    /// Folders of new files the costume asks for (its voice lines), under nativePC_MT
+    /// ("sound\\bgm\\oto\\emo_voice\\mod\\leon"): read from the mod's copy, and required (a file the
+    /// game cannot find ends it).
+    std::vector<std::string> folders;
     std::optional<SkinModPortrait> portrait;
 };
 

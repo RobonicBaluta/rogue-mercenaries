@@ -642,6 +642,28 @@ def launcher():
     return s
 
 
+def badge():
+    """Lucky Rookie (Leon, Darkside Chronicles): a police badge."""
+    s = Shape()
+    s.poly(spline([(50, 6), (70, 14), (88, 14), (86, 46), (74, 74), (50, 94), (26, 74), (14, 46), (12, 14), (30, 14)], 6))
+    s.poly(star(50, 50, 22, 9), cut=True)
+    s.poly(star(50, 50, 15, 6))
+    s.ring(50, 50, 30, 2.4, cut=True)
+    return s
+
+
+def boot():
+    """Roundhouse (Leon): a kicking boot."""
+    s = Shape()
+    s.poly([(36, 8), (60, 8), (62, 50), (84, 58), (92, 70), (92, 80), (34, 80), (32, 56)])   # the boot
+    s.rect(30, 82, 94, 90, 2)                                                             # the sole
+    for y in (22, 34, 46):
+        s.line([(38, y), (56, y)], 2.2, cut=True)                                        # the laces
+    for x, y, r in ((18, 30, 4), (10, 46, 3), (20, 62, 3)):
+        s.ellipse(x, y, r, r)                                                             # the motion
+    return s
+
+
 ICONS = {
     'chain': chain, 'skull': skull, 'shades': shades, 'herb': herb, 'parachute': parachute,
     'grenade': grenade, 'flash': flash, 'fire': fire, 'medkit': medkit, 'heal': heal, 'second_wind': second_wind,
@@ -650,7 +672,7 @@ ICONS = {
     'handgun': handgun, 'credits': credits, 'clock': clock, 'flag': flag, 'trophy': trophy, 'person': person,
     'mine': mine, 'gatling': gatling, 'bow': bow, 'key': key, 'dash': dash, 'dual_smg': dual_smg, 'radio': radio,
     'fist': fist, 'crown': crown, 'star': big_star, 'lunge': lunge, 'shockwave': shockwave,
-    'syringe': syringe, 'wolf': wolf, 'launcher': launcher,
+    'syringe': syringe, 'wolf': wolf, 'launcher': launcher, 'badge': badge, 'boot': boot,
 }
 
 

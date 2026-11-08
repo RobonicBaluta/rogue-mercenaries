@@ -1117,7 +1117,15 @@ void ParseSkins(const Diag& file, const json& e, CharacterDef& c) {
                 md.Error("must be an object");
             } else {
                 SkinMod mod;
-                CheckKeys(md, *m, {"name", "author", "url", "files", "portrait"});
+                CheckKeys(md, *m, {"name", "author", "url", "files", "portrait", "folders"});
+                if (GetStringList(md, *m, "folders", mod.folders, false)) {
+                    for (const std::string& f : mod.folders) {
+                        if (f.empty() || f.find("..") != std::string::npos || f.find(':') != std::string::npos || f.front() == '\\' ||
+                            f.front() == '/') {
+                            md.Error("folder " + Q(f) + " must be a path under nativePC_MT (\"sound\\\\bgm\\\\...\")");
+                        }
+                    }
+                }
                 if (const json* pt = Get(*m, "portrait")) {
                     SkinModPortrait portrait;
                     if (!pt->is_object()) {
@@ -1136,8 +1144,9 @@ void ParseSkins(const Diag& file, const json& e, CharacterDef& c) {
                                 }
                             }
                         }
-                        if (portrait.file.empty() || portrait.file.find_first_of("\\/:") != std::string::npos) {
-                            md.Error("portrait file " + Q(portrait.file) + " must be a bare file name");
+                        if (portrait.file.empty() || portrait.file.find(':') != std::string::npos ||
+                            portrait.file.find("..") != std::string::npos || portrait.file.front() == '\\' || portrait.file.front() == '/') {
+                            md.Error("portrait file " + Q(portrait.file) + " must be a file name or the end of a path in the mod");
                         }
                         mod.portrait = std::move(portrait);
                     }

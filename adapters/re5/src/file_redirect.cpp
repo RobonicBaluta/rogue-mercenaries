@@ -18,8 +18,16 @@ namespace {
 
 using CreateFileAFn = HANDLE(WINAPI*)(LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
 using CreateFileWFn = HANDLE(WINAPI*)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
+using GetAttributesAFn = DWORD(WINAPI*)(LPCSTR);
+using GetAttributesWFn = DWORD(WINAPI*)(LPCWSTR);
+using GetAttributesExAFn = BOOL(WINAPI*)(LPCSTR, GET_FILEEX_INFO_LEVELS, LPVOID);
+using GetAttributesExWFn = BOOL(WINAPI*)(LPCWSTR, GET_FILEEX_INFO_LEVELS, LPVOID);
 CreateFileAFn g_origA = nullptr;
 CreateFileWFn g_origW = nullptr;
+GetAttributesAFn g_origAttrA = nullptr;
+GetAttributesWFn g_origAttrW = nullptr;
+GetAttributesExAFn g_origAttrExA = nullptr;
+GetAttributesExWFn g_origAttrExW = nullptr;
 
 std::mutex g_mutex;
 std::shared_ptr<const std::vector<Redirect>> g_redirects = std::make_shared<std::vector<Redirect>>();
@@ -43,6 +51,8 @@ std::string Narrow(const std::wstring& w) {
     return out;
 }
 
+DWORD TargetAttributes(const std::wstring& target) { return g_origAttrW ? g_origAttrW(target.c_str()) : GetFileAttributesW(target.c_str()); }
+
 // The file to open instead of `path`, or empty. Reads only (a write never goes to a mod's file).
 std::wstring Lookup(const std::wstring& path, DWORD access) {
     if (t_inside || path.empty()) return {};
@@ -57,11 +67,28 @@ std::wstring Lookup(const std::wstring& path, DWORD access) {
     const auto redirects = Current();
     for (const Redirect& r : *redirects) {
         if (r.tail.empty() || lower.size() < r.tail.size()) continue;
+        if (r.tail.back() == L'\\') {
+            // A folder: a path inside it reads the same path inside the mod's folder.
+            const auto at = lower.find(L"\\" + r.tail);
+            if (at == std::wstring::npos) continue;
+            const std::wstring rest = path.substr(at + 1 + r.tail.size());
+            if (rest.empty()) continue;
+            const std::wstring target = r.target + L"\\" + rest;
+            const DWORD attributes = TargetAttributes(target);
+            if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
+            static std::atomic<int> logged{0};
+            if (logged.fetch_add(1) < 20) {
+                t_inside = true;
+                RM_LOGI("files: %s read from %s", Narrow(path).c_str(), Narrow(target).c_str());
+                t_inside = false;
+            }
+            return target;
+        }
         if (lower.compare(lower.size() - r.tail.size(), r.tail.size(), r.tail) != 0) continue;
         // The tail must start at a folder boundary ("archive\x.arc" never matches "barchive\x.arc").
         if (lower.size() > r.tail.size() && r.tail.front() != L'\\' && lower[lower.size() - r.tail.size() - 1] != L'\\') continue;
         // A missing mod file would end the game ("Failed open file"): the game's own is read then.
-        const DWORD attributes = GetFileAttributesW(r.target.c_str());
+        const DWORD attributes = TargetAttributes(r.target);
         if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
             t_inside = true;
             RM_LOGW("files: %s is missing; the game's own %s is read", Narrow(r.target).c_str(), Narrow(path).c_str());
@@ -100,6 +127,47 @@ HANDLE WINAPI CreateFileADetour(LPCSTR name, DWORD access, DWORD share, LPSECURI
     return g_origA(name, access, share, sa, disposition, flags, templ);
 }
 
+std::wstring Wide(LPCSTR name) {
+    const int n = MultiByteToWideChar(CP_ACP, 0, name, -1, nullptr, 0);
+    if (n <= 0) return {};
+    std::wstring wide(static_cast<std::size_t>(n), L'\0');
+    MultiByteToWideChar(CP_ACP, 0, name, -1, wide.data(), n);
+    wide.resize(static_cast<std::size_t>(n - 1));
+    return wide;
+}
+
+DWORD WINAPI GetAttributesWDetour(LPCWSTR name) {
+    if (name != nullptr) {
+        const std::wstring target = Lookup(name, GENERIC_READ);
+        if (!target.empty()) return g_origAttrW(target.c_str());
+    }
+    return g_origAttrW(name);
+}
+
+DWORD WINAPI GetAttributesADetour(LPCSTR name) {
+    if (name != nullptr) {
+        const std::wstring target = Lookup(Wide(name), GENERIC_READ);
+        if (!target.empty()) return g_origAttrW(target.c_str());
+    }
+    return g_origAttrA(name);
+}
+
+BOOL WINAPI GetAttributesExWDetour(LPCWSTR name, GET_FILEEX_INFO_LEVELS level, LPVOID info) {
+    if (name != nullptr) {
+        const std::wstring target = Lookup(name, GENERIC_READ);
+        if (!target.empty()) return g_origAttrExW(target.c_str(), level, info);
+    }
+    return g_origAttrExW(name, level, info);
+}
+
+BOOL WINAPI GetAttributesExADetour(LPCSTR name, GET_FILEEX_INFO_LEVELS level, LPVOID info) {
+    if (name != nullptr) {
+        const std::wstring target = Lookup(Wide(name), GENERIC_READ);
+        if (!target.empty()) return g_origAttrExW(target.c_str(), level, info);
+    }
+    return g_origAttrExA(name, level, info);
+}
+
 bool Queue(LPCWSTR module, LPCSTR proc, void* detour, void** original) {
     void* target = nullptr;
     MH_STATUS status = MH_CreateHookApiEx(module, proc, detour, original, &target);
@@ -116,7 +184,13 @@ bool Queue(LPCWSTR module, LPCSTR proc, void* detour, void** original) {
 bool Install() {
     const bool a = Queue(L"kernel32", "CreateFileA", reinterpret_cast<void*>(&CreateFileADetour), reinterpret_cast<void**>(&g_origA));
     const bool w = Queue(L"kernel32", "CreateFileW", reinterpret_cast<void*>(&CreateFileWDetour), reinterpret_cast<void**>(&g_origW));
-    return a && w;
+    const bool aa = Queue(L"kernel32", "GetFileAttributesA", reinterpret_cast<void*>(&GetAttributesADetour), reinterpret_cast<void**>(&g_origAttrA));
+    const bool aw = Queue(L"kernel32", "GetFileAttributesW", reinterpret_cast<void*>(&GetAttributesWDetour), reinterpret_cast<void**>(&g_origAttrW));
+    const bool xa = Queue(L"kernel32", "GetFileAttributesExA", reinterpret_cast<void*>(&GetAttributesExADetour),
+                          reinterpret_cast<void**>(&g_origAttrExA));
+    const bool xw = Queue(L"kernel32", "GetFileAttributesExW", reinterpret_cast<void*>(&GetAttributesExWDetour),
+                          reinterpret_cast<void**>(&g_origAttrExW));
+    return a && w && aa && aw && xa && xw;
 }
 
 void SetRedirects(std::vector<Redirect> redirects) {

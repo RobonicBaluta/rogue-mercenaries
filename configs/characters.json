@@ -576,6 +576,102 @@
           }
         }
       ]
+    },
+    {
+      "id": "leon",
+      "name": "Leon S. Kennedy",
+      "enabled": true,
+      "starting_weapons": [
+        "m92f",
+        "m3"
+      ],
+      "exclusive_mechanic": "",
+      "unlock_cost_credits": 0,
+      "costume_index": 0,
+      "skins": [
+        {
+          "id": "leon_dsc",
+          "name": "Darkside Chronicles",
+          "costume_index": 0,
+          "mod": {
+            "name": "Leon Definitive Edition",
+            "author": "kreed, izacky",
+            "url": "https://www.nexusmods.com/residentevil5goldedition/mods/223",
+            "folders": [
+              "sound\\bgm\\oto\\emo_voice\\mod\\leon"
+            ],
+            "files": [
+              {
+                "name": "uPl00ChrisNormal.arc",
+                "size": 60420703
+              }
+            ],
+            "portrait": {
+              "file": "Leon dsc\\kreedpic.jpg",
+              "crop": [
+                2020,
+                0,
+                900,
+                900
+              ]
+            }
+          },
+          "starting_passive": "leon_dsc_trait",
+          "build": {
+            "name": "Lucky Rookie",
+            "icon": "badge",
+            "summary": "Survives one lethal hit an arena at 30 percent health. Handguns 25 percent harder. Health x0.85.",
+            "category_damage": {
+              "handgun": 0.25
+            },
+            "max_health_mult": 0.85
+          }
+        },
+        {
+          "id": "leon_jacket",
+          "name": "Jacket",
+          "costume_index": 2,
+          "mod": {
+            "name": "Leon Definitive Edition",
+            "author": "kreed, izacky",
+            "url": "https://www.nexusmods.com/residentevil5goldedition/mods/223",
+            "folders": [
+              "sound\\bgm\\oto\\emo_voice\\mod\\leon"
+            ],
+            "files": [
+              {
+                "name": "uPl00ChrisCos2.arc",
+                "size": 90341329
+              }
+            ],
+            "portrait": {
+              "file": "Leon jacket\\kreedpic.jpg",
+              "crop": [
+                80,
+                0,
+                1200,
+                1200
+              ]
+            }
+          },
+          "build": {
+            "name": "Best Customer",
+            "icon": "credits",
+            "summary": "Every shop has a refine at half price and a free NEW STOCK. Better rarities. Supplies x0.8.",
+            "refine_every_shop": true,
+            "refine_price_mult": 0.5,
+            "free_shop_rerolls": 1,
+            "rarity_shift": 0.3,
+            "supplies_mult": 0.8
+          }
+        }
+      ],
+      "starting_passive": "leon_roundhouse",
+      "skill_pool": [
+        "leon_suplex",
+        "leon_agent_training",
+        "leon_matilda"
+      ]
     }
   ]
 }

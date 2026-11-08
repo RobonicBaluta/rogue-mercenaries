@@ -12,11 +12,13 @@
 namespace rmre5::fileredirect {
 
 struct Redirect {
-    std::wstring tail;    // the end of the game's path, lowercase, backslashes
-    std::wstring target;  // the file opened instead (absolute)
+    std::wstring tail;    // the end of the game's path, lowercase, backslashes; ending in "\\": a folder
+    std::wstring target;  // the file opened instead (absolute); for a folder, the folder whose files stand in
 };
 
-/// Hooks CreateFileA/W (queued; MH_ApplyQueued enables it).
+/// Hooks CreateFileA/W and GetFileAttributesA/W, GetFileAttributesExA/W (queued; MH_ApplyQueued
+/// enables them): a mod's files that the game folder lacks (a costume's voice lines) must also
+/// exist when the game asks first.
 bool Install();
 /// Replaces the redirect set (thread safe; the game's loader threads open files).
 void SetRedirects(std::vector<Redirect> redirects);

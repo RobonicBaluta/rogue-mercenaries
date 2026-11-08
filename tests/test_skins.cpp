@@ -263,3 +263,31 @@ TEST_CASE("a mod skin needs its mod installed", "[characters]") {
     CHECK(any.Accepts(12345));
     CHECK(has(errors([](json& s) { s["mod"]["files"][0]["sizes"] = json::array({0}); }), "positive whole number"));
 }
+
+// A character made only of mod skins (Leon, worn in Chris's costumes) waits for its mod.
+TEST_CASE("a mod character is not installed until one of its mods is", "[characters]") {
+    const json mod = {{"name", "Agent"},
+                      {"url", "https://www.nexusmods.com/residentevil5goldedition/mods/2"},
+                      {"files", json::array({json{{"name", "uPl00ChrisNormal.arc"}}})},
+                      {"folders", json::array({"sound/bgm/oto/emo_voice/mod/agent"})},
+                      {"portrait", json{{"file", "Agent dsc/pic.jpg"}, {"crop", json::array({0, 0, 10, 10})}}}};
+    auto content = test::Load(test::EditFixture([&](json&, json&, json& characters, json&, json&) {
+        characters["characters"].push_back(json{{"id", "agent"},
+                                                {"name", "Agent"},
+                                                {"starting_weapons", json::array({"pistol"})},
+                                                {"skins", json::array({json{{"id", "agent_a"}, {"name", "A"}, {"costume_index", 0}, {"mod", mod}},
+                                                                       json{{"id", "agent_b"}, {"name", "B"}, {"costume_index", 2}, {"mod", mod}}})}});
+    }));
+    const SkinDef* skin = FindSkin(*content->FindCharacter("agent"), "agent_a");
+    REQUIRE(skin != nullptr);
+    REQUIRE(skin->mod->folders.size() == 1);
+    CHECK(skin->mod->portrait->file == "Agent dsc/pic.jpg");
+    test::Harness h(content);
+    CHECK(Find(h.rc.Characters(), "agent")->gate == CharacterGate::NotInstalled);
+    CHECK(Find(h.rc.Characters(), "alpha")->gate == CharacterGate::Selectable);
+    h.rc.SetInstalledModSkins({"agent_b"});
+    CHECK(Find(h.rc.Characters(), "agent")->gate == CharacterGate::Selectable);
+    CHECK_FALSE(h.rc.StartRun("agent", 3, "agent_a").ok());  // its other mod is still missing
+    REQUIRE(h.rc.StartRun("agent", 3, "agent_b").ok());
+    CHECK(h.rc.state().character_id == "agent");
+}

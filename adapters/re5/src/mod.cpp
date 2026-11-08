@@ -657,19 +657,52 @@ void ScanModSkins() {
                 const std::string tail = "Image\\Archive\\" + f.name;
                 redirects.push_back({std::wstring(tail.begin(), tail.end()), match->wstring()});
             }
+            // The mod's own folder: the one under mods that holds its (first) costume file.
+            std::filesystem::path modRoot = root;
+            if (!redirects.empty()) {
+                const auto rel = std::filesystem::path(redirects.front().target).lexically_relative(root);
+                if (!rel.empty() && std::distance(rel.begin(), rel.end()) > 1) modRoot = root / *rel.begin();
+            }
+            // Its folders of new files (a costume's voice lines): found by the end of their path.
+            for (const std::string& folder : s.mod->folders) {
+                if (!missing.empty()) break;
+                std::string want = LowerAscii("nativePC_MT\\" + folder);
+                std::replace(want.begin(), want.end(), '/', '\\');
+                std::optional<std::filesystem::path> dir;
+                std::error_code walk;
+                for (auto it = std::filesystem::recursive_directory_iterator(modRoot, std::filesystem::directory_options::skip_permission_denied, walk);
+                     !walk && it != std::filesystem::recursive_directory_iterator(); it.increment(walk)) {
+                    if (!it->is_directory(walk)) continue;
+                    std::string have = LowerAscii(it->path().string());
+                    std::replace(have.begin(), have.end(), '/', '\\');
+                    if (have.size() >= want.size() && have.compare(have.size() - want.size(), want.size(), want) == 0) {
+                        dir = it->path();
+                        break;
+                    }
+                }
+                if (!dir) {
+                    missing += " the folder " + folder + " (the mod's main files)";
+                    continue;
+                }
+                std::string tail = LowerAscii(folder);
+                std::replace(tail.begin(), tail.end(), '/', '\\');
+                tail += "\\";
+                redirects.push_back({std::wstring(tail.begin(), tail.end()), dir->wstring()});
+            }
             if (missing.empty()) {
-                // Its picture: a file of that name in the mod's own folder (the folder under mods
-                // that holds its costume file).
-                if (s.mod->portrait && !redirects.empty()) {
-                    const std::filesystem::path costume(redirects.front().target);
-                    std::filesystem::path modRoot = root;
-                    const auto rel = costume.lexically_relative(root);
-                    if (!rel.empty() && rel.begin() != rel.end() && std::distance(rel.begin(), rel.end()) > 1) modRoot = root / *rel.begin();
-                    const auto pictures = byName.find(LowerAscii(s.mod->portrait->file));
+                // Its picture: a file of that name (or path's end) in the mod's own folder.
+                if (s.mod->portrait) {
+                    std::string wantTail = LowerAscii(s.mod->portrait->file);
+                    std::replace(wantTail.begin(), wantTail.end(), '/', '\\');
+                    const std::string fileName = wantTail.substr(wantTail.find_last_of('\\') == std::string::npos ? 0 : wantTail.find_last_of('\\') + 1);
+                    const auto pictures = byName.find(fileName);
                     if (pictures != byName.end()) {
                         for (const auto& p : pictures->second) {
                             const auto inside = p.lexically_relative(modRoot);
                             if (inside.empty() || inside.native().rfind(L"..", 0) == 0) continue;
+                            std::string have = LowerAscii(p.string());
+                            std::replace(have.begin(), have.end(), '/', '\\');
+                            if (have.size() < wantTail.size() || have.compare(have.size() - wantTail.size(), wantTail.size(), wantTail) != 0) continue;
                             portraits::ModPortrait pic;
                             pic.file = p;
                             pic.entry = s.mod->portrait->entry;
@@ -828,6 +861,40 @@ std::string SkinForRun(const std::vector<rm::CharacterAvailability>& characters,
     if (c.id != characterId) return {};
     const rm::SkinAvailability* skin = SelectedSkin(c);
     return skin ? skin->id : std::string();
+}
+
+// A mod character (Leon) wears another character's costumes (Chris's): the match's player class
+// then names that one. The character whose own skins include a costume slot.
+std::string CostumeOwner(std::int64_t costume) {
+    for (const rm::CharacterDef& c : g->content->characters()) {
+        for (const rm::SkinDef& s : c.skins) {
+            if (!s.mod && s.costume_index == costume) return c.id;
+        }
+    }
+    return {};
+}
+
+// True when a run of `characterId` in skin `skinId` is what the match's player class shows: its own
+// class, or a mod skin worn in that class's costume.
+bool PlaysAs(const std::string& classCharacter, const std::string& characterId, const std::string& skinId) {
+    if (classCharacter.empty() || classCharacter == characterId) return true;
+    const rm::CharacterDef* def = g->content->FindCharacter(characterId);
+    const rm::SkinDef* skin = def != nullptr ? rm::FindSkin(*def, skinId) : nullptr;
+    return skin != nullptr && skin->mod && CostumeOwner(skin->costume_index) == classCharacter;
+}
+
+// The character a run started in this match plays: the selected one when its chosen skin is a mod
+// skin worn in the match's class (Leon in Chris's costume), else the class's own.
+std::string MatchRunCharacter(const std::string& classCharacter) {
+    const auto characters = g->run->Characters();
+    if (g->selectedCharacter >= 0 && g->selectedCharacter < static_cast<int>(characters.size())) {
+        const auto& c = characters[static_cast<std::size_t>(g->selectedCharacter)];
+        if (c.id != classCharacter) {
+            const rm::SkinAvailability* skin = SelectedSkin(c);
+            if (skin != nullptr && PlaysAs(classCharacter, c.id, skin->id)) return c.id;
+        }
+    }
+    return classCharacter;
 }
 
 // The costume slot a character would wear: its chosen skin if it is the selected character,
@@ -1108,7 +1175,29 @@ private:
                     Item item;
                     item.label = Upper(c.name);
                     item.portrait = CostumeOf(characters, i);
-                    if (c.gate == rm::CharacterGate::Selectable) {
+                    // A mod character (Leon): its mod's picture; without its mod, where to get it.
+                    const rm::CharacterDef* def = run.content().FindCharacter(c.id);
+                    const rm::SkinDef* firstMod = nullptr;
+                    if (def != nullptr) {
+                        for (const rm::SkinDef& s : def->skins) {
+                            if (s.mod && firstMod == nullptr) firstMod = &s;
+                        }
+                    }
+                    if (firstMod != nullptr) {
+                        const rm::SkinAvailability* worn = static_cast<int>(i) == g->selectedCharacter ? SelectedSkin(c) : nullptr;
+                        for (const auto& s : c.skins) {
+                            if (worn == nullptr && s.gate == rm::CharacterGate::Selectable) worn = &s;
+                        }
+                        const auto pic = worn != nullptr ? g_modPortraits.find(worn->id) : g_modPortraits.end();
+                        if (pic != g_modPortraits.end()) item.portrait = pic->second;
+                    }
+                    if (c.gate == rm::CharacterGate::NotInstalled && firstMod != nullptr) {
+                        item.locked = true;
+                        item.label += "   MOD";
+                        const rm::SkinMod& mod = *firstMod->mod;
+                        item.help = (mod.author.empty() ? std::string("A free mod on Nexus Mods.") : "A free mod by " + Plain(mod.author) + ".") +
+                                    " Press to open its page,\nendorse it, and unzip it in RogueMercenaries, mods.";
+                    } else if (c.gate == rm::CharacterGate::Selectable) {
                         const bool selected = static_cast<int>(i) == g->selectedCharacter;
                         if (selected) item.label += "   SELECTED";
                         item.help = selected ? "Your character for the next run." : "Press to select this character.";
@@ -1459,6 +1548,19 @@ private:
                 const auto characters = run.Characters();
                 if (index < 0 || index >= static_cast<int>(characters.size())) break;
                 const auto& c = characters[index];
+                if (c.gate == rm::CharacterGate::NotInstalled) {
+                    // A mod character without its mod: its page.
+                    if (const rm::CharacterDef* def = run.content().FindCharacter(c.id)) {
+                        for (const rm::SkinDef& s : def->skins) {
+                            if (s.mod) {
+                                OpenModPage(*s.mod);
+                                break;
+                            }
+                        }
+                    }
+                    d.outcome = Outcome::Refresh;
+                    break;
+                }
                 if (c.gate == rm::CharacterGate::Selectable) {
                     if (g->selectedCharacter != index) g->selectedSkin.clear();
                     g->selectedCharacter = index;
@@ -1715,9 +1817,9 @@ void HandleNativeMenu(double now) {
     QueryPerformanceCounter(&counter);
     const auto seed = static_cast<std::uint64_t>(counter.QuadPart) ^ 0x9E3779B97F4A7C15ull;
     run.SetArenaPool(RotationMaps(), CurrentMapKey());  // the run map starts where the match is
-    const rm::Status status = run.StartRun(g->match.localCharacter, seed, SkinForRun(run.Characters(), g->match.localCharacter),
-                                           g->selectedLength);
-    Report(status, ("start run (" + g->match.localCharacter + ")").c_str());
+    const std::string runCharacter = MatchRunCharacter(g->match.localCharacter);  // Leon in Chris's costume
+    const rm::Status status = run.StartRun(runCharacter, seed, SkinForRun(run.Characters(), runCharacter), g->selectedLength);
+    Report(status, ("start run (" + runCharacter + ")").c_str());
     if (!status.ok()) {
         g->toasts.Push("Rogue Mercenaries: " + status.message);
         return;
@@ -2628,7 +2730,7 @@ void TryBeginArena(double now) {
     const bool waitingFirst = phase == rm::Phase::Idle && run.state().arena_index == 0;
     const bool waitingNext = phase == rm::Phase::RouteSelection && run.state().route_chosen;
     if (!waitingFirst && !waitingNext) return;
-    if (!g->match.localCharacter.empty() && g->match.localCharacter != run.state().character_id) {
+    if (!PlaysAs(g->match.localCharacter, run.state().character_id, run.state().skin_id)) {
         static double lastWarn = -100.0;
         if (now - lastWarn > 10.0) {
             lastWarn = now;

@@ -485,6 +485,12 @@ std::vector<CharacterAvailability> RunController::Characters() const {
         for (const SkinDef& s : c.skins) {
             a.skins.push_back({s.id, s.name, s.costume_index, SkinGate(s), s.unlock.text, CheckChallenge(s.unlock, profile_.stats)});
         }
+        // A character that is only mod skins (Leon) waits for one of its mods.
+        const bool allMods = !c.skins.empty() && std::all_of(c.skins.begin(), c.skins.end(), [](const SkinDef& s) { return s.mod.has_value(); });
+        if (allMods && a.gate == CharacterGate::Selectable &&
+            std::none_of(a.skins.begin(), a.skins.end(), [](const SkinAvailability& s) { return s.gate == CharacterGate::Selectable; })) {
+            a.gate = CharacterGate::NotInstalled;
+        }
         if (!c.skins.empty() && c.skins.front().costume_index >= 0) a.costume_index = c.skins.front().costume_index;
         out.push_back(std::move(a));
     }

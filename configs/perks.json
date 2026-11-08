@@ -238,6 +238,31 @@
       "icon": "supplies"
     },
     {
+      "id": "leon_roundhouse",
+      "name": "Roundhouse",
+      "description": "Leon. For 4 seconds after a melee hit his shots deal 40 percent more.",
+      "category": "style",
+      "rarity": "common",
+      "tags": [
+        "damage"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.4,
+          "condition": {
+            "type": "after_melee",
+            "window_seconds": 4
+          }
+        }
+      ],
+      "characters": [
+        "leon"
+      ],
+      "icon": "boot"
+    },
+    {
       "id": "chris_boulder_puncher",
       "name": "Boulder Puncher",
       "description": "Chris. Melee hits deal two and a half times the damage, handguns 25 percent less.",
@@ -637,6 +662,61 @@
       "icon": "credits"
     },
     {
+      "id": "leon_suplex",
+      "name": "Suplex",
+      "description": "Leon. Melee hits deal twice the damage, every melee kill pays 10 supplies. Rifles 25 percent less.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "melee"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "supplies_on_kill",
+          "amount": 10,
+          "melee_only": true
+        }
+      ],
+      "characters": [
+        "leon"
+      ],
+      "unlock_cost_credits": 150,
+      "build": {
+        "melee_damage": 1.0,
+        "category_damage": {
+          "rifle": -0.25
+        }
+      },
+      "icon": "fist"
+    },
+    {
+      "id": "leon_agent_training",
+      "name": "Agent Training",
+      "description": "Leon. 20 percent of his hits are critical and deal double damage. Heals 25 percent smaller.",
+      "category": "style",
+      "rarity": "epic",
+      "tags": [
+        "crit"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "crit",
+          "chance": 0.2,
+          "multiplier": 2.0
+        }
+      ],
+      "characters": [
+        "leon"
+      ],
+      "unlock_cost_credits": 200,
+      "build": {
+        "heal_mult": 0.75
+      },
+      "icon": "crosshair"
+    },
+    {
       "id": "excella_golden_parachute",
       "name": "Golden Parachute",
       "description": "Excella. Once per arena she survives a lethal hit with 25 percent health. 20 percent fewer supplies.",
@@ -959,6 +1039,34 @@
       "icon": "rifle"
     },
     {
+      "id": "leon_matilda",
+      "name": "Matilda",
+      "description": "Leon starts with an M93R and 30 handgun rounds.",
+      "category": "supply",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 286,
+          "amount": 1
+        },
+        {
+          "kind": "item_on_start",
+          "game_item": 513,
+          "amount": 30
+        }
+      ],
+      "characters": [
+        "leon"
+      ],
+      "unlock_cost_credits": 150,
+      "icon": "handgun"
+    },
+    {
       "id": "excella_rifle",
       "name": "Private Security",
       "description": "Excella starts with a Dragunov and 10 rounds.",
@@ -1090,6 +1198,24 @@
       ],
       "unlock_cost_credits": 90,
       "icon": "supplies"
+    },
+    {
+      "id": "leon_dsc_trait",
+      "name": "Lucky Rookie",
+      "description": "Once per arena Leon survives a lethal hit with 30 percent health.",
+      "category": "skin",
+      "rarity": "common",
+      "tags": [
+        "skin"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "cheat_death",
+          "per_arena": 1,
+          "leave_hp_fraction": 0.3
+        }
+      ]
     },
     {
       "id": "chris_stars_trait",

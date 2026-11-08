@@ -5,6 +5,7 @@ import json
 HAND, INCENDIARY, FLASH, SPRAY, HANDGUN_AMMO = 0x0106, 0x0107, 0x0108, 0x0304, 0x0201
 M92F, ITHACA, MP5, LHAWK, SHELLS, MG_AMMO, MAGNUM_AMMO = 0x0102, 0x0104, 0x0113, 0x011A, 0x0203, 0x0202, 0x0209
 VZ61, M500, M29, PSG1, DRAGUNOV, RIFLE_AMMO = 0x0103, 0x011B, 0x010B, 0x011C, 0x0120, 0x0204
+M93R = 0x011E
 
 
 def perk(pid, name, desc, category, effects, characters=None, cost=0, rarity='common', tags=None, enabled=True, build=None):
@@ -50,6 +51,10 @@ perks += [
           {'kind': 'item_on_arena_clear', 'game_item': SPRAY, 'amount': 1}], ['rebecca'], tags=['heal', 'items']),
     perk('excella_executive_bonus', 'Executive Bonus', 'Excella. 25 extra supplies for every arena cleared.', 'style',
          [{'kind': 'supplies_on_arena_clear', 'amount': 25, 'require_no_damage': False}], ['excella'], tags=['supplies']),
+    # Leon S. Kennedy (a mod character, 2026-11-08: Leon Definitive Edition): RE4's shoot, kick, shoot.
+    perk('leon_roundhouse', 'Roundhouse', 'Leon. For 4 seconds after a melee hit his shots deal 40 percent more.', 'style',
+         [{'kind': 'outgoing_damage_mult', 'value': 0.4, 'condition': {'type': 'after_melee', 'window_seconds': 4}}], ['leon'],
+         tags=['damage']),
 ]
 # Two more per character (2026-11-04, the user's go): each a rule with its cost, made of what the
 # builds already do in game ('build' adds into the run's build) or the perk effects.
@@ -98,6 +103,11 @@ perks += [
     perk('excella_hostile_takeover', 'Hostile Takeover', 'Excella. Every melee kill pays 15 supplies, but guns deal 15 percent less.', 'style',
          [{'kind': 'supplies_on_kill', 'amount': 15, 'melee_only': True}], ['excella'], cost=150, rarity='rare', tags=['supplies'],
          build={'category_damage': {g: -0.15 for g in GUNS}}),
+    perk('leon_suplex', 'Suplex', 'Leon. Melee hits deal twice the damage, every melee kill pays 10 supplies. Rifles 25 percent less.', 'style',
+         [{'kind': 'supplies_on_kill', 'amount': 10, 'melee_only': True}], ['leon'], cost=150, rarity='rare', tags=['melee'],
+         build={'melee_damage': 1.0, 'category_damage': {'rifle': -0.25}}),
+    perk('leon_agent_training', 'Agent Training', 'Leon. 20 percent of his hits are critical and deal double damage. Heals 25 percent smaller.', 'style',
+         [{'kind': 'crit', 'chance': 0.2, 'multiplier': 2.0}], ['leon'], cost=200, rarity='epic', tags=['crit'], build={'heal_mult': 0.75}),
     perk('excella_golden_parachute', 'Golden Parachute', 'Excella. Once per arena she survives a lethal hit with 25 percent health. 20 percent fewer supplies.', 'style',
          [{'kind': 'cheat_death', 'per_arena': 1, 'leave_hp_fraction': 0.25}], ['excella'], cost=200, rarity='epic', tags=['survival'],
          build={'supplies_mult': 0.8}),
@@ -116,6 +126,8 @@ perks += [
     perk('josh_magnum', 'Big Iron', 'Josh starts with an M29 and 6 rounds.', 'supply', [item_start(M29), item_start(MAGNUM_AMMO, 6)], ['josh'], cost=150, rarity='rare', tags=['weapon']),
     perk('barry_smg', 'Old Reliable', 'Barry starts with an MP5 and 60 rounds.', 'supply', [item_start(MP5), item_start(MG_AMMO, 60)], ['barry'], cost=150, rarity='rare', tags=['weapon']),
     perk('rebecca_rifle', 'Rookie Marksman', 'Rebecca starts with a PSG-1 and 10 rounds.', 'supply', [item_start(PSG1), item_start(RIFLE_AMMO, 10)], ['rebecca'], cost=150, rarity='rare', tags=['weapon']),
+    perk('leon_matilda', 'Matilda', 'Leon starts with an M93R and 30 handgun rounds.', 'supply', [item_start(M93R), item_start(HANDGUN_AMMO, 30)],
+         ['leon'], cost=150, rarity='rare', tags=['weapon']),
     perk('excella_rifle', 'Private Security', 'Excella starts with a Dragunov and 10 rounds.', 'supply', [item_start(DRAGUNOV), item_start(RIFLE_AMMO, 10)], ['excella'], cost=150, rarity='rare', tags=['weapon']),
 ]
 # ---- Support: bad situations. ----
@@ -134,6 +146,8 @@ perks += [
 # ---- Skin traits: a skin's perk (granted by the skin, never listed). Skins with a build (BUILDS below,
 # ROADMAP M8) lose their old small trait; the remaining ones go as their builds land. ----
 skin_traits = {
+    'leon_dsc_trait': ('Lucky Rookie', 'Once per arena Leon survives a lethal hit with 30 percent health.',
+                       [{'kind': 'cheat_death', 'per_arena': 1, 'leave_hp_fraction': 0.3}]),
     'chris_stars_trait': ('S.T.A.R.S. Restock', 'S.T.A.R.S. Chris restocks a first aid spray on every arena clear.',
                           [{'kind': 'item_on_arena_clear', 'game_item': 0x0304, 'amount': 1}]),
     'sheva_tribal_trait': ('Quiver', 'Tribal Sheva starts with 20 arrows, finds 10 more on every arena clear, and each kill heals 1.5 percent.',
@@ -241,6 +255,17 @@ BUILDS = {
         'offered_weapons': {'categories': ['handgun', 'launcher']}, 'usable_weapons': {'categories': ['handgun', 'launcher']},
         'max_health_mult': 0.85,
     },
+    # Leon's two (Leon Definitive Edition): Darkside Chronicles' rookie, RE4's jacket and its merchant.
+    'leon_dsc': {
+        'name': 'Lucky Rookie', 'icon': 'badge',
+        'summary': 'Survives one lethal hit an arena at 30 percent health. Handguns 25 percent harder. Health x0.85.',
+        'category_damage': {'handgun': 0.25}, 'max_health_mult': 0.85,
+    },
+    'leon_jacket': {
+        'name': 'Best Customer', 'icon': 'credits',
+        'summary': 'Every shop has a refine at half price and a free NEW STOCK. Better rarities. Supplies x0.8.',
+        'refine_every_shop': True, 'refine_price_mult': 0.5, 'free_shop_rerolls': 1, 'rarity_shift': 0.3, 'supplies_mult': 0.8,
+    },
     'sheva_fairy_tale': {
         'name': 'Enchanted Arms', 'icon': 'star',
         'summary': 'Starts with a legendary M3 that upgrades without limit.',
@@ -283,6 +308,7 @@ ICONS = {
     'josh_field_commander': 'flag', 'josh_point_man': 'smg', 'barry_magnum_specialist': 'magnum', 'barry_trap_setter': 'mine',
     'rebecca_chemist': 'herb', 'rebecca_steady_nerves': 'rifle', 'excella_hostile_takeover': 'credits',
     'excella_golden_parachute': 'parachute',
+    'leon_roundhouse': 'boot', 'leon_suplex': 'fist', 'leon_agent_training': 'crosshair', 'leon_matilda': 'handgun',
 }
 for p in perks:
     if p['id'] in ICONS:
@@ -315,9 +341,11 @@ pools = {
     'barry': ['barry_magnum_specialist', 'barry_trap_setter', 'barry_smg'],
     'rebecca': ['rebecca_chemist', 'rebecca_steady_nerves', 'rebecca_rifle'],
     'excella': ['excella_hostile_takeover', 'excella_golden_parachute', 'excella_rifle'],
+    'leon': ['leon_suplex', 'leon_agent_training', 'leon_matilda'],
 }
 passives = {'chris': 'chris_veteran', 'sheva': 'sheva_field_training', 'jill': 'jill_battle_instinct', 'wesker': 'wesker_firestarter',
-            'josh': 'josh_squad_tactics', 'barry': 'barry_demolition_man', 'rebecca': 'rebecca_combat_medic', 'excella': 'excella_executive_bonus'}
+            'josh': 'josh_squad_tactics', 'barry': 'barry_demolition_man', 'rebecca': 'rebecca_combat_medic', 'excella': 'excella_executive_bonus',
+            'leon': 'leon_roundhouse'}
 
 
 def help_lines(text, width=54):
@@ -368,10 +396,27 @@ MOD_SKINS.append(
              'files': [{'name': 'uPl02JillCos1.arc', 'sizes': [35058761, 34773905, 34708493, 34423428]}],
              # Its preview: the "Gear, Gloves" panel, below its title.
              'portrait': {'file': 'preview.jpg', 'crop': [1250, 180, 416, 416]}}})
+# Leon S. Kennedy: a character of his own, worn in Chris's costumes (Leon Definitive Edition by
+# kreed and izacky, 2026-11-08, the user: "this has to be his own character with his own perks").
+# His voice lines are new files the costumes ask for: their folder is read from the mod too.
+if not any(x['id'] == 'leon' for x in c['characters']):
+    c['characters'].append({'id': 'leon', 'name': 'Leon S. Kennedy', 'enabled': True, 'starting_weapons': ['m92f', 'm3'],
+                            'exclusive_mechanic': '', 'unlock_cost_credits': 0, 'costume_index': 0, 'skins': []})
+LEON_MOD = {'name': 'Leon Definitive Edition', 'author': 'kreed, izacky',
+            'url': 'https://www.nexusmods.com/residentevil5goldedition/mods/223',
+            'folders': ['sound\\bgm\\oto\\emo_voice\\mod\\leon']}
+MOD_SKINS += [
+    {'character': 'leon', 'base': 'chris_bsaa', 'id': 'leon_dsc', 'name': 'Darkside Chronicles',
+     'mod': dict(LEON_MOD, files=[{'name': 'uPl00ChrisNormal.arc', 'size': 60420703}],
+                 portrait={'file': 'Leon dsc\\kreedpic.jpg', 'crop': [2020, 0, 900, 900]})},
+    {'character': 'leon', 'base': 'chris_stars', 'id': 'leon_jacket', 'name': 'Jacket',
+     'mod': dict(LEON_MOD, files=[{'name': 'uPl00ChrisCos2.arc', 'size': 90341329}],
+                 portrait={'file': 'Leon jacket\\kreedpic.jpg', 'crop': [80, 0, 1200, 1200]})},
+]
 MOD_BASE = {m['id']: m['base'] for m in MOD_SKINS}
 for m in MOD_SKINS:
     ch = next(x for x in c['characters'] if x['id'] == m['character'])
-    base = next(x for x in ch['skins'] if x['id'] == m['base'])
+    base = next(s for x in c['characters'] for s in x['skins'] if s['id'] == m['base'])  # Leon's are Chris's
     entry = next((x for x in ch['skins'] if x['id'] == m['id']), None)
     if entry is None:
         entry = {'id': m['id']}

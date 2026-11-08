@@ -168,6 +168,16 @@ Use this folder, not a mod manager: one that installs the mod into the game repl
 
 Only the costume file of a mod is used: the Excella mod's other files (her weapons, items, menus and music) are not.
 
+**Leon S. Kennedy** (a character of his own, from [Leon Definitive Edition](https://www.nexusmods.com/residentevil5goldedition/mods/223)
+by kreed and izacky). Unzip all of it, its *Main Files* too (his voice lines): without them he cannot be picked. He
+wears Chris's two outfits' slots (the outfits themselves stay Chris's) and moves like Chris; without the mod CHARACTERS
+lists him in red, and pressing him opens the mod's page. His own perks: **Roundhouse** (his trait: for 4 s after a melee
+hit his shots deal 40 percent more), **Suplex** (melee hits twice as hard, every melee kill pays 10 supplies, rifles 25
+percent less), **Agent Training** (20 percent of hits critical for double damage, heals 25 percent smaller), and the
+supply **Matilda** (an M93R and 30 rounds). His skins: **Darkside Chronicles** (Lucky Rookie: once per arena he survives
+a lethal hit at 30 percent health, handguns 25 percent harder, health x0.85) and **Jacket** (Best Customer: every shop
+has a refine at half price and a free NEW STOCK, better rarities, supplies x0.8).
+
 **Keys.** Chests need a key (Jill's BSAA outfit excepted). A kill of a Majini drops one 8 percent of the time; you
 hold up to 9 and the HUD's right side shows how many. A chest opened without a key says *LOCKED* and stands again at
 the same spot a moment later.
