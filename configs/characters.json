@@ -267,6 +267,60 @@
               "duration_seconds": 1.5
             }
           }
+        },
+        {
+          "id": "jill_classic",
+          "name": "Classic",
+          "costume_index": 6,
+          "mod": {
+            "name": "Jill HDR Casual",
+            "author": "",
+            "url": "https://www.nexusmods.com/residentevil5goldedition/mods/135",
+            "files": [
+              {
+                "name": "uPl02JillCos1.arc",
+                "sizes": [
+                  35058761,
+                  34773905,
+                  34708493,
+                  34423428
+                ]
+              }
+            ],
+            "portrait": {
+              "file": "preview.jpg",
+              "crop": [
+                1250,
+                180,
+                416,
+                416
+              ]
+            }
+          },
+          "build": {
+            "name": "Last Escape",
+            "icon": "launcher",
+            "summary": "Starts with the grenade launcher. Her guns all carry Incendiary, Cryo and Toxic. Handguns, launchers only.",
+            "starting_weapon": "grenade_launcher",
+            "gun_elements": [
+              "incendiary",
+              "cryo",
+              "toxic"
+            ],
+            "offered_weapons": {
+              "categories": [
+                "handgun",
+                "launcher"
+              ]
+            },
+            "usable_weapons": {
+              "categories": [
+                "handgun",
+                "launcher"
+              ]
+            },
+            "max_health_mult": 0.85
+          }
         }
       ]
     },

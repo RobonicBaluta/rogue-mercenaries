@@ -640,10 +640,15 @@ void ScanModSkins() {
                 const auto named = byName.find(LowerAscii(f.name));
                 const std::vector<std::filesystem::path>& candidates = named != byName.end() ? named->second : kNone;
                 std::optional<std::filesystem::path> match;
-                for (const auto& p : candidates) {
+                std::vector<std::filesystem::path> ordered = candidates;  // the first in path order: a mod's variants
+                std::sort(ordered.begin(), ordered.end());
+                for (const auto& p : ordered) {
                     std::error_code sizeError;
                     const auto size = std::filesystem::file_size(p, sizeError);
-                    if (!sizeError && (f.size <= 0 || static_cast<std::int64_t>(size) == f.size)) match = p;
+                    if (!sizeError && f.Accepts(static_cast<std::int64_t>(size))) {
+                        match = p;
+                        break;
+                    }
                 }
                 if (!match) {
                     missing += " " + f.name + (named != byName.end() ? " (another version: its size differs)" : "");
@@ -681,6 +686,11 @@ void ScanModSkins() {
                 installed.insert(s.id);
             }
             line += " " + s.id + (missing.empty() ? " installed" : " missing" + missing) + ";";
+            if (missing.empty() && s.mod->files.size() == 1 && found.count(s.id) && !found[s.id].empty()) {
+                const std::filesystem::path chosen(found[s.id].front().target);
+                line.pop_back();
+                line += " (" + chosen.lexically_relative(root).string() + ");";
+            }
         }
     }
     const bool changed = found.size() != g_modSkinFiles.size() ||

@@ -626,6 +626,22 @@ def wolf():
     return s
 
 
+def launcher():
+    """Last Escape (Jill, classic): a grenade launcher."""
+    s = Shape()
+    body = [(10, 46), (62, 46), (62, 60), (10, 60)]
+    s.poly(rotate(body, -18))
+    s.poly(rotate([(58, 40), (78, 40), (80, 66), (58, 66)], -18))          # the cylinder
+    s.poly(rotate([(78, 48), (94, 52), (94, 66), (78, 64)], -18))          # the stock
+    s.poly(rotate([(60, 64), (68, 64), (64, 84), (54, 84)], -18))          # the grip
+    s.ring(*rotate([(50, 69)], -18)[0], 7, 2.6)                             # the trigger guard
+    s.ellipse(*rotate([(14, 53)], -18)[0], 7, 8)                            # the muzzle
+    s.ellipse(*rotate([(14, 53)], -18)[0], 3.5, 4, cut=True)
+    for x in (64, 70, 76):
+        s.line(rotate([(x, 42), (x, 64)], -18), 1.8, cut=True)            # the cylinder's flutes
+    return s
+
+
 ICONS = {
     'chain': chain, 'skull': skull, 'shades': shades, 'herb': herb, 'parachute': parachute,
     'grenade': grenade, 'flash': flash, 'fire': fire, 'medkit': medkit, 'heal': heal, 'second_wind': second_wind,
@@ -634,7 +650,7 @@ ICONS = {
     'handgun': handgun, 'credits': credits, 'clock': clock, 'flag': flag, 'trophy': trophy, 'person': person,
     'mine': mine, 'gatling': gatling, 'bow': bow, 'key': key, 'dash': dash, 'dual_smg': dual_smg, 'radio': radio,
     'fist': fist, 'crown': crown, 'star': big_star, 'lunge': lunge, 'shockwave': shockwave,
-    'syringe': syringe, 'wolf': wolf,
+    'syringe': syringe, 'wolf': wolf, 'launcher': launcher,
 }
 
 

@@ -1157,9 +1157,18 @@ void ParseSkins(const Diag& file, const json& e, CharacterDef& c) {
                             md.Error("a file must be an object {name, size}");
                             continue;
                         }
-                        CheckKeys(md, f, {"name", "size"});
+                        CheckKeys(md, f, {"name", "size", "sizes"});
                         GetString(md, f, "name", entry.name, true);
                         GetInt(md, f, "size", entry.size, false);
+                        if (const json* sizes = Get(f, "sizes")) {
+                            if (!sizes->is_array() || sizes->empty()) md.Error("field 'sizes' must list the variants' sizes");
+                            else {
+                                for (const json& v : *sizes) {
+                                    if (v.is_number_integer() && v.get<std::int64_t>() > 0) entry.sizes.push_back(v.get<std::int64_t>());
+                                    else md.Error("a size in 'sizes' must be a positive whole number");
+                                }
+                            }
+                        }
                         const bool plain = !entry.name.empty() && entry.name.find_first_of("\\/:") == std::string::npos;
                         if (!plain || entry.name.size() < 5 || entry.name.compare(entry.name.size() - 4, 4, ".arc") != 0) {
                             md.Error("file " + Q(entry.name) + " must be an archive's bare name (\"uPl05ExcellaNormal.arc\")");

@@ -253,4 +253,13 @@ TEST_CASE("a mod skin needs its mod installed", "[characters]") {
     CHECK(has(errors([](json& s) { s["mod"]["url"] = "https://example.com/x"; }), "nexusmods.com"));
     CHECK(has(errors([](json& s) { s["mod"]["files"][0]["name"] = "..\\x.arc"; }), "bare name"));
     CHECK(has(errors([](json& s) { s.erase("costume_index"); }), "costume_index it stands in for"));
+
+    // A mod with variants of one file: any of their sizes.
+    SkinModFile variants;
+    variants.sizes = {100, 200};
+    CHECK(variants.Accepts(200));
+    CHECK_FALSE(variants.Accepts(150));
+    SkinModFile any;
+    CHECK(any.Accepts(12345));
+    CHECK(has(errors([](json& s) { s["mod"]["files"][0]["sizes"] = json::array({0}); }), "positive whole number"));
 }

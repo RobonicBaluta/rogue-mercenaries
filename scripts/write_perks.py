@@ -232,6 +232,15 @@ BUILDS = {
         'summary': 'Starts with the flamethrower, fuel back twice as fast. Her guns are all Incendiary. Supplies x0.75.',
         'starting_weapon': 'flamethrower', 'fuel_regen_mult': 2.0, 'gun_elements': ['incendiary'], 'supplies_mult': 0.75,
     },
+    # Jill in her Raccoon City clothes (Jill HDR Casual): RE3's Last Escape, the grenade launcher
+    # and its flame, freeze and acid rounds; RE3's two guns only.
+    'jill_classic': {
+        'name': 'Last Escape', 'icon': 'launcher',
+        'summary': 'Starts with the grenade launcher. Her guns all carry Incendiary, Cryo and Toxic. Handguns, launchers only.',
+        'starting_weapon': 'grenade_launcher', 'gun_elements': ['incendiary', 'cryo', 'toxic'],
+        'offered_weapons': {'categories': ['handgun', 'launcher']}, 'usable_weapons': {'categories': ['handgun', 'launcher']},
+        'max_health_mult': 0.85,
+    },
     'sheva_fairy_tale': {
         'name': 'Enchanted Arms', 'icon': 'star',
         'summary': 'Starts with a legendary M3 that upgrades without limit.',
@@ -351,6 +360,14 @@ MOD_SKINS = [
              # Its preview picture, the standing Sheva with the flamethrower.
              'portrait': {'file': 'A.jpg', 'crop': [560, 50, 540, 540]}}},
 ]
+MOD_SKINS.append(
+    {'character': 'jill', 'base': 'jill_bsaa', 'id': 'jill_classic', 'name': 'Classic',
+     'mod': {'name': 'Jill HDR Casual', 'author': '',
+             'url': 'https://www.nexusmods.com/residentevil5goldedition/mods/135',
+             # Its four variants of her BSAA outfit's file (gear or not, gloves or not): any one.
+             'files': [{'name': 'uPl02JillCos1.arc', 'sizes': [35058761, 34773905, 34708493, 34423428]}],
+             # Its preview: the "Gear, Gloves" panel, below its title.
+             'portrait': {'file': 'preview.jpg', 'crop': [1250, 180, 416, 416]}}})
 MOD_BASE = {m['id']: m['base'] for m in MOD_SKINS}
 for m in MOD_SKINS:
     ch = next(x for x in c['characters'] if x['id'] == m['character'])

@@ -163,6 +163,7 @@ Use this folder, not a mod manager: one that installs the mod into the game repl
 | Character | Skin | Mod (creator) | Build | What it does |
 |---|---|---|---|---|
 | Excella | Experimenter | [Excella the Experimenter](https://www.nexusmods.com/residentevil5goldedition/mods/387) (TheGrimrose) | Field Trials | Every arena all her guns carry one random element (the arena's name is followed by it). Every shop offers a refine, at half price. Health x0.8. |
+| Jill | Classic | [Jill HDR Casual](https://www.nexusmods.com/residentevil5goldedition/mods/135) | Last Escape | Starts with the grenade launcher. Every gun she holds carries Incendiary, Cryo and Toxic (its flame, freeze and acid rounds). Only handguns and launchers are hers. Health x0.85. The mod comes in four variants (gear or not, gloves or not): keep the one you like in the mods folder (with several, the first by folder name is worn). |
 | Sheva | Hound Wolf Squad | [Hound Wolf Squad Sheva](https://www.nexusmods.com/residentevil5goldedition/mods/1177) (Angeltitilxyz) | Scorched Earth | Starts with the flamethrower, whose fuel comes back twice as fast. Every gun she holds is Incendiary. Supplies x0.75. |
 
 Only the costume file of a mod is used: the Excella mod's other files (her weapons, items, menus and music) are not.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -131,6 +132,11 @@ struct SkinBuild {
 struct SkinModFile {
     std::string name;       // the archive's file name ("uPl05ExcellaNormal.arc", under nativePC_MT\Image\Archive)
     std::int64_t size = 0;  // its size in the supported version (0: any)
+    std::vector<std::int64_t> sizes;  // or one of these (a mod's variants of the file)
+    [[nodiscard]] bool Accepts(std::int64_t bytes) const {
+        if (!sizes.empty()) return std::find(sizes.begin(), sizes.end(), bytes) != sizes.end();
+        return size <= 0 || bytes == size;
+    }
 };
 
 /// The mod's own picture for the SKINS screen, read from the player's copy of the mod (never
