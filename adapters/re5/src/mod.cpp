@@ -30,6 +30,7 @@
 
 #include "engine.h"
 #include "file_redirect.h"
+#include "area_cameras.h"
 #include "imgui.h"
 #include "icons.h"
 #include "portraits.h"
@@ -6865,6 +6866,12 @@ void PollDevCommand(double now) {
         std::sscanf(command.c_str() + 7, "%d %d", &character, &costume);
         const std::uintptr_t unit = AddPartner(character, costume, "dev");
         RM_LOGW("dev partner %d %d -> %08X", character, costume, static_cast<unsigned>(unit));
+    } else if (command.rfind("areacams ", 0) == 0) {
+        // "areacams auto|game|off": the camera zones of campaign areas (auto: off while a run
+        // plays one; game: the game's own; off: always off).
+        const std::string mode = command.substr(9);
+        areacams::SetMode(mode == "game" ? areacams::Mode::Game : mode == "off" ? areacams::Mode::Off : areacams::Mode::Auto);
+        RM_LOGW("dev areacams %s (now %s)", areacams::ModeName(areacams::GetMode()), areacams::Off() ? "off" : "the game's own");
     } else if (command.rfind("warp ", 0) == 0) {
         // "warp x y z": writes the local player's position (does a start position stick?).
         float pos[3] = {};
@@ -7659,6 +7666,9 @@ private:
         ApplyMoveSpeed();
         RefuelFlamethrower(now);
         HideHolsteredFlamethrower(now);
+        // A run's campaign area keeps the player camera: its camera zones and scripted zone
+        // cameras are off (user playtest 2026-11-08, the Volcano).
+        areacams::SetRunWantsOff(g->run->HasActiveRun() && CurrentMapKey() >= kFirstCampaignStage);
         // A match a run played in stays a run's match until it is gone, so quitting it writes no
         // save even if the run is settled first.
         static bool runMatch = false;

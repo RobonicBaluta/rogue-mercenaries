@@ -7015,7 +7015,6 @@
       "id": "campaign_s508",
       "name": "Volcano",
       "stage": 508,
-      "rotation": false,
       "start": [-897.9, -4.2, 798.2],
       "max_alive": 12,
       "min_player_distance": 800,

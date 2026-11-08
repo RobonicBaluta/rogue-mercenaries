@@ -61,6 +61,16 @@ constexpr std::uintptr_t kFnPlayerChangeAction = 0x00B5C900;
 // slots 6 (start, a thunk to 0x00C8B1E0), 7 (update, empty) and 10 (the default that sets the done
 // bit). See off::kPlActHold.
 constexpr std::uintptr_t kVtablePlActTest = 0x01045CF8;
+// Area cameras (research/re5-engine-map.md, "Area cameras"): a campaign area's camera zones, the
+// rAHCamera resource (DTI 0x011E894C, "stage\sNNN\soft\sNNN") the player camera (uCameraCtrl)
+// holds in kAreaCameraResource. Every frame its update (0x00841CE0) asks kFnAreaCameraCheck
+// (thiscall, the controller) which zone the player stands in: none, it sets the zone camera -1
+// through kFnAreaCameraSet(index, 1) and returns 2. kFnAreaCameraForce(index) (thiscall, RET 4,
+// AL) is a script's or an object's "this zone's camera now" (0x0076C880, 0x00AF1470).
+constexpr std::uintptr_t kAreaCameraResource = 0x011E9F44;
+constexpr std::uintptr_t kFnAreaCameraCheck = 0x00841840;
+constexpr std::uintptr_t kFnAreaCameraForce = 0x008417C0;
+constexpr std::uintptr_t kFnAreaCameraSet = 0x0083D530;
 // The flamethrower's unit, uWp21 (research/re5-engine-map.md, "The flamethrower").
 constexpr std::uintptr_t kVtableWp21 = 0x0102D0C8;
 constexpr std::uintptr_t kFnPlActTestStart = 0x00C91600;
@@ -498,6 +508,13 @@ constexpr std::size_t kUnitRotation = 0x40;       // quaternion x, y, z, w of an
 // flamethrower (scripts/test_flame_hide.sh): 0.001 there hides its tank and hose; the game sets
 // 1 again when it is equipped. The mod writes it only where it reads (1, 1, 1) or its own value.
 constexpr std::size_t kUnitScale = 0x50;
+// The player camera (uCameraCtrl) and its zone camera (addr::kFnAreaCameraCheck): bit 0 of the
+// flags is a forced zone (a script's), the zone it stands in, the zone camera's index (-1 none)
+// and the one before.
+constexpr std::size_t kCamCtrlAreaFlags = 0x30E8;
+constexpr std::size_t kCamCtrlArea = 0x30EC;
+constexpr std::size_t kCamCtrlZoneCamera = 0x30F4;
+constexpr std::size_t kCamCtrlPrevZoneCamera = 0x30F8;
 // cSetInfoEnemy reflected fields (property list FUN_00CCE070): the enemy's starting behaviour.
 constexpr std::size_t kSetInfoEnemyFirst = 0x70;  // mInAir; the enemy fields run to mbForceMoveFSM (+0xD5)
 constexpr std::size_t kSetInfoIsForNet = 0x84;
@@ -757,6 +774,17 @@ inline constexpr Signature kSignatures[] = {
     {"uplayer_get_dti", 0x00B7F080, "B8 D8 31 20 01 C3"},
     {"uenemy_get_dti", 0x009E0B70, "B8 4C 4F 1F 01 C3"},
     {"ucharacter_get_dti", 0x0084F720, "B8 88 A0 1E 01 C3"},
+    // Area cameras: the zone check (`cmp [0x011E9F44], 0`, `test byte [edi+0x30E8], 1`), its "no
+    // zone" end (`+0x30F8 = +0x30F4`, `+0x30F4 = -1`, `push 1; push eax; call 0x0083D530`,
+    // `+0x30EC = esi`), the forced zone and the camera set; rAHCamera's getDTI.
+    {"area_camera_check", addr::kFnAreaCameraCheck,
+     "55 8B EC 83 E4 F0 83 EC 44 83 3D 44 9F 1E 01 00 53 56 57 8B F9 89 7C 24 14 0F 84 1E 03 00 00 F6 87 E8 30 00 00 01"},
+    {"area_camera_none", 0x00841B29,
+     "8B 8F F4 30 00 00 89 8F F8 30 00 00 74 0E 8B 56 08 8B 42 04 89 87 F4 30 00 00 EB 0A C7 87 F4 30 00 00 FF FF FF FF "
+     "8B 87 F4 30 00 00 3B C8 74 0A 6A 01 50 8B CF E8 CD B9 FF FF 85 F6 89 B7 EC 30 00 00"},
+    {"area_camera_force", addr::kFnAreaCameraForce, "56 57 8B 3D 44 9F 1E 01 85 FF 8B F1 75 07 5F 32 C0 5E C2 04 00"},
+    {"area_camera_set", addr::kFnAreaCameraSet, "55 8B EC 83 E4 F0 81 EC D4 00 00 00 53 56 8B 75 08 83 FE FF 8B D9 57"},
+    {"rahcamera_get_dti", 0x007F71C0, "B8 4C 89 1E 01 C3"},
 };
 
 }  // namespace re5

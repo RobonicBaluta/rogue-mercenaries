@@ -136,6 +136,8 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.enemySpawn = g_caps.enemies && SignatureOk("enemy_create") && SignatureOk("enemy_set_spawn") &&
                         SignatureOk("class_lookup") && SignatureOk("link_units");
     g_caps.timeBonus = g_caps.mercCountdown && SignatureOk("merc_add_countdown") && SignatureOk("time_bonus_action");
+    g_caps.areaCameras = SignatureOk("area_camera_check") && SignatureOk("area_camera_none") && SignatureOk("area_camera_force") &&
+                         SignatureOk("area_camera_set") && SignatureOk("rahcamera_get_dti");
     g_caps.fatalHandler = SignatureOk("game_fatal_error");
     g_caps.itemBox = SignatureOk("itembox_create") && SignatureOk("unit_register");
     g_caps.matchSetup = g_caps.gameWork && SignatureOk("merc_match_setup") && SignatureOk("merc_stage_table_use");

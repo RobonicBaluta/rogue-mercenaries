@@ -9,6 +9,7 @@
 #include "dev_capture.h"
 #include "engine.h"
 #include "file_redirect.h"
+#include "area_cameras.h"
 #include "hooks.h"
 #include "log.h"
 #include "menu_probe.h"
@@ -113,6 +114,7 @@ DWORD WINAPI Worker(LPVOID) {
         resources::Install();
         world::Install();
         host::Install();
+        areacams::Install();
         if (settings.directStart) autopilot::Install();
     }
     if (settings.developerMode && settings.devMenuProbe && engine::Caps().buildIdentity) {

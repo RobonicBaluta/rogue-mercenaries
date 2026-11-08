@@ -82,10 +82,9 @@ NO_ROTATION = {
     # The campaign's opening area: the story keeps the inventory, weapon switching and the HUD off
     # there until an event a run never reaches (user playtest 2026-11-03).
     100: 'the story keeps the inventory, weapons and HUD off',
-    # The boulder's event camera holds the view at the start until the player drops off a ledge
-    # (user playtest 2026-11-08: "hard to see when you can't see your character").
-    508: 'the boulder scene camera holds the view at the start',
-}  # 503 was out (its random upper-deck start); the start warp (M6.2) fixed that
+}  # 503 was out (its random upper-deck start); the start warp (M6.2) fixed that. 508 was out
+# (2026-11-08: a camera zone held the view); a run's campaign area now keeps the player camera
+# (adapter area_cameras.cpp).
 # Short names from the areas' start views (vetting 2026-11-02); others get "Campaign sNNN".
 NAMES = {
     100: 'Kijuju Town', 104: 'Waterfront', 105: 'Back Alleys', 113: 'Warehouse', 114: 'Slums',
