@@ -532,7 +532,7 @@ e['keys'] = {'enabled': True, 'drop_chance': 0.08, 'classes': ['uEm1'], 'start':
 # as a choice; beating that opens 8 arenas, then 12, then the 13th arena against Wesker; later
 # arenas harder a step each from the fifth.
 e['ladder'] = {
-    '_comment': 'Run lengths (EconomyConfig::Ladder, written by scripts/write_perks.py). A length ends on its easy boss until it is beaten, then on a choice of easy or hard; beating the hard one opens the length whose unlocked_by names it. From growth_from_arena on, each arena adds budget_per_arena enemies, incoming_per_arena damage taken and toughness_per_arena (the player\'s damage divided by 1 + it) per step.',
+    '_comment': 'Run lengths (EconomyConfig::Ladder, written by scripts/write_perks.py). A length ends on its easy boss until it is beaten, then on a choice of easy or hard; beating a hard one opens the length whose unlocked_by names it. A run also fights every shorter length\'s boss at that length\'s arena. The finale is one more arena after its after length\'s boss in a run that beat a hard boss of every length in needs_hard. From growth_from_arena on, each arena adds budget_per_arena enemies, incoming_per_arena damage taken and toughness_per_arena (the player\'s damage divided by 1 + it) per step.',
     'enabled': True,
     'lengths': [
         {'id': 'short', 'name': 'Short', 'arenas': 4, 'easy_boss': 103, 'hard_boss': 304},
@@ -544,9 +544,11 @@ e['ladder'] = {
         {'id': 'marathon', 'name': 'Marathon', 'arenas': 12, 'easy_boss': 508,
          'unlocked_by': 'long:hard', 'boss_hp_mult': 1.5},
     ],
-    # The 13th arena: Midnight Wesker, once the hard bosses of 4 and 8 and the 12's boss are beaten.
-    'finale': {'boss': 506, 'after': 'marathon', 'unlocked_by': ['short:hard', 'long:hard', 'marathon:easy'],
-               'boss_hp_mult': 1.0},
+    # A longer run fights every shorter length's boss on its way (the user, 2026-11-08: "you get 1 on
+    # 4 one on 8 and one on 12"). The 13th arena: Midnight Wesker, after the 12's boss in a run that
+    # took the alternates on 4 and 8 ("except if you take both alternate routes, then you get 13th
+    # stage").
+    'finale': {'boss': 506, 'after': 'marathon', 'needs_hard': ['short', 'long'], 'boss_hp_mult': 1.0},
     'growth_from_arena': 5,
     'incoming_per_arena': 0.08,
     'toughness_per_arena': 0.05,

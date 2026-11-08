@@ -198,9 +198,12 @@ struct EconomyConfig {
     } keys;
 
     /// The run lengths a player climbs (the user's ladder, 2026-11-07). A length first ends on its
-    /// easy boss; beating it adds the hard one as a choice; beating the hard one unlocks the length
-    /// whose `unlocked_by` names it. The finale is one more arena after its `after` length, once every
-    /// key of its `unlocked_by` is beaten. Keys: "<length id>:easy", "<length id>:hard", "finale"
+    /// easy boss; beating it adds the hard ones as a choice; beating a hard one unlocks the length
+    /// whose `unlocked_by` names it. A longer run also fights every shorter length's boss at that
+    /// length's arena (the user, 2026-11-08: "you get 1 on 4 one on 8 and one on 12"), each with its
+    /// own choice and health. The finale is one more arena after its `after` length's boss, in a run
+    /// that beat a hard boss of every length in `needs_hard` ("if you take both alternate routes,
+    /// then you get 13th stage"). Keys: "<length id>:easy", "<length id>:hard", "finale"
     /// (ProfileStats::bosses_beaten). Arenas from `growth_from_arena` on get harder a step each.
     /// Disabled: runs are run.arena_count long and end on any boss map.
     struct Ladder {
@@ -220,11 +223,11 @@ struct EconomyConfig {
             std::string unlocked_by;  // a beaten key; empty: open from the start
             double boss_hp_mult = 1.0;
         };
-        std::vector<Length> lengths;
+        std::vector<Length> lengths;  // in order of their arenas, each longer than the one before
         struct Finale {
             int boss = -1;  // -1: none
             std::string after;
-            std::vector<std::string> unlocked_by;
+            std::vector<std::string> needs_hard;  // lengths whose hard boss the run itself beat
             double boss_hp_mult = 1.0;
         } finale;
         int growth_from_arena = 5;
@@ -234,6 +237,24 @@ struct EconomyConfig {
         [[nodiscard]] const Length* Find(std::string_view id) const {
             for (const Length& l : lengths) {
                 if (l.id == id) return &l;
+            }
+            return nullptr;
+        }
+        /// The lengths whose boss a run of `id` fights, at their own arenas: every length up to and
+        /// including it (shortest first). Empty for an unknown id.
+        [[nodiscard]] std::vector<const Length*> BossTiers(std::string_view id) const {
+            std::vector<const Length*> out;
+            const Length* target = Find(id);
+            if (target == nullptr) return out;
+            for (const Length& l : lengths) {
+                if (l.arenas <= target->arenas) out.push_back(&l);
+            }
+            return out;
+        }
+        /// The length whose boss a run of `id` fights at `arena` (1-based); nullptr when none.
+        [[nodiscard]] const Length* TierAt(std::string_view id, int arena) const {
+            for (const Length* l : BossTiers(id)) {
+                if (l->arenas == arena) return l;
             }
             return nullptr;
         }

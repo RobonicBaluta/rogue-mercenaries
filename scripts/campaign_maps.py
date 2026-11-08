@@ -104,6 +104,10 @@ NO_ROTATION = {
     # The campaign's opening area: the story keeps the inventory, weapon switching and the HUD off
     # there until an event a run never reaches (user playtest 2026-11-03).
     100: 'the story keeps the inventory, weapons and HUD off',
+    # The ground floor (y 0) leads up only by ladders (s505_IDf00_Ins: eight cSetInfoOmLadderV
+    # uOmf201, 2-4 m), and one could not be grabbed after a fall (user playtest 2026-11-08: "you
+    # can't ever continue and you are stuck there"). Back once ladders are checked in game.
+    505: 'a ladder up from the ground floor cannot be grabbed: a fall there strands the player',
 }  # 503 was out (its random upper-deck start); the start warp (M6.2) fixed that. 508 was out
 # (2026-11-08: a camera zone held the view); a run's campaign area now keeps the player camera
 # (adapter area_cameras.cpp).

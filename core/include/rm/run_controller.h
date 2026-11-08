@@ -322,10 +322,10 @@ public:
     struct LadderLengthView {
         std::string id;
         std::string name;
-        int arenas = 0;           // the finale's arena included when it is open
+        int arenas = 0;           // without the finale's
         bool open = false;        // can be played
         bool hard_open = false;   // its hard boss is offered (its easy one beaten)
-        bool finale_open = false; // it ends on the finale after its boss
+        bool finale_possible = false;  // the finale can follow its boss (in a run beating the needs_hard bosses)
         bool easy_beaten = false;
         bool hard_beaten = false;
     };
@@ -492,7 +492,12 @@ private:
     void AddRefineOffer();
     Status ApplyRefine(const std::string& instance_id, const WeaponInstance& refined, std::string_view source);
     [[nodiscard]] bool LengthOpen(const EconomyConfig::Ladder::Length& length) const;
-    [[nodiscard]] bool FinaleOpen(const EconomyConfig::Ladder::Length& length) const;
+    /// The finale's arena can follow this length's boss (a run of it may earn it).
+    [[nodiscard]] bool FinalePossible(const EconomyConfig::Ladder::Length& length) const;
+    /// This run has earned the finale: it beat a hard boss of every length in finale.needs_hard.
+    [[nodiscard]] bool FinaleEarned() const;
+    /// A length's boss arena choices: its easy boss, then its hard ones once the easy one is beaten.
+    [[nodiscard]] std::vector<int> BossChoices(const EconomyConfig::Ladder::Length& length) const;
     /// What these first-time ladder keys opened (the run's results).
     [[nodiscard]] std::vector<LadderUnlock> LadderUnlocksFor(const std::vector<std::string>& fresh_keys) const;
     [[nodiscard]] double BossHpMult(int map_key) const;

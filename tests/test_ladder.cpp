@@ -24,8 +24,9 @@ constexpr const char* kMaps = R"({"schema_version": 1, "maps": [
   {"id": "dome", "name": "Dome", "stage": 201, "points": [[0, 0, 0]], "boss": {"class": "uEm43", "name": "Giant", "hp": 8000}},
   {"id": "core", "name": "Core", "stage": 202, "points": [[0, 0, 0]], "boss": {"class": "uEm81", "name": "Wesker", "article": "", "hp": 9000}}]})";
 
-// Short: 3 arenas (Beast, then Beast or Giant); long: 4 arenas, opened by the short hard boss, its
-// bosses at 1.5x health; the finale (Wesker) after long once both hard bosses are beaten.
+// Short: 3 arenas (Beast, then Beast or Giant); long: 4 arenas, opened by the short hard boss, the
+// short bosses at its arena 3, its own at 1.5x health; the finale (Wesker) after long in a run that
+// beat the short hard boss.
 ContentSources LadderSources() {
     ContentSources src = test::FixtureSources();
     src.maps = kMaps;
@@ -36,7 +37,7 @@ ContentSources LadderSources() {
          {{{"id", "short"}, {"name", "Short"}, {"arenas", 3}, {"easy_boss", 200}, {"hard_boss", 201}},
           {{"id", "long"}, {"name", "Long"}, {"arenas", 4}, {"easy_boss", 200}, {"hard_boss", 201}, {"unlocked_by", "short:hard"},
            {"boss_hp_mult", 1.5}}}},
-        {"finale", {{"boss", 202}, {"after", "long"}, {"unlocked_by", {"short:hard", "long:hard"}}, {"boss_hp_mult", 2.0}}},
+        {"finale", {{"boss", 202}, {"after", "long"}, {"needs_hard", {"short"}}, {"boss_hp_mult", 2.0}}},
         {"growth_from_arena", 3},
         {"incoming_per_arena", 0.1},
         {"toughness_per_arena", 0.2},
@@ -75,6 +76,50 @@ std::string PlayToBoss(test::Harness& h, std::size_t boss_choice, double& t) {
     REQUIRE(h.rc.CompleteArena(t + 30.0).ok());
     t += 100.0;
     return cls + "@" + std::to_string(boss);
+}
+
+struct Played {
+    std::string boss;  // "uEm40@200" for a boss arena, empty otherwise
+    int hp = 0;        // the boss's health
+};
+
+// Plays the run's current arena on its planned map: a boss arena by killing the boss the director
+// sends, any other cleared at once.
+Played PlayPlanned(test::Harness& h, double& t) {
+    const int planned = h.rc.PlannedMapKey();
+    const MapDef* m = h.rc.content().FindMapByStage(planned);
+    Played out;
+    if (m != nullptr && m->boss) {
+        h.rc.SetMapStage(planned);
+        REQUIRE(h.rc.BeginArena(t).ok());
+        const auto spawns = h.rc.DirectorTick(t + 1.0, std::array<double, 3>{0, 0, 0});
+        REQUIRE(spawns.size() == 1);
+        out.boss = spawns[0].unit_class + "@" + std::to_string(planned);
+        out.hp = spawns[0].hp;
+        h.rc.DirectorSpawned(spawns[0].ticket, "boss");
+        KillEvent kill;
+        kill.now = t + 2.0;
+        kill.by_player = true;
+        kill.enemy_id = "boss";
+        REQUIRE(h.rc.OnEnemyKilled(kill).counted);
+        REQUIRE(h.rc.CompleteArena(t + 30.0).ok());
+    } else {
+        h.rc.SetMapStage(-1);
+        test::ClearArena(h.rc, t);
+    }
+    t += 100.0;
+    return out;
+}
+
+// On to the next arena (the first reward, the shop left, route offer `pick`); false when the run
+// is complete instead.
+bool NextArena(test::Harness& h, std::size_t pick) {
+    REQUIRE(h.rc.ContinueToRewards().ok());
+    if (h.rc.state().phase == Phase::RunComplete) return false;
+    REQUIRE(h.rc.ChooseReward(0).ok());
+    REQUIRE(h.rc.LeaveShop().ok());
+    REQUIRE(h.rc.ChooseRoute(pick).ok());
+    return true;
 }
 
 }  // namespace
@@ -120,20 +165,31 @@ TEST_CASE("the ladder: easy boss first, then a choice, the hard one opening the 
     REQUIRE(h.rc.ContinueToRewards().ok());
     const auto second = h.rc.EndRun();
     REQUIRE(second.ok());
-    REQUIRE(second.value().ladder_unlocks.size() == 1);
+    // Long opened, and how a long run earns the finale.
+    REQUIRE(second.value().ladder_unlocks.size() == 2);
     CHECK(second.value().ladder_unlocks[0].kind == LadderUnlock::Kind::Length);
     CHECK(second.value().ladder_unlocks[0].length_id == "long");
     CHECK(second.value().ladder_unlocks[0].arenas == 4);
     CHECK(second.value().ladder_unlocks[0].boss == 200);
+    CHECK(second.value().ladder_unlocks[1].kind == LadderUnlock::Kind::Finale);
+    CHECK(second.value().ladder_unlocks[1].length_id == "long");
+    CHECK(second.value().ladder_unlocks[1].boss == 202);
     CHECK(h.rc.profile().stats.bosses_beaten.count("short:hard") == 1);
     lengths = h.rc.LadderLengths();
     CHECK(lengths[1].open);
-    CHECK_FALSE(lengths[1].finale_open);
+    CHECK(lengths[1].finale_possible);
+    CHECK(lengths[1].arenas == 4);
+    CHECK_FALSE(lengths[0].finale_possible);
 
-    // Long: four arenas; its boss at 1.5x health; easy only at first.
+    // Long: four arenas; the short bosses at arena 3; its own boss, easy only at first, at 4; the
+    // finale's arena after it, played only when earned.
     REQUIRE(h.rc.StartRun("alpha", 3, "", "long").ok());
     CHECK(h.rc.state().arena_count == 4);
-    CHECK(h.rc.state().run_map.layers.back().size() == 1);
+    const RunMap& map = h.rc.state().run_map;
+    REQUIRE(map.layers.size() == 5);
+    CHECK(map.layers[2].size() == 2);
+    CHECK(map.layers[3].size() == 1);
+    CHECK(map.layers[4].size() == 1);
 }
 
 TEST_CASE("a length can have several alternates; any of them is its hard boss", "[ladder]") {
@@ -167,41 +223,75 @@ TEST_CASE("a length can have several alternates; any of them is its hard boss", 
     CHECK_FALSE(Content::LoadFromStrings(src).ok());
 }
 
-TEST_CASE("the finale follows the last length once its bosses are beaten", "[ladder]") {
+TEST_CASE("a longer run fights each shorter length's boss at its arena, at that length's health", "[ladder]") {
+    // The user (2026-11-08): "when you go for longer runs ... you get 1 on 4 one on 8 and one on 12".
     Profile seasoned;
     seasoned.stats.bosses_beaten = {"short:easy", "short:hard", "long:easy", "long:hard"};
     test::Harness h(test::Load(LadderSources()), seasoned);
     h.rc.SetArenaPool({0, 1, 2, 103, 200, 201, 202}, 0);
-    const auto lengths = h.rc.LadderLengths();
-    REQUIRE(lengths.size() == 2);
-    CHECK(lengths[1].finale_open);
-    CHECK(lengths[1].arenas == 5);
-    CHECK_FALSE(lengths[0].finale_open);
     REQUIRE(h.rc.StartRun("alpha", 4, "", "long").ok());
+    CHECK(h.rc.state().arena_count == 4);
     const RunMap& map = h.rc.state().run_map;
     REQUIRE(map.layers.size() == 5);
-    CHECK(map.layers[3].size() == 2);  // easy and hard
+    for (const RunMapNode& n : map.layers[1]) CHECK(n.next == std::vector<int>{0, 1});  // to both short bosses
+    REQUIRE(map.layers[2].size() == 2);
+    CHECK(map.layers[2][0].map_key == 200);
+    CHECK(map.layers[2][1].map_key == 201);
+    for (const RunMapNode& n : map.layers[2]) CHECK(n.next == std::vector<int>{0, 1});  // to both long bosses
+    REQUIRE(map.layers[3].size() == 2);
+    CHECK(map.layers[3][0].map_key == 200);
+    CHECK(map.layers[3][1].map_key == 201);
+    for (const RunMapNode& n : map.layers[3]) CHECK(n.next == std::vector<int>{0});
     REQUIRE(map.layers[4].size() == 1);
     CHECK(map.layers[4][0].map_key == 202);
-    for (const RunMapNode& n : map.layers[3]) CHECK(n.next == std::vector<int>{0});
+
+    double t = 0.0;
+    CHECK(PlayPlanned(h, t).boss.empty());
+    REQUIRE(NextArena(h, 0));
+    CHECK(PlayPlanned(h, t).boss.empty());
+    REQUIRE(NextArena(h, 1));  // arena 3: the short length's hard boss
+    const Played third = PlayPlanned(h, t);
+    CHECK(third.boss == "uEm43@201");
+    CHECK(third.hp == 8000);  // the short length's health (no multiplier)
+    CHECK(h.rc.state().ladder_beaten == std::vector<std::string>{"short:hard"});
+    REQUIRE(NextArena(h, 0));  // arena 4: the long length's easy boss
+    const Played fourth = PlayPlanned(h, t);
+    CHECK(fourth.boss == "uEm40@200");
+    CHECK(fourth.hp == 7500);  // Beast 5000 x the long length's 1.5
+    // The run took the short hard boss: the finale's arena follows.
+    CHECK(h.rc.state().arena_count == 5);
+    REQUIRE(NextArena(h, 0));
+    const Played fifth = PlayPlanned(h, t);
+    CHECK(fifth.boss == "uEm81@202");
+    CHECK(fifth.hp == 18000);  // Wesker 9000 x the finale's 2.0
+    CHECK_FALSE(NextArena(h, 0));
+    CHECK(h.rc.profile().stats.bosses_beaten.count("finale") == 1);
 }
 
-TEST_CASE("the last hard boss opens the finale, and the results say so", "[ladder]") {
-    Profile climbed;
-    climbed.stats.bosses_beaten = {"short:easy", "short:hard", "long:easy"};
-    test::Harness h(test::Load(LadderSources()), climbed);
+TEST_CASE("the finale's arena only follows a run that beat the needs_hard bosses", "[ladder]") {
+    // "except if you take both alternate routes, then you get 13th stage"
+    Profile seasoned;
+    seasoned.stats.bosses_beaten = {"short:easy", "short:hard", "long:easy"};
+    test::Harness h(test::Load(LadderSources()), seasoned);
     h.rc.SetArenaPool({0, 1, 2, 103, 200, 201, 202}, 0);
-    REQUIRE(h.rc.StartRun("alpha", 6, "", "long").ok());
-    CHECK(h.rc.state().arena_count == 4);  // no finale yet
+    REQUIRE(h.rc.StartRun("alpha", 5, "", "long").ok());
     double t = 0.0;
-    CHECK(PlayToBoss(h, 1, t) == "uEm43@201");
-    REQUIRE(h.rc.ContinueToRewards().ok());
+    CHECK(PlayPlanned(h, t).boss.empty());
+    REQUIRE(NextArena(h, 0));
+    CHECK(PlayPlanned(h, t).boss.empty());
+    REQUIRE(NextArena(h, 0));  // arena 3: the short length's easy boss
+    CHECK(PlayPlanned(h, t).boss == "uEm40@200");
+    REQUIRE(NextArena(h, 1));  // arena 4: the long length's hard boss
+    CHECK(PlayPlanned(h, t).boss == "uEm43@201");
+    CHECK(h.rc.state().ladder_beaten == std::vector<std::string>{"short:easy", "long:hard"});
+    CHECK(h.rc.state().arena_count == 4);  // no finale: the short hard boss was not this run's
+    CHECK_FALSE(NextArena(h, 0));
     const auto summary = h.rc.EndRun();
     REQUIRE(summary.ok());
-    REQUIRE(summary.value().ladder_unlocks.size() == 1);
-    CHECK(summary.value().ladder_unlocks[0].kind == LadderUnlock::Kind::Finale);
-    CHECK(summary.value().ladder_unlocks[0].length_id == "long");
-    CHECK(summary.value().ladder_unlocks[0].boss == 202);
+    CHECK(summary.value().completed);
+    CHECK(summary.value().arenas_cleared == 4);
+    CHECK(h.rc.profile().stats.bosses_beaten.count("long:hard") == 1);
+    CHECK(h.rc.profile().stats.bosses_beaten.count("finale") == 0);
     // A boss already beaten opens nothing new.
     REQUIRE(h.rc.StartRun("alpha", 7, "", "short").ok());
     CHECK(PlayToBoss(h, 1, t) == "uEm43@201");
@@ -209,6 +299,66 @@ TEST_CASE("the last hard boss opens the finale, and the results say so", "[ladde
     const auto again = h.rc.EndRun();
     REQUIRE(again.ok());
     CHECK(again.value().ladder_unlocks.empty());
+}
+
+TEST_CASE("the shipped 12-arena run: bosses on 4, 8 and 12, then the 13th arena's", "[ladder]") {
+    // The user's ladder (2026-11-08): 4 Uroboros / Giant Uroboros, 8 Aheri / Mkono or Jill, 12
+    // Uroboros Wesker, 13 Midnight Wesker.
+    ContentLoadResult loaded = Content::LoadFromDirectory(test::ConfigDir());
+    for (const std::string& e : loaded.errors) UNSCOPED_INFO(e);
+    REQUIRE(loaded.ok());
+    std::vector<int> pool;
+    for (const MapDef& m : loaded.content->maps()) {
+        if (m.rotation || m.boss) pool.push_back(m.stage);
+    }
+    Profile climbed;
+    climbed.stats.bosses_beaten = {"short:easy", "short:hard", "long:easy", "long:hard"};
+    test::Harness h(loaded.content, climbed);
+    h.rc.SetArenaPool(pool, 0);
+    REQUIRE(h.rc.StartRun("chris", 9, "", "marathon").ok());
+    CHECK(h.rc.state().arena_count == 12);
+    const RunMap& map = h.rc.state().run_map;
+    REQUIRE(map.layers.size() == 13);
+    const auto keys = [&map](std::size_t layer) {
+        std::vector<int> out;
+        for (const RunMapNode& n : map.layers[layer]) out.push_back(n.map_key);
+        return out;
+    };
+    CHECK(keys(3) == std::vector<int>{103, 304});
+    CHECK(keys(7) == std::vector<int>{308, 511, 309});
+    CHECK(keys(11) == std::vector<int>{508});
+    CHECK(keys(12) == std::vector<int>{506});
+    for (const std::size_t layer : {std::size_t{1}, std::size_t{2}, std::size_t{4}, std::size_t{10}}) {
+        for (const int key : keys(layer)) {
+            const MapDef* m = loaded.content->FindMapByStage(key);
+            REQUIRE(m != nullptr);
+            CHECK_FALSE(m->boss.has_value());
+            CHECK(m->rotation);
+        }
+    }
+}
+
+TEST_CASE("the ladder's lengths must grow, and the finale's needs_hard name shorter lengths", "[ladder]") {
+    ContentSources src = LadderSources();
+    nlohmann::json eco = nlohmann::json::parse(src.economy);
+    nlohmann::json bad = eco;
+    bad["ladder"]["lengths"][1]["arenas"] = 3;  // as long as short
+    src.economy = bad.dump();
+    CHECK_FALSE(Content::LoadFromStrings(src).ok());
+    bad = eco;
+    bad["ladder"]["finale"]["needs_hard"] = {"long"};  // the finale's own length
+    src.economy = bad.dump();
+    CHECK_FALSE(Content::LoadFromStrings(src).ok());
+    bad = eco;
+    bad["ladder"]["finale"]["needs_hard"] = {"nope"};
+    src.economy = bad.dump();
+    CHECK_FALSE(Content::LoadFromStrings(src).ok());
+    bad = eco;
+    bad["ladder"]["finale"]["unlocked_by"] = {"short:hard"};  // the old key
+    src.economy = bad.dump();
+    CHECK_FALSE(Content::LoadFromStrings(src).ok());
+    src.economy = eco.dump();
+    CHECK(Content::LoadFromStrings(src).ok());
 }
 
 TEST_CASE("a long run's later arenas are harder, a boss's health by its length", "[ladder]") {

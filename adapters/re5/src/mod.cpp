@@ -347,6 +347,22 @@ struct GridCell {
     int count = 0;
 };
 
+// The grenade launcher is one item per round type loaded (0x0125 explosive, 0x0126, 0x0127,
+// 0x0139..0x013B; the Organize table), and the game files the gun as a 0x010C record: the build's
+// 0x0125 came back as "010C x12" in the stage change's snapshot (user playtest 2026-11-08, classic
+// Jill). A run loads only 0x0125's model archive, not one for 0x010C, so the next stage could not
+// make "010C" and left the gun in the storage. Records are compared by their record id and the gun
+// is made again as 0x0125.
+constexpr std::uint32_t kItemGrenadeLauncher = 0x010C;
+constexpr std::uint32_t kItemLauncherExplosive = 0x0125;
+bool IsLauncherRoundsItem(std::uint32_t id) { return (id >= 0x0125 && id <= 0x0127) || (id >= 0x0139 && id <= 0x013B); }
+// The id an inventory record of this item carries.
+std::uint32_t RecordItemId(std::uint32_t id) { return IsLauncherRoundsItem(id) ? kItemGrenadeLauncher : id; }
+// The item to create for a record id.
+std::uint32_t MakeItemId(std::uint32_t id) { return id == kItemGrenadeLauncher ? kItemLauncherExplosive : id; }
+// A slot record's item, as RecordItemId.
+std::uint32_t SlotItemId(std::uintptr_t slot) { return RecordItemId(ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0)); }
+
 std::array<GridCell, kGridCells> ReadGrid() {
     std::array<GridCell, kGridCells> grid{};
     const auto player = engine::LocalPlayer();
@@ -357,8 +373,7 @@ std::array<GridCell, kGridCells> ReadGrid() {
         if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
         const int cell = ReadOr<std::int32_t>(slot + kSlotCell, -1);
         if (cell < 0 || cell >= kGridCells) continue;
-        grid[static_cast<std::size_t>(cell)] = GridCell{slot, ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0),
-                                                        ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0)};
+        grid[static_cast<std::size_t>(cell)] = GridCell{slot, SlotItemId(slot), ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0)};
     }
     return grid;
 }
@@ -482,13 +497,49 @@ bool IsKnifeItem(std::uint32_t id) { return id == re5::addr::kItemKnife || id ==
 // The last item that went to the run's storage, for the shop's and rewards' header line.
 std::string g_stashNote;
 double g_stashNoteAt = -1.0e9;
-std::string StashNote() { return Now() - g_stashNoteAt < 10.0 ? "   " + g_stashNote : std::string(); }
+// Guns that went to the storage since the player last opened ORGANIZE: their note stays up until
+// then (user playtest 2026-11-08: a rocket launcher taken with a full grid went to the storage, the
+// note was gone 10 s later and the gun was upgraded there, out of reach).
+std::vector<std::string> g_stashGuns;
+std::string g_stashGunsRun;
+std::vector<std::string>& StashGuns() {
+    if (g_stashGunsRun != g->run->state().run_id) {
+        g_stashGunsRun = g->run->state().run_id;
+        g_stashGuns.clear();
+    }
+    return g_stashGuns;
+}
+std::string StashNote() {
+    const auto& guns = StashGuns();
+    if (!guns.empty()) {
+        return "   " + guns.back() + (guns.size() > 1 ? " +" + std::to_string(guns.size() - 1) : std::string()) + " IN STORAGE";
+    }
+    return Now() - g_stashNoteAt < 10.0 ? "   " + g_stashNote : std::string();
+}
+// ORGANIZE opened: the guns' notes have done their job.
+void StashGunsSeen() { StashGuns().clear(); }
+
+// A gun handed out now would go to the storage: no grid cell is free (GiveItem).
+bool GridFull() {
+    if (!engine::Caps().inventory || !engine::LocalPlayer()) return false;
+    for (const GridCell& c : ReadGrid()) {
+        if (!c.record) return false;
+    }
+    return true;
+}
+
+// The weapon (weapons.json) an item or inventory record is: by record id, so the grenade
+// launcher's 0x010C record is the "grenade_launcher" of game item 0x0125.
+const rm::WeaponBaseDef* WeaponForItem(std::uint32_t id) {
+    for (const rm::WeaponBaseDef& w : g->content->weapons()) {
+        if (w.game_item >= 0 && RecordItemId(static_cast<std::uint32_t>(w.game_item)) == RecordItemId(id)) return &w;
+    }
+    return nullptr;
+}
 
 // Name of an inventory item for the game font: the run's weapons and catalog first.
 std::string GridItemName(std::uint32_t id) {
-    for (const rm::WeaponBaseDef& w : g->content->weapons()) {
-        if (w.game_item == static_cast<std::int64_t>(id)) return w.name;
-    }
+    if (const rm::WeaponBaseDef* w = WeaponForItem(id)) return w->name;
     for (const rm::EquipmentDef& e : g->content->loadouts().equipment) {
         if (e.game_item == static_cast<std::int64_t>(id)) return e.name;
     }
@@ -992,6 +1043,35 @@ std::string LadderBossName(int key) {
     return m && m->boss ? Plain(m->boss->Phrase()) : std::string("a boss");
 }
 
+// "4", "4 and 8", "4, 8 and 12": the boss arenas of ladder lengths.
+std::string ArenaList(const std::vector<const rm::EconomyConfig::Ladder::Length*>& tiers) {
+    std::string out;
+    for (std::size_t k = 0; k < tiers.size(); ++k) {
+        if (k > 0) out += k + 1 == tiers.size() ? " and " : ", ";
+        out += std::to_string(tiers[k]->arenas);
+    }
+    return out;
+}
+
+std::string Ordinal(int n) {
+    const int tens = n % 100, ones = n % 10;
+    const char* suffix = tens >= 11 && tens <= 13 ? "th" : ones == 1 ? "st" : ones == 2 ? "nd" : ones == 3 ? "rd" : "th";
+    return std::to_string(n) + suffix;
+}
+
+// "Beat the alternates on arenas 4 and 8 for a 13th arena": how a run earns the finale.
+std::string FinaleHowTo(const rm::EconomyConfig::Ladder& ladder) {
+    std::vector<const rm::EconomyConfig::Ladder::Length*> needs;
+    for (const std::string& id : ladder.finale.needs_hard) {
+        if (const auto* l = ladder.Find(id)) needs.push_back(l);
+    }
+    const auto* after = ladder.Find(ladder.finale.after);
+    const std::string arena = Ordinal((after ? after->arenas : 0) + 1) + " arena";
+    if (needs.empty()) return "Then a " + arena;
+    return std::string(needs.size() > 1 ? "Beat the alternates on arenas " : "Beat the alternate on arena ") + ArenaList(needs) +
+           " for a " + arena;
+}
+
 // RUN LENGTH (the ladder): every length, the open ones to choose; a locked one says which boss
 // opens it.
 nativemenu::Screen RunLengthScreen(rm::RunController& run) {
@@ -1009,16 +1089,23 @@ nativemenu::Screen RunLengthScreen(rm::RunController& run) {
             const auto* by = colon == std::string::npos ? nullptr : ladder.Find(def->unlocked_by.substr(0, colon));
             item.help = by ? "Beat the hard boss of a " + std::to_string(by->arenas) + " arena run to open it." : "Locked.";
         } else {
-            // "Ends on the Uroboros", "... or the Giant Uroboros", "Ends on Uroboros Aheri, Uroboros Mkono or Jill".
+            // "Ends on the Uroboros", "... or the Giant Uroboros"; a longer run fights the shorter
+            // lengths' bosses on the way: "Bosses on arenas 4 and 8, the last Uroboros Aheri,
+            // Uroboros Mkono or Jill."
             std::vector<int> ends{def->easy_boss};
             if (v.hard_open) ends.insert(ends.end(), def->hard_bosses.begin(), def->hard_bosses.end());
-            item.help = "Ends on ";
+            const auto tiers = ladder.BossTiers(def->id);
+            if (tiers.size() > 1) {
+                item.help = "Bosses on arenas " + ArenaList(tiers) + ", the last ";
+            } else {
+                item.help = "Ends on ";
+            }
             for (std::size_t k = 0; k < ends.size(); ++k) {
                 if (k > 0) item.help += k + 1 == ends.size() ? " or " : ", ";
                 item.help += LadderBossName(ends[k]);
             }
             item.help += ".";
-            if (v.finale_open) item.help += "\nThen one more arena.";
+            if (v.finale_possible) item.help += "\n" + FinaleHowTo(ladder) + ".";
             else if (!v.hard_open && !def->hard_bosses.empty()) item.help += "\nBeat it to face a harder boss next time.";
         }
         screen.items.push_back(std::move(item));
@@ -1085,16 +1172,32 @@ nativemenu::Screen RunResultsScreen(rm::RunController& run) {
         const std::string arenas = std::to_string(u.arenas);
         switch (u.kind) {
             case rm::LadderUnlock::Kind::HardBoss:
-                add("NEW BOSS   " + name, "A " + arenas + "-arena run can now end on " + boss + ".\nChoose it in the last NEXT ROUTE.",
+                add("NEW BOSS   " + name, "Arena " + arenas + " of a run can now be " + boss + ".\nChoose it in the NEXT ROUTE before it.",
                     "explosion");
                 break;
-            case rm::LadderUnlock::Kind::Length:
-                add(arenas + " ARENAS OPEN", arenas + " arenas, ending on " + boss + ".\nSTART RUN now asks how long the run is.", "flag");
+            case rm::LadderUnlock::Kind::Length: {
+                const auto tiers = g->content->economy().ladder.BossTiers(u.length_id);
+                add(arenas + " ARENAS OPEN",
+                    (tiers.size() > 1 ? arenas + " arenas, bosses on " + ArenaList(tiers) + ", the last " + boss
+                                      : arenas + " arenas, ending on " + boss) +
+                        ".\nSTART RUN now asks how long the run is.",
+                    "flag");
                 break;
-            case rm::LadderUnlock::Kind::Finale:
-                add("ONE MORE ARENA", "A " + arenas + "-arena run now goes on after its boss:\none more arena, against " + boss + ".",
-                    "explosion");
+            }
+            case rm::LadderUnlock::Kind::Finale: {
+                // "Beat the alternates on arenas 4 and 8 of a 12-arena run / for a 13th arena, against Wesker."
+                const rm::EconomyConfig::Ladder& ladder = g->content->economy().ladder;
+                std::vector<const rm::EconomyConfig::Ladder::Length*> needs;
+                for (const std::string& id : ladder.finale.needs_hard) {
+                    if (const auto* l = ladder.Find(id)) needs.push_back(l);
+                }
+                const std::string beat = needs.empty() ? "Beat its boss"
+                                         : needs.size() > 1 ? "Beat the alternates on arenas " + ArenaList(needs)
+                                                            : "Beat the alternate on arena " + ArenaList(needs);
+                add("ONE MORE ARENA",
+                    beat + " of a " + arenas + "-arena run\nfor a " + Ordinal(u.arenas + 1) + " arena, against " + boss + ".", "explosion");
                 break;
+            }
             case rm::LadderUnlock::Kind::Exotic:
                 add("EXOTIC GUNS", "A legendary gun can now be refined once more, to exotic:\ntwo elements and two legendary effects.",
                     "trophy");
@@ -1314,11 +1417,17 @@ private:
                 screen.header = "CHOOSE A REWARD" + StashNote();
                 screen.empty_help = "Nothing to choose. Press to continue.";
                 LogOffersOnce("rewards", s.reward_offers);
+                const bool gridFull = GridFull();
                 for (const auto& o : s.reward_offers) {
                     Item item;
                     item.label = Upper(Plain(o.title));
                     item.help = OfferDetail(o);
                     item.color = RarityColour(o.rarity);
+                    if (o.kind == "weapon" && gridFull) {
+                        // No grid cell: the gun goes to the storage (KeepInRunStash).
+                        item.label += "   TO STORAGE";
+                        item.help += "\nYour grid is full: it goes to the storage (ORGANIZE).";
+                    }
                     screen.items.push_back(std::move(item));
                 }
                 if (s.reroll_tokens > 0) {
@@ -1333,11 +1442,16 @@ private:
                 const rm::RunSnapshot s = run.Snapshot(Now());
                 screen.header = "SHOP   " + std::to_string(s.supplies) + " SUPPLIES" + StashNote();
                 LogOffersOnce("shop", s.shop_offers);
+                const bool gridFull = GridFull();
                 for (const auto& o : s.shop_offers) {
                     Item item;
                     item.label = Upper(Plain(o.title)) + (o.purchased ? "   BOUGHT" : "");
                     item.help = OfferDetail(o) + "\nPrice " + std::to_string(o.price) + " supplies.";
                     item.color = RarityColour(o.rarity);
+                    if (o.kind == "weapon" && !o.purchased && gridFull) {
+                        item.label += "   TO STORAGE";
+                        item.help += " Grid full: it goes to the storage.";
+                    }
                     if (!o.purchased && o.price > s.supplies) item.locked = true;
                     if (o.restricted) {  // M8: the skin's build cannot use this gun
                         item.locked = true;
@@ -1365,6 +1479,12 @@ private:
                 organize.label = "ORGANIZE INVENTORY";
                 organize.help = NativeItemBoxReady() ? "Arrange, combine and sell items in the game screen.\nBuying and upgrades stay in this SHOP."
                                                      : "Rearrange the nine cells of your item grid.";
+                if (const auto& guns = StashGuns(); !guns.empty() && NativeItemBoxReady()) {
+                    organize.label += "   " + guns.back() + (guns.size() > 1 ? " +" + std::to_string(guns.size() - 1) : std::string()) +
+                                      " IN STORAGE";
+                    organize.color = 0xFFFFD27Fu;
+                    organize.help = "Your storage holds a gun your grid had no room for.\nSwap it into the grid here.";
+                }
                 screen.items.push_back(std::move(organize));
                 Item leave;
                 leave.label = "LEAVE SHOP";
@@ -1682,8 +1802,9 @@ private:
                 }
                 if (index == offers + rerollRow) {  // ORGANIZE INVENTORY
                     // The game's own Organize/Buy screen when it can open here (M7.1); the mod's
-                    // grid screen otherwise.
+                    // grid screen otherwise. The storage's guns are seen there.
                     if (NativeItemBoxReady()) {
+                        StashGunsSeen();
                         g->itemBoxRequested = true;
                         d.outcome = Outcome::Close;
                         break;
@@ -1874,11 +1995,9 @@ std::optional<std::string> EquippedWeaponBaseId() {
         const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
         if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
         if (ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) != 1) continue;
-        const auto id = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
+        const auto id = SlotItemId(slot);
         if ((id >> 8) != 1) continue;
-        for (const rm::WeaponBaseDef& w : g->content->weapons()) {
-            if (w.game_item == static_cast<std::int64_t>(id)) return w.id;
-        }
+        if (const rm::WeaponBaseDef* w = WeaponForItem(id)) return w->id;
         return std::nullopt;
     }
     return std::nullopt;
@@ -1976,9 +2095,11 @@ void DetectEnemyDeaths(double now) {
 
 // A weapon's model is loaded in this match: the character's own loadout put it there, or its
 // class archive is in the loader's lists (M3 preloads every gun of the content in a run).
+// The grenade launcher's record id stands for the item it is made from (MakeItemId).
 bool WeaponModelLoaded(std::uint32_t id) {
-    if (g->loadedWeaponItems.count(id)) return true;
-    return resources::Available() && (id >> 8) == 1 && resources::WeaponLoaded(static_cast<std::uint16_t>(id));
+    if (g->loadedWeaponItems.count(id) || g->loadedWeaponItems.count(RecordItemId(id))) return true;
+    const std::uint32_t make = MakeItemId(id);
+    return resources::Available() && (make >> 8) == 1 && resources::WeaponLoaded(static_cast<std::uint16_t>(make));
 }
 
 // The weapons rewards, the shop and chests may hand out: those whose model is loaded.
@@ -2000,14 +2121,13 @@ int GiveItem(const char* source, std::int64_t gameItem, int count) {
     const auto player = engine::LocalPlayer();
     if (!engine::Caps().inventory || !player || gameItem < 0 || count <= 0) return 0;
     const auto inventory = player + re5::off::kPlayerInventory;
-    const int id = static_cast<int>(gameItem);
+    // A grenade launcher record (0x010C) is made from its explosive-rounds item (MakeItemId).
+    const int id = static_cast<int>(MakeItemId(static_cast<std::uint32_t>(gameItem)));
+    const std::uint32_t recordId = RecordItemId(static_cast<std::uint32_t>(id));
     std::uintptr_t stack = 0;
     for (int i = 0; i < re5::off::kInventorySlots && !stack; ++i) {
         const auto slot = inventory + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
-        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) == 1 &&
-            ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) == static_cast<std::uint32_t>(id)) {
-            stack = slot;
-        }
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) == 1 && SlotItemId(slot) == recordId) stack = slot;
     }
     using AddFn = int(__thiscall*)(std::uintptr_t inventory, int item, int count);
     using CreateFn = std::uintptr_t(__thiscall*)(std::uintptr_t inventory, int item, int count, int a, int b, int c,
@@ -2106,10 +2226,10 @@ std::uint32_t HeldAmmoItem() {
         for (const auto& [launcher, rounds] : kLauncherRounds) {
             if (id == launcher) return rounds;
         }
+        // The launcher's own record (RecordItemId): the rounds it is made with.
+        if (id == kItemGrenadeLauncher) return 0x0206;
         if (id == 0x010D) return 0;  // the rocket launcher: one rocket, never reloaded
-        for (const rm::WeaponBaseDef& w : g->content->weapons()) {
-            if (w.game_item == static_cast<std::int64_t>(id)) return AmmoItemFor(w.category);
-        }
+        if (const rm::WeaponBaseDef* w = WeaponForItem(id)) return AmmoItemFor(w->category);
         return 0;
     }
     return 0;
@@ -2176,12 +2296,10 @@ void StripToPistol() {
     }
     if (equipped != 0) {
         pistol = equipped;  // the hands win over the roll
-        for (const rm::WeaponBaseDef& w : g->content->weapons()) {
-            if (w.game_item != static_cast<std::int64_t>(equipped)) continue;
-            ammo = AmmoItemFor(w.category);
-            const rm::Status swapped = g->run->SwapStartingWeapon(w.id);
-            if (!swapped.ok()) RM_LOGW("inventory: starting weapon swap to %s failed: %s", w.id.c_str(), swapped.message.c_str());
-            break;
+        if (const rm::WeaponBaseDef* w = WeaponForItem(equipped)) {
+            ammo = AmmoItemFor(w->category);
+            const rm::Status swapped = g->run->SwapStartingWeapon(w->id);
+            if (!swapped.ok()) RM_LOGW("inventory: starting weapon swap to %s failed: %s", w->id.c_str(), swapped.message.c_str());
         }
     }
     int removed = 0;
@@ -2237,7 +2355,7 @@ std::vector<std::pair<std::uint32_t, int>> ReadInventory() {
     for (int i = 0; i < re5::off::kInventorySlots; ++i) {
         const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
         if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
-        out.emplace_back(ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0), ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0));
+        out.emplace_back(SlotItemId(slot), ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0));
     }
     return out;
 }
@@ -2253,7 +2371,7 @@ int ShrinkItem(std::uint32_t id, int total) {
     for (int i = 0; i < re5::off::kInventorySlots; ++i) {
         const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
         if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
-        if (ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != id) continue;
+        if (SlotItemId(slot) != RecordItemId(id)) continue;
         records.push_back(slot);
         current += ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0);
     }
@@ -2277,7 +2395,7 @@ int RemoveItemRecords(std::uint32_t id) {
     for (int i = 0; i < re5::off::kInventorySlots; ++i) {
         const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
         if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
-        if (ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != id) continue;
+        if (SlotItemId(slot) != RecordItemId(id)) continue;
         if (ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1) continue;  // never the gun in hand
         ClearSlot(slot);
         ++removed;
@@ -2409,7 +2527,7 @@ void SetWeaponRounds(std::uint32_t id, int rounds) {
     for (int i = 0; i < re5::off::kInventorySlots; ++i) {
         const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
         if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
-        if (ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != id) continue;
+        if (SlotItemId(slot) != RecordItemId(id)) continue;
         const int before = ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0);
         if (before != rounds) {
             SafeStore<std::int32_t>(slot + re5::off::kSlotCount, rounds);
@@ -6268,6 +6386,12 @@ int KeepInRunStash(std::uint32_t id, int count, const char* why) {
     g->toasts.Push(GridItemName(id) + " is in the storage (ORGANIZE)");
     g_stashNote = Upper(Plain(GridItemName(id))) + " IN STORAGE";
     g_stashNoteAt = Now();
+    if (IsWeaponItem(id)) {
+        auto& guns = StashGuns();
+        const std::string name = Upper(Plain(GridItemName(id)));
+        guns.erase(std::remove(guns.begin(), guns.end(), name), guns.end());
+        guns.push_back(name);
+    }
     return kept;
 }
 
@@ -6444,7 +6568,7 @@ void TakeRunFromSave(std::uintptr_t save) {
             if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
             const int cell = ReadOr<std::int32_t>(slot + kSlotCell, -1);
             if (cell >= 0 && cell < kGridCells) continue;
-            g->transition.carry.emplace_back(ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0), ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0));
+            g->transition.carry.emplace_back(SlotItemId(slot), ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0));
         }
     }
     std::string text;

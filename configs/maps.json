@@ -6191,6 +6191,7 @@
       "id": "campaign_s505",
       "name": "Factory Floor",
       "stage": 505,
+      "rotation": false,
       "start": [-2253.9, 703.2, -723.6],
       "max_alive": 12,
       "min_player_distance": 800,

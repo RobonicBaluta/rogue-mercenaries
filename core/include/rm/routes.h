@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -71,12 +72,16 @@ struct RunMap {
 RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& arenas, int first);
 
 /// A run's shape from its ladder length (EconomyConfig::Ladder): `layers` arenas in all, its last
-/// fought layer exactly `bosses` (in this order: the easy one, then the hard one when open), and
-/// when `finale` >= 0 one more layer after them with that boss map alone.
+/// fought layer exactly `bosses` (in this order: the easy one, then the hard ones when open), and
+/// when `finale` >= 0 one more layer after them with that boss map alone. `earlier_bosses` puts
+/// boss layers inside the run too (arena number, 1-based, to its bosses in order): the shorter
+/// lengths' bosses at their own arenas (the user, 2026-11-08: "you get 1 on 4 one on 8 and one on
+/// 12"). Every node of a boss layer leads to every node of the next layer.
 struct RunMapPlan {
     int layers = 4;
     std::vector<int> bosses;
     int finale = -1;
+    std::map<int, std::vector<int>> earlier_bosses;
 };
 RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& arenas, int first, const RunMapPlan& plan);
 

@@ -265,18 +265,43 @@ bool RunController::LengthOpen(const EconomyConfig::Ladder::Length& length) cons
     return length.unlocked_by.empty() || Beaten(length.unlocked_by);
 }
 
-bool RunController::FinaleOpen(const EconomyConfig::Ladder::Length& length) const {
+bool RunController::FinalePossible(const EconomyConfig::Ladder::Length& length) const {
     const auto& finale = content_->economy().ladder.finale;
-    if (finale.boss < 0 || finale.after != length.id) return false;
-    return std::all_of(finale.unlocked_by.begin(), finale.unlocked_by.end(), [this](const std::string& k) { return Beaten(k); });
+    return finale.boss >= 0 && finale.after == length.id;
 }
+
+bool RunController::FinaleEarned() const {
+    const auto& needs = content_->economy().ladder.finale.needs_hard;
+    return std::all_of(needs.begin(), needs.end(), [this](const std::string& id) {
+        return std::find(run_.ladder_beaten.begin(), run_.ladder_beaten.end(), id + ":hard") != run_.ladder_beaten.end();
+    });
+}
+
+std::vector<int> RunController::BossChoices(const EconomyConfig::Ladder::Length& length) const {
+    std::vector<int> out{length.easy_boss};
+    if (Beaten(length.id + ":easy")) out.insert(out.end(), length.hard_bosses.begin(), length.hard_bosses.end());
+    return out;
+}
+
+namespace {
+// The length a ladder boss beaten (or fought) at the run's current arena belongs to: the one whose
+// arena it is (a shorter length's boss inside a longer run), else the run's own.
+const EconomyConfig::Ladder::Length* BossTier(const EconomyConfig::Ladder& ladder, const EconomyConfig::Ladder::Length& run,
+                                             int arena, int map_key) {
+    if (const auto* tier = ladder.TierAt(run.id, arena); tier != nullptr && (map_key == tier->easy_boss || tier->IsHard(map_key))) {
+        return tier;
+    }
+    return map_key == run.easy_boss || run.IsHard(map_key) ? &run : nullptr;
+}
+}  // namespace
 
 double RunController::BossHpMult(int map_key) const {
     const EconomyConfig::Ladder& ladder = content_->economy().ladder;
     const auto* length = ladder.enabled ? ladder.Find(run_.length_id) : nullptr;
     if (length == nullptr) return 1.0;
     if (run_.arena_index > length->arenas && map_key == ladder.finale.boss) return ladder.finale.boss_hp_mult;
-    return map_key == length->easy_boss || length->IsHard(map_key) ? length->boss_hp_mult : 1.0;
+    const auto* tier = BossTier(ladder, *length, run_.arena_index, map_key);
+    return tier != nullptr ? tier->boss_hp_mult : 1.0;
 }
 
 void RunController::RecordBossBeaten(int map_key) {
@@ -285,9 +310,16 @@ void RunController::RecordBossBeaten(int map_key) {
     std::vector<std::string> keys{"boss:" + map->boss->unit_class};
     const EconomyConfig::Ladder& ladder = content_->economy().ladder;
     if (const auto* length = ladder.enabled ? ladder.Find(run_.length_id) : nullptr) {
-        if (run_.arena_index > length->arenas && map_key == ladder.finale.boss) keys.push_back("finale");
-        else if (map_key == length->easy_boss) keys.push_back(length->id + ":easy");
-        else if (length->IsHard(map_key)) keys.push_back(length->id + ":hard");
+        std::string key;
+        if (run_.arena_index > length->arenas && map_key == ladder.finale.boss) {
+            key = "finale";
+        } else if (const auto* tier = BossTier(ladder, *length, run_.arena_index, map_key)) {
+            key = tier->id + (map_key == tier->easy_boss ? ":easy" : ":hard");
+        }
+        if (!key.empty()) {
+            run_.ladder_beaten.push_back(key);
+            keys.push_back(std::move(key));
+        }
     }
     for (const std::string& key : keys) {
         if (!profile_.stats.bosses_beaten.insert(key).second) continue;
@@ -312,12 +344,9 @@ std::vector<LadderUnlock> RunController::LadderUnlocksFor(const std::vector<std:
         }
         if (!length.unlocked_by.empty() && fresh(length.unlocked_by) && LengthOpen(length)) {
             out.push_back({LadderUnlock::Kind::Length, length.id, length.arenas, length.easy_boss});
+            // The length that can go on to the finale: how to earn it.
+            if (FinalePossible(length)) out.push_back({LadderUnlock::Kind::Finale, length.id, length.arenas, ladder.finale.boss});
         }
-    }
-    const auto* after = ladder.finale.boss >= 0 ? ladder.Find(ladder.finale.after) : nullptr;
-    if (after != nullptr && FinaleOpen(*after) &&
-        std::any_of(ladder.finale.unlocked_by.begin(), ladder.finale.unlocked_by.end(), fresh)) {
-        out.push_back({LadderUnlock::Kind::Finale, after->id, after->arenas, ladder.finale.boss});
     }
     const std::string& exotic = content_->economy().refine.exotic_unlocked_by;
     if (!exotic.empty() && fresh(exotic) && MaxRefineRarity() == Rarity::Exotic) {
@@ -408,8 +437,8 @@ std::vector<RunController::LadderLengthView> RunController::LadderLengths() cons
         v.easy_beaten = Beaten(length.id + ":easy");
         v.hard_beaten = Beaten(length.id + ":hard");
         v.hard_open = !length.hard_bosses.empty() && v.easy_beaten;
-        v.finale_open = FinaleOpen(length);
-        v.arenas = length.arenas + (v.finale_open ? 1 : 0);
+        v.finale_possible = FinalePossible(length);
+        v.arenas = length.arenas;
         out.push_back(std::move(v));
     }
     return out;
@@ -754,7 +783,8 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     fresh.skin_id = skin->id;
     fresh.character = ApplySkin(*ch, *skin);
     fresh.phase = Phase::Idle;
-    fresh.arena_count = length != nullptr ? length->arenas + (FinaleOpen(*length) ? 1 : 0) : eco.run.arena_count;
+    // The finale's arena is added when the run earns it (CompleteArena).
+    fresh.arena_count = length != nullptr ? length->arenas : eco.run.arena_count;
     fresh.length_id = length != nullptr ? length->id : std::string();
     fresh.route_id = start->id;
     fresh.route_chosen = true;  // the first arena uses the starting route
@@ -771,12 +801,16 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     run_.loadout = RollLoadout(run_.character, *content_, streams_->loadout);
     run_.keys = eco.keys.enabled ? eco.keys.start : 0;
     if (length != nullptr) {
-        // Its easy boss, then its alternates too once the easy one is beaten; the finale after them.
+        // Every shorter length's bosses at their arenas, its own at its end (each its easy boss,
+        // then its alternates too once the easy one is beaten); the finale's arena after them,
+        // played only when the run earns it.
         RunMapPlan plan;
-        plan.layers = run_.arena_count;
-        plan.bosses.push_back(length->easy_boss);
-        if (Beaten(length->id + ":easy")) plan.bosses.insert(plan.bosses.end(), length->hard_bosses.begin(), length->hard_bosses.end());
-        plan.finale = FinaleOpen(*length) ? eco.ladder.finale.boss : -1;
+        plan.layers = run_.arena_count + (FinalePossible(*length) ? 1 : 0);
+        for (const auto* tier : eco.ladder.BossTiers(length->id)) {
+            if (tier != length) plan.earlier_bosses[tier->arenas] = BossChoices(*tier);
+        }
+        plan.bosses = BossChoices(*length);
+        plan.finale = FinalePossible(*length) ? eco.ladder.finale.boss : -1;
         run_.run_map = GenerateRunMap(*content_, streams_->route, arena_pool_, first_arena_, plan);
     } else {
         run_.run_map = GenerateRunMap(*content_, streams_->route, arena_pool_, first_arena_);
@@ -1340,6 +1374,16 @@ Result<ArenaResult> RunController::CompleteArena(double now) {
         result.arena_name = map->name;
         result.boss = map->boss.has_value();
         if (result.boss) RecordBossBeaten(map_stage_);
+    }
+    // The run's last boss beaten after the needs_hard bosses: the finale's arena follows.
+    const EconomyConfig::Ladder& ladder = eco.ladder;
+    if (const auto* length = ladder.enabled ? ladder.Find(run_.length_id) : nullptr;
+        length != nullptr && result.boss && run_.arena_index == length->arenas && run_.arena_count == length->arenas &&
+        FinalePossible(*length) && FinaleEarned() && run_.run_map.layers.size() > static_cast<std::size_t>(length->arenas)) {
+        run_.arena_count = length->arenas + 1;
+        Event f = MakeEvent(EventType::PerkTriggered);
+        f.Add("source", "ladder").Add("trigger", "finale_earned").Add("map", ladder.finale.boss);
+        Emit(std::move(f));
     }
     run_.results.push_back(result);
 

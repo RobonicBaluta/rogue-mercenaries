@@ -64,19 +64,49 @@ RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& 
         return out.empty() ? normal : out;
     };
 
+    // Boss layers are fought as a route of the highest tier.
+    std::vector<const RouteDef*> hardest;
+    for (const RouteDef& r : content.routes()) {
+        if (Playable(r) && !tiers.empty() && r.difficulty_tier == tiers.back()) hardest.push_back(&r);
+    }
+    auto hardestRoute = [&]() { return hardest.empty() ? eco.run.starting_route : hardest[rng.Index(hardest.size())]->id; };
+    // A layer of the given boss arenas (at most `width`); every node before leads to all of them.
+    auto pushBossLayer = [&](const std::vector<int>& keys) {
+        std::vector<RunMapNode> layer;
+        for (const int key : keys) {
+            if (layer.size() >= static_cast<std::size_t>(width)) break;
+            RunMapNode node;
+            node.map_key = key;
+            node.route_id = hardestRoute();
+            layer.push_back(std::move(node));
+        }
+        for (RunMapNode& p : map.layers.back()) {
+            p.next.clear();
+            for (std::size_t k = 0; k < layer.size(); ++k) p.next.push_back(static_cast<int>(k));
+        }
+        map.layers.push_back(std::move(layer));
+    };
+
     RunMapNode start;
     start.route_id = eco.run.starting_route;
     start.map_key = first >= 0 ? first : DrawArena(rng, fitting(1, start.route_id), {});
     map.layers.push_back({start});
 
+    bool fanOut = true;  // the previous layer (the start, a boss layer) leads to every node of the next
     for (int d = 1; d < fought; ++d) {
+        // A boss layer inside the run (a shorter length's bosses at their arena).
+        if (const auto earlier = plan.earlier_bosses.find(d + 1); earlier != plan.earlier_bosses.end() && !earlier->second.empty()) {
+            pushBossLayer(earlier->second);
+            fanOut = true;
+            continue;
+        }
         std::vector<RunMapNode> layer(static_cast<std::size_t>(width));
-        // Links into this layer: the start reaches every node; node j of a wider layer reaches
-        // j and j+1 (the last one its left neighbour and itself).
+        // Links into this layer: the start (or a boss) reaches every node; node j of a wider layer
+        // reaches j and j+1 (the last one its left neighbour and itself).
         std::vector<RunMapNode>& prev = map.layers.back();
         for (std::size_t j = 0; j < prev.size(); ++j) {
-            if (d == 1 || width == 1) {
-                for (int k = 0; k < (d == 1 ? width : 1); ++k) prev[j].next.push_back(k);
+            if (fanOut || width == 1) {
+                for (int k = 0; k < (fanOut ? width : 1); ++k) prev[j].next.push_back(k);
             } else {
                 const int a = std::min(static_cast<int>(j), width - 2);
                 prev[j].next = {a, a + 1};
@@ -109,35 +139,19 @@ RunMap GenerateRunMap(const Content& content, Rng& rng, const std::vector<int>& 
             arenas_used.insert(layer[k].map_key);
         }
         map.layers.push_back(std::move(layer));
+        fanOut = false;
     }
 
     if (bossLayer) {
-        // The last layer: distinct boss arenas, every node before leads to all of them, fought
-        // as a route of the highest tier.
-        std::vector<const RouteDef*> hardest;
-        for (const RouteDef& r : content.routes()) {
-            if (Playable(r) && !tiers.empty() && r.difficulty_tier == tiers.back()) hardest.push_back(&r);
-        }
+        // The last layer: distinct boss arenas, every node before leads to all of them.
         std::vector<int> pool = bosses;
         if (!planned) rng.Shuffle(pool);
-        pool.resize(std::min(pool.size(), static_cast<std::size_t>(width)));
-        std::vector<RunMapNode> layer;
-        for (const int key : pool) {
-            RunMapNode node;
-            node.map_key = key;
-            node.route_id = hardest.empty() ? eco.run.starting_route : hardest[rng.Index(hardest.size())]->id;
-            layer.push_back(std::move(node));
-        }
-        for (RunMapNode& p : map.layers.back()) {
-            p.next.clear();
-            for (std::size_t k = 0; k < layer.size(); ++k) p.next.push_back(static_cast<int>(k));
-        }
-        map.layers.push_back(std::move(layer));
+        pushBossLayer(pool);
         if (finale) {
             // One more arena after the boss: the finale's boss alone, reached from every boss.
             RunMapNode node;
             node.map_key = plan.finale;
-            node.route_id = hardest.empty() ? eco.run.starting_route : hardest[rng.Index(hardest.size())]->id;
+            node.route_id = hardestRoute();
             for (RunMapNode& p : map.layers.back()) p.next = {0};
             map.layers.push_back({node});
         }

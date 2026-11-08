@@ -1895,10 +1895,10 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
             }
             if (const json* f = Get(*s, "finale")) {
                 const Diag fd = ld.Sub(": finale");
-                CheckKeys(fd, *f, {"boss", "after", "unlocked_by", "boss_hp_mult"});
+                CheckKeys(fd, *f, {"boss", "after", "needs_hard", "boss_hp_mult"});
                 GetIntRange(fd, *f, "boss", l.finale.boss, false, -1, 9999);
                 GetString(fd, *f, "after", l.finale.after, false);
-                GetStringList(fd, *f, "unlocked_by", l.finale.unlocked_by, false);
+                GetStringList(fd, *f, "needs_hard", l.finale.needs_hard, false);
                 if (GetNumber(fd, *f, "boss_hp_mult", l.finale.boss_hp_mult, false)) CheckRange(fd, "boss_hp_mult", l.finale.boss_hp_mult, 0.1, 10.0);
             }
             if (l.enabled && l.lengths.empty()) ld.Error("an enabled ladder needs at least one length");
@@ -1909,7 +1909,22 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
                 const auto* base = colon == std::string::npos ? nullptr : l.Find(len.unlocked_by.substr(0, colon));
                 if (base == nullptr) ld.Error("length " + Q(len.id) + " is unlocked by unknown key " + Q(len.unlocked_by));
             }
-            if (l.finale.boss >= 0 && l.Find(l.finale.after) == nullptr) ld.Error("finale.after names unknown length " + Q(l.finale.after));
+            // A run fights a boss at every length's arenas: the lengths must grow.
+            for (std::size_t i = 1; i < l.lengths.size(); ++i) {
+                if (l.lengths[i].arenas <= l.lengths[i - 1].arenas) {
+                    ld.Error("length " + Q(l.lengths[i].id) + " must have more arenas than " + Q(l.lengths[i - 1].id));
+                }
+            }
+            if (l.finale.boss >= 0) {
+                const auto* after = l.Find(l.finale.after);
+                if (after == nullptr) ld.Error("finale.after names unknown length " + Q(l.finale.after));
+                for (const std::string& id : l.finale.needs_hard) {
+                    const auto* tier = l.Find(id);
+                    if (tier == nullptr || tier->hard_bosses.empty() || (after != nullptr && tier->arenas >= after->arenas)) {
+                        ld.Error("finale.needs_hard: " + Q(id) + " must be a shorter length with a hard boss");
+                    }
+                }
+            }
         }
     }
     if (const json* s = Section(d, doc, "run_map")) {

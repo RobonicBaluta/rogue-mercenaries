@@ -105,9 +105,9 @@ struct ArenaResult {
 /// What a run's first win over a ladder boss opened (EconomyConfig::Ladder), for its results.
 struct LadderUnlock {
     enum class Kind {
-        HardBoss,  // the length's hard boss is now a choice at its end
+        HardBoss,  // the length's hard boss is now a choice at its arena
         Length,    // a length opened
-        Finale,    // the finale arena follows its length now
+        Finale,    // the length that opened can go on to the finale (its run beating the needs_hard bosses)
         Exotic,    // guns can be refined to Exotic now (economy refine.exotic_unlocked_by beaten)
     };
     Kind kind = Kind::HardBoss;
@@ -164,6 +164,7 @@ struct RunState {
     std::string skin_id;
     std::string length_id;   // the ladder length (EconomyConfig::Ladder; empty without one)
     std::vector<std::string> bosses_beaten_new;  // ladder keys this run beat for the first time
+    std::vector<std::string> ladder_beaten;      // ladder keys this run beat ("short:hard"): the finale's needs_hard
     CharacterDef character;  // the character with the skin applied
     Loadout loadout;
     std::vector<ItemGrant> item_grants;  // earned, not yet handed to the adapter
