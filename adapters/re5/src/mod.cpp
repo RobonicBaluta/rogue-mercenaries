@@ -905,6 +905,22 @@ int CostumeOf(const std::vector<rm::CharacterAvailability>& characters, std::siz
     return static_cast<int>(skin && skin->costume_index >= 0 ? skin->costume_index : c.costume_index);
 }
 
+// The picture for a skin: its mod's own when it is an installed mod skin, else its costume's bust.
+int PortraitOf(const std::string& skinId, int costume) {
+    const auto pic = g_modPortraits.find(skinId);
+    return pic != g_modPortraits.end() ? pic->second : costume;
+}
+
+// The selected character's picture (its chosen skin's: a mod skin's own; -1 = none selected).
+int SelectedPortrait(rm::RunController& run) {
+    const auto characters = run.Characters();
+    if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) return -1;
+    const auto index = static_cast<std::size_t>(g->selectedCharacter);
+    const rm::SkinAvailability* skin = SelectedSkin(characters[index]);
+    const int costume = CostumeOf(characters, index);
+    return skin != nullptr ? PortraitOf(skin->id, costume) : costume;
+}
+
 // The selected character's costume slot (-1 = none selected).
 int SelectedCostume(rm::RunController& run) {
     const auto characters = run.Characters();
@@ -1031,7 +1047,7 @@ nativemenu::Screen RunResultsScreen(rm::RunController& run) {
     FindLook(characters, s.character_id, character, costume);
     if (!s.skin_id.empty()) FindLook(characters, s.skin_id, look, costume);
     screen.header = std::string(s.completed ? "RUN COMPLETE" : "RUN OVER") + (character.empty() ? "" : "   " + Upper(character));
-    screen.portrait = costume;
+    screen.portrait = s.skin_id.empty() ? costume : PortraitOf(s.skin_id, costume);
     auto add = [&](std::string label, std::string help, const char* icon) {
         nativemenu::Item item;
         item.label = std::move(label);
@@ -1142,7 +1158,7 @@ private:
         switch (id) {
             case ScreenId::Main:
                 screen.header = "ROGUE MERCENARIES   " + Upper(CreditsLine());
-                screen.portrait = SelectedCostume(run);
+                screen.portrait = SelectedPortrait(run);
                 screen.items = {
                     {"START RUN", "Solo Mercenaries on any stage. Pick your character,\nthe run starts with the match.",
                      false, 0, "crosshair"},
@@ -1221,7 +1237,7 @@ private:
             case ScreenId::Perks: {
                 // One slot per category; each row opens that category's list.
                 screen.header = "PERKS   " + Upper(CreditsLine());
-                screen.portrait = SelectedCostume(run);
+                screen.portrait = SelectedPortrait(run);
                 const std::string character = SelectedCharacterId(run);
                 for (rm::PerkCategory c : kSlotCategories) {
                     Item item;
@@ -1249,7 +1265,7 @@ private:
                 const std::string character = SelectedCharacterId(run);
                 screen.header = Upper(std::string(rm::PerkCategoryName(g->perkCategory))) + "   " + Upper(CreditsLine());
                 screen.empty_help = "No perk of this kind for this character yet.";
-                screen.portrait = SelectedCostume(run);
+                screen.portrait = SelectedPortrait(run);
                 const rm::PerkDef* equipped = character.empty() ? nullptr : run.EquippedPerk(character, g->perkCategory);
                 for (const rm::PerkDef* perk : MenuPerks(run, g->perkCategory)) {
                     Item item;
@@ -2269,6 +2285,76 @@ bool IsWeaponItem(std::uint32_t id) { return IsWeaponRecord(ItemRecord(id), id);
 constexpr std::uint32_t kItemFlamethrower = 0x0121;
 constexpr double kRefuelDelay = 1.5;
 constexpr double kRefuelPerSecond = 5.0;  // empty to full in 20 s
+
+// The flamethrower (uWp21) binds its tank and hose to the player's back every frame, whatever is
+// in hand (its update, 0x00BA4FF0; user playtest 2026-11-08: "it shows the model on the character at
+// all times, even when it has some other weapon on"). Out of hand its model is scaled down to
+// nothing, in hand back to its own size: uCoord's scale (re5::off::kUnitScale), written only where
+// it reads as the unit's own (1, 1, 1) or as the mod left it, and again if the game sets it back.
+constexpr float kHiddenScale = 0.001f;
+
+std::uintptr_t EquippedGunSlot();
+
+void HideHolsteredFlamethrower(double now) {
+    static std::uintptr_t unit = 0;
+    static double lastScan = -10.0;
+    static bool refused = false;
+    static int lastState = -1;  // logged: 0 shown, 1 hidden
+    static int rewrites = 0;
+    const auto player = engine::LocalPlayer();
+    if (!player || !g->match.inMatch) {
+        unit = 0;
+        refused = false;
+        lastState = -1;
+        rewrites = 0;
+        return;
+    }
+    // Its unit, among the player's pointers (looked for once a second: it comes with the first equip).
+    if (now - lastScan >= 1.0) {
+        lastScan = now;
+        for (std::size_t off = 0; off < 0x4000; off += 4) {
+            const auto p = ReadOr<std::uintptr_t>(player + off, 0);
+            if (p < 0x00400000 || p > 0x7FFF0000 || (p & 3)) continue;
+            if (ReadOr<std::uintptr_t>(p, 0) == re5::addr::kVtableWp21) {
+                if (p != unit) RM_LOGI("flamethrower: its unit %08X (player +%zX)", static_cast<unsigned>(p), off);
+                unit = p;
+                break;
+            }
+        }
+    }
+    if (unit == 0 || refused) return;
+    if (ReadOr<std::uintptr_t>(unit, 0) != re5::addr::kVtableWp21) {
+        unit = 0;  // gone
+        lastState = -1;
+        return;
+    }
+    const std::uintptr_t slot = EquippedGunSlot();
+    const bool hide = !(slot && ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) == kItemFlamethrower);
+    const float want = hide ? kHiddenScale : 1.0f;
+    const float other = hide ? 1.0f : kHiddenScale;
+    float scale[3];
+    for (int k = 0; k < 3; ++k) scale[k] = ReadOr<float>(unit + re5::off::kUnitScale + k * 4, -1.0f);
+    const auto reads = [](const float v[3], float x) {
+        return std::fabs(v[0] - x) < 0.0005f && std::fabs(v[1] - x) < 0.0005f && std::fabs(v[2] - x) < 0.0005f;
+    };
+    if (reads(scale, want)) {
+        lastState = hide ? 1 : 0;  // as wanted (the game sets 1 again itself when it is equipped)
+        return;
+    }
+    if (!reads(scale, other)) {
+        refused = true;  // not a scale this layout expects: left as it is
+        RM_LOGW("flamethrower: its unit %08X reads %.4f %.4f %.4f at +0x50, not its scale; its model is left as it is",
+                static_cast<unsigned>(unit), scale[0], scale[1], scale[2]);
+        return;
+    }
+    for (int k = 0; k < 3; ++k) SafeStore<float>(unit + re5::off::kUnitScale + k * 4, want);
+    if (lastState == (hide ? 1 : 0)) {
+        if (++rewrites == 30) RM_LOGW("flamethrower: the game keeps setting its scale back; written again each frame");
+        return;
+    }
+    lastState = hide ? 1 : 0;
+    RM_LOGI("flamethrower: %s", hide ? "out of hand, its model hidden" : "in hand, its model shown");
+}
 
 void RefuelFlamethrower(double now) {
     static int lastCount = -1;
@@ -7572,6 +7658,7 @@ private:
         SampleHitStates(now);
         ApplyMoveSpeed();
         RefuelFlamethrower(now);
+        HideHolsteredFlamethrower(now);
         // A match a run played in stays a run's match until it is gone, so quitting it writes no
         // save even if the run is settled first.
         static bool runMatch = false;

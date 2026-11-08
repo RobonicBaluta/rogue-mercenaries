@@ -61,6 +61,8 @@ constexpr std::uintptr_t kFnPlayerChangeAction = 0x00B5C900;
 // slots 6 (start, a thunk to 0x00C8B1E0), 7 (update, empty) and 10 (the default that sets the done
 // bit). See off::kPlActHold.
 constexpr std::uintptr_t kVtablePlActTest = 0x01045CF8;
+// The flamethrower's unit, uWp21 (research/re5-engine-map.md, "The flamethrower").
+constexpr std::uintptr_t kVtableWp21 = 0x0102D0C8;
 constexpr std::uintptr_t kFnPlActTestStart = 0x00C91600;
 constexpr std::uintptr_t kFnPlActTestUpdate = 0x00C76EA0;
 constexpr std::uintptr_t kFnActionDefaultDone = 0x00C71510;
@@ -491,6 +493,11 @@ constexpr std::size_t kLinkUnitManager = 0x3830;
 constexpr std::size_t kUnitPosition = 0x30;       // float x, y, z of any uCoord unit
 constexpr std::size_t kEnemyArmId = 0x1BE4;       // uEm10 weapon id copied from the descriptor (+4: count)
 constexpr std::size_t kUnitRotation = 0x40;       // quaternion x, y, z, w of any uCoord unit (MT uCoord layout)
+// x, y, z scale of a uCoord unit: MT's uCoord keeps position, rotation, scale, then its local
+// matrix (+0x60) and world matrix (+0xA0, read by 0x00B56650). Seen 2026-11-08 on the
+// flamethrower (scripts/test_flame_hide.sh): 0.001 there hides its tank and hose; the game sets
+// 1 again when it is equipped. The mod writes it only where it reads (1, 1, 1) or its own value.
+constexpr std::size_t kUnitScale = 0x50;
 // cSetInfoEnemy reflected fields (property list FUN_00CCE070): the enemy's starting behaviour.
 constexpr std::size_t kSetInfoEnemyFirst = 0x70;  // mInAir; the enemy fields run to mbForceMoveFSM (+0xD5)
 constexpr std::size_t kSetInfoIsForNet = 0x84;
