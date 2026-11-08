@@ -9,6 +9,7 @@
 # death (its actions after zero health), the fall and the arena's end. Saves and restores the
 # profile; checks the save.
 #   PRELOAD (archives loaded with the stage too)  STAGE  CLASS  SIDE (default 60)  DISTANCE (default 400)  SHOTS (default 6)  KILLSHOTS (default 20)
+#   FREE (seconds the boss fights the invulnerable player first, a capture every 5 s; default 0)
 cd "$(dirname "$0")/.."
 D="$LOCALAPPDATA/RogueMercenaries"
 LOG="$D/logs/adapter.log"
@@ -59,6 +60,12 @@ if [ $ok = 1 ]; then
         echo "spawn: $(since | grep -E "director: boss $CLASS .*spawned" | tail -1 | cut -c25-200)"
         wait_for "director: boss health" 1 8 && echo "health: $(since | grep 'director: boss health' | tail -1 | cut -c25-200)"
         sleep 3; cap 01-boss
+        if [ "${FREE:-0}" -gt 0 ]; then
+            for t in $(seq 5 5 "$FREE"); do sleep 4; cap "01-free-$t"; done
+            echo "free fight: $(since | grep "watch: $CLASS hp" | grep -oE 'action [0-9]+ [A-Za-z0-9_]+' | uniq | head -30 | tr '\n' ';' | cut -c1-500)"
+            echo "   player: $(since | grep -oE 'c[A-Za-z0-9]+_PL' | sort | uniq -c | tr '\n' ' ')"
+            since | grep -E "boss: |camera: |player died" | cut -c25-200 | head -6
+        fi
         keys "rdown+1200"
         for _ in $(seq 1 "$SHOTS"); do quick "bring $CLASS $DISTANCE $SIDE 2.0"; keys "lclick+350"; done
         sleep 1; cap 02-hud-after-shots

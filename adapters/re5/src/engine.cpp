@@ -136,6 +136,9 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.enemySpawn = g_caps.enemies && SignatureOk("enemy_create") && SignatureOk("enemy_set_spawn") &&
                         SignatureOk("class_lookup") && SignatureOk("link_units");
     g_caps.timeBonus = g_caps.mercCountdown && SignatureOk("merc_add_countdown") && SignatureOk("time_bonus_action");
+    g_caps.hitCheckProbe = g_caps.enemies && SignatureOk("enemy_hit_check");
+    g_caps.bossGunfire = g_caps.enemies && SignatureOk("em82_may_hurt") && SignatureOk("uem82_get_dti");
+    g_caps.faderState = SignatureOk("fader_ctor");
     g_caps.areaCameras = SignatureOk("area_camera_check") && SignatureOk("area_camera_none") && SignatureOk("area_camera_force") &&
                          SignatureOk("area_camera_set") && SignatureOk("rahcamera_get_dti");
     g_caps.fatalHandler = SignatureOk("game_fatal_error");

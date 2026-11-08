@@ -539,8 +539,9 @@ e['ladder'] = {
         # with their own deaths; Wesker (s506) takes it while he attacks and falls by the mod's hand.
         {'id': 'long', 'name': 'Long', 'arenas': 8, 'easy_boss': 108, 'hard_boss': 309,
          'unlocked_by': 'short:hard', 'boss_hp_mult': 1.3},
-        # The user's 12 ends on Uroboros Wesker; his body takes no gunfire yet (s508), so Jill again.
-        {'id': 'marathon', 'name': 'Marathon', 'arenas': 12, 'easy_boss': 309,
+        # The user's 12 ends on Uroboros Wesker on the Volcano (s508; 2026-11-08: his body takes
+        # gunfire in a run).
+        {'id': 'marathon', 'name': 'Marathon', 'arenas': 12, 'easy_boss': 508,
          'unlocked_by': 'long:hard', 'boss_hp_mult': 1.5},
     ],
     # The 13th arena: Wesker, once the hard bosses of 4 and 8 and the 12's boss are beaten.

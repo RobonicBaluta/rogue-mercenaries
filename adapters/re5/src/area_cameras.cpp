@@ -30,6 +30,7 @@ std::atomic<bool> g_runWantsOff{false};
 std::atomic<int> g_mode{static_cast<int>(Mode::Auto)};
 std::atomic<int> g_logged{0};
 std::atomic<bool> g_checkSeen{false};
+std::atomic<std::uintptr_t> g_lastCamera{0};
 std::atomic<bool> g_setFaulted{false};
 
 constexpr int kLogCap = 300;
@@ -47,6 +48,7 @@ bool SetNoZoneCamera(std::uintptr_t ctrl) {
 }
 
 int __fastcall CheckDetour(std::uintptr_t ctrl) {
+    g_lastCamera.store(ctrl, std::memory_order_relaxed);
     if (!g_checkSeen.exchange(true)) RM_LOGI("area cameras: the player camera's zone check runs (camera %08X)", static_cast<unsigned>(ctrl));
     if (!Off() || g_setFaulted.load() || ReadOr<std::uintptr_t>(re5::addr::kAreaCameraResource, 0) == 0) {
         const int before = ReadOr<std::int32_t>(ctrl + re5::off::kCamCtrlZoneCamera, -1);
@@ -122,6 +124,7 @@ void SetRunWantsOff(bool off) {
 }
 
 void SetMode(Mode mode) { g_mode = static_cast<int>(mode); }
+std::uintptr_t LastCamera() { return g_lastCamera.load(std::memory_order_relaxed); }
 Mode GetMode() { return static_cast<Mode>(g_mode.load()); }
 
 bool Off() {

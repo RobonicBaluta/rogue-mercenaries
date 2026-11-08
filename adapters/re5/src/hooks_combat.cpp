@@ -2,12 +2,14 @@
 
 #include <MinHook.h>
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 
 #include "engine.h"
 #include "hooks.h"
 #include "log.h"
+#include "memory.h"
 #include "re5_layout.h"
 
 namespace rmre5 {
@@ -49,6 +51,49 @@ using EnemyOnHitFn = void(__thiscall*)(std::uintptr_t self, std::uintptr_t hit);
 using SubHpFn = void(__thiscall*)(std::uintptr_t self, std::int16_t amount);
 
 EnemyOnHitFn g_origEnemyOnHit = nullptr;
+
+// Developer probe of the enemy hit check (dev "hitprobe <class>").
+using HitCheckFn = std::uint32_t(__thiscall*)(std::uintptr_t self, std::uintptr_t part);
+HitCheckFn g_origHitCheck = nullptr;
+std::atomic<std::uintptr_t> g_hitProbe{0};
+
+// Uroboros Wesker as a run's boss: his own check lets only his open core be hurt (the story opens
+// it with the partner's help); in a run every hit of his body hurts too. His own check still runs
+// first, so his gauges drain and he staggers and opens his core as he would.
+using MayHurtFn = std::uint32_t(__thiscall*)(std::uintptr_t self, std::uint32_t region, std::uint32_t amount);
+MayHurtFn g_origEm82MayHurt = nullptr;
+std::atomic<std::uintptr_t> g_gunfireBoss{0};
+std::atomic<int> g_gunfireLogged{0};
+
+std::uint32_t __fastcall Em82MayHurtDetour(std::uintptr_t self, void*, std::uint32_t region, std::uint32_t amount) {
+    const std::uint32_t own = g_origEm82MayHurt(self, region, amount);
+    if ((own & 0xFFu) != 0 || self == 0 || self != g_gunfireBoss.load(std::memory_order_relaxed)) return own;
+    if (g_gunfireLogged.fetch_add(1) < 3) {
+        RM_LOGI("boss: %s takes a hit its own check refused (region %u)", engine::ClassName(self).c_str(), region & 0xFFFFu);
+    }
+    return 1;
+}
+std::atomic<int> g_hitProbeLines{0};
+
+std::uint32_t __fastcall HitCheckDetour(std::uintptr_t self, void*, std::uintptr_t part) {
+    const std::uintptr_t probe = g_hitProbe.load(std::memory_order_relaxed);
+    if (probe == 0 || self != probe) return g_origHitCheck(self, part);
+    const std::uintptr_t unit = part ? part : self;
+    const auto record = ReadOr<std::uintptr_t>(unit + re5::off::kEnemyHitRecord, 0);
+    const auto pending = record ? ReadOr<std::uint8_t>(record + re5::off::kHitRecordPending, 0) : 0;
+    const auto block = ReadOr<std::uint8_t>(self + re5::off::kEnemyHitBlock, 0);
+    const auto flags = ReadOr<std::uint32_t>(self + re5::off::kEnemyHitFlags, 0);
+    float cool[5];
+    for (int k = 0; k < 5; ++k) cool[k] = ReadOr<float>(self + re5::off::kEnemyHitCooldowns + k * 4, -1.0f);
+    const std::uint32_t result = g_origHitCheck(self, part);
+    if (pending && g_hitProbeLines.fetch_add(1) < 400) {
+        RM_LOGW("hitprobe: %s part %08X (%s) record %08X pending %u; block %u flags80 %u cooldowns %.2f %.2f %.2f %.2f %.2f -> %u",
+                engine::ClassName(self).c_str(), static_cast<unsigned>(part), part ? engine::ClassName(part).c_str() : "body",
+                static_cast<unsigned>(record), pending, block, (flags & 0x80u) ? 1u : 0u, cool[0], cool[1], cool[2], cool[3], cool[4],
+                result & 0xFFu);
+    }
+    return result;
+}
 SubHpFn g_origCharacterSubHp = nullptr;
 SubHpFn g_origPlayerSubHp = nullptr;
 
@@ -194,8 +239,25 @@ bool InstallCombatHooks() {
         Hook(re5::addr::kFnPlayerAddHp, reinterpret_cast<void*>(&PlayerAddHpDetour),
              reinterpret_cast<void**>(&g_origPlayerAddHp), "uPlayer::AddHp");
     }
+    if (ok && caps.bossGunfire) {
+        Hook(re5::addr::kFnEm82MayHurt, reinterpret_cast<void*>(&Em82MayHurtDetour), reinterpret_cast<void**>(&g_origEm82MayHurt),
+             "uEm82 may-hurt (a run's boss takes gunfire)");
+    }
+    if (ok && caps.hitCheckProbe) {
+        Hook(re5::addr::kFnEnemyHitCheck, reinterpret_cast<void*>(&HitCheckDetour), reinterpret_cast<void**>(&g_origHitCheck),
+             "enemy hit check (developer probe)");
+    }
     g_status.combat = ok;
     return ok;
+}
+
+void SetBossTakesGunfire(std::uintptr_t unit) {
+    if (g_gunfireBoss.exchange(unit) != unit) g_gunfireLogged = 0;
+}
+
+void SetHitProbe(std::uintptr_t unit) {
+    g_hitProbeLines = 0;
+    g_hitProbe = g_origHitCheck != nullptr ? unit : 0;
 }
 
 }  // namespace rmre5

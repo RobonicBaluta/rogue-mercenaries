@@ -75,6 +75,13 @@ BOSSES = {
     # strikes with its arm); a killing shot plays its own Die (build/runs/20261108-010801-hits-uEm44-s108).
     # 19200 its own, 50 a pistol hit on it: 12000.
     108: {'class': 'uEm44', 'name': 'Popokarimu', 'hp': 12000, 'preload': []},
+    # Uroboros Wesker on the Volcano (2026-11-08, the ladder's 12): his own check lets only his open
+    # core be hurt (the story opens it with the partner); in a run his body takes gunfire too
+    # (adapter hooks_combat.cpp), and at zero health, where he fights on, the mod plays his last
+    # fall. His tentacles (uEm8e) and core (uEm8c) come with him.
+    # 25 a pistol hit on his body (build/runs/20261108-153415-bossarena-uEm82-s508): 3000, about 120
+    # pistol hits (180 at the 12-arena run's 1.5).
+    508: {'class': 'uEm82', 'name': 'Uroboros Wesker', 'article': '', 'hp': 3000, 'preload': ['uEm8c', 'uEm8e']},
 }
 BOSS_PLAYER_DISTANCE = (1000, 2500)  # the boss appears within sight, not on top of the player
 # Kept for developer tests but out of the run rotation ("rotation": false), with the reason.

@@ -7016,9 +7016,8 @@
       "name": "Volcano",
       "stage": 508,
       "start": [-897.9, -4.2, 798.2],
-      "max_alive": 12,
-      "min_player_distance": 800,
-      "max_player_distance": 3500,
+      "min_player_distance": 1000,
+      "max_player_distance": 2500,
       "points": [
         [2298.6, -296.2, -2669.1],
         [2037.1, -296.8, -2659.6],
@@ -7172,54 +7171,13 @@
         [711.7, 179.9, -1883.0],
         [75.7, -3.4, 11.0]
       ],
-      "preload": ["uEm10", "uOm1202", "uOm1203", "uWp73", "uEm0d", "uWp75", "uWp54", "uOm1206", "uWp5a", "uWp59", "uWp55", "uEm62", "uWp3c", "uWp3d", "uWp3e", "uWp50", "uWp6c", "uWp72", "uWp51", "uEm23", "uEm10Eff", "uWp5d", "uWp84", "uOm0100"],
-      "roster": [
-        {
-          "class": "uEm10",
-          "weight": 70,
-          "profiles": [
-            {"weight": 2, "fields": {"arm": 459125, "attribute": 32768}},
-            {"weight": 2, "fields": {"arm": 459097, "attribute": 32768}},
-            {"weight": 2, "fields": {"arm": 459093, "arm_num": 1, "arm_set_joint": 1, "attribute": 32768, "lefty": 1, "plaga": 1}},
-            {"weight": 2, "fields": {"arm": 459088, "arm_num": 1, "arm_set_joint": 1, "attribute": 33792, "lefty": 1}},
-            {"weight": 2, "fields": {"arm": 459123, "arm_set_joint": 1, "attribute": 33024, "lefty": 1}},
-            {"weight": 2, "fields": {"arm": 459093, "attribute": 32768, "plaga": 1}},
-            {"weight": 2, "fields": {"arm": 459123, "attribute": 32768}},
-            {"weight": 2, "fields": {"arm": 459125, "attribute": 34048, "plaga": 1}},
-            {"weight": 1, "fields": {"arm": 459123, "arm_set_joint": 1, "attribute": 640, "lefty": 1, "plaga": 1}},
-            {"weight": 1, "fields": {"arm": 459125, "attribute": 256}},
-            {"weight": 1, "fields": {"arm": 459008, "attribute": 1049216, "plaga": 1}},
-            {"weight": 1, "fields": {"arm": 459092, "arm_num": 2, "attribute": 1049088, "search_circle": 700.0}},
-            {"weight": 1, "fields": {"arm": 459098, "search_circle": 700.0}},
-            {"weight": 1, "fields": {"arm": 459123, "search_circle": 900.0}},
-            {"weight": 1, "fields": {"arm": 459008, "armed": 0}},
-            {"weight": 1, "fields": {"arm": 459123, "arm_set_joint": 1, "attribute": 1049216, "lefty": 1}},
-            {"weight": 1, "fields": {"arm": 459097, "search_circle": 500.0}},
-            {"weight": 1, "fields": {"arm": 459125, "plaga": 1, "search_circle": 700.0}},
-            {"weight": 1, "fields": {"arm": 459093, "search_circle": 700.0}},
-            {"weight": 1, "fields": {"arm": 459008, "armed": 0, "attribute": 33280, "plaga": 1}},
-            {"weight": 1, "fields": {"arm": 459092, "arm_num": 2, "attribute": 33280}},
-            {"weight": 1, "fields": {"arm": 459092, "arm_num": 1, "attribute": 33280}},
-            {"weight": 1, "fields": {"arm": 459093, "arm_num": 2, "arm_set_joint": 1, "attribute": 32768, "lefty": 1, "plaga": 1}},
-            {"weight": 1, "fields": {"arm": 459088, "arm_num": 1, "armed": 0, "attribute": 33280, "plaga": 1}},
-            {"weight": 1, "fields": {"arm": 459098, "arm_num": 1, "attribute": 33280}},
-            {"weight": 1, "fields": {"arm": 459116, "arm_num": 2, "attribute": 33024}},
-            {"weight": 1, "fields": {"arm": 459093, "arm_set_joint": 1, "attribute": 33024, "lefty": 1, "plaga": 1}},
-            {"weight": 1, "fields": {"arm": 459116, "arm_num": 1, "attribute": 33280}},
-            {"weight": 1, "fields": {"arm": 459008, "arm_set_joint": 1, "armed": 0, "attribute": 32768, "lefty": 1}},
-            {"weight": 1, "fields": {"arm": 459092, "arm_num": 1, "armed": 0, "attribute": 33024}},
-            {"weight": 1, "fields": {"arm": 459092, "arm_num": 1, "attribute": 32768, "plaga": 1}}
-          ]
-        },
-        {
-          "class": "uEm23",
-          "weight": 2,
-          "special": true,
-          "profiles": [
-            {"weight": 1, "fields": {"arm": 459101, "search_circle": 8000.0}}
-          ]
-        }
-      ]
+      "preload": ["uEm8c", "uEm8e"],
+      "boss": {
+        "class": "uEm82",
+        "name": "Uroboros Wesker",
+        "article": "",
+        "hp": 3000
+      }
     },
     {
       "id": "campaign_s700",

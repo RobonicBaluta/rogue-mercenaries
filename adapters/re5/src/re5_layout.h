@@ -71,6 +71,14 @@ constexpr std::uintptr_t kAreaCameraResource = 0x011E9F44;
 constexpr std::uintptr_t kFnAreaCameraCheck = 0x00841840;
 constexpr std::uintptr_t kFnAreaCameraForce = 0x008417C0;
 constexpr std::uintptr_t kFnAreaCameraSet = 0x0083D530;
+// The enemy hit check (research/re5-engine-map.md "Enemy hit collection"): thiscall (enemy, part
+// or 0), 1 when a pending hit goes on to OnHit. Developer probe only (dev "hitprobe").
+constexpr std::uintptr_t kFnEnemyHitCheck = 0x009E0700;
+// Uroboros Wesker's (uEm82, vtable 0x00F8D878) "may this hit hurt" (vtable +0x204, thiscall
+// (region, amount), ret 8, AL), asked by uEnemy::ApplyDamage (0x009DEA50) before any damage: a
+// region of 0x3C and up hurts while his core part (+0x1F50) is open (its type 2, its +0x1E24
+// clear); any other drains his gauges (+0x1F9C, +0x1FA0) and does not (research/re5-engine-map.md).
+constexpr std::uintptr_t kFnEm82MayHurt = 0x009217E0;
 // The flamethrower's unit, uWp21 (research/re5-engine-map.md, "The flamethrower").
 constexpr std::uintptr_t kVtableWp21 = 0x0102D0C8;
 constexpr std::uintptr_t kFnPlActTestStart = 0x00C91600;
@@ -511,6 +519,19 @@ constexpr std::size_t kUnitScale = 0x50;
 // The player camera (uCameraCtrl) and its zone camera (addr::kFnAreaCameraCheck): bit 0 of the
 // flags is a forced zone (a script's), the zone it stands in, the zone camera's index (-1 none)
 // and the one before.
+// The enemy hit check's fields: the hit record (its +0x48: a hit pending), the block byte, the
+// flags (bit 0x80 refuses), five cooldown floats (any over 0 refuses).
+constexpr std::size_t kEnemyHitRecord = 0x129C;
+constexpr std::size_t kHitRecordPending = 0x48;
+constexpr std::size_t kEnemyHitBlock = 0x1E24;
+constexpr std::size_t kEnemyHitFlags = 0x18DC;
+constexpr std::size_t kEnemyHitCooldowns = 0x1DFC;
+// The player camera's current camera (uCameraCtrl +0x1B0: its own +0xDF0 or the event one +0x2DE0)
+// and the zone check's answer (+0x30F0).
+constexpr std::size_t kCamCtrlCurrent = 0x1B0;
+constexpr std::size_t kCamCtrlZoneAnswer = 0x30F0;
+// The fader (addr::kFadeInstance, vtable 0x00F67828, built by 0x007F1B70): its state +0x20..+0x2C.
+constexpr std::size_t kFaderState = 0x20;
 constexpr std::size_t kCamCtrlAreaFlags = 0x30E8;
 constexpr std::size_t kCamCtrlArea = 0x30EC;
 constexpr std::size_t kCamCtrlZoneCamera = 0x30F4;
@@ -785,6 +806,13 @@ inline constexpr Signature kSignatures[] = {
     {"area_camera_force", addr::kFnAreaCameraForce, "56 57 8B 3D 44 9F 1E 01 85 FF 8B F1 75 07 5F 32 C0 5E C2 04 00"},
     {"area_camera_set", addr::kFnAreaCameraSet, "55 8B EC 83 E4 F0 81 EC D4 00 00 00 53 56 8B 75 08 83 FE FF 8B D9 57"},
     {"rahcamera_get_dti", 0x007F71C0, "B8 4C 89 1E 01 C3"},
+    // The enemy hit check: `mov ebp, [esp+8]` (the part), `cmovz eax, esi`, `mov edi, [eax+0x129C]`.
+    // Uroboros Wesker's "may this hit hurt": `cmp ax, 0x3C`, `mov ecx, [esi+0x1F50]`; his getDTI.
+    {"em82_may_hurt", addr::kFnEm82MayHurt, "8B 44 24 04 53 33 DB 66 3D 3C 00 56 8B F1 72 38 8B 8E 50 1F 00 00 83 C0 C4 0F B7 C0"},
+    {"uem82_get_dti", 0x0092F860, "B8 60 12 1F 01 C3"},
+    {"enemy_hit_check", addr::kFnEnemyHitCheck, "55 8B 6C 24 08 56 85 ED 8B F1 8B C5 0F 44 C6 57 8B B8 9C 12 00 00 85 FF"},
+    // The fader's constructor: `mov [esi], 0x00F67828; mov [0x011E8804], esi; [esi+0x20..0x2C] = 0`.
+    {"fader_ctor", 0x007F1B78, "33 C0 C7 06 28 78 F6 00 89 35 04 88 1E 01 89 46 20 89 46 24 89 46 28 89 46 2C"},
 };
 
 }  // namespace re5

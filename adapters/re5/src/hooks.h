@@ -127,6 +127,12 @@ void TickGame(const char* source);
 // Install* only create and queue hooks; the caller enables them with one
 // MH_ApplyQueued() and calls MarkHooksInactive() if that fails.
 bool InstallCombatHooks();
+/// Developer: every call of the enemy hit check for `unit` (0: off) with a hit pending is logged
+/// with what the check reads (block, flags, cooldowns) and its answer.
+void SetHitProbe(std::uintptr_t unit);
+/// The run's boss (0: none): when its class's own "may this hit hurt" says no (Uroboros Wesker:
+/// anything but his open core), the hit hurts anyway, the game's own damage then (2026-11-08).
+void SetBossTakesGunfire(std::uintptr_t unit);
 void MarkHooksInactive();
 bool InstallInputHooks(void* realDirectInput8Create);
 bool InstallD3d9Hooks();

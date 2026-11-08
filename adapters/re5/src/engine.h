@@ -56,6 +56,9 @@ struct Verified {
     bool gameShop = false;      // campaign shop screen constructor and unit registration
     bool enemySpawn = false;    // sEnemy::Create, the set spawn, class lookup (director)
     bool areaCameras = false;   // the player camera's zone cameras (a run's campaign areas keep its own)
+    bool hitCheckProbe = false; // developer: the enemy hit check, logged (dev "hitprobe")
+    bool bossGunfire = false;   // Uroboros Wesker as a run's boss takes gunfire anywhere (his own check: only his open core)
+    bool faderState = false;    // developer: the fader's state, logged (dev "screenwatch")
 };
 const Verified& Caps();
 

@@ -295,7 +295,7 @@
         "id": "marathon",
         "name": "Marathon",
         "arenas": 12,
-        "easy_boss": 309,
+        "easy_boss": 508,
         "unlocked_by": "long:hard",
         "boss_hp_mult": 1.5
       }

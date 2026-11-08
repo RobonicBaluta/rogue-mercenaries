@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 // Area cameras (2026-11-08, the user's playtest: on the Volcano "the boulder scene camera
 // movement ... doesn't let go until you go off a ledge, which is hard to see when you can't see
 // your character"). A campaign area's camera zones (rAHCamera) take the player camera over while
@@ -24,5 +26,7 @@ Mode GetMode();
 /// True while the zone cameras are off.
 bool Off();
 const char* ModeName(Mode mode);
+/// The player camera (uCameraCtrl) the zone check ran on last (0: none yet).
+std::uintptr_t LastCamera();
 
 }  // namespace rmre5::areacams

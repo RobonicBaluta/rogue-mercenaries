@@ -3156,11 +3156,77 @@ struct ScriptedFall {
 constexpr ScriptedFall kScriptedFalls[] = {
     {"uEm81", "cEm80ActShrink", 0.0},    {"uEm80", "cEm80ActShrink", 0.0},    {"uEm44", "cEm44ActDie", 0.3},
     {"uEm84", "cEm84ActDieNormal", 0.3}, {"uEm83", "cEm83ActDieNormal", 0.3},
+    // Uroboros Wesker fights on at zero health too (his end is the story's): his last pinned fall.
+    {"uEm82", "cEm82DmgLastPinionDie", 0.0},
 };
 std::uintptr_t g_fallDone = 0;
 
 bool FallingByItself(const std::string& action) {
     return action.find("Die") != std::string::npos || action.find("Dead") != std::string::npos;
+}
+
+// A boss's scripted kills, turned into a plain attack in a run as they begin (before the player
+// is caught). Wesker's knife-hand (cEm80ActAtkSyutoStart, then AtkSyuto with the player in
+// SyutoEsc_PL, then AtkSyutoDie) kills at full health past the run's health, its perks and the
+// developer invulnerability, with the story's death fade (2026-11-08, scripts/test_black_screen.sh:
+// two of four arenas, build/runs/20261108-150643-blackscreen r3, r4). His other grabs (the knee,
+// the choke) take the camera for their close-up and give it back.
+struct ScriptedKill {
+    const char* cls;
+    const char* start;   // the move's first action
+    const char* instead; // the attack started in its place
+};
+constexpr ScriptedKill kScriptedKills[] = {
+    {"uEm81", "cEm80ActAtkSyutoStart", "cEm80ActAtkKick"},
+    {"uEm80", "cEm80ActAtkSyutoStart", "cEm80ActAtkKick"},
+};
+
+void TameBossKills() {
+    const std::uintptr_t unit = g->boss.unit;
+    if (!unit || !g->run->HasActiveRun()) return;
+    static std::uintptr_t lastUnit = 0;
+    static std::string lastAction;
+    const std::string action = engine::CurrentActionName(unit);
+    if (unit == lastUnit && action == lastAction) return;
+    lastUnit = unit;
+    lastAction = action;
+    const std::string cls = engine::ClassName(unit);
+    for (const ScriptedKill& k : kScriptedKills) {
+        if (cls != k.cls || action != k.start) continue;
+        const auto ids = engine::ActionIdsOf(unit, k.instead);
+        const bool ok = !ids.empty() && engine::StartAction(unit, ids.front(), k.instead);
+        RM_LOGI("boss: %s began %s (a scripted kill); %s", cls.c_str(), k.start,
+                ok ? (std::string(k.instead) + " instead").c_str() : "left as it is (no replacement)");
+        return;
+    }
+}
+
+// The player camera's event camera (a grab's close-up) held while the player is in none of the
+// moves that use it: logged once a time, with what was going on (2026-11-08: one boss arena went
+// black for good with the player still aiming, build/runs/20261108-012025-bossarena-uEm81-s506,
+// not seen again in five).
+void WatchEventCamera(double now) {
+    static double since = -1.0;
+    static bool logged = false;
+    const auto cam = areacams::LastCamera();
+    const auto local = engine::LocalPlayer();
+    const bool event = cam && local && g->match.inMatch && ReadOr<std::uintptr_t>(cam + re5::off::kCamCtrlCurrent, 0) == cam + 0x2DE0;
+    const std::string action = event ? engine::CurrentActionName(local) : std::string();
+    const bool held = event && action.find("_PL") == std::string::npos && action.find("EventAct") == std::string::npos &&
+                      action.find("damage") == std::string::npos;
+    if (!held) {
+        since = -1.0;
+        logged = false;
+        return;
+    }
+    if (since < 0.0) since = now;
+    if (logged || now - since < 5.0) return;
+    logged = true;
+    const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+    RM_LOGW("camera: the event camera has held for 5 s with the player in %s (boss %s in %s, app flags %08X)", action.c_str(),
+            g->boss.unit ? engine::ClassName(g->boss.unit).c_str() : "-",
+            g->boss.unit ? engine::CurrentActionName(g->boss.unit).c_str() : "-",
+            app ? ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) : 0u);
 }
 
 void DriveBossFall(double now) {
@@ -3207,7 +3273,37 @@ struct UnitPin {
     std::uintptr_t unit = 0;
     float dest[3] = {};
     double until = 0.0;
+    bool turn = false;  // held facing `yaw` too (dev bring ... away)
+    float yaw = 0.0f;
 };
+
+// Developer "screenwatch on|off": what can turn the picture black, logged on every change: the
+// fader's state, the application's flag word, the player camera's current camera and zone answer,
+// and the player's action.
+bool g_screenWatch = false;
+std::string g_screenWatchLast;
+
+void WatchScreen() {
+    if (!g_screenWatch) return;
+    char line[512];
+    const auto fader = engine::Caps().faderState ? ReadOr<std::uintptr_t>(re5::addr::kFadeInstance, 0) : 0;
+    std::uint32_t fs[4] = {};
+    for (int k = 0; k < 4 && fader; ++k) fs[k] = ReadOr<std::uint32_t>(fader + re5::off::kFaderState + k * 4, 0);
+    const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+    const auto appFlags = app ? ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) : 0;
+    const auto cam = areacams::LastCamera();
+    const auto current = cam ? ReadOr<std::uintptr_t>(cam + re5::off::kCamCtrlCurrent, 0) : 0;
+    const char* which = !current ? "-" : current == cam + 0xDF0 ? "own" : current == cam + 0x2DE0 ? "event" : "other";
+    const auto local = engine::LocalPlayer();
+    std::snprintf(line, sizeof(line), "fader %08X %08X %08X %08X | app flags %08X | camera %s answer %d zone %d forced %u | player %s",
+                  fs[0], fs[1], fs[2], fs[3], appFlags, which, cam ? ReadOr<std::int32_t>(cam + re5::off::kCamCtrlZoneAnswer, -1) : -1,
+                  cam ? ReadOr<std::int32_t>(cam + re5::off::kCamCtrlZoneCamera, -1) : -1,
+                  cam ? ReadOr<std::uint32_t>(cam + re5::off::kCamCtrlAreaFlags, 0) & 1u : 0u,
+                  local ? engine::CurrentActionName(local).c_str() : "-");
+    if (g_screenWatchLast == line) return;
+    g_screenWatchLast = line;
+    RM_LOGW("screenwatch: %s", line);
+}
 UnitPin g_pin;
 
 std::uintptr_t FirstEnemyOf(const std::string& cls) {
@@ -3268,7 +3364,11 @@ void WatchWeapons() {
 }
 
 void WatchUnit(double now) {
-    if (g_pin.unit && now < g_pin.until) engine::WarpUnit(g_pin.unit, g_pin.dest);
+    if (g_pin.unit && now < g_pin.until) {
+        engine::WarpUnit(g_pin.unit, g_pin.dest);
+        if (g_pin.turn) engine::TurnTo(g_pin.unit, g_pin.yaw, 0);
+    }
+    WatchScreen();
     WatchWeapons();
     if (g_watchPlayer) {
         const auto local = engine::LocalPlayer();
@@ -6866,6 +6966,17 @@ void PollDevCommand(double now) {
         std::sscanf(command.c_str() + 7, "%d %d", &character, &costume);
         const std::uintptr_t unit = AddPartner(character, costume, "dev");
         RM_LOGW("dev partner %d %d -> %08X", character, costume, static_cast<unsigned>(unit));
+    } else if (command.rfind("hitprobe ", 0) == 0) {
+        // "hitprobe <class>|off": the enemy hit check's calls for the first enemy of the class
+        // with a hit pending, logged with what it reads and answers.
+        const std::string cls = command.substr(9);
+        const std::uintptr_t unit = cls == "off" ? 0 : FirstEnemyOf(cls);
+        SetHitProbe(unit);
+        RM_LOGW("dev hitprobe %s -> %08X%s", cls.c_str(), static_cast<unsigned>(unit), engine::Caps().hitCheckProbe ? "" : " (no probe: signature)");
+    } else if (command.rfind("screenwatch ", 0) == 0) {
+        g_screenWatch = command.substr(12) == "on";
+        g_screenWatchLast.clear();
+        RM_LOGW("dev screenwatch %s", g_screenWatch ? "on" : "off");
     } else if (command.rfind("areacams ", 0) == 0) {
         // "areacams auto|game|off": the camera zones of campaign areas (auto: off while a run
         // plays one; game: the game's own; off: always off).
@@ -7020,13 +7131,14 @@ void PollDevCommand(double now) {
         }
         if (!line.empty()) RM_LOGW("  %s", line.c_str());
     } else if (command.rfind("bring ", 0) == 0) {
-        // "bring <class> <distance> [side]": the first enemy of the class moved that far straight
-        // ahead of the player as he faces now (aiming turns him to the camera), `side` units to his
-        // right (negative: left): the aiming camera looks past his shoulder, beside his facing.
+        // "bring <class> <distance> [side] [pin seconds] [away]": the first enemy of the class moved
+        // that far straight ahead of the player as he faces now (aiming turns him to the camera),
+        // `side` units to his right (negative: left): the aiming camera looks past his shoulder,
+        // beside his facing. "away": while pinned it faces the way the player does (its back to him).
         std::istringstream args(command.substr(6));
-        std::string cls;
+        std::string cls, away;
         float distance = 500.0f, side = 0.0f, pin = 0.0f;
-        args >> cls >> distance >> side >> pin;
+        args >> cls >> distance >> side >> pin >> away;
         const std::uintptr_t unit = FirstEnemyOf(cls);
         const auto player = engine::LocalPlayer();
         if (unit && player) {
@@ -7050,6 +7162,9 @@ void PollDevCommand(double now) {
                 g_pin.unit = unit;
                 for (int k = 0; k < 3; ++k) g_pin.dest[k] = dest[k];
                 g_pin.until = now + pin;
+                g_pin.turn = away == "away";
+                g_pin.yaw = std::atan2(fx, fz);
+                if (g_pin.turn) engine::TurnTo(unit, g_pin.yaw, 0);
             }
             RM_LOGW("dev bring %s %.0f side %.0f: to %.0f %.0f %.0f (%d copies)%s", cls.c_str(), distance, side, dest[0], dest[1],
                     dest[2], copies, pin > 0.0f ? ", pinned" : "");
@@ -7651,6 +7766,8 @@ private:
         }
         DriveDirector(now);
         DriveBossFall(now);
+        TameBossKills();
+        WatchEventCamera(now);
         DriveArena(now);
         DetectEnemyDeaths(now);
         OpenChests(now);
@@ -7669,6 +7786,8 @@ private:
         // A run's campaign area keeps the player camera: its camera zones and scripted zone
         // cameras are off (user playtest 2026-11-08, the Volcano).
         areacams::SetRunWantsOff(g->run->HasActiveRun() && CurrentMapKey() >= kFirstCampaignStage);
+        // The run's boss takes gunfire where its own check would refuse it (Uroboros Wesker).
+        SetBossTakesGunfire(g->boss.unit);
         // A match a run played in stays a run's match until it is gone, so quitting it writes no
         // save even if the run is settled first.
         static bool runMatch = false;
