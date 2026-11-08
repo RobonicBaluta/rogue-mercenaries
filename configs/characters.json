@@ -195,19 +195,27 @@
                 "name": "uPl01ShebaCos4.arc",
                 "size": 66242900
               }
-            ]
-          },
-          "build": {
-            "name": "Enchanted Arms",
-            "icon": "star",
-            "summary": "Starts with a legendary M3 that upgrades without limit.",
-            "starting_weapon": "m3",
-            "starting_weapon_rarity": "legendary",
-            "uncapped_upgrades": {
-              "ids": [
-                "m3"
+            ],
+            "portrait": {
+              "file": "A.jpg",
+              "crop": [
+                560,
+                50,
+                540,
+                540
               ]
             }
+          },
+          "build": {
+            "name": "Scorched Earth",
+            "icon": "wolf",
+            "summary": "Starts with the flamethrower, fuel back twice as fast. Her guns are all Incendiary. Supplies x0.75.",
+            "starting_weapon": "flamethrower",
+            "fuel_regen_mult": 2.0,
+            "gun_elements": [
+              "incendiary"
+            ],
+            "supplies_mult": 0.75
           }
         }
       ]
@@ -429,30 +437,20 @@
                 "name": "uPl05ExcellaNormal.arc",
                 "size": 13847141
               }
-            ]
+            ],
+            "portrait": {
+              "file": "Merce2Resource.arc",
+              "entry": "id\\jpn\\merce_dc\\versus_22_360_NOMIP_BM"
+            }
           },
           "build": {
-            "name": "Ambition",
-            "icon": "crown",
-            "summary": "Every melee kill raises one of seven stats for the run, each to a cap: damage, speed, healing and more.",
-            "melee_kill_stats": {
-              "damage": 0.06,
-              "defense": 0.045,
-              "max_health": 0.075,
-              "crit": 0.03,
-              "move_speed": 0.045,
-              "heal": 0.075,
-              "supplies": 0.06
-            },
-            "melee_kill_caps": {
-              "damage": 1.0,
-              "defense": 0.7,
-              "max_health": 1.0,
-              "crit": 0.3,
-              "move_speed": 0.6,
-              "heal": 0.5,
-              "supplies": 0.5
-            }
+            "name": "Field Trials",
+            "icon": "syringe",
+            "summary": "Every arena her guns carry a random element. Every shop refines a gun at half price. Health x0.8.",
+            "arena_element": true,
+            "refine_every_shop": true,
+            "refine_price_mult": 0.5,
+            "max_health_mult": 0.8
           }
         }
       ]

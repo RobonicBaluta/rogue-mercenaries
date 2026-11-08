@@ -603,6 +603,7 @@ std::uint32_t RarityColour(std::string_view rarity) {
 // so the game folder is never written and the costume it stands in for keeps its own look. A mod
 // skin without its mod is listed in SKINS but not selectable; pressing it opens the mod's page.
 std::map<std::string, std::vector<fileredirect::Redirect>> g_modSkinFiles;  // installed mod skin -> its redirects
+std::map<std::string, int> g_modPortraits;  // installed mod skin -> its picture's portrait slot
 std::string g_modRedirectSkin = "-";  // the skin whose redirects are set ("" none, "-" never set)
 bool g_devRedirects = false;          // dev redirect set them by hand: left alone
 
@@ -627,9 +628,11 @@ void ScanModSkins() {
     std::map<std::string, std::vector<fileredirect::Redirect>> found;
     rm::StringSet installed;
     std::string line;
+    int modIndex = 0;
     for (const rm::CharacterDef& c : g->content->characters()) {
         for (const rm::SkinDef& s : c.skins) {
             if (!s.mod) continue;
+            const int portraitSlot = portraits::kModPortraitBase + modIndex++;  // one per mod skin, in content order
             std::vector<fileredirect::Redirect> redirects;
             std::string missing;
             for (const rm::SkinModFile& f : s.mod->files) {
@@ -650,6 +653,30 @@ void ScanModSkins() {
                 redirects.push_back({std::wstring(tail.begin(), tail.end()), match->wstring()});
             }
             if (missing.empty()) {
+                // Its picture: a file of that name in the mod's own folder (the folder under mods
+                // that holds its costume file).
+                if (s.mod->portrait && !redirects.empty()) {
+                    const std::filesystem::path costume(redirects.front().target);
+                    std::filesystem::path modRoot = root;
+                    const auto rel = costume.lexically_relative(root);
+                    if (!rel.empty() && rel.begin() != rel.end() && std::distance(rel.begin(), rel.end()) > 1) modRoot = root / *rel.begin();
+                    const auto pictures = byName.find(LowerAscii(s.mod->portrait->file));
+                    if (pictures != byName.end()) {
+                        for (const auto& p : pictures->second) {
+                            const auto inside = p.lexically_relative(modRoot);
+                            if (inside.empty() || inside.native().rfind(L"..", 0) == 0) continue;
+                            portraits::ModPortrait pic;
+                            pic.file = p;
+                            pic.entry = s.mod->portrait->entry;
+                            if (s.mod->portrait->crop.size() == 4) {
+                                for (int k = 0; k < 4; ++k) pic.crop[static_cast<std::size_t>(k)] = s.mod->portrait->crop[static_cast<std::size_t>(k)];
+                            }
+                            portraits::SetModPortrait(portraitSlot, std::move(pic));
+                            g_modPortraits[s.id] = portraitSlot;
+                            break;
+                        }
+                    }
+                }
                 found[s.id] = std::move(redirects);
                 installed.insert(s.id);
             }
@@ -1297,7 +1324,11 @@ private:
                     if (summary.empty() && skinDef != nullptr && !skinDef->starting_passive.empty()) {
                         if (const rm::PerkDef* trait = run.content().FindPerk(skinDef->starting_passive)) summary = trait->description;
                     }
-                    if (skinDef != nullptr && skinDef->mod) item.label += "   MOD";
+                    if (skinDef != nullptr && skinDef->mod) {
+                        item.label += "   MOD";
+                        const auto pic = g_modPortraits.find(s.id);
+                        if (s.gate == rm::CharacterGate::Selectable && pic != g_modPortraits.end()) item.portrait = pic->second;
+                    }
                     if (s.gate == rm::CharacterGate::NotInstalled && skinDef != nullptr && skinDef->mod) {
                         // Not installed: where to get it (the menu's two help lines of 54).
                         item.locked = true;
@@ -2152,7 +2183,7 @@ void RefuelFlamethrower(double now) {
         }
         lastCount = count;
         if (count >= full || now - lastFiredAt < kRefuelDelay) return;
-        owed += kRefuelPerSecond * dt;
+        owed += kRefuelPerSecond * g->run->state().character.build.fuel_regen_mult * dt;
         const int add = std::min(full - count, static_cast<int>(owed));
         if (add <= 0) return;
         owed -= add;
@@ -2516,6 +2547,13 @@ void ArenaBegan(double now) {
     }
     const std::string from = rm::GuestHomes(*g->content, guests);
     g->noticeNext = from.empty() ? std::string() : "WITH ENEMIES FROM " + Upper(Plain(from));
+    // A build whose guns take a random element each arena (Field Trials) names it next.
+    if (!s.arena_element.empty()) {
+        const rm::SkinBuild& build = g->run->state().character.build;
+        const std::string trial = Upper(Plain(build.name)) + "   " + Upper(Plain(s.arena_element)) + " GUNS";
+        g->noticeNext = g->noticeNext.empty() ? trial : trial + "   " + g->noticeNext;
+        RM_LOGI("arena %d: the build's element is %s", s.arena, s.arena_element.c_str());
+    }
     if (line.empty()) return;
     g->notice = line;
     g->noticeUntil = now + 5.0;

@@ -135,6 +135,13 @@ void ApplyPerkBuild(SkinBuild& build, const SkinBuild& perk) {
     if (build.drops_as < 0) build.drops_as_held_ammo = build.drops_as_held_ammo || perk.drops_as_held_ammo;
     for (const auto& pick : perk.pickup_as) build.pickup_as.push_back(pick);
     build.break_grabs = build.break_grabs || perk.break_grabs;
+    for (const std::string& e : perk.gun_elements) {
+        if (std::find(build.gun_elements.begin(), build.gun_elements.end(), e) == build.gun_elements.end()) build.gun_elements.push_back(e);
+    }
+    build.arena_element = build.arena_element || perk.arena_element;
+    build.refine_every_shop = build.refine_every_shop || perk.refine_every_shop;
+    build.refine_price_mult *= perk.refine_price_mult;
+    build.fuel_regen_mult *= perk.fuel_regen_mult;
 }
 
 bool WeaponFilter::Allows(std::string_view base_id, std::string_view category) const {

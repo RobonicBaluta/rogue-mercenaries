@@ -219,6 +219,19 @@ BUILDS = {
         'summary': 'Better loot and shop stock. Submachine guns hit 30 percent harder and upgrade without limit.',
         'rarity_shift': 0.8, 'category_damage': {'smg': 0.3}, 'uncapped_upgrades': {'categories': ['smg']},
     },
+    # The supported mods' skins (MOD_SKINS below), from their looks (the user, 2026-11-08: "make a
+    # nice perk for both based on the vibes and the names"): Excella in a lab suit tries a new
+    # compound on her guns every arena; Sheva in Hound Wolf Squad gear carries a flamethrower.
+    'excella_experimenter': {
+        'name': 'Field Trials', 'icon': 'syringe',
+        'summary': 'Every arena her guns carry a random element. Every shop refines a gun at half price. Health x0.8.',
+        'arena_element': True, 'refine_every_shop': True, 'refine_price_mult': 0.5, 'max_health_mult': 0.8,
+    },
+    'sheva_hound_wolf': {
+        'name': 'Scorched Earth', 'icon': 'wolf',
+        'summary': 'Starts with the flamethrower, fuel back twice as fast. Her guns are all Incendiary. Supplies x0.75.',
+        'starting_weapon': 'flamethrower', 'fuel_regen_mult': 2.0, 'gun_elements': ['incendiary'], 'supplies_mult': 0.75,
+    },
     'sheva_fairy_tale': {
         'name': 'Enchanted Arms', 'icon': 'star',
         'summary': 'Starts with a legendary M3 that upgrades without limit.',
@@ -328,11 +341,15 @@ MOD_SKINS = [
     {'character': 'excella', 'base': 'excella_dress', 'id': 'excella_experimenter', 'name': 'Experimenter',
      'mod': {'name': 'Excella the Experimenter', 'author': 'TheGrimrose',
              'url': 'https://www.nexusmods.com/residentevil5goldedition/mods/387',
-             'files': [{'name': 'uPl05ExcellaNormal.arc', 'size': 13847141}]}},
+             'files': [{'name': 'uPl05ExcellaNormal.arc', 'size': 13847141}],
+             # Its own character select bust, in its copy of the game's Mercenaries archive.
+             'portrait': {'file': 'Merce2Resource.arc', 'entry': 'id\\jpn\\merce_dc\\versus_22_360_NOMIP_BM'}}},
     {'character': 'sheva', 'base': 'sheva_fairy_tale', 'id': 'sheva_hound_wolf', 'name': 'Hound Wolf Squad',
      'mod': {'name': 'Hound Wolf Squad Sheva', 'author': 'Angeltitilxyz',
              'url': 'https://www.nexusmods.com/residentevil5goldedition/mods/1177',
-             'files': [{'name': 'uPl01ShebaCos4.arc', 'size': 66242900}]}},
+             'files': [{'name': 'uPl01ShebaCos4.arc', 'size': 66242900}],
+             # Its preview picture, the standing Sheva with the flamethrower.
+             'portrait': {'file': 'A.jpg', 'crop': [560, 50, 540, 540]}}},
 ]
 MOD_BASE = {m['id']: m['base'] for m in MOD_SKINS}
 for m in MOD_SKINS:
@@ -349,7 +366,7 @@ for ch in c['characters']:
     ch['starting_passive'] = passives[ch['id']]
     ch['skill_pool'] = pools[ch['id']]
     for s in ch.get('skins', []):
-        own = MOD_BASE.get(s['id'], s['id'])  # a mod skin wears its base skin's build
+        own = s['id'] if s['id'] in BUILDS else MOD_BASE.get(s['id'], s['id'])  # a mod skin without its own build wears its base's
         trait = own + '_trait'
         if trait in skin_traits:
             s['starting_passive'] = trait

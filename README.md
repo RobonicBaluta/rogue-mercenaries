@@ -155,15 +155,15 @@ the others are written and wait for a playtest (2026-11-03).
 **Mod skins (optional).** Some skins wear a costume mod made by someone else, from its creator's page on Nexus Mods.
 None of it comes with ROGUE MERCENARIES: without the mod the game plays as always, and SKINS lists the skin in red,
 saying whose mod it is; pressing it opens the mod's page (get it there, and endorse it). Unzip the download into
-`Resident Evil 5\RogueMercenaries\mods` (any folder below it, as it unpacks); the skin can then be worn, with the
-build of the outfit it stands in for. The mod's files are read from that folder only while you wear its skin: nothing
+`Resident Evil 5\RogueMercenaries\mods` (any folder below it, as it unpacks); the skin can then be worn, with its
+own build, and SKINS shows the mod's own picture (its character select bust, or its preview). The mod's files are read from that folder only while you wear its skin: nothing
 in the game's own folders is changed, the original outfit keeps its look, and deleting the folder removes the mod.
 Use this folder, not a mod manager: one that installs the mod into the game replaces the original outfit everywhere.
 
-| Character | Skin | Mod (creator) | Stands in for |
-|---|---|---|---|
-| Excella | Experimenter | [Excella the Experimenter](https://www.nexusmods.com/residentevil5goldedition/mods/387) (TheGrimrose) | Dress (Ambition) |
-| Sheva | Hound Wolf Squad | [Hound Wolf Squad Sheva](https://www.nexusmods.com/residentevil5goldedition/mods/1177) (Angeltitilxyz) | Fairy Tale (Enchanted Arms) |
+| Character | Skin | Mod (creator) | Build | What it does |
+|---|---|---|---|---|
+| Excella | Experimenter | [Excella the Experimenter](https://www.nexusmods.com/residentevil5goldedition/mods/387) (TheGrimrose) | Field Trials | Every arena all her guns carry one random element (the arena's name is followed by it). Every shop offers a refine, at half price. Health x0.8. |
+| Sheva | Hound Wolf Squad | [Hound Wolf Squad Sheva](https://www.nexusmods.com/residentevil5goldedition/mods/1177) (Angeltitilxyz) | Scorched Earth | Starts with the flamethrower, whose fuel comes back twice as fast. Every gun she holds is Incendiary. Supplies x0.75. |
 
 Only the costume file of a mod is used: the Excella mod's other files (her weapons, items, menus and music) are not.
 

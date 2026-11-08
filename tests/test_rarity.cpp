@@ -395,3 +395,60 @@ TEST_CASE("rarity remake: a resumed run keeps its guns' elements", "[weapons][ra
     REQUIRE(it->affixes.size() == 1);
     CHECK(it->affixes[0].kind == AffixKind::UniqueLastWord);
 }
+
+TEST_CASE("rarity remake: a build's own elements, the arena's element and cheap refines", "[weapons][rarity]") {
+    const auto withBuild = [](nlohmann::json build) {
+        auto sources = RemakeSources();
+        nlohmann::json characters = nlohmann::json::parse(sources.characters);
+        characters["characters"][0]["skins"] = nlohmann::json::array({nlohmann::json{{"id", "alpha_base"}, {"name", "Base"}, {"build", build}}});
+        sources.characters = characters.dump();
+        return test::Load(sources);
+    };
+    SECTION("gun_elements: every gun burns") {
+        test::Harness h(withBuild({{"name", "Burner"}, {"gun_elements", {"incendiary"}}}));
+        REQUIRE(h.rc.StartRun("alpha", 1).ok());
+        REQUIRE(h.rc.BeginArena(0.0).ok());
+        HitContext hit;
+        hit.now = 1.0;
+        hit.weapon_id = "pistol";
+        hit.base_damage = 100.0;
+        const OutgoingResult r = h.rc.ComputeOutgoingMultiplier(hit);
+        REQUIRE(FindProc(r.procs, ProcKind::Burn) != nullptr);
+        CHECK(FindProc(r.procs, ProcKind::Burn)->dps == Approx(25.0));
+    }
+    SECTION("arena_element: one random element each arena, named in the snapshot") {
+        test::Harness h(withBuild({{"name", "Trials"}, {"arena_element", true}}));
+        REQUIRE(h.rc.StartRun("alpha", 1).ok());
+        REQUIRE(h.rc.BeginArena(0.0).ok());
+        CHECK(h.rc.state().arena_element >= 0);
+        CHECK_FALSE(h.rc.Snapshot(1.0).arena_element.empty());
+    }
+    SECTION("refine_every_shop and refine_price_mult") {
+        test::Harness h(test::Load(RemakeSources([](nlohmann::json&, nlohmann::json& economy) {
+            economy["refine"]["shop_chance"] = 0.0;
+        })));
+        test::Harness cheap(withBuild({{"name", "Lab"}, {"refine_every_shop", true}, {"refine_price_mult", 0.5}}));
+        for (test::Harness* x : {&h, &cheap}) {
+            REQUIRE(x->rc.StartRun("alpha", 1).ok());
+            test::ClearArena(x->rc, 0.0);
+            REQUIRE(x->rc.ContinueToRewards().ok());
+            REQUIRE(x->rc.ChooseReward(0).ok());
+        }
+        const auto refineOf = [](const RunController& rc) {
+            const auto& offers = rc.state().shop_offers;
+            return std::find_if(offers.begin(), offers.end(), [](const ShopOffer& o) { return o.kind == ShopOfferKind::Refine; });
+        };
+        CHECK(refineOf(h.rc) == h.rc.state().shop_offers.end());
+        REQUIRE(refineOf(cheap.rc) != cheap.rc.state().shop_offers.end());
+        CHECK(refineOf(cheap.rc)->price == 20);  // half of 40
+    }
+    SECTION("an unknown element is refused") {
+        auto sources = RemakeSources();
+        nlohmann::json characters = nlohmann::json::parse(sources.characters);
+        characters["characters"][0]["skins"] =
+            nlohmann::json::array({nlohmann::json{{"id", "alpha_base"}, {"name", "Base"}, {"build", {{"gun_elements", {"plasma"}}}}}});
+        sources.characters = characters.dump();
+        const auto r = Content::LoadFromStrings(sources);
+        CHECK(std::any_of(r.errors.begin(), r.errors.end(), [](const std::string& e) { return e.find("unknown element") != std::string::npos; }));
+    }
+}

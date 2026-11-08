@@ -219,6 +219,7 @@ struct RunState {
     // Combat bookkeeping (reset per arena).
     std::vector<KillRecord> kill_records;
     StringMap<int> weapon_hits;  // hits per weapon instance this run (Chain Lightning's every N-th)
+    int arena_element = -1;      // the build's random element this arena (rm::Element; -1 none)
     std::optional<double> last_melee_time;
     std::optional<double> player_hp;
     std::optional<double> player_hp_max;
@@ -287,6 +288,7 @@ struct RunSnapshot {
     std::string route_id;
     std::string route_name;
     std::string arena_name;  // the run map node's arena (maps.json name), empty when unknown
+    std::string arena_element;  // the build's random element this arena (its content name; empty: none)
     std::vector<std::vector<RunMapNodeView>> run_map;
     int arena = 0;  // current arena number (1-based), 0 before the first
     int arena_count = 0;

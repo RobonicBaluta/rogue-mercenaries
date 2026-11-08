@@ -116,6 +116,10 @@ RunSnapshot RunController::Snapshot(double now) const {
     s.keys_enabled = c.economy().keys.enabled;
     s.keys_needed = s.keys_enabled && !run_.character.build.chest_keys_exempt;
     s.keys = run_.keys;
+    if (run_.arena_element >= 0) {
+        const ElementDef* e = c.FindElement(static_cast<Element>(run_.arena_element));
+        s.arena_element = e != nullptr ? e->name : std::string(ElementName(static_cast<Element>(run_.arena_element)));
+    }
     s.stats = run_.stats;
     s.invulnerable_left = std::max(0.0, run_.invulnerable_until - now);
     s.damage_buff_left = std::max(0.0, run_.damage_buff_until - now);

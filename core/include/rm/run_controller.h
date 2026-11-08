@@ -523,6 +523,8 @@ private:
     // after the multiplier); a kill's (blasts, overkill, refill, Bloodthirst's heal).
     void AddHitProcs(const WeaponInstance& weapon, double dealt, bool execute, std::vector<WeaponProc>& procs);
     void AddKillProcs(const KillEvent& kill, const WeaponInstance* weapon, KillOutcome& out);
+    /// A gun's elements with the build's (gun_elements, the arena's element), each once.
+    [[nodiscard]] std::vector<Element> GunElements(const WeaponInstance& weapon) const;
     const WeaponInstance* ApplicableWeapon(const std::optional<std::string>& weapon_id,
                                            const std::optional<bool>& melee) const;
     std::string NextInstanceId();

@@ -3,11 +3,13 @@
 #include <windows.h>
 
 #include <d3d9.h>
+#include <wincodec.h>
 
 #include <array>
 #include <cstring>
 #include <fstream>
 #include <map>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -50,6 +52,8 @@ constexpr std::size_t kMaxTexture = 8u << 20;
 std::filesystem::path g_archiveDir;
 IDirect3DDevice9* g_device = nullptr;
 std::map<int, Portrait> g_cache;  // texture 0: tried and failed
+std::mutex g_modMutex;
+std::map<int, ModPortrait> g_mods;  // mod skins' pictures by slot
 
 // One resource of an MT Framework archive: "ARC\0", u16 version, u16 count, then per entry a
 // 64-byte name, u32 type, u32 packed size, u32 size (low 24 bits), u32 offset; zlib data.
@@ -111,6 +115,85 @@ IDirect3DTexture9* CreateTexture(IDirect3DDevice9* device, const std::vector<std
     return texture;
 }
 
+// An image's region (WIC: jpg, png, ...) as an A8R8G8B8 texture; at most 2048 a side.
+IDirect3DTexture9* ImageTexture(IDirect3DDevice9* device, const ModPortrait& src, int& width, int& height) {
+    const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    IWICImagingFactory* factory = nullptr;
+    IWICBitmapDecoder* decoder = nullptr;
+    IWICBitmapFrameDecode* frame = nullptr;
+    IWICFormatConverter* converter = nullptr;
+    UINT w = 0, h = 0;
+    std::vector<unsigned char> pixels;
+    WICRect rect{};
+    bool ok = SUCCEEDED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) &&
+              SUCCEEDED(factory->CreateDecoderFromFilename(src.file.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder)) &&
+              SUCCEEDED(decoder->GetFrame(0, &frame)) && SUCCEEDED(factory->CreateFormatConverter(&converter)) &&
+              SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0.0,
+                                              WICBitmapPaletteTypeCustom)) &&
+              SUCCEEDED(converter->GetSize(&w, &h)) && w > 0 && h > 0;
+    if (ok) {
+        rect = {0, 0, static_cast<INT>(w), static_cast<INT>(h)};
+        if (src.crop[2] > 0 && src.crop[3] > 0) {
+            rect.X = std::min<INT>(src.crop[0], static_cast<INT>(w) - 1);
+            rect.Y = std::min<INT>(src.crop[1], static_cast<INT>(h) - 1);
+            rect.Width = std::min<INT>(src.crop[2], static_cast<INT>(w) - rect.X);
+            rect.Height = std::min<INT>(src.crop[3], static_cast<INT>(h) - rect.Y);
+        }
+        ok = rect.Width > 0 && rect.Height > 0 && rect.Width <= 2048 && rect.Height <= 2048;
+    }
+    if (ok) {
+        pixels.resize(static_cast<std::size_t>(rect.Width) * rect.Height * 4);
+        ok = SUCCEEDED(converter->CopyPixels(&rect, static_cast<UINT>(rect.Width) * 4, static_cast<UINT>(pixels.size()), pixels.data()));
+    }
+    if (converter) converter->Release();
+    if (frame) frame->Release();
+    if (decoder) decoder->Release();
+    if (factory) factory->Release();
+    if (SUCCEEDED(init)) CoUninitialize();
+    if (!ok) return nullptr;
+    IDirect3DTexture9* texture = nullptr;
+    if (FAILED(device->CreateTexture(rect.Width, rect.Height, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &texture, nullptr))) return nullptr;
+    D3DLOCKED_RECT locked{};
+    if (FAILED(texture->LockRect(0, &locked, nullptr, 0))) {
+        texture->Release();
+        return nullptr;
+    }
+    for (INT y = 0; y < rect.Height; ++y) {
+        std::memcpy(static_cast<unsigned char*>(locked.pBits) + static_cast<std::size_t>(y) * locked.Pitch,
+                    pixels.data() + static_cast<std::size_t>(y) * rect.Width * 4, static_cast<std::size_t>(rect.Width) * 4);
+    }
+    texture->UnlockRect(0);
+    width = rect.Width;
+    height = rect.Height;
+    return texture;
+}
+
+Portrait LoadMod(IDirect3DDevice9* device, int slot) {
+    ModPortrait src;
+    {
+        std::lock_guard lock(g_modMutex);
+        const auto it = g_mods.find(slot);
+        if (it == g_mods.end()) return {};
+        src = it->second;
+    }
+    Portrait p;
+    IDirect3DTexture9* texture = nullptr;
+    if (!src.entry.empty()) {
+        std::vector<std::uint8_t> tex;
+        if (ReadEntry(src.file, src.entry.c_str(), tex)) texture = CreateTexture(device, tex, p.width, p.height);
+    } else {
+        texture = ImageTexture(device, src, p.width, p.height);
+    }
+    if (!texture) {
+        RM_LOGW("portraits: mod picture %d not read from %s%s%s", slot, src.file.string().c_str(), src.entry.empty() ? "" : " ",
+                src.entry.c_str());
+        return {};
+    }
+    p.texture = reinterpret_cast<unsigned long long>(texture);
+    RM_LOGI("portraits: mod picture %d loaded (%dx%d) from %s", slot, p.width, p.height, src.file.string().c_str());
+    return p;
+}
+
 Portrait Load(IDirect3DDevice9* device, int costume) {
     const Bust& bust = kBusts[static_cast<std::size_t>(costume)];
     const auto archive = g_archiveDir / (std::wstring(bust.archive) + L".arc");
@@ -134,7 +217,24 @@ Portrait Load(IDirect3DDevice9* device, int costume) {
 
 void SetGameDirectory(const std::filesystem::path& gameDir) { g_archiveDir = gameDir / L"nativePC_MT" / L"Image" / L"Archive"; }
 
+void SetModPortrait(int slot, ModPortrait source) {
+    std::lock_guard lock(g_modMutex);
+    auto& current = g_mods[slot];
+    if (current.file == source.file && current.entry == source.entry && current.crop == source.crop) return;
+    current = std::move(source);
+    g_cache.erase(slot);  // read again (the render thread holds no other reference to it)
+}
+
 Portrait Get(IDirect3DDevice9* device, int costume) {
+    if (device && costume >= kModPortraitBase) {
+        if (device != g_device) {
+            g_cache.clear();
+            g_device = device;
+        }
+        auto it = g_cache.find(costume);
+        if (it == g_cache.end()) it = g_cache.emplace(costume, LoadMod(device, costume)).first;
+        return it->second;
+    }
     if (!device || costume < 0 || costume >= static_cast<int>(kBusts.size())) return {};
     if (device != g_device) {  // a new device: the old one's textures went with it (not released)
         g_cache.clear();

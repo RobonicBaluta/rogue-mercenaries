@@ -890,8 +890,20 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                      "melee_damage", "melee_kill_stats", "melee_kill_caps", "heal_mult", "heal_buff_fraction", "heal_invulnerable_seconds",
                      "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "extra_chests", "special",
                      "special_2", "stack_mult", "never_offered", "drops_as_held_ammo", "pickup_as", "break_grabs",
-                     "shop_weapon", "shop_weapon_price"});
+                     "shop_weapon", "shop_weapon_price", "gun_elements", "arena_element", "refine_every_shop",
+                     "refine_price_mult", "fuel_regen_mult"});
     GetString(d, b, "shop_weapon", out.shop_weapon, false);
+    if (GetStringList(d, b, "gun_elements", out.gun_elements, false)) {
+        for (const std::string& e : out.gun_elements) {
+            if (!ParseElement(e)) d.Error("unknown element " + Q(e) + " in gun_elements");
+        }
+    }
+    GetBool(d, b, "arena_element", out.arena_element, false);
+    GetBool(d, b, "refine_every_shop", out.refine_every_shop, false);
+    if (GetNumber(d, b, "refine_price_mult", out.refine_price_mult, false)) {
+        CheckRange(d, "refine_price_mult", out.refine_price_mult, 0.0, 5.0);
+    }
+    if (GetNumber(d, b, "fuel_regen_mult", out.fuel_regen_mult, false)) CheckRange(d, "fuel_regen_mult", out.fuel_regen_mult, 0.1, 10.0);
     if (GetInt(d, b, "shop_weapon_price", out.shop_weapon_price, false)) {
         CheckRange(d, "shop_weapon_price", static_cast<double>(out.shop_weapon_price), 0, 10000);
     }
@@ -1105,7 +1117,31 @@ void ParseSkins(const Diag& file, const json& e, CharacterDef& c) {
                 md.Error("must be an object");
             } else {
                 SkinMod mod;
-                CheckKeys(md, *m, {"name", "author", "url", "files"});
+                CheckKeys(md, *m, {"name", "author", "url", "files", "portrait"});
+                if (const json* pt = Get(*m, "portrait")) {
+                    SkinModPortrait portrait;
+                    if (!pt->is_object()) {
+                        md.Error("field 'portrait' must be an object {file, entry} or {file, crop}");
+                    } else {
+                        CheckKeys(md, *pt, {"file", "entry", "crop"});
+                        GetString(md, *pt, "file", portrait.file, true);
+                        GetString(md, *pt, "entry", portrait.entry, false);
+                        if (const json* crop = Get(*pt, "crop")) {
+                            if (!crop->is_array() || crop->size() != 4) {
+                                md.Error("field 'crop' must be [x, y, width, height]");
+                            } else {
+                                for (const json& v : *crop) portrait.crop.push_back(v.is_number_integer() ? v.get<int>() : -1);
+                                if (portrait.crop[0] < 0 || portrait.crop[1] < 0 || portrait.crop[2] <= 0 || portrait.crop[3] <= 0) {
+                                    md.Error("field 'crop' must hold whole numbers, a positive size");
+                                }
+                            }
+                        }
+                        if (portrait.file.empty() || portrait.file.find_first_of("\\/:") != std::string::npos) {
+                            md.Error("portrait file " + Q(portrait.file) + " must be a bare file name");
+                        }
+                        mod.portrait = std::move(portrait);
+                    }
+                }
                 GetString(md, *m, "name", mod.name, true);
                 GetString(md, *m, "author", mod.author, false);
                 GetString(md, *m, "url", mod.url, true);

@@ -366,13 +366,15 @@ void RunController::AddRefineOffer() {
     const EconomyConfig::Refine& refine = content_->economy().refine;
     if (!refine.enabled) return;
     const WeaponInstance* target = RefineTarget(std::nullopt);
-    if (target == nullptr || !(refine.shop_chance > 0.0 && streams_->shop.NextDouble() < refine.shop_chance)) return;
+    const SkinBuild& build = run_.character.build;
+    if (target == nullptr) return;
+    if (!build.refine_every_shop && !(refine.shop_chance > 0.0 && streams_->shop.NextDouble() < refine.shop_chance)) return;
     ShopOffer o;
     o.kind = ShopOfferKind::Refine;
     o.weapon = RefineWeapon(streams_->shop, *content_, caps_, *target);
     o.rarity = o.weapon.rarity;
     o.target_instance_id = target->instance_id;
-    o.price = refine.price[RarityIndex(o.rarity)];
+    o.price = static_cast<std::int64_t>(std::llround(static_cast<double>(refine.price[RarityIndex(o.rarity)]) * build.refine_price_mult));
     run_.shop_offers.push_back(std::move(o));
 }
 
@@ -903,6 +905,12 @@ Status RunController::BeginArena(double now) {
     run_.kill_records.clear();
     run_.last_melee_time.reset();
     run_.seen_enemy_ids.clear();
+    // A build with arena_element: every gun carries one random element this arena.
+    run_.arena_element = -1;
+    if (run_.character.build.arena_element && !content_->elements().empty() && streams_) {
+        const auto& elements = content_->elements();
+        run_.arena_element = static_cast<int>(elements[streams_->loot.Index(elements.size())].element);
+    }
     run_.clamp_logged = false;
     run_.reward_offer.clear();
     run_.reward_chosen = false;

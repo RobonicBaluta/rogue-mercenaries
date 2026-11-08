@@ -106,6 +106,13 @@ struct SkinBuild {
     /// Gatling), at shop_weapon_price supplies (0: the common weapon price).
     std::string shop_weapon;
     std::int64_t shop_weapon_price = 0;
+    // The rarity remake's elements on the build's guns (element names, rm::ParseElement): every gun's
+    // hits carry gun_elements, and with arena_element one more random element, drawn each arena.
+    std::vector<std::string> gun_elements;
+    bool arena_element = false;
+    bool refine_every_shop = false;  // every shop offers a refine (economy refine)
+    double refine_price_mult = 1.0;  // refines in the shop cost this much
+    double fuel_regen_mult = 1.0;    // the flamethrower's fuel comes back this much faster
     SkinSpecial special;
     SkinSpecial special_2;  // a second special on its own button (Wesker's burst)
     [[nodiscard]] const SkinSpecial& Special(int slot) const { return slot == 1 ? special_2 : special; }
@@ -126,11 +133,20 @@ struct SkinModFile {
     std::int64_t size = 0;  // its size in the supported version (0: any)
 };
 
+/// The mod's own picture for the SKINS screen, read from the player's copy of the mod (never
+/// shipped): a texture entry of one of its archives, or a region of an image it comes with.
+struct SkinModPortrait {
+    std::string file;   // its name in the mod's folder ("Merce2Resource.arc", "A.jpg")
+    std::string entry;  // an archive's texture entry ("id\jpn\merce_dc\versus_22_360_NOMIP_BM"); empty: an image
+    std::vector<int> crop;  // an image's x, y, width, height (empty: all of it)
+};
+
 struct SkinMod {
     std::string name;    // the mod's title on its page
     std::string author;  // its creator (empty: unknown)
     std::string url;     // its page (https://www.nexusmods.com/...)
     std::vector<SkinModFile> files;
+    std::optional<SkinModPortrait> portrait;
 };
 
 struct SkinDef {

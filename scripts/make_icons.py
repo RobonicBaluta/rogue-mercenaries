@@ -595,6 +595,37 @@ def parachute():
     return s
 
 
+def syringe():
+    """Field Trials (Excella the Experimenter): a syringe."""
+    s = Shape()
+    body = [(30, 70), (62, 38), (72, 48), (40, 80)]
+    s.poly(body)
+    s.poly([(26, 74), (36, 84), (31, 89), (21, 79)])            # the collar
+    s.line([(67, 43), (83, 27)], 5)                              # the plunger rod
+    s.poly(rotate([(78, 14), (98, 14), (98, 22), (78, 22)], 45, 88, 18))  # the thumb rest
+    s.line([(24, 82), (8, 98)], 2.4)                             # the needle
+    for t in (0.3, 0.5, 0.7):                                    # the scale
+        x, y = 30 + (62 - 30) * t + 4, 70 + (38 - 70) * t + 4
+        s.line([(x - 3, y - 3), (x + 2, y + 2)], 2.0, cut=True)
+    s.ellipse(14, 40, 7, 9)                                      # a drop
+    s.poly([(14, 24), (8, 38), (20, 38)])
+    return s
+
+
+def wolf():
+    """Scorched Earth (Hound Wolf Squad Sheva): a wolf's head in profile."""
+    s = Shape()
+    head = [(6, 54), (12, 48), (30, 42), (44, 32), (52, 26), (58, 6), (66, 22), (72, 14), (76, 34), (84, 46),
+            (90, 66), (94, 94), (78, 90), (70, 82), (60, 88), (54, 78), (44, 80), (40, 70), (28, 66), (14, 64), (8, 60)]
+    s.poly(head)
+    s.poly([(44, 42), (54, 40), (50, 46)], cut=True)            # the eye
+    s.line([(14, 60), (30, 60)], 2.0, cut=True)                  # the mouth
+    s.line([(64, 30), (66, 22)], 2.0, cut=True)                  # the ear's line
+    for a, b in (((70, 58), (80, 66)), ((66, 68), (76, 76))):
+        s.line([a, b], 2.0, cut=True)                            # the ruff
+    return s
+
+
 ICONS = {
     'chain': chain, 'skull': skull, 'shades': shades, 'herb': herb, 'parachute': parachute,
     'grenade': grenade, 'flash': flash, 'fire': fire, 'medkit': medkit, 'heal': heal, 'second_wind': second_wind,
@@ -603,6 +634,7 @@ ICONS = {
     'handgun': handgun, 'credits': credits, 'clock': clock, 'flag': flag, 'trophy': trophy, 'person': person,
     'mine': mine, 'gatling': gatling, 'bow': bow, 'key': key, 'dash': dash, 'dual_smg': dual_smg, 'radio': radio,
     'fist': fist, 'crown': crown, 'star': big_star, 'lunge': lunge, 'shockwave': shockwave,
+    'syringe': syringe, 'wolf': wolf,
 }
 
 

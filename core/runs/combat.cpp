@@ -199,7 +199,7 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
         }
         // Against a boss an element is more damage instead of a status.
         if (hit.target_is_boss) {
-            for (Element el : weapon->elements) {
+            for (Element el : GunElements(*weapon)) {
                 if (const ElementDef* d = content_->FindElement(el)) b.weapon_bonus += d->boss_bonus;
             }
         }
@@ -243,11 +243,23 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
     return out;
 }
 
+std::vector<Element> RunController::GunElements(const WeaponInstance& weapon) const {
+    std::vector<Element> out = weapon.elements;
+    const auto add = [&out](Element e) {
+        if (std::find(out.begin(), out.end(), e) == out.end()) out.push_back(e);
+    };
+    for (const std::string& name : run_.character.build.gun_elements) {
+        if (const auto e = ParseElement(name)) add(*e);
+    }
+    if (run_.arena_element >= 0) add(static_cast<Element>(run_.arena_element));
+    return out;
+}
+
 void RunController::AddHitProcs(const WeaponInstance& weapon, double dealt, bool execute, std::vector<WeaponProc>& procs) {
     const auto roll = [this](double chance) {
         return chance >= 1.0 || (chance > 0.0 && streams_->combat.NextDouble() < chance);
     };
-    for (Element el : weapon.elements) {
+    for (Element el : GunElements(weapon)) {
         const ElementDef* d = content_->FindElement(el);
         if (d == nullptr) continue;
         WeaponProc p;
@@ -323,7 +335,7 @@ void RunController::AddKillProcs(const KillEvent& kill, const WeaponInstance* we
         if (const ElementDef* d = content_->FindElement(Element::Cryo)) blast(ProcKind::Shatter, *d);
     }
     if (weapon == nullptr) return;
-    for (Element el : weapon->elements) {
+    for (Element el : GunElements(*weapon)) {
         if (el != Element::Explosive) continue;
         if (const ElementDef* d = content_->FindElement(el)) blast(ProcKind::Explode, *d);
     }
