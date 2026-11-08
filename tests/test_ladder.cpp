@@ -136,6 +136,37 @@ TEST_CASE("the ladder: easy boss first, then a choice, the hard one opening the 
     CHECK(h.rc.state().run_map.layers.back().size() == 1);
 }
 
+TEST_CASE("a length can have several alternates; any of them is its hard boss", "[ladder]") {
+    // The user's 8 (2026-11-08): Aheri, then Mkono or Jill.
+    ContentSources src = LadderSources();
+    nlohmann::json eco = nlohmann::json::parse(src.economy);
+    eco["ladder"]["lengths"][0]["hard_boss"] = {201, 202};
+    src.economy = eco.dump();
+    Profile beaten;
+    beaten.stats.bosses_beaten = {"short:easy"};
+    test::Harness h(test::Load(src), beaten);
+    h.rc.SetArenaPool({0, 1, 2, 103, 200, 201, 202}, 0);
+    REQUIRE(h.rc.StartRun("alpha", 1, "", "short").ok());
+    const auto& last = h.rc.state().run_map.layers.back();
+    REQUIRE(last.size() == 3);
+    CHECK(last[0].map_key == 200);
+    CHECK(last[1].map_key == 201);
+    CHECK(last[2].map_key == 202);
+    double t = 0.0;
+    CHECK(PlayToBoss(h, 2, t) == "uEm81@202");  // the second alternate
+    REQUIRE(h.rc.ContinueToRewards().ok());
+    REQUIRE(h.rc.EndRun().ok());
+    CHECK(h.rc.profile().stats.bosses_beaten.count("short:hard") == 1);  // it opens the next length
+    CHECK(h.rc.LadderLengths()[1].open);
+    // A list in the content: a bad entry is an error, the map keys must be boss maps.
+    eco["ladder"]["lengths"][0]["hard_boss"] = {201, "x"};
+    src.economy = eco.dump();
+    CHECK_FALSE(Content::LoadFromStrings(src).ok());
+    eco["ladder"]["lengths"][0]["hard_boss"] = {201, 0};
+    src.economy = eco.dump();
+    CHECK_FALSE(Content::LoadFromStrings(src).ok());
+}
+
 TEST_CASE("the finale follows the last length once its bosses are beaten", "[ladder]") {
     Profile seasoned;
     seasoned.stats.bosses_beaten = {"short:easy", "short:hard", "long:easy", "long:hard"};

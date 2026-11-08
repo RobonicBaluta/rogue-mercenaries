@@ -8673,7 +8673,7 @@
       "boss": {
         "class": "uEm41",
         "name": "Uroboros Aheri",
-        "hp": 12000,
+        "hp": 10000,
         "spawn": [-11691.4, 0.0, -18013.9],
         "facing": 1.4286,
         "trigger": 1500,

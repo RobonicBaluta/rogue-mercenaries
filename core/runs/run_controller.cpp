@@ -276,7 +276,7 @@ double RunController::BossHpMult(int map_key) const {
     const auto* length = ladder.enabled ? ladder.Find(run_.length_id) : nullptr;
     if (length == nullptr) return 1.0;
     if (run_.arena_index > length->arenas && map_key == ladder.finale.boss) return ladder.finale.boss_hp_mult;
-    return map_key == length->easy_boss || map_key == length->hard_boss ? length->boss_hp_mult : 1.0;
+    return map_key == length->easy_boss || length->IsHard(map_key) ? length->boss_hp_mult : 1.0;
 }
 
 void RunController::RecordBossBeaten(int map_key) {
@@ -287,7 +287,7 @@ void RunController::RecordBossBeaten(int map_key) {
     if (const auto* length = ladder.enabled ? ladder.Find(run_.length_id) : nullptr) {
         if (run_.arena_index > length->arenas && map_key == ladder.finale.boss) keys.push_back("finale");
         else if (map_key == length->easy_boss) keys.push_back(length->id + ":easy");
-        else if (map_key == length->hard_boss) keys.push_back(length->id + ":hard");
+        else if (length->IsHard(map_key)) keys.push_back(length->id + ":hard");
     }
     for (const std::string& key : keys) {
         if (!profile_.stats.bosses_beaten.insert(key).second) continue;
@@ -306,9 +306,9 @@ std::vector<LadderUnlock> RunController::LadderUnlocksFor(const std::vector<std:
         return std::find(fresh_keys.begin(), fresh_keys.end(), key) != fresh_keys.end();
     };
     for (const auto& length : ladder.lengths) {
-        // The easy boss beaten for the first time: the hard one is a choice from now on.
-        if (length.hard_boss >= 0 && fresh(length.id + ":easy")) {
-            out.push_back({LadderUnlock::Kind::HardBoss, length.id, length.arenas, length.hard_boss});
+        // The easy boss beaten for the first time: its alternates are a choice from now on.
+        if (fresh(length.id + ":easy")) {
+            for (const int hard : length.hard_bosses) out.push_back({LadderUnlock::Kind::HardBoss, length.id, length.arenas, hard});
         }
         if (!length.unlocked_by.empty() && fresh(length.unlocked_by) && LengthOpen(length)) {
             out.push_back({LadderUnlock::Kind::Length, length.id, length.arenas, length.easy_boss});
@@ -407,7 +407,7 @@ std::vector<RunController::LadderLengthView> RunController::LadderLengths() cons
         v.open = LengthOpen(length);
         v.easy_beaten = Beaten(length.id + ":easy");
         v.hard_beaten = Beaten(length.id + ":hard");
-        v.hard_open = length.hard_boss >= 0 && v.easy_beaten;
+        v.hard_open = !length.hard_bosses.empty() && v.easy_beaten;
         v.finale_open = FinaleOpen(length);
         v.arenas = length.arenas + (v.finale_open ? 1 : 0);
         out.push_back(std::move(v));
@@ -771,11 +771,11 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     run_.loadout = RollLoadout(run_.character, *content_, streams_->loadout);
     run_.keys = eco.keys.enabled ? eco.keys.start : 0;
     if (length != nullptr) {
-        // Its easy boss, then its hard one once the easy one is beaten; the finale after them.
+        // Its easy boss, then its alternates too once the easy one is beaten; the finale after them.
         RunMapPlan plan;
         plan.layers = run_.arena_count;
         plan.bosses.push_back(length->easy_boss);
-        if (length->hard_boss >= 0 && Beaten(length->id + ":easy")) plan.bosses.push_back(length->hard_boss);
+        if (Beaten(length->id + ":easy")) plan.bosses.insert(plan.bosses.end(), length->hard_bosses.begin(), length->hard_bosses.end());
         plan.finale = FinaleOpen(*length) ? eco.ladder.finale.boss : -1;
         run_.run_map = GenerateRunMap(*content_, streams_->route, arena_pool_, first_arena_, plan);
     } else {

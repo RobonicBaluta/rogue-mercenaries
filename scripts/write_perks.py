@@ -536,17 +536,15 @@ e['ladder'] = {
     'enabled': True,
     'lengths': [
         {'id': 'short', 'name': 'Short', 'arenas': 4, 'easy_boss': 103, 'hard_boss': 304},
-        # 2026-11-08: the bosses confirmed in game: Popokarimu (s108) and Jill (s309) die to gunfire
-        # with their own deaths; Wesker (s506) takes it while he attacks and falls by the mod's hand.
-        {'id': 'long', 'name': 'Long', 'arenas': 8, 'easy_boss': 108, 'hard_boss': 309,
+        # The user's ladder (2026-11-08: "4 - uroboros, 4 alternate giant uroboros, 8 - Aheri, 8
+        # alternate - Mkono, 12 - uroboros wesker, 13 midnight wesker"; then Jill as the 8's other
+        # alternate: "8: Mkono or Jill"). Popokarimu (s108) stays a boss map outside the ladder.
+        {'id': 'long', 'name': 'Long', 'arenas': 8, 'easy_boss': 308, 'hard_boss': [511, 309],
          'unlocked_by': 'short:hard', 'boss_hp_mult': 1.3},
-        # The user's 12 ends on Uroboros Wesker on the Volcano (s508; 2026-11-08: his body takes
-        # gunfire in a run), then also on Uroboros Aheri in the Tiled Labs (s308, 2026-11-08: the
-        # user's "stronger flamethrower Uroboros").
-        {'id': 'marathon', 'name': 'Marathon', 'arenas': 12, 'easy_boss': 508, 'hard_boss': 308,
+        {'id': 'marathon', 'name': 'Marathon', 'arenas': 12, 'easy_boss': 508,
          'unlocked_by': 'long:hard', 'boss_hp_mult': 1.5},
     ],
-    # The 13th arena: Wesker, once the hard bosses of 4 and 8 and the 12's boss are beaten.
+    # The 13th arena: Midnight Wesker, once the hard bosses of 4 and 8 and the 12's boss are beaten.
     'finale': {'boss': 506, 'after': 'marathon', 'unlocked_by': ['short:hard', 'long:hard', 'marathon:easy'],
                'boss_hp_mult': 1.0},
     'growth_from_arena': 5,

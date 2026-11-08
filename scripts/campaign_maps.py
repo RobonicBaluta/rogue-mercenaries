@@ -88,9 +88,9 @@ BOSSES = {
     # story sets it (the s308 set's position and turn, its story health 15000) and appears once the
     # player comes within 15 m, or after 90 s (the user, 2026-11-08: "spawn ... where they are
     # supposed to be, right now it spawns in the corridor if you don't move"). 80 a pistol hit on its
-    # body, 200 on a weak spot (build/runs/20261108-181644-bossarena-uEm41-s308): 12000, about 150
-    # body hits (225 at the 12-arena run's 1.5).
-    308: {'class': 'uEm41', 'name': 'Uroboros Aheri', 'hp': 12000, 'preload': ['uEm41Arm', 'uEm41Core', 'uOm0019'],
+    # body, 200 on a weak spot (build/runs/20261108-181644-bossarena-uEm41-s308): 10000, 125 body
+    # hits (160 at the 8-arena run's 1.3; the first Uroboros is 150 at 100 a hit).
+    308: {'class': 'uEm41', 'name': 'Uroboros Aheri', 'hp': 10000, 'preload': ['uEm41Arm', 'uEm41Core', 'uOm0019'],
           'spawn': (-11691.4, 0.0, -18013.9), 'facing': 1.4286, 'trigger': 1500, 'trigger_wait': 90},
     # Excella's Uroboros (uEm42, 2026-11-08): its body, four cores, slime and tentacles. A mass that
     # rises beside the deck: it appears where the story sets it (the s511 set Uro3_Battle's position

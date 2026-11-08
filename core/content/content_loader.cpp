@@ -1875,7 +1875,17 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
                         GetString(ed, e, "name", len.name, true);
                         GetIntRange(ed, e, "arenas", len.arenas, true, 2, 20);
                         GetIntRange(ed, e, "easy_boss", len.easy_boss, true, 0, 9999);
-                        GetIntRange(ed, e, "hard_boss", len.hard_boss, false, -1, 9999);
+                        // One boss map key or a list of them.
+                        if (const auto hb = e.find("hard_boss"); hb != e.end()) {
+                            const json list = hb->is_array() ? *hb : json::array({*hb});
+                            for (const json& k : list) {
+                                if (!k.is_number_integer() || k.get<std::int64_t>() < 0 || k.get<std::int64_t>() > 9999) {
+                                    ed.Error("hard_boss must be a map key 0..9999 or a list of them");
+                                } else if (!len.IsHard(k.get<int>())) {
+                                    len.hard_bosses.push_back(k.get<int>());
+                                }
+                            }
+                        }
                         GetString(ed, e, "unlocked_by", len.unlocked_by, false);
                         if (GetNumber(ed, e, "boss_hp_mult", len.boss_hp_mult, false)) CheckRange(ed, "boss_hp_mult", len.boss_hp_mult, 0.1, 10.0);
                         if (l.Find(len.id) != nullptr) ed.Error("duplicate length " + Q(len.id));
@@ -2163,7 +2173,7 @@ private:
             };
             for (const auto& len : c.economy_.ladder.lengths) {
                 bossMap(len.easy_boss, len.id + ".easy_boss");
-                bossMap(len.hard_boss, len.id + ".hard_boss");
+                for (const int hard : len.hard_bosses) bossMap(hard, len.id + ".hard_boss");
             }
             bossMap(c.economy_.ladder.finale.boss, "finale.boss");
         }

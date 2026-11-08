@@ -210,7 +210,13 @@ struct EconomyConfig {
             std::string name;
             int arenas = 4;          // the boss arena included
             int easy_boss = -1;      // boss map keys (maps.json "stage" of a map with a boss)
-            int hard_boss = -1;      // -1: none
+            // Its alternates ("hard_boss": one map key or a list; empty: none), all offered once the
+            // easy boss is beaten; beating any of them is the length's ":hard" (the user's 8: Mkono or
+            // Jill, 2026-11-08).
+            std::vector<int> hard_bosses;
+            [[nodiscard]] bool IsHard(int key) const {
+                return std::find(hard_bosses.begin(), hard_bosses.end(), key) != hard_bosses.end();
+            }
             std::string unlocked_by;  // a beaten key; empty: open from the start
             double boss_hp_mult = 1.0;
         };

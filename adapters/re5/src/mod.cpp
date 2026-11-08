@@ -1009,11 +1009,17 @@ nativemenu::Screen RunLengthScreen(rm::RunController& run) {
             const auto* by = colon == std::string::npos ? nullptr : ladder.Find(def->unlocked_by.substr(0, colon));
             item.help = by ? "Beat the hard boss of a " + std::to_string(by->arenas) + " arena run to open it." : "Locked.";
         } else {
-            item.help = "Ends on " + LadderBossName(def->easy_boss);
-            if (v.hard_open && def->hard_boss >= 0) item.help += " or " + LadderBossName(def->hard_boss);
+            // "Ends on the Uroboros", "... or the Giant Uroboros", "Ends on Uroboros Aheri, Uroboros Mkono or Jill".
+            std::vector<int> ends{def->easy_boss};
+            if (v.hard_open) ends.insert(ends.end(), def->hard_bosses.begin(), def->hard_bosses.end());
+            item.help = "Ends on ";
+            for (std::size_t k = 0; k < ends.size(); ++k) {
+                if (k > 0) item.help += k + 1 == ends.size() ? " or " : ", ";
+                item.help += LadderBossName(ends[k]);
+            }
             item.help += ".";
             if (v.finale_open) item.help += "\nThen one more arena.";
-            else if (!v.hard_open && def->hard_boss >= 0) item.help += "\nBeat it to face a harder boss next time.";
+            else if (!v.hard_open && !def->hard_bosses.empty()) item.help += "\nBeat it to face a harder boss next time.";
         }
         screen.items.push_back(std::move(item));
     }
