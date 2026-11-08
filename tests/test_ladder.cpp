@@ -20,7 +20,7 @@ constexpr const char* kMaps = R"({"schema_version": 1, "maps": [
   {"id": "a3", "name": "Arena Three", "stage": 103, "points": [[0, 0, 0]], "roster": [{"class": "uEm10"}]},
   {"id": "lair", "name": "Lair", "stage": 200, "points": [[0, 0, 0]], "boss": {"class": "uEm40", "name": "Beast", "hp": 5000}},
   {"id": "dome", "name": "Dome", "stage": 201, "points": [[0, 0, 0]], "boss": {"class": "uEm43", "name": "Giant", "hp": 8000}},
-  {"id": "core", "name": "Core", "stage": 202, "points": [[0, 0, 0]], "boss": {"class": "uEm81", "name": "Wesker", "hp": 9000}}]})";
+  {"id": "core", "name": "Core", "stage": 202, "points": [[0, 0, 0]], "boss": {"class": "uEm81", "name": "Wesker", "article": "", "hp": 9000}}]})";
 
 // Short: 3 arenas (Beast, then Beast or Giant); long: 4 arenas, opened by the short hard boss, its
 // bosses at 1.5x health; the finale (Wesker) after long once both hard bosses are beaten.
@@ -209,6 +209,16 @@ TEST_CASE("a long run's later arenas are harder, a boss's health by its length",
     const auto spawns = h.rc.DirectorTick(t + 1.0, std::array<double, 3>{0, 0, 0});
     REQUIRE(spawns.size() == 1);
     CHECK(spawns[0].hp == 7500);  // Beast 5000 x 1.5
+}
+
+TEST_CASE("a boss in a sentence: its article, none for a person", "[ladder]") {
+    const auto content = test::Load(LadderSources());
+    const MapDef* beast = content->FindMapByStage(200);
+    const MapDef* wesker = content->FindMapByStage(202);
+    REQUIRE(beast != nullptr);
+    REQUIRE(wesker != nullptr);
+    CHECK(beast->boss->Phrase() == "the Beast");
+    CHECK(wesker->boss->Phrase() == "Wesker");
 }
 
 TEST_CASE("a skin can be unlocked by beating a boss", "[ladder]") {

@@ -46,6 +46,8 @@ STARTS = {
     503: (1718.5, 0.0, 19263.3), 505: (-2253.9, 703.2, -723.6), 506: (-137.7, -700.0, 821.5),
     508: (-897.9, -4.2, 798.2), 700: (0.0, 0.0, 0.0), 103: (-810.0, -1200.0, -1140.0),
     304: (470.0, -10900.0, 524.0),
+    # Boss areas (2026-11-08): where a match on the stage put the player, the same in two runs each.
+    309: (-55.0, 1.0, 932.0), 108: (-1753.0, 366.0, -1727.0),
 }
 # Starts moved off the recorded spot. s204: the host puts the player on the boat the story arrives
 # on (33885 51 -87306), and the climb to the ledge is a story action that never appears here (user
@@ -61,6 +63,18 @@ BELOW = {204: 90.0}
 BOSSES = {
     103: {'class': 'uEm40', 'name': 'Uroboros', 'hp': 15000, 'preload': ['uEm40Dummy', 'uEm40Parts']},
     304: {'class': 'uEm43', 'name': 'Giant Uroboros', 'hp': 15000, 'preload': []},
+    # Wesker in his black coat (the user's Midnight Wesker): gunfire hurts him only while he winds
+    # up an attack (his knee dash: 150, 100 a pistol hit), otherwise he shrugs it off (DmgNot); at
+    # zero health he fights on, so the mod counts him dead and plays his own Shrink as his fall
+    # (build/runs/20261108-002722-hits-uEm81-s506). His campaign health.
+    506: {'class': 'uEm81', 'name': 'Wesker', 'article': '', 'hp': 8500, 'preload': []},
+    # Jill in her battle suit (2026-11-08): dashes, rolls, fires her SMGs; a killing shot plays her own
+    # DieNormal (build/runs/20261108-010222-hits-uEm84-s309). 2000 her own: 6000 (a pistol hit 250-275).
+    309: {'class': 'uEm84', 'name': 'Jill', 'article': '', 'hp': 6000, 'preload': []},
+    # The flying creature of s108 (Popokarimu, by its looks and moves: walks, flies, dives, dashes,
+    # strikes with its arm); a killing shot plays its own Die (build/runs/20261108-010801-hits-uEm44-s108).
+    # 19200 its own, 50 a pistol hit on it: 12000.
+    108: {'class': 'uEm44', 'name': 'Popokarimu', 'hp': 12000, 'preload': []},
 }
 BOSS_PLAYER_DISTANCE = (1000, 2500)  # the boss appears within sight, not on top of the player
 # Kept for developer tests but out of the run rotation ("rotation": false), with the reason.
@@ -74,7 +88,8 @@ NAMES = {
     100: 'Kijuju Town', 104: 'Waterfront', 105: 'Back Alleys', 113: 'Warehouse', 114: 'Slums',
     202: 'Marsh Village', 204: 'Port', 300: 'Cave Shrine', 302: 'Ruin Passages', 310: 'Underground Facility',
     314: 'Mine Scaffolds', 500: 'Cargo Hold', 503: 'Freighter Deck', 505: 'Factory Floor', 506: 'Steel Docks',
-    508: 'Volcano', 700: 'Spencer Mansion', 103: 'Pump Rooms', 304: 'Capsule Dome',
+    508: 'Volcano', 700: 'Spencer Mansion', 103: 'Pump Rooms', 304: 'Capsule Dome', 309: 'Temple Hall',
+    108: 'Field Office',
 }
 
 
@@ -163,7 +178,8 @@ for stage in args.stages:
         entry = {k: v for k, v in entry.items() if k not in ('roster', 'max_alive', 'preload')}
         entry['min_player_distance'], entry['max_player_distance'] = BOSS_PLAYER_DISTANCE
         entry['preload'] = boss['preload']
-        entry['boss'] = {'class': boss['class'], 'name': boss['name'], 'hp': boss['hp']}
+        entry['boss'] = {'class': boss['class'], 'name': boss['name'], **({'article': boss['article']} if 'article' in boss else {}),
+                         'hp': boss['hp']}
     # An area made again keeps its place in the list (the run map draws from it in order).
     if any(m['stage'] == stage for m in doc['maps']):
         doc['maps'] = [entry if m['stage'] == stage else m for m in doc['maps']]

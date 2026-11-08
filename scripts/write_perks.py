@@ -318,6 +318,7 @@ for p in perks:
         assert len(help_lines(p['description'])) <= 2, (p['id'], help_lines(p['description']))
         assert all(ch.isalnum() or ch in ' ,.-' for ch in p['description']), (p['id'], p['description'])
 
+SKIN_BOSS_UNLOCKS = {'wesker_midnight': 'boss:uEm81'}
 for ch in c['characters']:
     ch['starting_passive'] = passives[ch['id']]
     ch['skill_pool'] = pools[ch['id']]
@@ -331,6 +332,15 @@ for ch in c['characters']:
             s['build'] = BUILDS[s['id']]
         else:
             s.pop('build', None)
+        # Skins a boss unlocks (the user's ladder, 2026-11-07: "once you get midnight wesker you unlock
+        # him", the description not saying how). S.T.A.R.S. Wesker waits for Uroboros Wesker, whose
+        # fight does not work yet: locked now he could not be had.
+        for field in ('unlock_kind', 'unlock_boss', 'unlock_text'):
+            s.pop(field, None)
+        if s['id'] in SKIN_BOSS_UNLOCKS:
+            s['unlock_kind'] = 'boss_beaten'
+            s['unlock_boss'] = SKIN_BOSS_UNLOCKS[s['id']]
+            s['unlock_text'] = 'Locked.'
 c['_comment'] = ("Playable characters. Every character and skin is available from the start (the challenge fields unlock_kind/unlock_count/"
                  "unlock_text/unlock_character, see core/include/rm/characters.h, are kept for later). starting_weapons: the first entry is "
                  "the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come "
@@ -409,21 +419,28 @@ open('configs/weapons.json', 'a').write('\n')
 e = json.load(open('configs/economy.json'))
 e['keys'] = {'enabled': True, 'drop_chance': 0.08, 'classes': ['uEm1'], 'start': 0, 'max': 9}
 # The ladder (the user, 2026-11-07): 4 arenas ending on Uroboros; beating him adds Giant Uroboros
-# as a choice; beating that opens 8 arenas (the same two bosses, tougher, until more bosses work),
-# its later arenas harder a step each from the fifth. The 12-arena length (Uroboros Wesker) and the
-# 13th arena (Midnight Wesker) wait for the Wesker fights (uEm82/uEm81 do not die at zero health).
+# as a choice; beating that opens 8 arenas, then 12, then the 13th arena against Wesker; later
+# arenas harder a step each from the fifth.
 e['ladder'] = {
     '_comment': 'Run lengths (EconomyConfig::Ladder, written by scripts/write_perks.py). A length ends on its easy boss until it is beaten, then on a choice of easy or hard; beating the hard one opens the length whose unlocked_by names it. From growth_from_arena on, each arena adds budget_per_arena enemies, incoming_per_arena damage taken and toughness_per_arena (the player\'s damage divided by 1 + it) per step.',
     'enabled': True,
     'lengths': [
         {'id': 'short', 'name': 'Short', 'arenas': 4, 'easy_boss': 103, 'hard_boss': 304},
-        {'id': 'long', 'name': 'Long', 'arenas': 8, 'easy_boss': 103, 'hard_boss': 304,
+        # 2026-11-08: the bosses confirmed in game: Popokarimu (s108) and Jill (s309) die to gunfire
+        # with their own deaths; Wesker (s506) takes it while he attacks and falls by the mod's hand.
+        {'id': 'long', 'name': 'Long', 'arenas': 8, 'easy_boss': 108, 'hard_boss': 309,
          'unlocked_by': 'short:hard', 'boss_hp_mult': 1.3},
+        # The user's 12 ends on Uroboros Wesker; his body takes no gunfire yet (s508), so Jill again.
+        {'id': 'marathon', 'name': 'Marathon', 'arenas': 12, 'easy_boss': 309,
+         'unlocked_by': 'long:hard', 'boss_hp_mult': 1.5},
     ],
+    # The 13th arena: Wesker, once the hard bosses of 4 and 8 and the 12's boss are beaten.
+    'finale': {'boss': 506, 'after': 'marathon', 'unlocked_by': ['short:hard', 'long:hard', 'marathon:easy'],
+               'boss_hp_mult': 1.0},
     'growth_from_arena': 5,
     'incoming_per_arena': 0.08,
     'toughness_per_arena': 0.05,
-    'budget_per_arena': 3,
+    'budget_per_arena': 2,
 }
 json.dump(e, open('configs/economy.json', 'w'), indent=2)
 open('configs/economy.json', 'a').write('\n')

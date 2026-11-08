@@ -116,14 +116,24 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
     CHECK(sheva->enabled);
     CHECK(chris->unlock_cost_credits == 0);
     CHECK(sheva->unlock_cost_credits == 0);
-    // Everyone is enabled and available from the start (the challenge machinery stays for later).
+    // Everyone is enabled and available from the start (the challenge machinery stays for later),
+    // but for skins a ladder boss unlocks (the user, 2026-11-07: Midnight Wesker by beating him).
     for (const CharacterDef& other : c.characters()) {
         if (other.id == "chris" || other.id == "sheva") continue;
         INFO(other.id);
         CHECK(other.enabled);
         CHECK(other.unlock.kind == ChallengeKind::None);
         REQUIRE_FALSE(other.skins.empty());
-        for (const SkinDef& skin : other.skins) CHECK(skin.unlock.kind == ChallengeKind::None);
+        for (const SkinDef& skin : other.skins) {
+            INFO(skin.id);
+            CHECK((skin.unlock.kind == ChallengeKind::None || skin.unlock.kind == ChallengeKind::BossBeaten));
+            if (skin.unlock.kind == ChallengeKind::BossBeaten) {
+                // Its boss is one a run can end on.
+                bool reachable = false;
+                for (const MapDef& m : c.maps()) reachable = reachable || (m.boss && "boss:" + m.boss->unit_class == skin.unlock.boss);
+                CHECK(reachable);
+            }
+        }
         CHECK(other.unlock_cost_credits == 0);
         CHECK(CheckCharacter(&other, {}) == CharacterGate::Selectable);
     }

@@ -1212,11 +1212,12 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
             if (!boss->is_object()) {
                 bd.Error("must be an object");
             } else {
-                CheckKeys(bd, *boss, {"class", "name", "hp"});
+                CheckKeys(bd, *boss, {"class", "name", "article", "hp"});
                 MapBoss b;
                 GetString(bd, *boss, "class", b.unit_class, true);
                 if (b.unit_class.rfind("uEm", 0) != 0) bd.Error("class must be an enemy class (uEm..)");
                 GetString(bd, *boss, "name", b.name, true);
+                GetString(bd, *boss, "article", b.article, false);
                 std::int64_t hp = 0;
                 if (GetInt(bd, *boss, "hp", hp, false) && (hp < 0 || hp > 32767)) bd.Error("hp must be 0..32767");
                 b.hp = static_cast<int>(hp);

@@ -47,6 +47,9 @@ struct MapBoss {
     std::string unit_class;  // engine class, e.g. "uEm40"
     std::string name;        // shown in the route menu and on the HUD
     int hp = 0;              // > 0: its health once spawned (the game's own suits story weapons)
+    std::string article = "the";  // before its name in a sentence ("the Uroboros"; "" for a person)
+    /// Its name in a sentence: "the Uroboros", "Wesker".
+    [[nodiscard]] std::string Phrase() const { return article.empty() ? name : article + " " + name; }
 };
 
 /// A map the director can run an arena on (configs/maps.json).

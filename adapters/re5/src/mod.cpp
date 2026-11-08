@@ -759,10 +759,10 @@ std::string DurationText(double seconds) {
 
 // RUN RESULTS (M7.3): the last finished run, opened by itself when the game is back at the Play
 // menu and from CREDITS.
-// The ladder's boss of map `key` by its name (maps.json), for the menu.
+// The ladder's boss of map `key` in a sentence (maps.json): "the Uroboros", "Wesker".
 std::string LadderBossName(int key) {
     const rm::MapDef* m = key >= 0 ? g->content->FindMapByStage(key) : nullptr;
-    return m && m->boss ? Plain(m->boss->name) : std::string("a boss");
+    return m && m->boss ? Plain(m->boss->Phrase()) : std::string("a boss");
 }
 
 // RUN LENGTH (the ladder): every length, the open ones to choose; a locked one says which boss
@@ -782,8 +782,8 @@ nativemenu::Screen RunLengthScreen(rm::RunController& run) {
             const auto* by = colon == std::string::npos ? nullptr : ladder.Find(def->unlocked_by.substr(0, colon));
             item.help = by ? "Beat the hard boss of a " + std::to_string(by->arenas) + " arena run to open it." : "Locked.";
         } else {
-            item.help = "Ends on the " + LadderBossName(def->easy_boss);
-            if (v.hard_open && def->hard_boss >= 0) item.help += " or the " + LadderBossName(def->hard_boss);
+            item.help = "Ends on " + LadderBossName(def->easy_boss);
+            if (v.hard_open && def->hard_boss >= 0) item.help += " or " + LadderBossName(def->hard_boss);
             item.help += ".";
             if (v.finale_open) item.help += "\nThen one more arena.";
             else if (!v.hard_open && def->hard_boss >= 0) item.help += "\nBeat it to face a harder boss next time.";
@@ -846,19 +846,20 @@ nativemenu::Screen RunResultsScreen(rm::RunController& run) {
     }
     // What the run's boss wins opened on the ladder: right under the first row, seen without scrolling.
     for (const rm::LadderUnlock& u : s.ladder_unlocks) {
-        const std::string boss = LadderBossName(u.boss);
+        const std::string boss = LadderBossName(u.boss);  // in a sentence: "the Giant Uroboros"
+        const rm::MapDef* map = g->content->FindMapByStage(u.boss);
+        const std::string name = map && map->boss ? Upper(Plain(map->boss->name)) : std::string("A BOSS");
         const std::string arenas = std::to_string(u.arenas);
         switch (u.kind) {
             case rm::LadderUnlock::Kind::HardBoss:
-                add("NEW BOSS   " + Upper(boss),
-                    "A " + arenas + "-arena run can now end on the " + boss + ".\nChoose it in the last NEXT ROUTE.", "explosion");
+                add("NEW BOSS   " + name, "A " + arenas + "-arena run can now end on " + boss + ".\nChoose it in the last NEXT ROUTE.",
+                    "explosion");
                 break;
             case rm::LadderUnlock::Kind::Length:
-                add(arenas + " ARENAS OPEN",
-                    arenas + " arenas, ending on the " + boss + ".\nSTART RUN now asks how long the run is.", "flag");
+                add(arenas + " ARENAS OPEN", arenas + " arenas, ending on " + boss + ".\nSTART RUN now asks how long the run is.", "flag");
                 break;
             case rm::LadderUnlock::Kind::Finale:
-                add("ONE MORE ARENA", "A " + arenas + "-arena run now goes on after its boss:\none more arena, the " + boss + ".",
+                add("ONE MORE ARENA", "A " + arenas + "-arena run now goes on after its boss:\none more arena, against " + boss + ".",
                     "explosion");
                 break;
         }
@@ -2335,11 +2336,14 @@ int g_startMovedGeneration = -1;
 int g_arenaGeneration = -1;        // the match the arena began in (-1: none watched)
 double g_arenaMatchGoneSince = -1.0;
 
+void StopBossWatch();  // below, with the developer watch
+
 void ArenaBegan(double now) {
     g->arenaBeganAt = now;
     g_arenaGeneration = g->matchGeneration;
     g_arenaMatchGoneSince = -1.0;
     g->boss = {};
+    StopBossWatch();
     ApplyBuildHealth();
     ApplyBuildStacks();
     {
@@ -2758,32 +2762,53 @@ constexpr double kBossWalkAgain = 1.5;
 
 constexpr double kBossFallSeconds = 3.0;  // a dead boss's fall before the arena's screens (DriveArena)
 
-// A boss whose death the campaign scripts fights on at zero health (Wesker, uEm81: kicks, shots,
-// shifts at 0 of 8500; build/runs/20261107-233420-boss-uEm81-s506). Once the mod has counted it
-// dead, its own stagger plays through the fall before the arena's screens (DriveArena): Wesker's
-// Shrink, the weakened stagger the campaign's injection follows, held 6 s
-// (build/runs/20261107-233900-boss-uEm81-s506).
+// A dead boss's fall. The mod counts a boss dead when its health reaches zero, but some never die
+// there: Wesker (uEm81) fights on at 0 of 8500 (his death is scripted in the campaign), and the
+// others only start their death from the hit that kills them, not from health taken some other way
+// (Popokarimu walked on at zero after SubHp; build/runs/20261108-011728-bossarena-uEm44-s108). So a
+// boss that has not begun a death of its own shortly after (an action named Die/Dead) is given
+// its own: Wesker his Shrink, the weakened stagger the campaign's injection follows (6 s;
+// build/runs/20261107-233900-boss-uEm81-s506), the others their death. The Uroboros dies by itself.
 struct ScriptedFall {
     const char* cls;
     const char* action;
+    double after;  // seconds after its death: a killing hit's own death starts at once
 };
-constexpr ScriptedFall kScriptedFalls[] = {{"uEm81", "cEm80ActShrink"}, {"uEm80", "cEm80ActShrink"}};
-std::uintptr_t g_fallStarted = 0;
+constexpr ScriptedFall kScriptedFalls[] = {
+    {"uEm81", "cEm80ActShrink", 0.0},    {"uEm80", "cEm80ActShrink", 0.0},    {"uEm44", "cEm44ActDie", 0.3},
+    {"uEm84", "cEm84ActDieNormal", 0.3}, {"uEm83", "cEm83ActDieNormal", 0.3},
+};
+std::uintptr_t g_fallDone = 0;
+
+bool FallingByItself(const std::string& action) {
+    return action.find("Die") != std::string::npos || action.find("Dead") != std::string::npos;
+}
 
 void DriveBossFall(double now) {
     const std::uintptr_t unit = g->boss.fallen;
-    if (!g->boss.dead || !unit || unit == g_fallStarted || now - g->boss.diedAt > kBossFallSeconds) return;
+    if (!g->boss.dead || !unit || unit == g_fallDone || now - g->boss.diedAt > kBossFallSeconds) return;
     const std::string cls = engine::ClassName(unit);
+    const ScriptedFall* fall = nullptr;
     for (const ScriptedFall& f : kScriptedFalls) {
-        if (cls != f.cls) continue;
-        const auto ids = engine::ActionIdsOf(unit, f.action);
-        if (!ids.empty() && engine::StartAction(unit, ids.front(), f.action, true)) {
-            g_fallStarted = unit;
-            RM_LOGI("boss fall: %s %s (action %d) %.2f s after its death", cls.c_str(), f.action, ids.front(), now - g->boss.diedAt);
-        }
+        if (cls == f.cls) fall = &f;
+    }
+    if (!fall) {
+        g_fallDone = unit;  // falls by itself (the Uroboros' death sequence)
         return;
     }
-    g_fallStarted = unit;  // a boss that falls by itself (the Uroboros' death sequence)
+    const std::string current = engine::CurrentActionName(unit);
+    if (current == fall->action || (FallingByItself(current) && current.find("Atk") == std::string::npos)) {
+        RM_LOGI("boss fall: %s fell by itself (%s), %.2f s after its death", cls.c_str(), current.c_str(), now - g->boss.diedAt);
+        g_fallDone = unit;
+        return;
+    }
+    if (now - g->boss.diedAt < fall->after) return;
+    const auto ids = engine::ActionIdsOf(unit, fall->action);
+    if (!ids.empty() && engine::StartAction(unit, ids.front(), fall->action, true)) {
+        g_fallDone = unit;
+        RM_LOGI("boss fall: %s %s (action %d) %.2f s after its death (it was in %s)", cls.c_str(), fall->action, ids.front(),
+                now - g->boss.diedAt, current.c_str());
+    }
 }
 
 // Developer "watch <class>": the first enemy of that class, its action and health logged on every
@@ -2797,6 +2822,14 @@ struct UnitWatch {
     double since = 0.0;
 };
 UnitWatch g_watch;
+// Developer "bring ... <pin s>": the unit kept where it was put for that long (re-placed every
+// frame), so a test's shot finds it there whatever it does meanwhile.
+struct UnitPin {
+    std::uintptr_t unit = 0;
+    float dest[3] = {};
+    double until = 0.0;
+};
+UnitPin g_pin;
 
 std::uintptr_t FirstEnemyOf(const std::string& cls) {
     for (const auto& e : engine::ReadEnemyStates()) {
@@ -2805,7 +2838,40 @@ std::uintptr_t FirstEnemyOf(const std::string& cls) {
     return 0;
 }
 
+// Developer "watchplayer on|off": the local player's action on every change (what a boss's move
+// did to him: Wesker's knee strike left the screen black once, build/runs/20261108-012025-...).
+bool g_watchPlayer = false;
+std::string g_watchPlayerAction;
+
+// A boss arena logs the boss's and the player's actions on every change (the developer watch's
+// lines, a few hundred a fight), so a playtest's log shows what a boss did (Wesker's knee strike
+// left the screen black once in six arenas, cause unknown).
+bool g_bossWatch = false;
+void StartBossWatch(const std::string& cls) {
+    g_watch = {};
+    g_watch.cls = cls;
+    g_watchPlayer = true;
+    g_watchPlayerAction.clear();
+    g_bossWatch = true;
+}
+void StopBossWatch() {
+    if (!g_bossWatch) return;
+    g_watch = {};
+    g_watchPlayer = false;
+    g_bossWatch = false;
+}
+
 void WatchUnit(double now) {
+    if (g_pin.unit && now < g_pin.until) engine::WarpUnit(g_pin.unit, g_pin.dest);
+    if (g_watchPlayer) {
+        const auto local = engine::LocalPlayer();
+        const std::string action = local ? engine::CurrentActionName(local) : std::string("-");
+        if (action != g_watchPlayerAction) {
+            const auto hp = local ? engine::ReadHp(local) : std::nullopt;
+            RM_LOGW("watch: player action %d %s, hp %d", local ? engine::CurrentActionId(local) : -1, action.c_str(), hp ? hp->hp : -1);
+            g_watchPlayerAction = action;
+        }
+    }
     UnitWatch& w = g_watch;
     if (w.cls.empty()) return;
     const std::uintptr_t unit = FirstEnemyOf(w.cls);
@@ -2932,6 +2998,7 @@ void DriveDirector(double now) {
     if (!g->match.inMatch) {
         g->directorUnits.clear();
         g->boss = {};
+        StopBossWatch();
         g_stuckTracks.clear();
         g_trapSpots.clear();
         g_stuckRemaining = -1;
@@ -3006,6 +3073,7 @@ void DriveDirector(double now) {
         run.DirectorSpawned(r.ticket, id);
         if (r.boss) {
             g->boss = {unit, r.hp, now};
+            StartBossWatch(r.unit_class);
             RM_LOGI("director: boss %s (%s) spawned, health %d", r.unit_class.c_str(),
                     CurrentMap() && CurrentMap()->boss ? CurrentMap()->boss->name.c_str() : "?", r.hp);
         }
@@ -6157,6 +6225,10 @@ void PollDevCommand(double now) {
         g_watch = {};
         if (command.substr(6) != "off") g_watch.cls = command.substr(6);
         RM_LOGW("dev watch %s", g_watch.cls.empty() ? "off" : g_watch.cls.c_str());
+    } else if (command.rfind("watchplayer ", 0) == 0) {
+        g_watchPlayer = command.substr(12) == "on";
+        g_watchPlayerAction.clear();
+        RM_LOGW("dev watchplayer %s", g_watchPlayer ? "on" : "off");
     } else if (command.rfind("actions ", 0) == 0) {
         // "actions <class>": the action table of the first enemy of that class.
         const std::uintptr_t unit = FirstEnemyOf(command.substr(8));
@@ -6174,11 +6246,13 @@ void PollDevCommand(double now) {
         }
         if (!line.empty()) RM_LOGW("  %s", line.c_str());
     } else if (command.rfind("bring ", 0) == 0) {
-        // "bring <class> <distance>": the first enemy of the class moved that far straight ahead
-        // of the player as he faces now (aiming turns him to the camera: into the line of fire).
-        const auto space = command.find(' ', 6);
-        const std::string cls = command.substr(6, space == std::string::npos ? std::string::npos : space - 6);
-        const float distance = space == std::string::npos ? 500.0f : static_cast<float>(std::atof(command.c_str() + space + 1));
+        // "bring <class> <distance> [side]": the first enemy of the class moved that far straight
+        // ahead of the player as he faces now (aiming turns him to the camera), `side` units to his
+        // right (negative: left): the aiming camera looks past his shoulder, beside his facing.
+        std::istringstream args(command.substr(6));
+        std::string cls;
+        float distance = 500.0f, side = 0.0f, pin = 0.0f;
+        args >> cls >> distance >> side >> pin;
         const std::uintptr_t unit = FirstEnemyOf(cls);
         const auto player = engine::LocalPlayer();
         if (unit && player) {
@@ -6190,14 +6264,33 @@ void PollDevCommand(double now) {
                 fx /= len;
                 fz /= len;
             }
-            const float dest[3] = {ReadOr<float>(player + re5::off::kUnitPosition, 0.0f) + fx * distance,
+            // Right of the facing (fx, fz) on the ground plane: (-fz, fx) in this game's frame (a
+            // guess the hit sweep tells: negative sides are the other way).
+            const float rx = -fz, rz = fx;
+            const float dest[3] = {ReadOr<float>(player + re5::off::kUnitPosition, 0.0f) + fx * distance + rx * side,
                                    ReadOr<float>(player + re5::off::kUnitPosition + 4, 0.0f),
-                                   ReadOr<float>(player + re5::off::kUnitPosition + 8, 0.0f) + fz * distance};
+                                   ReadOr<float>(player + re5::off::kUnitPosition + 8, 0.0f) + fz * distance + rz * side};
             const int copies = engine::WarpUnit(unit, dest);
-            RM_LOGW("dev bring %s %.0f: to %.0f %.0f %.0f (%d copies)", cls.c_str(), distance, dest[0], dest[1], dest[2], copies);
+            g_pin = {};
+            if (pin > 0.0f) {
+                g_pin.unit = unit;
+                for (int k = 0; k < 3; ++k) g_pin.dest[k] = dest[k];
+                g_pin.until = now + pin;
+            }
+            RM_LOGW("dev bring %s %.0f side %.0f: to %.0f %.0f %.0f (%d copies)%s", cls.c_str(), distance, side, dest[0], dest[1],
+                    dest[2], copies, pin > 0.0f ? ", pinned" : "");
         } else {
             RM_LOGW("dev bring %s: no such enemy or no player", cls.c_str());
         }
+    } else if (command.rfind("target ", 0) == 0) {
+        // "target <class>": the first enemy of the class gets the player as its target (a boss
+        // spawned outside its scenario may have none and stand still: the Uroboros did).
+        const std::uintptr_t unit = FirstEnemyOf(command.substr(7));
+        const auto local = engine::LocalPlayer();
+        const auto before = unit ? ReadOr<std::uintptr_t>(unit + re5::off::kEnemyTarget, 0) : 0;
+        const bool set = unit && local && SafeStore<std::uintptr_t>(unit + re5::off::kEnemyTarget, local);
+        RM_LOGW("dev target %s %08X: was %08X, %s", command.substr(7).c_str(), static_cast<unsigned>(unit),
+                static_cast<unsigned>(before), set ? "the player now" : "not set");
     } else if (command.rfind("act ", 0) == 0) {
         // "act <class> <id>": starts that action of the first enemy of the class (StartAction's checks).
         const auto space = command.find(' ', 4);

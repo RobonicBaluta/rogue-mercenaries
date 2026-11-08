@@ -8,7 +8,8 @@
 #     (long:easy not beaten yet).
 # Restarts the game with configs/adapter.director.json (invulnerable). Saves and restores the
 # profile, checks the save file's hash; closes the game at the end. Captures in build/runs/<time>-ladder.
-#   CHARACTER (default chris), PART (1, 2 or both: default both)
+#   CHARACTER (default chris), PART (1, 2 or both: default both); part 2: BOSSES (the beaten keys,
+#   default short:easy,short:hard), ROW (the RUN LENGTH row to start, default 1)
 cd "$(dirname "$0")/.."
 D="$LOCALAPPDATA/RogueMercenaries"
 LOG="$D/logs/adapter.log"
@@ -129,18 +130,20 @@ if [ "$PART" != 1 ]; then
     [ -f "$OUT/profile-before/profile.json" ] && cp "$OUT/profile-before/profile.json" "$D/profile.json"
     # With no profile before, part 1's is used; with none at all, there is nothing to mark.
     [ -f "$D/profile.json" ] || echo "PART 2 SKIPPED: no profile to mark (run part 1 first)"
-    [ -f "$D/profile.json" ] && { python scripts/profile_edit.py "$D/profile.json" --bosses "short:easy,short:hard" --no-active-run || exit 1; }
+    [ -f "$D/profile.json" ] && { python scripts/profile_edit.py "$D/profile.json" --bosses "${BOSSES:-short:easy,short:hard}" --no-active-run || exit 1; }
     [ -f "$D/profile.json" ] && start_game
     if [ -f "$D/profile.json" ] && open_menu; then
         keys "enter+2500"
         sleep 2
         [ "$(count 'start run \(')" -eq 0 ] && echo "START RUN did not start a run (RUN LENGTH expected)" || echo "A RUN STARTED WITHOUT RUN LENGTH"
         cap 05-run-length
-        keys "down+700"; sleep 1; cap 06-run-length-long
+        for _ in $(seq 1 "${ROW:-1}"); do keys "down+700"; sleep 1; done
+        cap 06-run-length-chosen
         keys "enter+2500"
         if wait_for "phase idle -> arena_active" 1 90; then
             echo "run: $(since | grep -E 'start run \(' | tail -1 | cut -c25-200)"
-            echo "arenas: $(count 'run map: arena [0-9]+:'); arena 8: $(map_line 8)"
+            n=$(count 'run map: arena [0-9]+:')
+            echo "arenas: $n; arena $((n - 1)): $(map_line $((n - 1))); arena $n: $(map_line "$n")"
             sleep 6; cap 07-long-arena1
         else
             echo "the long run did not start"
