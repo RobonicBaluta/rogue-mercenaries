@@ -65,6 +65,8 @@ bool MenuAtInput();
 /// Developer: log every distinct label/help draw call of other screens (message id, position,
 /// scale) to learn a screen's layout before hosting mod screens in it.
 void EnableDrawProbe();
+/// Developer tests: the game believes it owns no Extra Content, and/or its Mercenaries row is closed.
+void SetDevSimulation(bool noExtraContent, bool mercenariesLocked);
 
 // Shared with the in-match host (match_ui): the borrowed message slots, the game's text
 // draw, menu input and list navigation. Slots 0..7 are rows, 8 the help, 9 the header.

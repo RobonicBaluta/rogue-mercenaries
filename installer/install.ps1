@@ -159,6 +159,8 @@ try {
         $dst = Join-Path $GameDir $rel
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
         Copy-Item -LiteralPath $_.FullName -Destination $dst -Force
+        # Files from a downloaded ZIP carry an "internet" mark that can keep a DLL from loading.
+        Unblock-File -LiteralPath $dst -ErrorAction SilentlyContinue
         $installed += [pscustomobject]@{ path = $rel; sha256 = Get-Hash $dst }
     }
     foreach ($name in @('uninstall.ps1', 'Uninstall.bat')) {

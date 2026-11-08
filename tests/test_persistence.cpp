@@ -1,4 +1,5 @@
 #include <cstdio>
+#include <fstream>
 
 #include <catch_amalgamated.hpp>
 
@@ -61,6 +62,25 @@ void CheckEqual(const Profile& a, const Profile& b) {
 std::size_t ErrorEvents(const MemorySink& sink) { return sink.Count(EventType::Error); }
 
 }  // namespace
+
+TEST_CASE("a profile saves and loads in a folder the system code page cannot name", "[persistence]") {
+    // A friend's Windows user name decides the data folder: "Ștefan" has no ANSI form on most
+    // systems, and std::filesystem::path::string() throws on it (2026-11-08).
+    test::TempDir dir("unicode");
+    const fs::path folder = dir.path() / L"Ștefan 世界";
+    MemorySink sink;
+    ProfileStore store(folder / "profile.json", &sink);
+    Profile saved = SampleProfile();
+    REQUIRE_NOTHROW(store.Save(saved));
+    REQUIRE(store.Save(saved).ok());
+    ProfileLoadResult loaded;
+    REQUIRE_NOTHROW(loaded = store.Load());
+    CHECK(loaded.source == ProfileSource::Main);
+    // A damaged file there reports itself instead of throwing too.
+    { std::ofstream(folder / "profile.json") << "not json"; }
+    { std::ofstream(store.backup_path()) << "not json"; }
+    REQUIRE_NOTHROW((void)store.Load());
+}
 
 TEST_CASE("profile serialisation round-trips with checksum", "[persistence]") {
     const Profile p = SampleProfile();

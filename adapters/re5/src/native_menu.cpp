@@ -1,8 +1,9 @@
 // Native "ROGUE MERCENARIES" entry and mod menu inside RE5's Play menu
 // (uIdStartUp01).
 //
-// Vanilla Play menu: the item count is raised from 8 to 9, so the game draws,
-// highlights and navigates a ninth row itself. Choosing it opens the mod menu
+// Vanilla Play menu: the item count is raised by one (8 to 9; 7 to 8 for a player without the
+// Extra Content DLC, whose menu has no eighth row), so the game draws, highlights and navigates one
+// more row itself. Choosing it opens the mod menu
 // *inside the same screen object*: from then on this module does the screen's
 // per-frame work (input through the game's own menu helpers, then the game's
 // own row/help draw), so the list shows the mod's screens with the game's
@@ -49,7 +50,6 @@ using RowColorFn = void(__thiscall*)(std::uintptr_t self, std::uint32_t* argb, b
 using DrawHelpFn = void(__thiscall*)(std::uintptr_t self, int message, int y);
 using DrawLabelFn = void(__thiscall*)(void* ecx, int message, int x, int y, const std::uint32_t* argb, float scale);
 
-constexpr int kRogueItem = 8;
 constexpr int kMercenariesItem = 6;
 constexpr std::uint8_t kStateInput = 2;
 constexpr std::uint32_t kRMessageCrc = 0x10C460E6;
@@ -61,8 +61,17 @@ constexpr int kHeaderY = 100;
 constexpr float kHeaderScale = 0.55f;
 constexpr char kLabel[] = "ROGUE MERCENARIES";
 constexpr char kHelp[] = "Chain Mercenaries stages into one run\nwith perks and rewards in between.";
-constexpr int kRogueRowY = re5::addr::kPlayMenuFirstRowY + kRogueItem * re5::addr::kPlayMenuRowPitch;
-constexpr int kShiftedHelpY = re5::addr::kPlayMenuHelpY + re5::addr::kPlayMenuRowPitch;
+
+// The rows the game itself gives the menu: its init (0x00A39560) makes 8 when Extra Content is owned,
+// and says so in kMenuExtraContentRow, and 7 otherwise (a friend's PC, 2026-11-08: no row, "the mod
+// doesn't load"). Ours is the row after them.
+int GameRows(std::uintptr_t menu) { return ReadOr<std::uint8_t>(menu + re5::off::kMenuExtraContentRow, 0) != 0 ? 8 : 7; }
+int RogueItem(std::uintptr_t menu) { return GameRows(menu); }
+int RogueRowY(std::uintptr_t menu) { return re5::addr::kPlayMenuFirstRowY + RogueItem(menu) * re5::addr::kPlayMenuRowPitch; }
+// A ninth row takes the help line's place, which moves down; eight rows leave it where it is.
+int HelpLineY(std::uintptr_t menu) {
+    return re5::addr::kPlayMenuHelpY + (GameRows(menu) == 8 ? re5::addr::kPlayMenuRowPitch : 0);
+}
 
 // Borrowed message ids (mes_system): PS3 / Xbox LIVE texts. Slots 0..7 are
 // the rows, 8 the help line, 9 the header.
@@ -324,7 +333,26 @@ void SetBallIndex(std::uintptr_t self, int item) {
 }
 
 bool Extended(std::uintptr_t menu) {
-    return g_applied.load() && ReadOr<std::int32_t>(menu + re5::off::kMenuItemCount, 0) == 9;
+    return g_applied.load() && ReadOr<std::int32_t>(menu + re5::off::kMenuItemCount, 0) == GameRows(menu) + 1;
+}
+
+std::atomic<bool> g_devMercenariesLocked{false};
+
+// START RUN is the game's own decide on its Mercenaries row, which the game refuses on a save that has
+// not opened that mode yet (the row reads "???"). The run does not need it: the mod sets up the match
+// itself. The row counts as open for that one call; the save is not touched.
+void MoveWithMercenariesOpen(std::uintptr_t self) {
+    const auto work = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
+    const auto address = work + re5::off::kGameWorkPlayMenuMask;
+    const auto mask = work ? ReadOr<std::uint32_t>(address, 0) : 0;
+    const std::uint32_t row = 1u << kMercenariesItem;
+    const bool closed = work != 0 && (mask & row) == 0;
+    if (closed) {
+        SafeStore<std::uint32_t>(address, mask | row);
+        RM_LOGI("native menu: this save has not opened The Mercenaries; a run does not need it");
+    }
+    g_origMove(self);
+    if (closed) SafeStore<std::uint32_t>(address, mask);
 }
 
 // ---- mod menu ------------------------------------------------------------------------
@@ -364,7 +392,7 @@ void EnterModMenu(std::uintptr_t self, bool sound = true) {
 void LeaveModMenu(std::uintptr_t self, int cursor) {
     g_stack.clear();
     g_modMenu = false;
-    SafeStore<std::int32_t>(self + re5::off::kMenuItemCount, 9);
+    SafeStore<std::int32_t>(self + re5::off::kMenuItemCount, GameRows(self) + 1);
     SafeStore<std::int32_t>(self + re5::off::kMenuCursor, cursor);
     SafeStore<std::uint8_t>(self + re5::off::kMenuBlink, 0);
     SetBallIndex(self, cursor);
@@ -422,7 +450,7 @@ void __fastcall PlayMenuDrawDetour(std::uintptr_t self, void*);
 bool ModMenuFrame(std::uintptr_t self, bool readInput) {
     if (ReadOr<std::uint8_t>(self + re5::off::kMenuState, 0) != kStateInput) {
         // Something else moved the screen on; fall back to the vanilla list.
-        LeaveModMenu(self, kRogueItem);
+        LeaveModMenu(self, RogueItem(self));
         return false;
     }
     Level* level = &g_stack.back();
@@ -456,7 +484,7 @@ bool ModMenuFrame(std::uintptr_t self, bool readInput) {
                         g_stack.pop_back();
                         Rebuild();
                     } else {
-                        LeaveModMenu(self, kRogueItem);
+                        LeaveModMenu(self, RogueItem(self));
                         return false;
                     }
                     break;
@@ -466,12 +494,12 @@ bool ModMenuFrame(std::uintptr_t self, bool readInput) {
                     LeaveModMenu(self, kMercenariesItem);
                     g_chosen = true;
                     RM_LOGI("native menu: START RUN chosen");
-                    g_origMove(self);
+                    MoveWithMercenariesOpen(self);
                     return true;
                 case Outcome::Denied: PlaySound(re5::addr::kFnMenuSoundDeny, self); break;
                 case Outcome::Close:
                     PlaySound(re5::addr::kFnMenuSoundCancel, self);
-                    LeaveModMenu(self, kRogueItem);
+                    LeaveModMenu(self, RogueItem(self));
                     return false;
             }
             level = &g_stack.back();
@@ -484,7 +512,7 @@ bool ModMenuFrame(std::uintptr_t self, bool readInput) {
                 level = &g_stack.back();
                 SetBallIndex(self, std::min(level->cursor, kMaxRows - 1));
             } else {
-                LeaveModMenu(self, kRogueItem);
+                LeaveModMenu(self, RogueItem(self));
                 return false;
             }
         } else if (n > 0) {
@@ -511,20 +539,40 @@ void __fastcall PlayMenuMoveDetour(std::uintptr_t self, void*) {
     }
     g_lastMenuFrame = GetTickCount();
     std::lock_guard lock(g_menuMutex);
-    if (g_resetRequested.exchange(false) && g_modMenu.load()) LeaveModMenu(self, kRogueItem);
+    if (g_resetRequested.exchange(false) && g_modMenu.load()) LeaveModMenu(self, RogueItem(self));
     if (g_modMenu.load()) {
         if (ModMenuFrame(self, true)) {
             g_atInput = ReadOr<std::uint8_t>(self + re5::off::kMenuState, 0) == kStateInput;
             return;
         }
     }
+    if (g_devMercenariesLocked.load()) {
+        const auto work = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
+        if (work) {
+            SafeStore<std::uint32_t>(work + re5::off::kGameWorkPlayMenuMask,
+                                     ReadOr<std::uint32_t>(work + re5::off::kGameWorkPlayMenuMask, 0) & ~(1u << kMercenariesItem));
+        }
+    }
     std::int32_t count = 0;
-    // Only extend the full Gold Edition menu (8 rows; 9 once extended).
+    // Add our row to the game's 7 or 8 (one more once extended).
     // Trial/benchmark variants use other counts and keep the vanilla menu.
-    if (SafeRead(self + re5::off::kMenuItemCount, count) && (count == 8 || count == 9)) {
-        SafeStore<std::int32_t>(self + re5::off::kMenuItemCount, ApplyTexts() ? 9 : 8);
+    const int gameRows = GameRows(self);
+    if (SafeRead(self + re5::off::kMenuItemCount, count) && (count == gameRows || count == gameRows + 1)) {
+        SafeStore<std::int32_t>(self + re5::off::kMenuItemCount, ApplyTexts() ? gameRows + 1 : gameRows);
+    }
+    static std::uintptr_t loggedMenu = 0;
+    if (loggedMenu != self) {
+        loggedMenu = self;
+        RM_LOGI("native menu: the Play menu has %d rows of its own (item count %d); ROGUE MERCENARIES is row %d", gameRows, count, RogueItem(self));
     }
     const auto cursor = ReadOr<std::int32_t>(self + re5::off::kMenuCursor, -1);
+    static int lastCursor = -2;
+    static int cursorLines = 0;
+    if (cursor != lastCursor && cursorLines < 64) {
+        lastCursor = cursor;
+        ++cursorLines;
+        RM_LOGI("native menu: cursor on row %d of %d", cursor, ReadOr<std::int32_t>(self + re5::off::kMenuItemCount, 0));
+    }
     const auto state = ReadOr<std::uint8_t>(self + re5::off::kMenuState, 0);
     // Back from a finished run: the mod menu opens by itself on the run's results.
     if (state == kStateInput && Extended(self) && g_openOnMenu.load() >= 0) {
@@ -544,7 +592,7 @@ void __fastcall PlayMenuMoveDetour(std::uintptr_t self, void*) {
     // row drawn highlighted last frame.
     if (state == kStateInput && (MenuInputBits() & PadMask(re5::off::kPadDecideMask)) != 0) {
         RM_LOGI("native menu: decide on row %d of %d", cursor, ReadOr<std::int32_t>(self + re5::off::kMenuItemCount, 0));
-        if (cursor == kRogueItem && Extended(self)) {
+        if (cursor == RogueItem(self) && Extended(self)) {
             EnterModMenu(self);
             g_buttonLatch = true;  // this press opened the menu
             ModMenuFrame(self, false);
@@ -564,7 +612,7 @@ void __fastcall PlayMenuDrawDetour(std::uintptr_t self, void*) {
         // move() refreshes the enabled mask from game work every frame and
         // then calls this draw.
         const auto mask = ReadOr<std::uint32_t>(self + re5::off::kMenuEnabledMask, 0);
-        SafeStore<std::uint32_t>(self + re5::off::kMenuEnabledMask, mask | (1u << kRogueItem));
+        SafeStore<std::uint32_t>(self + re5::off::kMenuEnabledMask, mask | (1u << RogueItem(self)));
     }
     if (mod || extended) t_drawingMenu = self;
     g_origDraw(self);
@@ -576,9 +624,9 @@ void __fastcall PlayMenuDrawDetour(std::uintptr_t self, void*) {
         std::uint32_t argb = 0;
         reinterpret_cast<RowColorFn>(re5::addr::kFnMenuRowColor)(self, &argb, false, 0xFF, 0);
         g_origDrawLabel(reinterpret_cast<void*>(self), kPool[kSlotHeader], 640, kHeaderY, &argb, kHeaderScale);
-    } else if (extended && ReadOr<std::int32_t>(self + re5::off::kMenuCursor, -1) == kRogueItem) {
-        // The game draws no help line for row 8.
-        g_origDrawHelp(self, kPool[kSlotHelp], kShiftedHelpY);
+    } else if (extended && ReadOr<std::int32_t>(self + re5::off::kMenuCursor, -1) == RogueItem(self)) {
+        // Ours: the game draws none for row 8, and for row 7 its Extra Content text (kept out below).
+        g_origDrawHelp(self, kPool[kSlotHelp], HelpLineY(self));
     }
 }
 
@@ -637,7 +685,7 @@ void __fastcall DrawLabelDetour(void* ecx, void*, int message, int x, int y, con
                 }
                 RecordRowDraw(row, x, y, scale, argb ? *argb : 0xFFFFFFFFu);
             }
-        } else if (message == re5::addr::kMessageItem8Label && y == kRogueRowY) {
+        } else if (y == RogueRowY(t_drawingMenu)) {
             message = kPool[0];
         }
     }
@@ -648,7 +696,8 @@ void __fastcall DrawHelpDetour(std::uintptr_t self, void*, int message, int y) {
     if (g_drawProbe.load() && self != t_drawingMenu) ProbeDraw("help", self, message, 0, y, 1.0f);
     if (self && self == t_drawingMenu) {
         if (g_modMenu.load()) return;  // replaced after the draw
-        if (y == re5::addr::kPlayMenuHelpY) y = kShiftedHelpY;
+        if (ReadOr<std::int32_t>(self + re5::off::kMenuCursor, -1) == RogueItem(self)) return;  // ours, after the draw
+        if (y == re5::addr::kPlayMenuHelpY) y = HelpLineY(self);
     }
     g_origDrawHelp(self, message, y);
 }
@@ -669,6 +718,28 @@ bool QueueHook(std::uintptr_t address, void* detour, void** original) {
 void SetModel(Model* model) { g_model = model; }
 
 void EnableDrawProbe() { g_drawProbe = true; }
+
+void SetDevSimulation(bool noExtraContent, bool mercenariesLocked) {
+    g_devMercenariesLocked = mercenariesLocked;
+    if (!noExtraContent) return;
+    RM_LOGW("dev: the game is told it owns no Extra Content");
+    // What the game sets from Steam at start-up; kept clear so its menus take the path a player
+    // without the DLC gets. A test aid: the thread lives as long as the process.
+    if (HANDLE t = CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
+            for (;;) {
+                if (const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0)) {
+                    SafeStore<std::uint8_t>(app + re5::off::kAppOwnsExtraContent, 0);
+                    SafeStore<std::uint8_t>(app + re5::off::kAppOwnsExtraContent2, 0);
+                }
+                if (const auto message = ReadOr<std::uintptr_t>(re5::addr::kSMessageInstance, 0)) {
+                    SafeStore<std::int32_t>(message + re5::off::kMessageExtraContent, 0);
+                }
+                Sleep(20);
+            }
+        }, nullptr, 0, nullptr)) {
+        CloseHandle(t);
+    }
+}
 
 std::atomic<bool> g_holdTexts{false};
 bool TextsReady() { return ApplyTexts(); }

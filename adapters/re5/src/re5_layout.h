@@ -625,6 +625,14 @@ constexpr std::size_t kGameoverDelay = 0x198;    // float: frames until the exit
 constexpr std::size_t kGameWorkMercPhase = 0x67C;  // int32 Mercenaries phase (2, 3 at the match's end)
 constexpr std::size_t kMenuCursor = 0x48;      // int32 selected item
 constexpr std::size_t kMenuItemCount = 0x190;  // int32: 7, or 8 with "Contenido extra"
+constexpr std::size_t kMenuExtraContentRow = 0x198;  // uint8: the init gave it that eighth row
+// game work: the Play menu's enabled rows, copied to kMenuEnabledMask every frame (bit 6 The Mercenaries)
+constexpr std::size_t kGameWorkPlayMenuMask = 0x20;
+// app: set at start-up when Steam says Extra Content (DLC 352000 or 352001) is owned
+constexpr std::size_t kAppOwnsExtraContent = 0x10568;
+constexpr std::size_t kAppOwnsExtraContent2 = 0x10567;
+// sMessage (addr::kSMessageInstance): the other way the Play menu gets its eighth row
+constexpr std::size_t kMessageExtraContent = 0x2F658;
 constexpr std::size_t kMenuEnabledMask = 0x194; // uint32 bit per item; clear bits draw red
 constexpr std::size_t kMenuBlink = 0x3D;        // uint8: selected row pulses while set
 constexpr std::size_t kMenuTopMenu = 0x128;     // uIdTopMenu00* (planet and side labels)
@@ -714,6 +722,7 @@ inline constexpr Signature kSignatures[] = {
     {"enemy_apply_damage_subhp", 0x009DEB02, "8B 06 8B 90 14 01 00 00 57 8B CE"},
     // Play menu: move entry, decide-mask test, cursor/count use, label table.
     {"playmenu_move", addr::kFnPlayMenuMove, "53 56 57 6A FF 6A FF 8B F1 E8 52 9D FA FF 8B F8"},
+    {"playmenu_extra_content", 0x00A395EB, "A1 F0 26 1B 01 39 88 58 F6 02 00 75 0D A1 A4 40 23 01 38 88 68 05 01 00"},
     {"playmenu_decide_mask", 0x00A39745, "8B 0D 40 9C 24 01 85 B9 B4 05 00 00"},
     {"playmenu_cursor_count", 0x00A397A2, "8B 86 90 01 00 00 8B 4E 48 50 51 8B"},
     {"playmenu_label_table", 0x01131D90, "A9 03 AA 03 AB 03 AD 03 AC 03 B0 03 AF 03 AE 03 A8 03"},

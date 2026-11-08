@@ -41,6 +41,10 @@ struct Settings {
     std::vector<std::string> devGrantPerks;
     // Hooks every menu screen (uId*) to log which ones are live.
     bool devMenuProbe = false;
+    // Test aids for a PC unlike the developer's: the game told it owns no Extra Content, and the
+    // save's The Mercenaries row closed.
+    bool devNoExtraContent = false;
+    bool devMercenariesLocked = false;
     // Adds ROGUE MERCENARIES to the game's Play menu.
     bool nativeMenu = true;
     // START RUN drives the game's setup screens itself: Solo, a random stage

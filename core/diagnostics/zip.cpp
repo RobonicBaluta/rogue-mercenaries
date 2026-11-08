@@ -4,6 +4,7 @@
 #include <fstream>
 #include <limits>
 #include <system_error>
+#include "rm/common.h"
 
 namespace rm {
 namespace {
@@ -121,13 +122,13 @@ Status WriteStoredZip(const std::filesystem::path& path, const std::vector<ZipEn
     tmp += ".tmp";
     {
         std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        if (!out) return Status::Error(ErrorCode::IoError, "cannot open " + tmp.string());
+        if (!out) return Status::Error(ErrorCode::IoError, "cannot open " + rm::PathText(tmp));
         out.write(archive.data(), static_cast<std::streamsize>(archive.size()));
         out.flush();
-        if (!out) return Status::Error(ErrorCode::IoError, "cannot write " + tmp.string());
+        if (!out) return Status::Error(ErrorCode::IoError, "cannot write " + rm::PathText(tmp));
     }
     std::filesystem::rename(tmp, path, ec);
-    if (ec) return Status::Error(ErrorCode::IoError, "cannot replace " + path.string() + ": " + ec.message());
+    if (ec) return Status::Error(ErrorCode::IoError, "cannot replace " + rm::PathText(path) + ": " + ec.message());
     return Status::Success();
 }
 

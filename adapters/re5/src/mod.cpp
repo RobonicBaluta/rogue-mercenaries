@@ -59,6 +59,7 @@
 #include "rm/rosters.h"
 #include "rm/run_controller.h"
 #include "rm/telemetry.h"
+#include "rm/common.h"
 
 namespace rmre5 {
 namespace {
@@ -675,7 +676,7 @@ void ScanModSkins() {
     if (std::filesystem::is_directory(root, ec)) {
         for (auto it = std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, ec);
              !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
-            if (it->is_regular_file(ec)) byName[LowerAscii(it->path().filename().string())].push_back(it->path());
+            if (it->is_regular_file(ec)) byName[LowerAscii(rm::PathText(it->path().filename()))].push_back(it->path());
         }
     }
     std::map<std::string, std::vector<fileredirect::Redirect>> found;
@@ -726,7 +727,7 @@ void ScanModSkins() {
                 for (auto it = std::filesystem::recursive_directory_iterator(modRoot, std::filesystem::directory_options::skip_permission_denied, walk);
                      !walk && it != std::filesystem::recursive_directory_iterator(); it.increment(walk)) {
                     if (!it->is_directory(walk)) continue;
-                    std::string have = LowerAscii(it->path().string());
+                    std::string have = LowerAscii(rm::PathText(it->path()));
                     std::replace(have.begin(), have.end(), '/', '\\');
                     if (have.size() >= want.size() && have.compare(have.size() - want.size(), want.size(), want) == 0) {
                         dir = it->path();
@@ -753,7 +754,7 @@ void ScanModSkins() {
                         for (const auto& p : pictures->second) {
                             const auto inside = p.lexically_relative(modRoot);
                             if (inside.empty() || inside.native().rfind(L"..", 0) == 0) continue;
-                            std::string have = LowerAscii(p.string());
+                            std::string have = LowerAscii(rm::PathText(p));
                             std::replace(have.begin(), have.end(), '/', '\\');
                             if (have.size() < wantTail.size() || have.compare(have.size() - wantTail.size(), wantTail.size(), wantTail) != 0) continue;
                             portraits::ModPortrait pic;
@@ -775,7 +776,7 @@ void ScanModSkins() {
             if (missing.empty() && s.mod->files.size() == 1 && found.count(s.id) && !found[s.id].empty()) {
                 const std::filesystem::path chosen(found[s.id].front().target);
                 line.pop_back();
-                line += " (" + chosen.lexically_relative(root).string() + ");";
+                line += " (" + rm::PathText(chosen.lexically_relative(root)) + ");";
             }
         }
     }
@@ -784,7 +785,7 @@ void ScanModSkins() {
                                      [](const auto& a, const auto& b) { return a.first == b.first; });
     g_modSkinFiles = std::move(found);
     g->run->SetInstalledModSkins(std::move(installed));
-    if (changed || g_modRedirectSkin == "-") RM_LOGI("mods: %s:%s", ModsFolder().string().c_str(), line.empty() ? " no mod skins" : line.c_str());
+    if (changed || g_modRedirectSkin == "-") RM_LOGI("mods: %s:%s", rm::PathText(ModsFolder()).c_str(), line.empty() ? " no mod skins" : line.c_str());
     g_modRedirectSkin = "-";  // set again on the next tick
 }
 
@@ -8334,7 +8335,7 @@ void DrawDeveloper(const rm::RunSnapshot& s) {
         std::string summary = std::string("mod ") + kModVersion + " adapter " + kAdapterVersion +
                               "\ncapabilities " + g->run->capabilities().ToString() + "\n";
         const auto report = rm::ExportDiagnostics(zip, g->paths.logDir, g->paths.configDir, {}, summary);
-        g->diagnosticsResult = report.status.ok() ? ("written " + zip.string()) : report.status.message;
+        g->diagnosticsResult = report.status.ok() ? ("written " + rm::PathText(zip)) : report.status.message;
     }
     if (!g->diagnosticsResult.empty()) ImGui::TextWrapped("%s", g->diagnosticsResult.c_str());
 }
@@ -8375,7 +8376,7 @@ void ModInit(const Paths& paths, const Settings& settings) {
         std::filesystem::remove_all(sandbox, ec);
         std::filesystem::create_directories(sandbox, ec);
         profilePath = sandbox / L"profile.json";
-        RM_LOGW("dev: UI demo mode on sandbox profile %s", profilePath.string().c_str());
+        RM_LOGW("dev: UI demo mode on sandbox profile %s", rm::PathText(profilePath).c_str());
     }
     g->store = std::make_unique<rm::ProfileStore>(profilePath, g->fanout.get());
     auto profile = g->store->Load();
@@ -8413,7 +8414,7 @@ void DrawDisabled() {
     ImGui::Begin("Rogue Mercenaries - disabled", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
     ImGui::TextUnformatted("The mod stopped itself after an internal error; the game is unmodified now.");
     ImGui::TextWrapped("%s", g->disabledReason.c_str());
-    ImGui::TextDisabled("See %s", (g->paths.logDir / L"adapter.log").string().c_str());
+    ImGui::TextDisabled("See %s", rm::PathText((g->paths.logDir / L"adapter.log")).c_str());
     ImGui::End();
 }
 

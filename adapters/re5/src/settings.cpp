@@ -74,6 +74,8 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
             const auto& dev = json["dev"];
             settings.probeIntervalMs = dev.value("probe_interval_ms", settings.probeIntervalMs);
             settings.probeHits = dev.value("probe_hits", settings.probeHits);
+            settings.devNoExtraContent = dev.value("no_extra_content", settings.devNoExtraContent);
+            settings.devMercenariesLocked = dev.value("mercenaries_locked", settings.devMercenariesLocked);
             settings.muteAudio = dev.value("mute_audio", settings.muteAudio);
             settings.disableInputHooks = dev.value("disable_input_hooks", settings.disableInputHooks);
             settings.disableD3d9Hooks = dev.value("disable_d3d9_hooks", settings.disableD3d9Hooks);

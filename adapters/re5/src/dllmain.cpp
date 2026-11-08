@@ -28,6 +28,7 @@
 #include "proxy.h"
 #include "settings.h"
 #include "version.h"
+#include "rm/common.h"
 
 namespace {
 
@@ -40,15 +41,15 @@ rmre5::LogLevel ParseLevel(const std::string& name) {
     return rmre5::LogLevel::Info;
 }
 
-DWORD WINAPI Worker(LPVOID) {
+DWORD StartMod() {
     using namespace rmre5;
     const Paths paths = ResolvePaths(g_module);
     std::string settingsError;
     const Settings settings = LoadSettings(paths, &settingsError);
     LogOpen(paths.logDir / L"adapter.log", ParseLevel(settings.logLevel));
     RM_LOGI("Rogue Mercenaries %s (adapter re5 %s) starting", kModVersion, kAdapterVersion);
-    RM_LOGI("game dir: %s", paths.gameDir.string().c_str());
-    RM_LOGI("data dir: %s", paths.dataDir.string().c_str());
+    RM_LOGI("game dir: %s", rm::PathText(paths.gameDir).c_str());
+    RM_LOGI("data dir: %s", rm::PathText(paths.dataDir).c_str());
     if (!settingsError.empty()) {
         RM_LOGW("%s", settingsError.c_str());
     }
@@ -78,6 +79,7 @@ DWORD WINAPI Worker(LPVOID) {
     }
 
     probe::Configure(settings);
+    if (settings.developerMode) nativemenu::SetDevSimulation(settings.devNoExtraContent, settings.devMercenariesLocked);
     if (settings.developerMode) {
         ConfigureDevCapture(paths.dataDir);
     }
@@ -136,6 +138,18 @@ DWORD WINAPI Worker(LPVOID) {
     }
     ModCapabilitiesReady();
     RM_LOGI("initialization complete");
+    return 0;
+}
+
+// No exception may leave this thread: it would end the game, not only the mod.
+DWORD WINAPI Worker(LPVOID) {
+    try {
+        return StartMod();
+    } catch (const std::exception& e) {
+        RM_LOGE("the mod could not start: %s", e.what());
+    } catch (...) {
+        RM_LOGE("the mod could not start: unknown exception");
+    }
     return 0;
 }
 

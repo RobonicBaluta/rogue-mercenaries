@@ -77,9 +77,9 @@ PLAY
     - Dying or beating the run's last boss ends the run and banks your Credits.
 
 KNOWN ISSUES (ALPHA)
-  - Only tested on one game save so far. The mod starts its matches itself, so it should
-    not need The Mercenaries or its stages unlocked in your save; if START RUN does
-    nothing on your save, please say so.
+  - The mod does not need the Extra Content DLC or The Mercenaries unlocked, but it has
+    only been played on one full save, with those simulated for the rest. If "Rogue
+    Mercenaries" shows at the top right but something is missing, send your logs.
   - New in this version and not played yet: the bosses on arenas 4 and 8 of longer runs
     and the 13th arena.
   - Uroboros Mkono, one of the alternate bosses of arena 8, may not be beatable yet:
@@ -93,6 +93,9 @@ KNOWN ISSUES (ALPHA)
     Chinese or Russian text, go to The Mercenaries > Solo, press F7 and start the run there.
 
 WHEN SOMETHING BREAKS
+  If "Rogue Mercenaries" never shows at the top right of the game, check that dinput8.dll
+  is still in the game folder: an antivirus may have removed it (it hooks the game, which
+  looks suspicious). If it is gone, allow it and run Install.bat again.
   Please send:
     - what you were doing, the character and skin, and the stage;
     - the folder %LOCALAPPDATA%\RogueMercenaries\logs (paste that path into Explorer's

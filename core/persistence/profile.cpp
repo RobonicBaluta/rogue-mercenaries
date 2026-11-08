@@ -15,6 +15,7 @@
 #include <io.h>
 #else
 #include <unistd.h>
+#include "rm/common.h"
 #endif
 
 namespace rm {
@@ -424,8 +425,8 @@ ProfileLoadResult ProfileStore::Load() {
         Event e;
         e.type = EventType::Error;
         e.level = EventLevel::Error;
-        e.Add("operation", op).Add("message", message).Add("path", path.string());
-        if (!preserved.empty()) e.Add("preserved_as", preserved.string());
+        e.Add("operation", op).Add("message", message).Add("path", rm::PathText(path));
+        if (!preserved.empty()) e.Add("preserved_as", rm::PathText(preserved));
         sink_->OnEvent(e);
     };
 
@@ -434,7 +435,7 @@ ProfileLoadResult ProfileStore::Load() {
         if (!fs::exists(path, ec)) return false;
         std::string text;
         if (!ReadWhole(path, text)) {
-            const std::string msg = path.filename().string() + ": cannot read file";
+            const std::string msg = rm::PathText(path.filename()) + ": cannot read file";
             result.errors.push_back(msg);
             emit_error("profile_load", msg, path, {});
             return false;
@@ -460,7 +461,7 @@ ProfileLoadResult ProfileStore::Load() {
             fs::rename(path, preserved, ec);
             if (ec) preserved.clear();
         }
-        const std::string msg = path.filename().string() + ": " + parsed.status().message;
+        const std::string msg = rm::PathText(path.filename()) + ": " + parsed.status().message;
         result.errors.push_back(msg);
         if (!preserved.empty()) result.preserved.push_back(preserved);
         emit_error("profile_load", msg, path, preserved);
@@ -490,7 +491,7 @@ Status ProfileStore::Save(const Profile& profile) {
 
     const fs::path tmp = temp_path();
     if (!WriteDurable(tmp, text)) {
-        return Status::Error(ErrorCode::PersistenceFailed, "cannot write " + tmp.string());
+        return Status::Error(ErrorCode::PersistenceFailed, "cannot write " + rm::PathText(tmp));
     }
     // Keep the previous file as .bak only if it is still a valid profile, so a corrupt main
     // never overwrites a good backup.
@@ -510,13 +511,13 @@ Status ProfileStore::Save(const Profile& profile) {
     ec.clear();
     fs::rename(tmp, main_, ec);  // replaces the existing file (MoveFileEx REPLACE_EXISTING on MSVC)
     if (ec) {
-        return Status::Error(ErrorCode::PersistenceFailed, "cannot replace " + main_.string() + ": " + ec.message());
+        return Status::Error(ErrorCode::PersistenceFailed, "cannot replace " + rm::PathText(main_) + ": " + ec.message());
     }
     if (sink_ != nullptr) {
         Event e;
         e.type = EventType::ProfileSaved;
         e.level = EventLevel::Debug;
-        e.Add("path", main_.string()).Add("credits", profile.credits.balance()).Add("bytes", text.size());
+        e.Add("path", rm::PathText(main_)).Add("credits", profile.credits.balance()).Add("bytes", text.size());
         sink_->OnEvent(e);
     }
     return Status::Success();

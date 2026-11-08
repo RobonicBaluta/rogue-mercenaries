@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "log.h"
+#include "rm/common.h"
 
 namespace rmre5::icons {
 namespace {
@@ -55,7 +56,7 @@ IDirect3DTexture9* Load(IDirect3DDevice9* device, const std::string& name) {
     UINT width = 0, height = 0;
     std::vector<unsigned char> pixels;
     if (!Decode(file, width, height, pixels)) {
-        RM_LOGW("icons: %s.png missing or unreadable in %s", name.c_str(), g_dir.string().c_str());
+        RM_LOGW("icons: %s.png missing or unreadable in %s", name.c_str(), rm::PathText(g_dir).c_str());
         return nullptr;
     }
     // Managed: the runtime keeps a copy, so the texture survives a device reset.

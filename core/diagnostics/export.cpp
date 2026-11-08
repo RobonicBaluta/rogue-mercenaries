@@ -8,6 +8,7 @@
 #include "rm/diagnostics.h"
 #include "rm/version.h"
 #include "rm/zip.h"
+#include "rm/common.h"
 
 namespace rm {
 namespace {
@@ -22,7 +23,7 @@ std::string Lower(std::string s) {
 }
 
 bool HasExtension(const fs::path& p, std::initializer_list<std::string_view> allowed) {
-    const std::string ext = Lower(p.extension().string());
+    const std::string ext = Lower(rm::PathText(p.extension()));
     return std::find(allowed.begin(), allowed.end(), ext) != allowed.end();
 }
 
@@ -60,27 +61,27 @@ DiagnosticsReport ExportDiagnostics(const fs::path& out_zip, const fs::path& log
         std::error_code ec;
         const fs::file_status st = fs::symlink_status(p, ec);
         if (ec || fs::is_symlink(st) || !fs::is_regular_file(st)) {
-            report.skipped.push_back(p.string() + ": not a regular file");
+            report.skipped.push_back(rm::PathText(p) + ": not a regular file");
             return false;
         }
         const std::uint64_t size = fs::file_size(p, ec);
         if (ec || size > options.max_file_bytes) {
-            report.skipped.push_back(p.string() + ": too large");
+            report.skipped.push_back(rm::PathText(p) + ": too large");
             return false;
         }
         if (total + size > options.max_total_bytes) {
-            report.skipped.push_back(p.string() + ": archive size limit reached");
+            report.skipped.push_back(rm::PathText(p) + ": archive size limit reached");
             return false;
         }
         for (const ZipEntry& e : entries) {
             if (e.name == archive_name) {
-                report.skipped.push_back(p.string() + ": duplicate name " + archive_name);
+                report.skipped.push_back(rm::PathText(p) + ": duplicate name " + archive_name);
                 return false;
             }
         }
         std::string data;
         if (!ReadAll(p, data)) {
-            report.skipped.push_back(p.string() + ": unreadable");
+            report.skipped.push_back(rm::PathText(p) + ": unreadable");
             return false;
         }
         total += data.size();
@@ -93,22 +94,22 @@ DiagnosticsReport ExportDiagnostics(const fs::path& out_zip, const fs::path& log
     for (const fs::path& p : ListFiles(log_dir)) {
         if (!HasExtension(p, {".jsonl", ".log", ".txt"})) continue;
         std::string content;
-        if (!add(p, "logs/" + p.filename().string(), &content)) continue;
-        if (Lower(p.extension().string()) != ".jsonl") continue;
+        if (!add(p, "logs/" + rm::PathText(p.filename()), &content)) continue;
+        if (Lower(rm::PathText(p.extension())) != ".jsonl") continue;
         std::istringstream lines(content);
         for (std::string line; std::getline(lines, line);) {
             if (line.find("\"level\":\"error\"") != std::string::npos) error_lines.push_back(line);
         }
     }
     for (const fs::path& p : ListFiles(config_dir)) {
-        if (HasExtension(p, {".json"})) add(p, "configs/" + p.filename().string(), nullptr);
+        if (HasExtension(p, {".json"})) add(p, "configs/" + rm::PathText(p.filename()), nullptr);
     }
     for (const fs::path& p : extra_files) {
         if (!HasExtension(p, {".jsonl", ".json", ".log", ".txt", ".ini", ".md", ".csv"})) {
-            report.skipped.push_back(p.string() + ": file type not allowed");
+            report.skipped.push_back(rm::PathText(p) + ": file type not allowed");
             continue;
         }
-        add(p, "extra/" + p.filename().string(), nullptr);
+        add(p, "extra/" + rm::PathText(p.filename()), nullptr);
     }
 
     // JSONL lines start with {"ts":"<ISO-8601>", so ordering by that prefix is chronological;

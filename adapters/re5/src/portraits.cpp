@@ -15,6 +15,7 @@
 
 #include "log.h"
 #include "rm/inflate.h"
+#include "rm/common.h"
 
 namespace rmre5::portraits {
 namespace {
@@ -185,12 +186,12 @@ Portrait LoadMod(IDirect3DDevice9* device, int slot) {
         texture = ImageTexture(device, src, p.width, p.height);
     }
     if (!texture) {
-        RM_LOGW("portraits: mod picture %d not read from %s%s%s", slot, src.file.string().c_str(), src.entry.empty() ? "" : " ",
+        RM_LOGW("portraits: mod picture %d not read from %s%s%s", slot, rm::PathText(src.file).c_str(), src.entry.empty() ? "" : " ",
                 src.entry.c_str());
         return {};
     }
     p.texture = reinterpret_cast<unsigned long long>(texture);
-    RM_LOGI("portraits: mod picture %d loaded (%dx%d) from %s", slot, p.width, p.height, src.file.string().c_str());
+    RM_LOGI("portraits: mod picture %d loaded (%dx%d) from %s", slot, p.width, p.height, rm::PathText(src.file).c_str());
     return p;
 }
 
@@ -199,7 +200,7 @@ Portrait Load(IDirect3DDevice9* device, int costume) {
     const auto archive = g_archiveDir / (std::wstring(bust.archive) + L".arc");
     std::vector<std::uint8_t> tex;
     if (!ReadEntry(archive, bust.entry, tex)) {
-        RM_LOGW("portraits: costume %d: %s not read from %s", costume, bust.entry, archive.string().c_str());
+        RM_LOGW("portraits: costume %d: %s not read from %s", costume, bust.entry, rm::PathText(archive).c_str());
         return {};
     }
     Portrait p;

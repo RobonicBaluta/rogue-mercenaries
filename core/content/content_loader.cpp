@@ -11,6 +11,7 @@
 
 #include "rm/content.h"
 #include "rm/version.h"
+#include "rm/common.h"
 
 namespace rm {
 namespace {
@@ -2241,7 +2242,7 @@ ContentLoadResult Content::LoadFromDirectory(const std::filesystem::path& direct
     if (std::filesystem::exists(directory / "maps.json")) (void)ReadFile(directory / "maps.json", src.maps);
     for (const auto& [name, target] : files) {
         const std::filesystem::path p = directory / name;
-        if (!ReadFile(p, *target)) io_errors.push_back(std::string(name) + ": cannot read " + p.string());
+        if (!ReadFile(p, *target)) io_errors.push_back(std::string(name) + ": cannot read " + rm::PathText(p));
     }
     ContentLoadResult result = ContentBuilder::Build(src);
     if (!io_errors.empty()) {
