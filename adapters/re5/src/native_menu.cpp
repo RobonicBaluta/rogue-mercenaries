@@ -128,18 +128,37 @@ std::atomic<bool> g_applied{false};
 struct Messages {
     std::uintptr_t table = 0;
     int count = 0;
+    std::string path;
 };
+
+// The loaded mes_system of the game's language, or any loaded one. This used to be the Spanish
+// table's fixed address: in every other language that slot is empty, and the row silently never
+// appeared (2026-11-08, the game in English).
+std::uintptr_t SystemMessages(std::uintptr_t sMessage) {
+    const auto table = [sMessage](int language) {
+        return ReadOr<std::uintptr_t>(sMessage + re5::off::kMessageFirstTable + language * re5::off::kMessageLanguageStride, 0);
+    };
+    const auto save = ReadOr<std::uintptr_t>(re5::addr::kSaveData, 0);
+    const int language =
+        save ? ReadOr<std::int32_t>(save + ReadOr<std::int32_t>(save + re5::off::kSaveSlotIndex, 0) * re5::off::kSaveLanguageStride + re5::off::kSaveLanguage, -1)
+             : -1;
+    if (language >= 0 && language < re5::off::kMessageLanguages && table(language)) return table(language);
+    for (int other = 0; other < re5::off::kMessageLanguages; ++other) {
+        if (table(other)) return table(other);
+    }
+    return 0;
+}
 
 Messages FindMessages() {
     const auto sMessage = ReadOr<std::uintptr_t>(re5::addr::kSMessageInstance, 0);
-    const auto rMessage = sMessage ? ReadOr<std::uintptr_t>(sMessage + re5::off::kMessageSystemSlot, 0) : 0;
+    const auto rMessage = sMessage ? SystemMessages(sMessage) : 0;
     if (!rMessage || ReadOr<std::uint32_t>(rMessage + re5::off::kRMessageTypeCrc, 0) != kRMessageCrc) return {};
     const std::string path = ReadCString(rMessage + re5::off::kRMessagePath, 64);
     if (path.rfind("etc\\message\\mes_system", 0) != 0) return {};
     const auto data = ReadOr<std::uintptr_t>(rMessage + re5::off::kRMessageData, 0);
     if (!data || ReadOr<std::uint32_t>(data, 0) != kMsg2Magic) return {};
     return {ReadOr<std::uintptr_t>(rMessage + re5::off::kRMessageTable, 0),
-            ReadOr<std::uint16_t>(data + re5::off::kMsg2Count, 0)};
+            ReadOr<std::uint16_t>(data + re5::off::kMsg2Count, 0), path};
 }
 
 // Glyph code for a character in the game's message encoding (Latin fonts:
@@ -253,7 +272,11 @@ bool ApplyTexts() {
     if (g_applied.load()) return true;
     if (g_textFailed) return false;
     const Messages m = FindMessages();
-    if (!m.table || m.count <= kPool[kSlots - 1]) return false;  // messages not loaded yet; retry next frame
+    if (!m.table || m.count <= kPool[kSlots - 1]) {  // messages not loaded yet; retry next frame
+        static int waits = 0;
+        if (++waits == 300) RM_LOGW("native menu: the game's text table was not found (%d messages); no Rogue Mercenaries row yet", m.count);
+        return false;
+    }
     if (!g_widthsReady) {
         if (!BuildWidths(m)) {
             g_textFailed = true;
@@ -268,7 +291,7 @@ bool ApplyTexts() {
         SafeStore(g_slotAddress[i], reinterpret_cast<std::uintptr_t>(g_buffers[i].data()));
     }
     g_applied = true;
-    RM_LOGI("native menu: texts set (%d messages borrowed of %d)", kSlots, m.count);
+    RM_LOGI("native menu: texts set (%d messages borrowed of %d, %s)", kSlots, m.count, m.path.c_str());
     return true;
 }
 

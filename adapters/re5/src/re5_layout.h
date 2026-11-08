@@ -656,7 +656,15 @@ constexpr std::size_t kScreenBack = 0x3E;
 constexpr std::size_t kPadDecideMask = 0x5B4;
 constexpr std::size_t kPadCancelMask = 0x5B8;
 // sMessage -> rMessage for etc\message\mes_system_<lang>
-constexpr std::size_t kMessageSystemSlot = 0x11534;
+// One loaded rMessage per language and file, at +kMessageFirstTable + (language * 19 + file) * 0x3A0
+// (0x007D9F50). mes_system is file 0. Languages: 0 j, 1 e, 2 g, 3 f, 4 s, 5 i, 6 r, 7 p, 8 c, 9 chT, 10 chS.
+constexpr std::size_t kMessageFirstTable = 0x1B4;
+constexpr std::size_t kMessageLanguageStride = 19 * 0x3A0;
+constexpr int kMessageLanguages = 11;
+// The language they were loaded for: [kSaveData] + [+kSaveSlotIndex] * kSaveLanguageStride + kSaveLanguage.
+constexpr std::size_t kSaveSlotIndex = 0x20;
+constexpr std::size_t kSaveLanguageStride = 0x8C74;
+constexpr std::size_t kSaveLanguage = 0x70;
 constexpr std::size_t kRMessagePath = 0x04;    // char[] resource path
 constexpr std::size_t kRMessageTypeCrc = 0x5C; // 0x10C460E6 for rMessage
 constexpr std::size_t kRMessageTable = 0x60;   // const uint16_t** per-message pointers
@@ -722,6 +730,7 @@ inline constexpr Signature kSignatures[] = {
     {"enemy_apply_damage_subhp", 0x009DEB02, "8B 06 8B 90 14 01 00 00 57 8B CE"},
     // Play menu: move entry, decide-mask test, cursor/count use, label table.
     {"playmenu_move", addr::kFnPlayMenuMove, "53 56 57 6A FF 6A FF 8B F1 E8 52 9D FA FF 8B F8"},
+    {"smessage_load", 0x007D9F50, "81 EC 14 01 00 00 33 C0 38 84 24 18 01 00 00 89 0C 24 0F 95 C0 57 89 81 58 F6 02 00 8B 0D 58 21 1B 01 8B 51 20 69 D2 74 8C 00 00"},
     {"playmenu_extra_content", 0x00A395EB, "A1 F0 26 1B 01 39 88 58 F6 02 00 75 0D A1 A4 40 23 01 38 88 68 05 01 00"},
     {"playmenu_decide_mask", 0x00A39745, "8B 0D 40 9C 24 01 85 B9 B4 05 00 00"},
     {"playmenu_cursor_count", 0x00A397A2, "8B 86 90 01 00 00 8B 4E 48 50 51 8B"},
