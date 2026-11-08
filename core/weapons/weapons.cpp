@@ -60,8 +60,33 @@ std::string_view AffixKindName(AffixKind k) {
         case AffixKind::SuppliesOnKill: return "supplies_on_kill";
         case AffixKind::UniqueLowHpTargetBonus: return "low_hp_target_bonus";
         case AffixKind::UniqueKillStreakExtend: return "kill_streak_extend";
+        case AffixKind::UniqueExecute: return "execute";
+        case AffixKind::UniqueDragonsBreath: return "dragons_breath";
+        case AffixKind::UniqueChainLightning: return "chain_lightning";
+        case AffixKind::UniqueBottomless: return "bottomless";
+        case AffixKind::UniqueOverkill: return "overkill";
+        case AffixKind::UniqueLastWord: return "last_word";
+        case AffixKind::UniqueBloodthirst: return "bloodthirst";
     }
     return "damage_pct";
+}
+
+std::string_view ElementName(Element e) {
+    switch (e) {
+        case Element::Incendiary: return "incendiary";
+        case Element::Shock: return "shock";
+        case Element::Cryo: return "cryo";
+        case Element::Explosive: return "explosive";
+        case Element::Toxic: return "toxic";
+    }
+    return "incendiary";
+}
+
+std::optional<Element> ParseElement(std::string_view name) {
+    for (Element e : kAllElements) {
+        if (ElementName(e) == name) return e;
+    }
+    return std::nullopt;
 }
 
 std::optional<AffixKind> ParseAffixKind(std::string_view name) {
@@ -73,14 +98,23 @@ std::optional<AffixKind> ParseAffixKind(std::string_view name) {
 }
 
 std::optional<AffixKind> ParseUniqueEffect(std::string_view name) {
-    for (AffixKind k : {AffixKind::UniqueLowHpTargetBonus, AffixKind::UniqueKillStreakExtend}) {
+    for (AffixKind k : {AffixKind::UniqueLowHpTargetBonus, AffixKind::UniqueKillStreakExtend, AffixKind::UniqueExecute,
+                        AffixKind::UniqueDragonsBreath, AffixKind::UniqueChainLightning, AffixKind::UniqueBottomless,
+                        AffixKind::UniqueOverkill, AffixKind::UniqueLastWord, AffixKind::UniqueBloodthirst}) {
         if (AffixKindName(k) == name) return k;
     }
     return std::nullopt;
 }
 
 bool IsUniqueAffix(AffixKind k) {
-    return k == AffixKind::UniqueLowHpTargetBonus || k == AffixKind::UniqueKillStreakExtend;
+    switch (k) {
+        case AffixKind::DamagePct:
+        case AffixKind::CritChance:
+        case AffixKind::CritMultPct:
+        case AffixKind::LowHpTargetDamagePct:
+        case AffixKind::SuppliesOnKill: return false;
+        default: return true;
+    }
 }
 
 WeaponInstance MakeStartingWeapon(std::string_view base_id, std::string instance_id) {
@@ -90,40 +124,53 @@ WeaponInstance MakeStartingWeapon(std::string_view base_id, std::string instance
     return w;
 }
 
-WeaponInstance GenerateWeapon(Rng& rng, const Content& content, const Capabilities& caps,
-                              std::string_view base_id, Rarity rarity, std::string instance_id) {
-    WeaponInstance w;
-    w.instance_id = std::move(instance_id);
-    w.base_id = std::string(base_id);
-    w.rarity = rarity;
-    const EconomyConfig::WeaponRarityRule& rule =
-        content.economy().weapon_rarity[RarityIndex(rarity)];
+namespace {
+
+double RoundAffix(AffixKind kind, double v) {
+    switch (kind) {
+        case AffixKind::SuppliesOnKill: return std::max(1.0, std::round(v));
+        case AffixKind::CritChance: return RoundTo(v, 1000.0);
+        default: return RoundTo(v, 100.0);
+    }
+}
+
+// Adds what `rarity` has and `w` lacks: regular affixes up to its count (kinds not yet on the
+// gun), legendary effects (ids not yet on it), then elements. The elements are drawn last, so a
+// gun of a tier without any draws as it did before the rarity remake.
+void FillToRarity(Rng& rng, const Content& content, const Capabilities& caps, WeaponInstance& w, Rarity rarity) {
+    const EconomyConfig::WeaponRarityRule& rule = content.economy().weapon_rarity[RarityIndex(rarity)];
+    int regular = 0;
+    int uniques_on = 0;
+    for (const Affix& a : w.affixes) {
+        if (IsUniqueAffix(a.kind)) {
+            ++uniques_on;
+        } else {
+            ++regular;
+        }
+    }
 
     std::vector<const AffixDef*> pool;
     for (const AffixDef& a : content.affixes()) {
-        if (caps.HasAll(a.requires_capabilities)) pool.push_back(&a);
+        const bool held = std::any_of(w.affixes.begin(), w.affixes.end(), [&a](const Affix& x) { return x.kind == a.kind; });
+        if (!held && caps.HasAll(a.requires_capabilities)) pool.push_back(&a);
     }
-    for (int i = 0; i < rule.affix_count && !pool.empty(); ++i) {
+    for (int i = regular; i < rule.affix_count && !pool.empty(); ++i) {
         const std::size_t k = rng.Index(pool.size());
         const AffixDef* def = pool[k];
         pool.erase(pool.begin() + static_cast<std::ptrdiff_t>(k));
         Affix affix;
         affix.kind = def->kind;
         affix.threshold = def->threshold;
-        const double rolled = rng.UniformReal(def->min, def->max) * rule.magnitude_mult;
-        switch (def->kind) {
-            case AffixKind::SuppliesOnKill: affix.value = std::max(1.0, std::round(rolled)); break;
-            case AffixKind::CritChance: affix.value = RoundTo(rolled, 1000.0); break;
-            default: affix.value = RoundTo(rolled, 100.0); break;
-        }
+        affix.value = RoundAffix(def->kind, rng.UniformReal(def->min, def->max) * rule.magnitude_mult);
         w.affixes.push_back(std::move(affix));
     }
 
     std::vector<const UniqueAffixDef*> uniques;
     for (const UniqueAffixDef& u : content.unique_affixes()) {
-        if (caps.HasAll(u.requires_capabilities)) uniques.push_back(&u);
+        const bool held = std::any_of(w.affixes.begin(), w.affixes.end(), [&u](const Affix& x) { return x.unique_id == u.id; });
+        if (!held && caps.HasAll(u.requires_capabilities)) uniques.push_back(&u);
     }
-    for (int i = 0; i < rule.unique_count && !uniques.empty(); ++i) {
+    for (int i = uniques_on; i < rule.unique_count && !uniques.empty(); ++i) {
         const std::size_t k = rng.Index(uniques.size());
         const UniqueAffixDef* def = uniques[k];
         uniques.erase(uniques.begin() + static_cast<std::ptrdiff_t>(k));
@@ -134,7 +181,43 @@ WeaponInstance GenerateWeapon(Rng& rng, const Content& content, const Capabiliti
         affix.unique_id = def->id;
         w.affixes.push_back(std::move(affix));
     }
+
+    std::vector<Element> elements;
+    for (const ElementDef& e : content.elements()) {
+        if (std::find(w.elements.begin(), w.elements.end(), e.element) == w.elements.end()) elements.push_back(e.element);
+    }
+    for (int i = static_cast<int>(w.elements.size()); i < rule.element_count && !elements.empty(); ++i) {
+        const std::size_t k = rng.Index(elements.size());
+        w.elements.push_back(elements[k]);
+        elements.erase(elements.begin() + static_cast<std::ptrdiff_t>(k));
+    }
+}
+
+}  // namespace
+
+WeaponInstance GenerateWeapon(Rng& rng, const Content& content, const Capabilities& caps,
+                              std::string_view base_id, Rarity rarity, std::string instance_id) {
+    WeaponInstance w;
+    w.instance_id = std::move(instance_id);
+    w.base_id = std::string(base_id);
+    w.rarity = rarity;
+    FillToRarity(rng, content, caps, w, rarity);
     return w;
+}
+
+WeaponInstance RefineWeapon(Rng& rng, const Content& content, const Capabilities& caps, const WeaponInstance& w) {
+    if (w.rarity == Rarity::Exotic) return w;
+    WeaponInstance out = w;
+    const Rarity to = kAllRarities[RarityIndex(w.rarity) + 1];
+    const auto& rules = content.economy().weapon_rarity;
+    const double from_mult = rules[RarityIndex(w.rarity)].magnitude_mult;
+    const double scale = from_mult > 0.0 ? rules[RarityIndex(to)].magnitude_mult / from_mult : 1.0;
+    for (Affix& a : out.affixes) {
+        if (!IsUniqueAffix(a.kind)) a.value = RoundAffix(a.kind, a.value * scale);
+    }
+    out.rarity = to;
+    FillToRarity(rng, content, caps, out, to);
+    return out;
 }
 
 std::string DescribeAffix(const Affix& affix, const Content* content) {
@@ -155,8 +238,24 @@ std::string DescribeAffix(const Affix& affix, const Content* content) {
                    Num(affix.threshold * 100.0) + "% HP";
         case AffixKind::UniqueKillStreakExtend:
             return unique_name + ": kills extend kill-streak windows by " + Num(affix.value) + "s";
+        case AffixKind::UniqueExecute:
+        case AffixKind::UniqueDragonsBreath:
+        case AffixKind::UniqueChainLightning:
+        case AffixKind::UniqueBottomless:
+        case AffixKind::UniqueOverkill:
+        case AffixKind::UniqueLastWord:
+        case AffixKind::UniqueBloodthirst: {
+            const UniqueAffixDef* u = content != nullptr ? content->FindUnique(affix.unique_id) : nullptr;
+            return u != nullptr && !u->description.empty() ? unique_name + ": " + u->description : unique_name;
+        }
     }
     return "?";
+}
+
+std::string DescribeElement(Element e, const Content* content) {
+    const ElementDef* d = content != nullptr ? content->FindElement(e) : nullptr;
+    if (d == nullptr) return std::string(ElementName(e));
+    return d->description.empty() ? d->name : d->name + ": " + d->description;
 }
 
 }  // namespace rm

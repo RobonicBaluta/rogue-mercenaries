@@ -12,7 +12,7 @@
 
 namespace rm {
 
-enum class ShopOfferKind { Heal, RerollToken, WeaponUpgrade, Weapon, Perk, Item };
+enum class ShopOfferKind { Heal, RerollToken, WeaponUpgrade, Weapon, Perk, Item, Refine };
 std::string_view ShopOfferKindName(ShopOfferKind k);
 
 struct ShopOffer {
@@ -23,9 +23,9 @@ struct ShopOffer {
     double heal_fraction = 0.0;      // Heal: fraction of max hp queued as a heal request
     std::string perk_id;             // Perk
     std::string item_id;             // Item: loadouts.json equipment id (one bundle)
-    std::string target_instance_id;  // WeaponUpgrade
+    std::string target_instance_id;  // WeaponUpgrade, Refine
     int target_level = 0;            // WeaponUpgrade: level before the upgrade
-    WeaponInstance weapon;           // Weapon
+    WeaponInstance weapon;           // Weapon; Refine: the target one tier up (rm::RefineWeapon)
     bool restricted = false;         // Weapon: the skin's build cannot use it (not for sale)
 };
 

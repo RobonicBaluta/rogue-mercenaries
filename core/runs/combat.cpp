@@ -7,6 +7,23 @@
 
 namespace rm {
 
+std::string_view ProcKindName(ProcKind k) {
+    switch (k) {
+        case ProcKind::Burn: return "burn";
+        case ProcKind::Poison: return "poison";
+        case ProcKind::Freeze: return "freeze";
+        case ProcKind::Shock: return "shock";
+        case ProcKind::IgniteAround: return "ignite_around";
+        case ProcKind::Arc: return "arc";
+        case ProcKind::Execute: return "execute";
+        case ProcKind::Explode: return "explode";
+        case ProcKind::Shatter: return "shatter";
+        case ProcKind::Overkill: return "overkill";
+        case ProcKind::Refill: return "refill";
+    }
+    return "burn";
+}
+
 const WeaponInstance* RunController::ApplicableWeapon(const std::optional<std::string>& weapon_id,
                                                       const std::optional<bool>& melee) const {
     if (melee.value_or(false)) return nullptr;  // weapon modifiers never apply to melee
@@ -139,7 +156,11 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
         }
     }
 
-    if (const WeaponInstance* weapon = ApplicableWeapon(hit.weapon_id, hit.is_melee)) {
+    const WeaponInstance* weapon = ApplicableWeapon(hit.weapon_id, hit.is_melee);
+    // The magazine's last round (Last Word), and a hit that kills outright (Execute, Last Word).
+    const bool last_round = hit.magazine_left.has_value() && *hit.magazine_left <= 0;
+    bool execute = false;
+    if (weapon != nullptr) {
         const WeaponBaseDef* base = content_->FindWeapon(weapon->base_id);
         b.weapon_base_mult = base != nullptr ? base->base_damage_mult : 1.0;
         b.weapon_bonus += LevelDamageBonus(eco, weapon->level);
@@ -155,10 +176,40 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
                 case AffixKind::UniqueLowHpTargetBonus:
                     if (target_fraction && *target_fraction < af.threshold) b.weapon_bonus += af.value;
                     break;
-                case AffixKind::SuppliesOnKill:
-                case AffixKind::UniqueKillStreakExtend: break;
+                case AffixKind::UniqueExecute:
+                    if (target_fraction && *target_fraction < af.threshold) {
+                        if (hit.target_is_boss) {
+                            b.weapon_bonus += af.value;
+                        } else {
+                            execute = true;
+                        }
+                    }
+                    break;
+                case AffixKind::UniqueLastWord:
+                    if (last_round) {
+                        if (hit.target_is_boss) {
+                            b.weapon_bonus += af.value;
+                        } else {
+                            execute = true;
+                        }
+                    }
+                    break;
+                default: break;  // kill and area effects: below and in OnEnemyKilled
             }
         }
+        // Against a boss an element is more damage instead of a status.
+        if (hit.target_is_boss) {
+            for (Element el : weapon->elements) {
+                if (const ElementDef* d = content_->FindElement(el)) b.weapon_bonus += d->boss_bonus;
+            }
+        }
+    }
+    // The target's statuses, whatever hits it (melee too).
+    if (hit.target_frozen) {
+        if (const ElementDef* d = content_->FindElement(Element::Cryo)) b.status_mult *= d->taken_mult;
+    }
+    if (hit.target_poisoned) {
+        if (const ElementDef* d = content_->FindElement(Element::Toxic)) b.status_mult *= d->taken_mult;
     }
 
     b.crit_chance = std::clamp(crit_chance, 0.0, eco.damage.max_crit_chance);
@@ -167,10 +218,11 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
     b.crit_multiplier = (best_crit_mult > 0.0 ? best_crit_mult : eco.damage.default_crit_multiplier) + crit_extra;
 
     b.raw = b.route_mult * std::max(0.0, 1.0 + b.perk_bonus + b.kill_streak_bonus + b.build_bonus) * b.weapon_base_mult *
-            std::max(0.0, 1.0 + b.weapon_bonus) * (b.crit ? b.crit_multiplier : 1.0);
+            std::max(0.0, 1.0 + b.weapon_bonus) * (b.crit ? b.crit_multiplier : 1.0) * b.status_mult;
     b.clamped = std::clamp(b.raw, eco.damage.outgoing_min, eco.damage.outgoing_max);
     out.multiplier = b.clamped;
     out.crit = b.crit;
+    if (weapon != nullptr && !hit.target_is_boss) AddHitProcs(*weapon, hit.base_damage * out.multiplier, execute, out.procs);
 
     if (hit.is_melee.value_or(false)) run_.last_melee_time = hit.now;
     ++run_.hits_computed;
@@ -189,6 +241,115 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
         Emit(std::move(e));
     }
     return out;
+}
+
+void RunController::AddHitProcs(const WeaponInstance& weapon, double dealt, bool execute, std::vector<WeaponProc>& procs) {
+    const auto roll = [this](double chance) {
+        return chance >= 1.0 || (chance > 0.0 && streams_->combat.NextDouble() < chance);
+    };
+    for (Element el : weapon.elements) {
+        const ElementDef* d = content_->FindElement(el);
+        if (d == nullptr) continue;
+        WeaponProc p;
+        p.source = d->name;
+        switch (el) {
+            case Element::Incendiary:
+            case Element::Toxic:
+                if (!roll(d->chance)) continue;
+                p.kind = el == Element::Incendiary ? ProcKind::Burn : ProcKind::Poison;
+                p.dps = dealt * d->dps_fraction;
+                p.seconds = d->seconds;
+                break;
+            case Element::Shock:
+                if (!roll(d->chance)) continue;
+                p.kind = ProcKind::Shock;
+                p.damage = dealt * d->damage_fraction;
+                p.radius = d->radius;
+                p.targets = d->targets;
+                break;
+            case Element::Cryo:
+                if (!roll(d->chance)) continue;
+                p.kind = ProcKind::Freeze;
+                p.seconds = d->seconds;
+                break;
+            case Element::Explosive: continue;  // on a kill
+        }
+        procs.push_back(std::move(p));
+    }
+    for (const Affix& af : weapon.affixes) {
+        const UniqueAffixDef* u = af.unique_id.empty() ? nullptr : content_->FindUnique(af.unique_id);
+        if (u == nullptr) continue;
+        if (af.kind == AffixKind::UniqueDragonsBreath) {
+            const ElementDef* fire = content_->FindElement(Element::Incendiary);
+            WeaponProc p;
+            p.kind = ProcKind::IgniteAround;
+            p.source = u->id;
+            p.dps = dealt * (fire != nullptr ? fire->dps_fraction : 0.35);
+            p.seconds = fire != nullptr ? fire->seconds : 3.0;
+            p.radius = u->radius;
+            procs.push_back(std::move(p));
+        } else if (af.kind == AffixKind::UniqueChainLightning && u->every > 0) {
+            if (++run_.weapon_hits[weapon.instance_id] % u->every != 0) continue;
+            WeaponProc p;
+            p.kind = ProcKind::Arc;
+            p.source = u->id;
+            p.damage = dealt * u->value;
+            p.radius = u->radius;
+            p.targets = u->targets;
+            procs.push_back(std::move(p));
+        }
+    }
+    if (execute) {
+        WeaponProc p;
+        p.kind = ProcKind::Execute;
+        p.source = "execute";
+        procs.push_back(std::move(p));
+    }
+}
+
+void RunController::AddKillProcs(const KillEvent& kill, const WeaponInstance* weapon, KillOutcome& out) {
+    if (!kill.by_player || kill.target_is_boss) return;
+    const auto blast = [&](ProcKind kind, const ElementDef& d) {
+        WeaponProc p;
+        p.kind = kind;
+        p.source = d.name;
+        p.damage = d.damage_fraction * kill.target_hp_max;
+        if (d.damage_cap > 0.0) p.damage = std::min(p.damage, d.damage_cap);
+        p.radius = d.radius;
+        if (p.damage > 0.0 && p.radius > 0.0) out.procs.push_back(std::move(p));
+    };
+    // A frozen enemy shatters whatever killed it (the player's).
+    if (kill.target_frozen) {
+        if (const ElementDef* d = content_->FindElement(Element::Cryo)) blast(ProcKind::Shatter, *d);
+    }
+    if (weapon == nullptr) return;
+    for (Element el : weapon->elements) {
+        if (el != Element::Explosive) continue;
+        if (const ElementDef* d = content_->FindElement(el)) blast(ProcKind::Explode, *d);
+    }
+    for (const Affix& af : weapon->affixes) {
+        const UniqueAffixDef* u = af.unique_id.empty() ? nullptr : content_->FindUnique(af.unique_id);
+        if (u == nullptr) continue;
+        if (af.kind == AffixKind::UniqueOverkill && kill.overkill > 0.0) {
+            WeaponProc p;
+            p.kind = ProcKind::Overkill;
+            p.source = u->id;
+            p.damage = kill.overkill * u->value;
+            p.radius = u->radius;
+            out.procs.push_back(std::move(p));
+            out.triggered.push_back(u->id);
+        } else if (af.kind == AffixKind::UniqueBottomless) {
+            WeaponProc p;
+            p.kind = ProcKind::Refill;
+            p.source = u->id;
+            out.procs.push_back(std::move(p));
+            out.triggered.push_back(u->id);
+        } else if (af.kind == AffixKind::UniqueBloodthirst && caps_.Has(cap::kHeal) && u->value > 0.0) {
+            run_.heal_requests.push_back(HealRequest{u->value, u->id});
+            out.heal_fraction_queued += u->value;
+            out.triggered.push_back(u->id);
+        }
+    }
 }
 
 IncomingResult RunController::ComputeIncoming(const IncomingContext& incoming) {

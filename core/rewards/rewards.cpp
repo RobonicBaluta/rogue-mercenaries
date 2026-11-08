@@ -25,6 +25,7 @@ std::string_view RewardKindName(RewardKind k) {
         case RewardKind::Weapon: return "weapon";
         case RewardKind::Supplies: return "supplies";
         case RewardKind::Item: return "item";
+        case RewardKind::Refine: return "refine";
     }
     return "supplies";
 }

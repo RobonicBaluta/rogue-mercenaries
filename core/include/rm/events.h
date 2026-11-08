@@ -41,6 +41,7 @@ enum class EventType {
     ChestOpened,        // a chest (time-bonus pickup) paid out
     RunSuspended,       // its match was left; the run goes on later from its resume point
     RunResumed,         // a suspended or interrupted run goes on
+    WeaponRefined,      // a held gun went one tier up (reward, shop, chest)
 };
 std::string_view EventTypeName(EventType type);
 

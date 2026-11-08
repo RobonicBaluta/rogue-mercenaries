@@ -44,6 +44,34 @@ namespace rm {
 //    enemy_id within one arena are ignored.
 // ---------------------------------------------------------------------------------------
 
+/// What a gun's element or legendary effect asks the adapter to do in the world (the rarity
+/// remake): statuses on the target, blasts and arcs around it. The core decides; the adapter
+/// plays it with the game's own reactions where the enemy class has them.
+enum class ProcKind {
+    Burn,          // the target burns: dps for seconds (a new burn keeps the higher dps, the later end)
+    Poison,        // the target is poisoned: dps for seconds; it takes ElementDef(Toxic).taken_mult
+    Freeze,        // the target is frozen for seconds; it takes ElementDef(Cryo).taken_mult
+    Shock,         // the target is stunned; `damage` arcs to `targets` other enemies within `radius`
+    IgniteAround,  // every enemy within `radius` of the target burns (dps, seconds)
+    Arc,           // `damage` arcs to `targets` other enemies within `radius` (no stun on the target)
+    Execute,       // the target dies now (never a boss)
+    Explode,       // the victim blows up: `damage` to every enemy within `radius`, thrown
+    Shatter,       // a frozen victim shatters: `damage` to every enemy within `radius`
+    Overkill,      // `damage` to the nearest other enemy within `radius`
+    Refill,        // the gun's magazine is full again
+};
+std::string_view ProcKindName(ProcKind k);
+
+struct WeaponProc {
+    ProcKind kind = ProcKind::Burn;
+    std::string source;      // the element's name or the legendary effect's id
+    double damage = 0.0;     // Shock, Arc, Explode, Shatter, Overkill: per enemy reached
+    double dps = 0.0;        // Burn, Poison, IgniteAround
+    double seconds = 0.0;    // Burn, Poison, Freeze, IgniteAround
+    double radius = 0.0;     // engine units around the target or the victim
+    int targets = 0;         // Shock, Arc: enemies reached (0: every one in the radius)
+};
+
 struct KillEvent {
     double now = 0.0;
     bool by_player = false;
@@ -51,6 +79,11 @@ struct KillEvent {
     std::optional<bool> was_melee;
     std::optional<std::string> enemy_id;
     std::optional<std::string> enemy_class;  // the unit's class ("uEm10"): key drops
+    // The killing hit, for the gun's kill effects (the rarity remake).
+    double overkill = 0.0;       // damage past zero health
+    double target_hp_max = 0.0;
+    bool target_frozen = false;  // frozen by a Cryo gun when it died: it shatters
+    bool target_is_boss = false;
 };
 
 struct KillOutcome {
@@ -65,6 +98,7 @@ struct KillOutcome {
     bool key_dropped = false;            // a chest key (economy keys)
     std::string stat_gained;             // a build's melee-kill stat ("damage", ...), empty if none
     double stat_amount = 0.0;
+    std::vector<WeaponProc> procs;       // the killing gun's kill effects (Explode, Shatter, Overkill, Refill)
 };
 
 /// A healing item's heal as the game applies it (the adapter's hook on the player's health add).
@@ -111,6 +145,12 @@ struct HitContext {
     std::optional<bool> is_melee;          // needs "melee_detect"
     std::optional<double> player_hp;       // optional; else last value seen in damage events
     std::optional<double> player_hp_max;
+    // The rarity remake: the target's statuses (the adapter keeps them), whether it is the
+    // arena's boss, and the rounds left in the gun's magazine after this shot (Last Word).
+    bool target_frozen = false;
+    bool target_poisoned = false;
+    bool target_is_boss = false;
+    std::optional<int> magazine_left;
 };
 
 /// Telemetry breakdown: final = clamp(raw, outgoing_min, outgoing_max) where
@@ -130,12 +170,14 @@ struct OutgoingBreakdown {
     double raw = 1.0;
     double clamped = 1.0;
     std::string weapon_instance_id;  // empty when no instance applied
+    double status_mult = 1.0;        // the target's statuses (frozen, poisoned): times raw
 };
 
 struct OutgoingResult {
     double multiplier = 1.0;  // clamped; multiply the engine's damage by this
     bool crit = false;
     OutgoingBreakdown breakdown;
+    std::vector<WeaponProc> procs;  // the gun's elements and legendary effects on this hit
 };
 
 struct IncomingContext {
@@ -219,6 +261,9 @@ struct ChestReward {
     int item_count = 0;
     std::string weapon_id;     // weapon placed, if any
     std::string weapon_name;
+    std::string refined_instance_id;  // a gun refined one tier up (the rarity remake), if any
+    std::string refined_name;
+    std::string refined_rarity;       // the tier it reached
     int number = 0;            // chests opened this run, this one included
 };
 
@@ -386,6 +431,8 @@ public:
     Status DevGrantPerk(std::string_view perk_id);
     /// Adds a weapon instance under the normal slot rules (see weapons.h).
     Status DevGrantWeapon(WeaponInstance weapon);
+    /// Refines the run's gun of `base` (else RefineTarget's pick) one tier, as a reward would.
+    Status DevRefineWeapon(const std::optional<std::string>& base);
     /// Credits supplies to the active run; each call is its own transaction (reason "dev").
     Status DevGrantSupplies(std::int64_t amount);
     /// Supplies earned (> 0) or spent (< 0) outside the run's own screens (the game's
@@ -397,7 +444,14 @@ public:
     Status SwapStartingWeapon(std::string_view base_id);
     /// A chest was opened in the arena (adapter: a time-bonus pickup). Only while an arena is
     /// active; rolls from the "loot" stream.
-    Result<ChestReward> OpenChest(double now);
+    /// `held_weapon`: the base id of the gun in the player's hands (a chest's refine goes to it).
+    Result<ChestReward> OpenChest(double now, std::optional<std::string> held_weapon = std::nullopt);
+    /// The highest tier a gun can be refined to: Exotic once economy refine.exotic_unlocked_by is
+    /// beaten (and the content has an exotic tier), else Legendary.
+    [[nodiscard]] Rarity MaxRefineRarity() const;
+    /// The gun a refine goes to: `preferred` (a base id) if it can go up, else the highest tier,
+    /// then level, then the newest; nullptr when none can.
+    [[nodiscard]] const WeaponInstance* RefineTarget(const std::optional<std::string>& preferred) const;
 
     // ---- Director (ROADMAP M1): the adapter tells the map, the core decides the spawns.
     /// The map (engine stage) the next and current arenas are played on.
@@ -429,6 +483,10 @@ public:
 private:
     // The ladder (EconomyConfig::Ladder): what the profile has beaten and opened.
     [[nodiscard]] bool Beaten(std::string_view key) const;
+    // The rarity remake's refines: a refine reward added to the offer; one for the shop.
+    void AddRefineReward(bool sure);
+    void AddRefineOffer();
+    Status ApplyRefine(const std::string& instance_id, const WeaponInstance& refined, std::string_view source);
     [[nodiscard]] bool LengthOpen(const EconomyConfig::Ladder::Length& length) const;
     [[nodiscard]] bool FinaleOpen(const EconomyConfig::Ladder::Length& length) const;
     /// What these first-time ladder keys opened (the run's results).
@@ -457,6 +515,10 @@ private:
     ArenaMetrics* CurrentArena();
     const ArenaMetrics* CurrentArena() const;
     bool WeaponIdMode() const;
+    // The rarity remake (combat.cpp): a hit's element and effect procs (`dealt`: the hit's damage
+    // after the multiplier); a kill's (blasts, overkill, refill, Bloodthirst's heal).
+    void AddHitProcs(const WeaponInstance& weapon, double dealt, bool execute, std::vector<WeaponProc>& procs);
+    void AddKillProcs(const KillEvent& kill, const WeaponInstance* weapon, KillOutcome& out);
     const WeaponInstance* ApplicableWeapon(const std::optional<std::string>& weapon_id,
                                            const std::optional<bool>& melee) const;
     std::string NextInstanceId();

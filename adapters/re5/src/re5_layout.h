@@ -94,6 +94,7 @@ constexpr std::uintptr_t kFnResourceRelease = 0x00447020;
 constexpr std::uintptr_t kFnMotionListSet = 0x005CCDD0;
 constexpr std::uintptr_t kFnCharSetMotion = 0x0084CFF0;
 constexpr std::uintptr_t kDtiMotionList = 0x0124B574;  // rMotionList
+constexpr std::uintptr_t kDtiEffectList = 0x0124ABE0;  // rEffectList (build/dti_all.txt)
 // sPlayer's add-player (thiscall on [kSPlayerInstance]: slot, character, costume, a game work value
 // for +0x4C0; ret 0x10): refuses a slot in use; fills the save's player entry of that slot from
 // the character table (0x00C92D60 on save + slot data + 0x23300: the entry at +0x10 + slot*0x50,

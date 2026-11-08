@@ -101,13 +101,14 @@ if(RM_BUILD_TESTS)
         tests/test_threat.cpp
         tests/test_rosters.cpp
         tests/test_ladder.cpp
+        tests/test_rarity.cpp
     )
     target_link_libraries(rm_tests PRIVATE rm_core rm_json rm_catch2)
     target_compile_definitions(rm_tests PRIVATE RM_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     rm_project_warnings(rm_tests)
 
     set(RM_TEST_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/test_output)
-    foreach(tag rng content perks weapons economy shop rewards routes run persistence telemetry characters items director builds threat rosters ladder)
+    foreach(tag rng content perks weapons economy shop rewards routes run persistence telemetry characters items director builds threat rosters ladder rarity)
         add_test(NAME rm_tests.${tag} COMMAND rm_tests "[${tag}]" --reporter compact)
     endforeach()
     # Safety net: any test without one of the tags above still runs.

@@ -110,6 +110,8 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | enemy threat | `arena N: <MAP>   <ROUTE> (stage S, enemy threat L)`; the director's spawn lines show each class and weapon (`arm 70150`: the weapon class uWp50, graded in `economy.json` `enemy_threat` `weapons`) |
 | kills not by the player | `enemy_hit ... killed=1 by=<class>` |
 | borrowed boss moves | `resources: list 4 (enemies) extras queued: ... uEm84` (Jill) or `uEm80` (Wesker); `special: boss motion pawn\em\em84\motion\em84atk 0A: N of M body tracks and N of M in all reach uPl02JillCos2's joints, 91 frames (slot 15)`; while it plays the player's action is `cPlAction_pl_act_test`; `special: boss motion 0A done: 91 frames in X s at speed 2.0`; `special: boss move dual_smg over (done) after X s, step 2 of 2, N m from where it began; back to relax`; `special: the hold ran after N requests, X s` when it took more than one; a hit with no reaction during it: `special: a no-reaction hit (cPlAction_pl_act_setEventAct_wait) during dual_smg step N; the hold is asked for again`, then `special: the hold is back after a no-reaction hit, X s`; when not: `special: no boss move for <move> (<why>)`, `special: boss move <move> over (the hold never started: <action>, N requests)` |
+| elements (rarity remake) | `elements: uEm10 reactions: DmgFire=134 DmgIce=135 DmgSulfate=136 DmgFlash=137 DmgFlyoff=115 DmgYoroke=124 DeadHeadExplosion=149` (a class's reactions, once); `elements: burn (Incendiary) on uEm10 <unit>: 0 damage, 50 per second for 3.0 s, 0 range, 1 reached, its own reaction` (the first 12 of each kind per match: burn, poison, freeze, shock, arc, ignite_around, execute, explode, shatter, overkill, refill); the kills they cause: `enemy <unit> died (health reached zero): counted, N remain (by the special)`; with `probe_hits` the first 40 hits: `hit: m92f, magazine N left, x1.00, N procs[, frozen]` |
+| refines | `chest N: CHEST   ...   M92F REFINED TO EPIC`; telemetry `weapon_refined` (source reward, shop, chest, dev) |
 | boss arena | `director: boss uEm40 at x y z, N m from the player (N m above), cEm40Act...` every 5 s; `director: uEm40 stuck 8 s at ...; moved to ...` when it stops closing in |
 | specials while dying | `special: slot N pressed while dying; not used` |
 | start move | `match start: the player is not placed yet (0 0 0); moving to the map's start later`; `warp: N places hold the unit's position ..., more than a unit has; not moved` |
@@ -191,6 +193,14 @@ and `$ctest` to `ctest.exe` in the same folder.
     `STAGE=<boss map> CLASS=uEmNN bash scripts/test_boss_arena.sh` (a boss map's arena end to end: spawn, health, hits, a
     killing shot, its fall, the screens), `STAGE=<boss map> CLASS=uEmNN [CONFIG=configs/adapter.mortal.json] bash
     scripts/test_boss_idle.sh` (the boss left to fight the player, captures every 5 s),
+    `[STAGE=<n>] [CLASSES="..."] [FIRE_MS=3500] [GUN=0121] [EFFECTS=none] bash scripts/test_flamethrower.sh` (a gun held on one
+    class after another: hits, each class's health and actions, the gun's state; `gamectl` holds a button with `lclick:<ms>`,
+    `lclick+<ms>` is a tap and a wait; a few classes at a time, or some are not loaded and their spawns refused),
+    `[STAGE=<n>] [CLASS=uEmNN] [REACTIONS="DmgFire ..."] bash scripts/test_reactions.sh` (an enemy class's own reactions
+    started by the mod, each captured: which play, which the class lacks; never list `DeadArmyBurn`, it ends the game),
+    `[STAGE=503] [CASES="burn freeze shock toxic blast exotic"] bash scripts/test_elements.sh` (the rarity remake: the gun in
+    hand made each case's gun with dev `gun`, a Majini brought into the line of fire and shot; the elements' lines counted,
+    frames captured; then dev `refine`),
     `[PART=1|2] bash scripts/test_ladder.sh` (the ladder: part 1, no boss beaten, a short run
     straight from START RUN through its Uroboros to RUN COMPLETE, the profile must then hold `short:easy`; part 2, the short hard boss
     beaten (`scripts/profile_edit.py` rewrites the profile with a valid checksum), START RUN must open RUN LENGTH and its second row

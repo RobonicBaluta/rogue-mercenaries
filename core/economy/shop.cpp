@@ -14,6 +14,7 @@ std::string_view ShopOfferKindName(ShopOfferKind k) {
         case ShopOfferKind::Weapon: return "weapon";
         case ShopOfferKind::Perk: return "perk";
         case ShopOfferKind::Item: return "item";
+        case ShopOfferKind::Refine: return "refine";
     }
     return "heal";
 }

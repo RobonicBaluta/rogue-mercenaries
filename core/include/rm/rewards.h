@@ -19,7 +19,7 @@ class Content;
 struct CharacterDef;
 struct PerkDef;
 
-enum class RewardKind { Perk, Weapon, Supplies, Item };
+enum class RewardKind { Perk, Weapon, Supplies, Item, Refine };
 std::string_view RewardKindName(RewardKind k);
 
 struct RewardChoice {
@@ -30,6 +30,9 @@ struct RewardChoice {
     std::int64_t supplies = 0;  // kind == Supplies
     std::string item_id;        // kind == Item: loadouts.json equipment id
     int item_count = 0;         // kind == Item
+    // kind == Refine: `weapon` is the held gun `target_instance_id` one tier up (rm::RefineWeapon,
+    // rolled when offered: what you see is what you get); `rarity` the tier it reaches.
+    std::string target_instance_id;
 };
 
 struct EquipmentDef;

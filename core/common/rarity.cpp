@@ -13,6 +13,7 @@ std::string_view RarityName(Rarity r) {
         case Rarity::Rare: return "rare";
         case Rarity::Epic: return "epic";
         case Rarity::Legendary: return "legendary";
+        case Rarity::Exotic: return "exotic";
     }
     return "common";
 }

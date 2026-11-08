@@ -9,6 +9,8 @@
 # (developer mode, invulnerable, muted). Saves and restores the profile; closes the game at the end.
 #   STAGE (default 2)  NUMBER (campaign area, -1 none)  CLASSES  FUEL (100)  FIRE_MS (3500)
 #   DISTANCE (450)  EXTRAS (more archives, e.g. "uEm40Dummy uEm40Parts")
+#   EFFECTS (effect lists looked up, then loaded from their files before firing, dev effect; default
+#   the flamethrower's own, wp21's; "none" skips it): 2026-11-08, the stream never showed off its area
 cd "$(dirname "$0")/.."
 D="$LOCALAPPDATA/RogueMercenaries"
 LOG="$D/logs/adapter.log"
@@ -20,6 +22,7 @@ FUEL=${FUEL:-100}
 FIRE_MS=${FIRE_MS:-3500}
 DISTANCE=${DISTANCE:-450}
 GUN=${GUN:-0121}  # any weapon item (hex): 011E M93R, 0122 stun rod, 0125 grenade launcher, 010D rocket launcher
+EFFECTS=${EFFECTS:-'effect\efl\wp\wp21\wp2100 effect\efl\wp\wp21\wp2101 effect\efl\wp\wp21\wp2103 effect\efl\wp\wp21\wp2104'}
 SAVE=$(ls "/c/Program Files (x86)/Steam/userdata/"*/21690/remote/savedata.bin 2>/dev/null | head -1)
 [ -f "$SAVE" ] || { echo "savedata.bin not found"; exit 1; }
 OUT="build/runs/$(date +%Y%m%d-%H%M%S)-flamethrower"
@@ -43,7 +46,9 @@ close_game() {
 save_before=$(sha256sum "$SAVE" | cut -c1-16)
 BACKUP="build/backups/savedata-$(date +%Y%m%d-%H%M%S).bin"
 cp "$SAVE" "$BACKUP" || exit 1
-cp "$D/profile.json" "$D/profile.flame-backup.json" || exit 1
+# The profile and its .bak are put back at the end; with none before, none is left.
+mkdir -p "$OUT/profile-before" || exit 1
+for f in profile.json profile.json.bak; do [ -f "$D/$f" ] && { cp "$D/$f" "$OUT/profile-before/$f" || exit 1; }; done
 close_game
 bash build/restart_to_play_menu.sh configs/adapter.director.json >/dev/null
 sleep 3
@@ -66,14 +71,23 @@ for k in 1 2 3 4 up down left right; do
     [ "${state#* }" = "00000001" ] && { echo "equipped with key $k"; break; }
 done
 cap 02-equipped
+if [ "$EFFECTS" != none ]; then
+    for e in $EFFECTS; do dev "effect $e"; done   # cached already?
+    for e in $EFFECTS; do dev "effect $e load"; done
+    since | grep -E "dev effect|effects:" | cut -c25-200
+fi
+dev "wpwatch on"  # the gun's state and stream while it fires
 for cls in $CLASSES; do
     alive || break
     mark=$(grep -c "" "$LOG")
+    printf '%s' "watch $cls" > "$D/dev.command"; sleep 0.3  # its health and actions (the flame's burn passes no hit)
     keys "rdown+900"
     # Fire from the moment it appears: one that reached him first grabbed him (2026-11-07: every
     # class after the first met a grabbed Chris, "AYUDA", and was never burnt).
     printf '%s' "spawn $cls -1 1 $DISTANCE" > "$D/dev.command"
-    keys "lclick+$FIRE_MS,rup+200" &
+    # Held for FIRE_MS ("lclick:ms"; "lclick+ms" is an 80 ms tap and a wait: until 2026-11-08 this
+    # test only tapped the trigger, and the flamethrower seemed not to fire).
+    keys "lclick:$FIRE_MS+100,rup+200" &
     sleep 1.5; cap "03-$cls-firing"
     wait
     cap "03-$cls"
@@ -84,18 +98,22 @@ for cls in $CLASSES; do
     killed=$(tail -n +"$mark" "$LOG" | grep -c "enemy_hit.*class=$cls .*killed=1")
     states=$(tail -n +"$mark" "$LOG" | grep "enemy states: $cls " | sed -E 's/.*enemy states: [^ ]+ ([^ ]+) after.*/\1/' | sort -u | tr '\n' ' ')
     echo "$cls: $hits hits, $dmg damage, killed $killed; fuel/equipped now $st; states: $states"
+    echo "   watched: $(tail -n +"$mark" "$LOG" | grep "watch: $cls hp" | grep -oE 'hp -?[0-9]+/[0-9]+ action -?[0-9]+ [A-Za-z0-9_]+' | awk '{print $2, $5}' | uniq | tr '\n' ' ' | cut -c1-260)"
+    tail -n +"$mark" "$LOG" | grep "wpwatch:" | cut -c40-300 | head -8
     dev killall; sleep 2
 done
 # Its fuel comes back by itself in a run (RefuelFlamethrower): after 25 s without firing.
 echo "fuel before the wait: $(gun_state)"
 sleep 25
 echo "fuel after 25 s: $(gun_state)"
-since | grep -E "dev create|dev obtain|outside the grid|flamethrower:|dev spawn|refused|not loaded|game fatal|UNHANDLED|exception" | cut -c25-200 | head -30 > "$OUT/notes.txt"
+since | grep -E "dev create|dev obtain|outside the grid|flamethrower:|dev spawn|dev effect|effects:|refused|not loaded|game fatal|UNHANDLED|exception" | cut -c25-200 | head -30 > "$OUT/notes.txt"
 cat "$OUT/notes.txt"
 since | grep -E "enemy_hit|enemy states|dev inv slot.*item $GUN " | cut -c25-260 > "$OUT/hits.txt"
 alive || echo "THE GAME CLOSED"
 close_game
-cp "$D/profile.flame-backup.json" "$D/profile.json" && rm -f "$D/profile.flame-backup.json"
+for f in profile.json profile.json.bak; do
+    if [ -f "$OUT/profile-before/$f" ]; then cp "$OUT/profile-before/$f" "$D/$f"; else rm -f "$D/$f"; fi
+done
 save_after=$(sha256sum "$SAVE" | cut -c1-16)
 echo "save before $save_before after $save_after"
 if [ "$save_after" != "$save_before" ]; then

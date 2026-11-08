@@ -89,6 +89,14 @@ public:
     [[nodiscard]] const std::vector<WeaponBaseDef>& weapons() const { return weapons_; }
     [[nodiscard]] const std::vector<AffixDef>& affixes() const { return affixes_; }
     [[nodiscard]] const std::vector<UniqueAffixDef>& unique_affixes() const { return uniques_; }
+    /// weapons.json "elements" (every element, once each, when present).
+    [[nodiscard]] const std::vector<ElementDef>& elements() const { return elements_; }
+    [[nodiscard]] const ElementDef* FindElement(Element e) const {
+        for (const ElementDef& d : elements_) {
+            if (d.element == e) return &d;
+        }
+        return nullptr;
+    }
     [[nodiscard]] const std::vector<CharacterDef>& characters() const { return characters_; }
     [[nodiscard]] const std::vector<RouteDef>& routes() const { return routes_; }
     [[nodiscard]] const EconomyConfig& economy() const { return economy_; }
@@ -117,6 +125,7 @@ private:
     std::vector<WeaponBaseDef> weapons_;
     std::vector<AffixDef> affixes_;
     std::vector<UniqueAffixDef> uniques_;
+    std::vector<ElementDef> elements_;
     std::vector<CharacterDef> characters_;
     std::vector<RouteDef> routes_;
     EconomyConfig economy_;

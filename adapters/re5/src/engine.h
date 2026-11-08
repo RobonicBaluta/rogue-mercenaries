@@ -119,6 +119,13 @@ bool TurnTo(std::uintptr_t character, float yaw, int frames);
 /// with a reference held for the caller (ReleaseResource); 0 when not: looked up, never loaded.
 std::uintptr_t LoadedMotionList(const char* path);
 void ReleaseResource(std::uintptr_t resource);
+/// An effect list (rEffectList; "effect\efl\wp\wp21\wp2103", no extension): the cached one with
+/// a reference held for the caller (ReleaseResource), else 0; with `load`, read from its file now
+/// when it is not cached. A missing file is the game's own fatal error: load only files that exist
+/// (EffectFileExists).
+std::uintptr_t EffectList(const char* path, bool load);
+/// True when nativePC_MT\<path>.efl exists next to the game.
+bool EffectFileExists(const std::string& path);
 /// Puts `list` into one of the unit's motion list slots through the game's own (reference
 /// counted) setter: the slot holding it already, else the highest free one. The slot, or -1.
 int BindMotionList(std::uintptr_t unit, std::uintptr_t list);

@@ -55,8 +55,11 @@ json WeaponToJson(const WeaponInstance& w) {
     for (const Affix& a : w.affixes) {
         affixes.push_back({{"kind", static_cast<int>(a.kind)}, {"value", Fin(a.value)}, {"threshold", Fin(a.threshold)}, {"unique_id", a.unique_id}});
     }
+    json elements = json::array();
+    for (Element e : w.elements) elements.push_back(std::string(ElementName(e)));
     return {{"instance_id", w.instance_id}, {"base_id", w.base_id}, {"level", w.level},
-            {"rarity", std::string(RarityName(w.rarity))}, {"affixes", std::move(affixes)}};
+            {"rarity", std::string(RarityName(w.rarity))}, {"affixes", std::move(affixes)},
+            {"elements", std::move(elements)}};
 }
 
 WeaponInstance WeaponFromJson(const json& j) {
@@ -72,6 +75,10 @@ WeaponInstance WeaponFromJson(const json& j) {
         affix.threshold = Get(a, "threshold", 0.0);
         affix.unique_id = Get(a, "unique_id", std::string());
         w.affixes.push_back(std::move(affix));
+    }
+    for (const json& e : Get(j, "elements", json::array())) {
+        if (!e.is_string()) continue;
+        if (const auto el = ParseElement(e.get<std::string>())) w.elements.push_back(*el);
     }
     return w;
 }

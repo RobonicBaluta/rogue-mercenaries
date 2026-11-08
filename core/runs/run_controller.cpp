@@ -319,7 +319,79 @@ std::vector<LadderUnlock> RunController::LadderUnlocksFor(const std::vector<std:
         std::any_of(ladder.finale.unlocked_by.begin(), ladder.finale.unlocked_by.end(), fresh)) {
         out.push_back({LadderUnlock::Kind::Finale, after->id, after->arenas, ladder.finale.boss});
     }
+    const std::string& exotic = content_->economy().refine.exotic_unlocked_by;
+    if (!exotic.empty() && fresh(exotic) && MaxRefineRarity() == Rarity::Exotic) {
+        out.push_back({LadderUnlock::Kind::Exotic, std::string(), 0, -1});
+    }
     return out;
+}
+
+Rarity RunController::MaxRefineRarity() const {
+    const EconomyConfig& eco = content_->economy();
+    const auto& exotic = eco.weapon_rarity[RarityIndex(Rarity::Exotic)];
+    const bool has_tier = exotic.magnitude_mult > 0.0 && (exotic.affix_count > 0 || exotic.element_count > 0 || exotic.unique_count > 0);
+    return has_tier && !eco.refine.exotic_unlocked_by.empty() && Beaten(eco.refine.exotic_unlocked_by) ? Rarity::Exotic
+                                                                                                        : Rarity::Legendary;
+}
+
+const WeaponInstance* RunController::RefineTarget(const std::optional<std::string>& preferred) const {
+    const Rarity top = MaxRefineRarity();
+    const WeaponInstance* best = nullptr;
+    for (const WeaponInstance& w : run_.weapons) {
+        if (RarityIndex(w.rarity) >= RarityIndex(top)) continue;
+        if (preferred && w.base_id == *preferred) return &w;
+        if (best == nullptr || RarityIndex(w.rarity) > RarityIndex(best->rarity) ||
+            (w.rarity == best->rarity && w.level >= best->level)) {
+            best = &w;
+        }
+    }
+    return best;
+}
+
+void RunController::AddRefineReward(bool sure) {
+    const EconomyConfig::Refine& refine = content_->economy().refine;
+    if (!refine.enabled || run_.reward_offer.empty()) return;
+    const WeaponInstance* target = RefineTarget(std::nullopt);
+    if (target == nullptr) return;
+    if (!sure && !(refine.reward_chance > 0.0 && streams_->reward.NextDouble() < refine.reward_chance)) return;
+    RewardChoice choice;
+    choice.kind = RewardKind::Refine;
+    choice.weapon = RefineWeapon(streams_->reward, *content_, caps_, *target);
+    choice.rarity = choice.weapon.rarity;
+    choice.target_instance_id = target->instance_id;
+    run_.reward_offer.back() = std::move(choice);  // in place of the last choice: the offer keeps its size
+}
+
+void RunController::AddRefineOffer() {
+    const EconomyConfig::Refine& refine = content_->economy().refine;
+    if (!refine.enabled) return;
+    const WeaponInstance* target = RefineTarget(std::nullopt);
+    if (target == nullptr || !(refine.shop_chance > 0.0 && streams_->shop.NextDouble() < refine.shop_chance)) return;
+    ShopOffer o;
+    o.kind = ShopOfferKind::Refine;
+    o.weapon = RefineWeapon(streams_->shop, *content_, caps_, *target);
+    o.rarity = o.weapon.rarity;
+    o.target_instance_id = target->instance_id;
+    o.price = refine.price[RarityIndex(o.rarity)];
+    run_.shop_offers.push_back(std::move(o));
+}
+
+Status RunController::ApplyRefine(const std::string& instance_id, const WeaponInstance& refined, std::string_view source) {
+    const auto it = std::find_if(run_.weapons.begin(), run_.weapons.end(),
+                                 [&instance_id](const WeaponInstance& w) { return w.instance_id == instance_id; });
+    if (it == run_.weapons.end()) return Status::Error(ErrorCode::GrantFailed, "weapon " + instance_id + " is no longer held");
+    if (RarityIndex(refined.rarity) != RarityIndex(it->rarity) + 1) {
+        return Status::Error(ErrorCode::GrantFailed, "weapon " + instance_id + " changed since the refine was offered");
+    }
+    const int level = it->level;
+    const Rarity from = it->rarity;
+    *it = refined;
+    it->level = level;  // a refine never touches the level
+    Event e = MakeEvent(EventType::WeaponRefined);
+    e.Add("weapon", it->base_id).Add("weapon_instance", it->instance_id).Add("source", source).Add("refined_from", RarityName(from))
+        .Add("rarity", RarityName(it->rarity)).Add("affixes", it->affixes.size()).Add("elements", it->elements.size());
+    Emit(std::move(e));
+    return Status::Success();
 }
 
 std::vector<RunController::LadderLengthView> RunController::LadderLengths() const {
@@ -907,6 +979,7 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
             ++a.player_kills;
             if (kill.was_melee.value_or(false)) run_.last_melee_time = kill.now;
             ApplyBuildKill(kill, out);
+            AddKillProcs(kill, weapon, out);
 
             // Kill-streak record (+ legendary window extensions from the killing weapon).
             double extend = 0.0;
@@ -1240,11 +1313,15 @@ Result<ArenaResult> RunController::CompleteArena(double now) {
     run_.results.push_back(result);
 
     run_.reward_rarity_shift = route.rarity_bonus + eco.rewards.rating_rarity_bonus[RatingIndex(rating)];
+    // A refine among the rewards now and then; always after a top-rated arena.
+    const auto sure_rating = ParseRating(eco.refine.reward_rating);
+    run_.reward_refine_sure = sure_rating && RatingIndex(rating) <= RatingIndex(*sure_rating);
     // The last arena offers nothing: there is nothing left to use a reward on.
     run_.reward_offer.clear();
     if (run_.arena_index < run_.arena_count) {
         run_.reward_offer = GenerateRewardOffer(streams_->reward, MakeOfferContext(run_.reward_rarity_shift),
                                                 [this] { return NextInstanceId(); });
+        AddRefineReward(run_.reward_refine_sure);
     }
     run_.reward_chosen = false;
     run_.phase = Phase::ArenaResults;
@@ -1290,6 +1367,7 @@ Status RunController::RerollReward() {
     --run_.reroll_tokens;
     run_.reward_offer = GenerateRewardOffer(streams_->reward, MakeOfferContext(run_.reward_rarity_shift),
                                             [this] { return NextInstanceId(); });
+    AddRefineReward(run_.reward_refine_sure);
     Event e = MakeEvent(EventType::RewardRerolled);
     e.Add("tokens_left", run_.reroll_tokens).Add("choices", run_.reward_offer.size());
     Emit(std::move(e));
@@ -1332,6 +1410,11 @@ Status RunController::ChooseReward(std::size_t index) {
                 return Fail(op, ErrorCode::GrantFailed, "supplies reward could not be credited");
             }
             break;
+        case RewardKind::Refine: {
+            const Status s = ApplyRefine(choice.target_instance_id, choice.weapon, "reward");
+            if (!s.ok()) return Fail(op, ErrorCode::GrantFailed, s.message);
+            break;
+        }
         case RewardKind::Item: {
             const Status s = GrantItem(choice.item_id, choice.item_count, "reward");
             if (!s.ok()) {
@@ -1355,6 +1438,7 @@ Status RunController::ChooseReward(std::size_t index) {
     if (converted_supplies > 0) e.Add("inventory_full_supplies", converted_supplies);
     if (choice.kind == RewardKind::Weapon) e.Add("weapon", choice.weapon.base_id).Add("weapon_instance", choice.weapon.instance_id);
     if (choice.kind == RewardKind::Supplies) e.Add("supplies", choice.supplies);
+    if (choice.kind == RewardKind::Refine) e.Add("weapon_instance", choice.target_instance_id);
     Emit(std::move(e));
 
     if (run_.arena_index >= run_.arena_count) {
@@ -1369,6 +1453,7 @@ void RunController::EnterShop() {
     const RouteDef* route = Route();
     run_.shop_offers = GenerateShopOffers(streams_->shop, MakeOfferContext(route != nullptr ? route->rarity_bonus : 0.0),
                                           run_.weapons, run_.reroll_tokens, [this] { return NextInstanceId(); });
+    AddRefineOffer();
     run_.free_shop_rerolls = run_.character.build.free_shop_rerolls;
     run_.shop_restocks = 0;
     run_.shop_generation = 0;
@@ -1538,6 +1623,7 @@ Status RunController::RerollShop() {
     const RouteDef* route = Route();
     run_.shop_offers = GenerateShopOffers(streams_->shop, MakeOfferContext(route != nullptr ? route->rarity_bonus : 0.0),
                                           run_.weapons, run_.reroll_tokens, [this] { return NextInstanceId(); });
+    AddRefineOffer();
     ++run_.shop_generation;
     Event e = MakeEvent(EventType::ShopEntered);
     e.Add("offers", run_.shop_offers.size()).Add("supplies", run_.supplies.balance()).Add("reroll", run_.shop_generation)
@@ -1601,6 +1687,7 @@ Status RunController::Purchase(std::size_t index) {
             if (grant.ok()) GrantWeapon(offer.weapon, "shop");
             break;
         case ShopOfferKind::Perk: grant = GrantPerk(offer.perk_id, "shop", CursePolicy::Exclude, false); break;
+        case ShopOfferKind::Refine: grant = ApplyRefine(offer.target_instance_id, offer.weapon, "shop"); break;
         case ShopOfferKind::Item: {
             const EquipmentDef* def = content_->loadouts().FindEquipment(offer.item_id);
             grant = GrantItem(offer.item_id, def != nullptr ? def->bundle : 1, "shop");  // the same bundle a reward gives
@@ -1743,7 +1830,7 @@ std::optional<std::array<double, 3>> RunController::DirectorRelocate(const std::
     return director_->Relocate(unit_id, player, accept);
 }
 
-Result<ChestReward> RunController::OpenChest(double now) {
+Result<ChestReward> RunController::OpenChest(double now, std::optional<std::string> held_weapon) {
     constexpr std::string_view op = "open_chest";
     if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
     if (run_.phase != Phase::ArenaActive) return Fail(op, ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
@@ -1767,6 +1854,19 @@ Result<ChestReward> RunController::OpenChest(double now) {
     std::int64_t supplies = eco.chests.supplies_base + eco.chests.supplies_per_arena * (arena - 1);
 
     const OfferContext ctx = MakeOfferContext(0.0);
+    // Sometimes a chest refines the gun in hand one tier (the rarity remake): on top of the rest.
+    if (eco.refine.enabled && eco.refine.chest_chance > 0.0 && rng.NextDouble() < eco.refine.chest_chance) {
+        if (const WeaponInstance* target = RefineTarget(held_weapon)) {
+            const WeaponInstance refined = RefineWeapon(rng, *content_, caps_, *target);
+            const std::string id = target->instance_id;
+            if (ApplyRefine(id, refined, "chest").ok()) {
+                out.refined_instance_id = id;
+                const WeaponBaseDef* base = content_->FindWeapon(refined.base_id);
+                out.refined_name = base != nullptr ? base->name : refined.base_id;
+                out.refined_rarity = std::string(RarityName(refined.rarity));
+            }
+        }
+    }
     const double roll = rng.NextDouble();
     bool placed = false;
     // A build whose drops are one item (Safari Chris: mines) gets that item from every chest.
@@ -1823,6 +1923,7 @@ Result<ChestReward> RunController::OpenChest(double now) {
     if (out.key_used) e.Add("key_used", true).Add("keys", run_.keys);
     if (!out.item_id.empty()) e.Add("item", out.item_id).Add("count", out.item_count);
     if (!out.weapon_id.empty()) e.Add("weapon", out.weapon_id);
+    if (!out.refined_instance_id.empty()) e.Add("refined", out.refined_instance_id).Add("refined_rarity", out.refined_rarity);
     Emit(std::move(e));
     return out;
 }
@@ -1853,6 +1954,15 @@ Status RunController::DevGrantWeapon(WeaponInstance weapon) {
     if (weapon.instance_id.empty()) weapon.instance_id = NextInstanceId();
     GrantWeapon(std::move(weapon), "dev");
     return Status::Success();
+}
+
+Status RunController::DevRefineWeapon(const std::optional<std::string>& base) {
+    if (!run_.active) return Fail("dev_refine_weapon", ErrorCode::NoActiveRun, "no active run");
+    const WeaponInstance* target = RefineTarget(base);
+    if (target == nullptr) return Fail("dev_refine_weapon", ErrorCode::NotEligible, "no gun can go up a tier");
+    const WeaponInstance refined = RefineWeapon(streams_->loot, *content_, caps_, *target);
+    const Status s = ApplyRefine(target->instance_id, refined, "dev");
+    return s.ok() ? s : Fail("dev_refine_weapon", ErrorCode::GrantFailed, s.message);
 }
 
 Status RunController::DevGrantSupplies(std::int64_t amount) {

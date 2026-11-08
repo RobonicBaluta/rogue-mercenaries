@@ -3,7 +3,7 @@
 
   python scripts/ghidra_query.py count
   python scripts/ghidra_query.py decompile 0xbf2cf0 [max_lines]
-  python scripts/ghidra_query.py callers 0x... | callees 0x... | xrefs 0x... | disasm 0x... [count]
+  python scripts/ghidra_query.py callers 0x... | callees 0x... | xrefs 0x... | disasm 0x... [count] | words 0x... [count]
   python scripts/ghidra_query.py seed FILE      (one hex function start per line; creates missing functions)
 """
 import os
@@ -66,6 +66,17 @@ with pyghidra.open_program(BINARY, project_location=PROJECT_DIR, project_name=PR
     elif cmd == "xrefs":
         for r in refs.getReferencesTo(addr(args[0])):
             print(r.getFromAddress(), fname(r.getFromAddress()), r.getReferenceType())
+    elif cmd == "words":
+        # "words 0x... [count]": dwords from that address (a vtable: each slot and the function it names).
+        mem = program.getMemory()
+        a = addr(args[0])
+        n = int(args[1]) if len(args) > 1 else 16
+        for i in range(n):
+            at = a.add(i * 4)
+            v = mem.getInt(at) & 0xFFFFFFFF
+            target = program.getAddressFactory().getDefaultAddressSpace().getAddress(v)
+            f = fm.getFunctionAt(target)
+            print(f"{at} +{i * 4:03X} {v:08X} {f.getName() if f else ''}")
     elif cmd == "disasm":
         ins = listing.getInstructionAt(addr(args[0])) or listing.getInstructionAfter(addr(args[0]))
         n = int(args[1]) if len(args) > 1 else 40

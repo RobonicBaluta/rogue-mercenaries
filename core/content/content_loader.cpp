@@ -221,10 +221,10 @@ bool ReadRarityTable(const Diag& d, const json& obj, std::string_view key, Rarit
         return false;
     }
     const Diag sub = d.Sub("." + std::string(key));
-    CheckKeys(sub, *t, {"common", "uncommon", "rare", "epic", "legendary"});
+    CheckKeys(sub, *t, {"common", "uncommon", "rare", "epic", "legendary", "exotic"});
     for (Rarity r : kAllRarities) {
         double v = 0.0;
-        if (GetNumber(sub, *t, RarityName(r), v, true)) {
+        if (GetNumber(sub, *t, RarityName(r), v, r != Rarity::Exotic)) {  // exotic: 0 unless given
             CheckRange(sub, RarityName(r), v, 0.0, 1.0e9);
             out[RarityIndex(r)] = v;
         }
@@ -240,10 +240,10 @@ bool ReadRarityPrices(const Diag& d, const json& obj, std::string_view key,
         return false;
     }
     const Diag sub = d.Sub("." + std::string(key));
-    CheckKeys(sub, *t, {"common", "uncommon", "rare", "epic", "legendary"});
+    CheckKeys(sub, *t, {"common", "uncommon", "rare", "epic", "legendary", "exotic"});
     for (Rarity r : kAllRarities) {
         std::int64_t v = 0;
-        if (GetInt(sub, *t, RarityName(r), v, true)) {
+        if (GetInt(sub, *t, RarityName(r), v, r != Rarity::Exotic)) {
             if (v < 0) sub.Error("price for " + Q(RarityName(r)) + " must be >= 0");
             out[RarityIndex(r)] = v;
         }
@@ -624,8 +624,9 @@ std::vector<std::string> AffixImpliedCaps(AffixKind kind) {
 }
 
 void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>& weapons,
-                  std::vector<AffixDef>& affixes, std::vector<UniqueAffixDef>& uniques) {
-    CheckKeys(file, doc, {"schema_version", "weapons", "affixes", "unique_affixes"});
+                  std::vector<AffixDef>& affixes, std::vector<UniqueAffixDef>& uniques,
+                  std::vector<ElementDef>& elements) {
+    CheckKeys(file, doc, {"_comment", "schema_version", "weapons", "affixes", "unique_affixes", "elements"});
     if (const json* list = ListField(file, doc, "weapons")) {
         for (std::size_t i = 0; i < list->size(); ++i) {
             const json& e = (*list)[i];
@@ -689,14 +690,48 @@ void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>&
             UniqueAffixDef u;
             if (!ReadId(d, e, u.id)) continue;
             d = file.Sub(": unique affix " + Q(u.id));
-            CheckKeys(d, e, {"id", "name", "description", "effect", "value", "threshold", "seconds",
-                             "requires_capabilities"});
+            CheckKeys(d, e, {"id", "name", "description", "effect", "value", "threshold", "seconds", "radius",
+                             "every", "targets", "requires_capabilities"});
             GetString(d, e, "name", u.name, true);
             GetString(d, e, "description", u.description, false);
-            if (!ReadEnum(d, e, "effect", u.kind, ParseUniqueEffect, "low_hp_target_bonus, kill_streak_extend")) {
+            if (!ReadEnum(d, e, "effect", u.kind, ParseUniqueEffect,
+                          "low_hp_target_bonus, kill_streak_extend, execute, dragons_breath, chain_lightning, "
+                          "bottomless, overkill, last_word, bloodthirst")) {
                 continue;
             }
-            if (u.kind == AffixKind::UniqueLowHpTargetBonus) {
+            const bool remake = u.kind != AffixKind::UniqueLowHpTargetBonus && u.kind != AffixKind::UniqueKillStreakExtend;
+            if (remake) {
+                // The rarity remake's effects: what each reads (the others must be absent).
+                const bool wants_value = u.kind == AffixKind::UniqueExecute || u.kind == AffixKind::UniqueChainLightning ||
+                                         u.kind == AffixKind::UniqueOverkill || u.kind == AffixKind::UniqueLastWord ||
+                                         u.kind == AffixKind::UniqueBloodthirst;
+                const bool wants_threshold = u.kind == AffixKind::UniqueExecute;
+                const bool wants_radius = u.kind == AffixKind::UniqueDragonsBreath || u.kind == AffixKind::UniqueChainLightning ||
+                                          u.kind == AffixKind::UniqueOverkill;
+                const bool wants_arcs = u.kind == AffixKind::UniqueChainLightning;
+                if (wants_value) {
+                    if (GetNumber(d, e, "value", u.value, true)) CheckRange(d, "value", u.value, 0.0, 10.0, true);
+                } else if (Get(e, "value") != nullptr) {
+                    d.Error("field 'value' does not apply to " + Q(AffixKindName(u.kind)));
+                }
+                if (wants_threshold) {
+                    if (GetNumber(d, e, "threshold", u.threshold, true)) CheckRange(d, "threshold", u.threshold, 0.0, 1.0, true);
+                } else if (Get(e, "threshold") != nullptr) {
+                    d.Error("field 'threshold' does not apply to " + Q(AffixKindName(u.kind)));
+                }
+                if (wants_radius) {
+                    if (GetNumber(d, e, "radius", u.radius, true)) CheckRange(d, "radius", u.radius, 0.0, 5000.0, true);
+                } else if (Get(e, "radius") != nullptr) {
+                    d.Error("field 'radius' does not apply to " + Q(AffixKindName(u.kind)));
+                }
+                if (wants_arcs) {
+                    GetIntRange(d, e, "every", u.every, true, 1, 100);
+                    GetIntRange(d, e, "targets", u.targets, true, 1, 20);
+                } else if (Get(e, "every") != nullptr || Get(e, "targets") != nullptr) {
+                    d.Error("fields 'every' and 'targets' only apply to chain_lightning");
+                }
+                if (Get(e, "seconds") != nullptr) d.Error("field 'seconds' only applies to kill_streak_extend");
+            } else if (u.kind == AffixKind::UniqueLowHpTargetBonus) {
                 if (GetNumber(d, e, "value", u.value, true)) CheckRange(d, "value", u.value, 0.0, 10.0, true);
                 if (GetNumber(d, e, "threshold", u.threshold, true)) {
                     CheckRange(d, "threshold", u.threshold, 0.0, 1.0, true);
@@ -708,9 +743,62 @@ void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>&
                     d.Error("kill_streak_extend takes only 'seconds'");
                 }
             }
+            if (!remake && (Get(e, "radius") != nullptr || Get(e, "every") != nullptr || Get(e, "targets") != nullptr)) {
+                d.Error("fields 'radius', 'every' and 'targets' do not apply to " + Q(AffixKindName(u.kind)));
+            }
             ReadCapabilities(d, e, u.requires_capabilities);
             MergeCapabilities(u.requires_capabilities, AffixImpliedCaps(u.kind));
             uniques.push_back(std::move(u));
+        }
+    }
+    // Elements (optional: without them no gun has one).
+    if (const json* list = Get(doc, "elements")) {
+        if (!list->is_array()) {
+            file.Error("field 'elements' must be an array");
+            return;
+        }
+        std::set<Element> seen;
+        for (std::size_t i = 0; i < list->size(); ++i) {
+            const json& e = (*list)[i];
+            Diag d = file.Sub(": elements[" + std::to_string(i) + "]");
+            ElementDef el;
+            if (!ReadEnum(d, e, "element", el.element, ParseElement, "incendiary, shock, cryo, explosive, toxic")) continue;
+            d = file.Sub(": element " + Q(ElementName(el.element)));
+            if (!seen.insert(el.element).second) d.Error("duplicate element");
+            CheckKeys(d, e, {"element", "name", "description", "chance", "seconds", "dps_fraction", "damage_fraction",
+                             "damage_cap", "radius", "targets", "taken_mult", "boss_bonus"});
+            GetString(d, e, "name", el.name, true);
+            GetString(d, e, "description", el.description, false);
+            if (GetNumber(d, e, "chance", el.chance, false)) CheckRange(d, "chance", el.chance, 0.0, 1.0, true);
+            if (GetNumber(d, e, "seconds", el.seconds, false)) CheckRange(d, "seconds", el.seconds, 0.0, 30.0);
+            if (GetNumber(d, e, "dps_fraction", el.dps_fraction, false)) CheckRange(d, "dps_fraction", el.dps_fraction, 0.0, 5.0);
+            if (GetNumber(d, e, "damage_fraction", el.damage_fraction, false)) {
+                CheckRange(d, "damage_fraction", el.damage_fraction, 0.0, 5.0);
+            }
+            if (GetNumber(d, e, "damage_cap", el.damage_cap, false)) CheckRange(d, "damage_cap", el.damage_cap, 0.0, 30000.0);
+            if (GetNumber(d, e, "radius", el.radius, false)) CheckRange(d, "radius", el.radius, 0.0, 5000.0);
+            GetIntRange(d, e, "targets", el.targets, false, 0, 20);
+            if (GetNumber(d, e, "taken_mult", el.taken_mult, false)) CheckRange(d, "taken_mult", el.taken_mult, 0.1, 10.0);
+            if (GetNumber(d, e, "boss_bonus", el.boss_bonus, false)) CheckRange(d, "boss_bonus", el.boss_bonus, 0.0, 5.0);
+            // What each element needs to do anything.
+            switch (el.element) {
+                case Element::Incendiary:
+                case Element::Toxic:
+                    if (!(el.seconds > 0.0) || !(el.dps_fraction > 0.0)) d.Error("needs 'seconds' and 'dps_fraction' above 0");
+                    break;
+                case Element::Shock:
+                    if (el.targets <= 0 || !(el.radius > 0.0) || !(el.damage_fraction > 0.0)) {
+                        d.Error("needs 'targets', 'radius' and 'damage_fraction' above 0");
+                    }
+                    break;
+                case Element::Cryo:
+                    if (!(el.seconds > 0.0)) d.Error("needs 'seconds' above 0");
+                    break;
+                case Element::Explosive:
+                    if (!(el.radius > 0.0) || !(el.damage_fraction > 0.0)) d.Error("needs 'radius' and 'damage_fraction' above 0");
+                    break;
+            }
+            elements.push_back(std::move(el));
         }
     }
 }
@@ -1358,7 +1446,7 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     const Diag d = file.Sub("");
     CheckKeys(d, doc, {"schema_version", "run", "rewards", "weapon_rarity", "upgrades", "supplies",
                        "credits", "rating", "damage", "shop", "run_map", "chests", "keys", "enemy_threat",
-                       "run_rosters", "ladder"});
+                       "run_rosters", "ladder", "refine", "_comment"});
     if (const json* s = Section(d, doc, "run")) {
         const Diag sd = d.Sub(": run");
         CheckKeys(sd, *s, {"arena_count", "starting_route", "starting_supplies",
@@ -1397,19 +1485,39 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     }
     if (const json* s = Section(d, doc, "weapon_rarity")) {
         const Diag sd = d.Sub(": weapon_rarity");
-        CheckKeys(sd, *s, {"common", "uncommon", "rare", "epic", "legendary"});
+        CheckKeys(sd, *s, {"common", "uncommon", "rare", "epic", "legendary", "exotic"});
         for (Rarity r : kAllRarities) {
-            const json* t = Section(sd, *s, RarityName(r));
+            // Exotic is optional: without it refining stops at Legendary.
+            const json* t = r == Rarity::Exotic ? Get(*s, RarityName(r)) : Section(sd, *s, RarityName(r));
             if (t == nullptr) continue;
             const Diag td = sd.Sub("." + std::string(RarityName(r)));
-            CheckKeys(td, *t, {"affix_count", "magnitude_mult", "unique_count"});
+            CheckKeys(td, *t, {"affix_count", "magnitude_mult", "unique_count", "element_count"});
             EconomyConfig::WeaponRarityRule& rule = eco.weapon_rarity[RarityIndex(r)];
             GetIntRange(td, *t, "affix_count", rule.affix_count, true, 0, 5);
             if (GetNumber(td, *t, "magnitude_mult", rule.magnitude_mult, true)) {
                 CheckRange(td, "magnitude_mult", rule.magnitude_mult, 0.0, 10.0, true);
             }
             GetIntRange(td, *t, "unique_count", rule.unique_count, false, 0, 3);
+            GetIntRange(td, *t, "element_count", rule.element_count, false, 0, 5);
         }
+    }
+    if (const json* s = Get(doc, "refine")) {  // optional: without it no gun is refined
+        const Diag sd = d.Sub(": refine");
+        CheckKeys(sd, *s, {"_comment", "reward_chance", "reward_rating", "shop_chance", "chest_chance", "price",
+                           "exotic_unlocked_by"});
+        eco.refine.enabled = true;
+        if (GetNumber(sd, *s, "reward_chance", eco.refine.reward_chance, false)) {
+            CheckRange(sd, "reward_chance", eco.refine.reward_chance, 0.0, 1.0);
+        }
+        if (GetString(sd, *s, "reward_rating", eco.refine.reward_rating, false) && !ParseRating(eco.refine.reward_rating)) {
+            sd.Error("unknown reward_rating " + Q(eco.refine.reward_rating) + " (S, A, B or C)");
+        }
+        if (GetNumber(sd, *s, "shop_chance", eco.refine.shop_chance, false)) CheckRange(sd, "shop_chance", eco.refine.shop_chance, 0.0, 1.0);
+        if (GetNumber(sd, *s, "chest_chance", eco.refine.chest_chance, false)) {
+            CheckRange(sd, "chest_chance", eco.refine.chest_chance, 0.0, 1.0);
+        }
+        ReadRarityPrices(sd, *s, "price", eco.refine.price);
+        GetString(sd, *s, "exotic_unlocked_by", eco.refine.exotic_unlocked_by, false);
     }
     if (const json* s = Section(d, doc, "upgrades")) {
         const Diag sd = d.Sub(": upgrades");
@@ -1725,7 +1833,8 @@ public:
 
         if (auto doc = ParseDocument(file("perks.json"), src.perks)) ParsePerks(file("perks.json"), *doc, content->perks_);
         if (auto doc = ParseDocument(file("weapons.json"), src.weapons)) {
-            ParseWeapons(file("weapons.json"), *doc, content->weapons_, content->affixes_, content->uniques_);
+            ParseWeapons(file("weapons.json"), *doc, content->weapons_, content->affixes_, content->uniques_,
+                         content->elements_);
         }
         if (auto doc = ParseDocument(file("characters.json"), src.characters)) {
             ParseCharacters(file("characters.json"), *doc, content->characters_);

@@ -51,8 +51,23 @@ struct EconomyConfig {
         int affix_count = 0;
         double magnitude_mult = 1.0;
         int unique_count = 0;
+        int element_count = 0;
     };
     std::array<WeaponRarityRule, kRarityCount> weapon_rarity{};
+
+    /// Refining a gun one tier up (rm::RefineWeapon): a reward choice now and then (always after
+    /// an arena rated `reward_rating` or better), a shop offer now and then, and sometimes a
+    /// chest's (on the gun in hand). Legendary is the top until `exotic_unlocked_by` (a
+    /// ProfileStats::bosses_beaten key) is beaten. Prices by the tier reached.
+    struct Refine {
+        bool enabled = false;
+        double reward_chance = 0.0;
+        std::string reward_rating = "S";
+        double shop_chance = 0.0;
+        double chest_chance = 0.0;
+        std::array<std::int64_t, kRarityCount> price{};
+        std::string exotic_unlocked_by;
+    } refine;
 
     struct Upgrades {
         int max_level = 5;

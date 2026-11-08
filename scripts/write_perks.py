@@ -401,9 +401,10 @@ for extra in WEAPON_EXTRA:
         w['weapons'].append(extra)
     elif 'unlock_cost_credits' not in extra:
         known[0].pop('unlock_cost_credits', None)
-# Off until its flame works on the run's stages: in game (2026-11-07, scripts/test_flamethrower.sh)
-# it aims and burns fuel but only its pilot light shows, no stream and no damage.
-WEAPON_OFF = {'flamethrower'}
+# Guns kept out of the arsenal. The flamethrower was (2026-11-07: only its pilot light showed) until
+# 2026-11-08 showed the test only tapped the trigger ("lclick+ms" is a tap and a wait): held, it
+# flames on a Mercenaries stage and sets Majini burning (scripts/test_flamethrower.sh).
+WEAPON_OFF = set()
 for wd in w['weapons']:
     if wd['id'] in WEAPON_OFF:
         wd['enabled'] = False

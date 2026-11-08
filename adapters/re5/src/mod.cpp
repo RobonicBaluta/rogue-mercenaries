@@ -162,6 +162,7 @@ struct ModState {
     MatchState match;
     bool arenaEndRequested = false;  // timer forced to 0 after a clear
     bool devQuiet = false;           // developer: no director refills, native spawns blocked
+    bool devBreakGrabs = false;      // developer: every Majini grab broken, as Iron Grip does (weapon tests)
     std::uint64_t chestsPlacedFor = 0;  // (match generation, arena) whose chests are placed
     double arenaBeganAt = -1.0;         // when the current arena began (director grace period)
     bool matchUiOpenRequested = false;  // native results screen to open once the tick's lock is released
@@ -589,7 +590,18 @@ std::uint32_t RarityColour(std::string_view rarity) {
     if (rarity == "rare") return 0xFF5CA8FFu;
     if (rarity == "epic") return 0xFFC884FFu;
     if (rarity == "legendary") return 0xFFFFB040u;
+    if (rarity == "exotic") return 0xFF4CF0E6u;
     return 0;
+}
+
+// The offers a reward or shop screen lists, logged when they change ("rewards: ...", "shop: ...").
+void LogOffersOnce(const char* what, const std::vector<rm::OfferView>& offers) {
+    static std::map<std::string, std::string> last;
+    std::string line;
+    for (const auto& o : offers) line += " | " + o.kind + " " + o.title + " (" + o.rarity + (o.price > 0 ? ", " + std::to_string(o.price) : "") + ")";
+    if (last[what] == line) return;
+    last[what] = line;
+    RM_LOGI("%s offers:%s", what, line.c_str());
 }
 
 // Help line for a reward or shop offer in the game font (letters, digits, space, comma, period).
@@ -600,6 +612,7 @@ std::string OfferDetail(const rm::OfferView& o) {
     if (o.kind == "weapon") return "A new weapon for the run.";
     if (o.kind == "supplies") return "Supplies to spend in the shop.";
     if (o.kind == "reroll") return "Reroll the next reward offer once.";
+    if (o.kind == "refine") return "Raises a gun one rarity.";
     return Plain(o.kind);
 }
 
@@ -862,6 +875,10 @@ nativemenu::Screen RunResultsScreen(rm::RunController& run) {
                 add("ONE MORE ARENA", "A " + arenas + "-arena run now goes on after its boss:\none more arena, against " + boss + ".",
                     "explosion");
                 break;
+            case rm::LadderUnlock::Kind::Exotic:
+                add("EXOTIC GUNS", "A legendary gun can now be refined once more, to exotic:\ntwo elements and two legendary effects.",
+                    "trophy");
+                break;
         }
     }
     add(Upper(Plural(s.total_kills, "kill")), "Enemies killed in this run.", "crosshair");
@@ -1054,6 +1071,7 @@ private:
                 const rm::RunSnapshot s = run.Snapshot(Now());
                 screen.header = "CHOOSE A REWARD" + StashNote();
                 screen.empty_help = "Nothing to choose. Press to continue.";
+                LogOffersOnce("rewards", s.reward_offers);
                 for (const auto& o : s.reward_offers) {
                     Item item;
                     item.label = Upper(Plain(o.title));
@@ -1072,6 +1090,7 @@ private:
             case ScreenId::MatchShop: {
                 const rm::RunSnapshot s = run.Snapshot(Now());
                 screen.header = "SHOP   " + std::to_string(s.supplies) + " SUPPLIES" + StashNote();
+                LogOffersOnce("shop", s.shop_offers);
                 for (const auto& o : s.shop_offers) {
                     Item item;
                     item.label = Upper(Plain(o.title)) + (o.purchased ? "   BOUGHT" : "");
@@ -1357,6 +1376,8 @@ private:
                     const rm::Status st = run.ChooseReward(static_cast<std::size_t>(index));
                     Report(st, "choose reward");
                     if (!st.ok()) { d.outcome = Outcome::Denied; break; }
+                    const rm::OfferView& o = s.reward_offers[static_cast<std::size_t>(index)];
+                    RM_LOGI("reward chosen: %s %s (%s): %s", o.kind.c_str(), o.title.c_str(), o.rarity.c_str(), o.detail.c_str());
                     d.outcome = Outcome::Push;
                     d.next = run.phase() == rm::Phase::Shop ? ScreenId::MatchShop : ScreenId::MatchRunOver;
                 } else if (index == offers && s.reroll_tokens > 0) {
@@ -1375,6 +1396,11 @@ private:
                     const rm::Status st = run.Purchase(static_cast<std::size_t>(index));
                     Report(st, "purchase");
                     if (!st.ok()) g->toasts.Push(st.message);
+                    if (st.ok()) {
+                        const rm::OfferView& o = s.shop_offers[static_cast<std::size_t>(index)];
+                        RM_LOGI("shop: bought %s %s (%s) for %lld", o.kind.c_str(), o.title.c_str(), o.rarity.c_str(),
+                                static_cast<long long>(o.price));
+                    }
                     d.outcome = st.ok() ? Outcome::Refresh : Outcome::Denied;
                     break;
                 }
@@ -1613,9 +1639,14 @@ std::string EnemyKillId(std::uintptr_t enemy, int maxHp) {
     return id;
 }
 
-// Enemies a build special hurt (M8: Twin Fury, Backup) and when: their deaths are the player's.
+// Enemies a build special hurt (M8: Twin Fury, Backup), the mod's elements burnt, or the player
+// hit, and when: a death within kSpecialKillCredit is the player's (a Majini the flamethrower set
+// burning dies of the game's own fire, outside any hit, about 4 s later).
 std::map<std::uintptr_t, double> g_specialVictims;
-constexpr double kSpecialKillCredit = 3.0;
+// The rarity remake's element statuses (defined with DriveElements).
+bool FrozenNow(std::uintptr_t enemy, double now);
+void QueueProcs(std::uintptr_t enemy, const std::vector<rm::WeaponProc>& procs);
+constexpr double kSpecialKillCredit = 6.0;
 void BuildKillNotice(const rm::KillOutcome& outcome, double now);
 
 void ReportEnemyDeath(std::uintptr_t enemy, int maxHp, double now, const char* how) {
@@ -1626,9 +1657,13 @@ void ReportEnemyDeath(std::uintptr_t enemy, int maxHp, double now, const char* h
     if (kill.by_player) {
         kill.was_melee = false;
         kill.enemy_class = engine::ClassName(enemy);
+        kill.target_hp_max = maxHp;
+        kill.target_frozen = FrozenNow(enemy, now);  // a frozen one shatters (rm::ProcKind::Shatter)
     }
+    kill.target_is_boss = enemy == g->boss.unit;
     kill.enemy_id = EnemyKillId(enemy, maxHp);
     const rm::KillOutcome out = g->run->OnEnemyKilled(kill);
+    if (!out.procs.empty()) QueueProcs(enemy, out.procs);
     if (out.counted) {
         RM_LOGI("enemy %08X died (%s): counted, %d remain%s", static_cast<unsigned>(enemy), how, out.remaining,
                 kill.by_player ? " (by the special)" : "");
@@ -2861,8 +2896,36 @@ void StopBossWatch() {
     g_bossWatch = false;
 }
 
+// Developer "wpwatch on|off": the weapon units the player object points to (uWp*), each one's
+// state at +0x10E0 (the flamethrower uWp21's update, 0x00BA4EC0, makes its stream, the effect
+// list wp2103, only in states 6, 8 and 9) and that stream at +0x1C90, with the player's action,
+// on every change.
+bool g_wpWatch = false;
+std::string g_wpWatchLast;
+
+void WatchWeapons() {
+    const auto local = engine::LocalPlayer();
+    if (!g_wpWatch || !local) return;
+    std::string line;
+    for (std::size_t off = 0; off < 0x4000; off += 4) {
+        const auto p = ReadOr<std::uintptr_t>(local + off, 0);
+        if (p < 0x00400000 || p > 0x7FFF0000 || (p & 3)) continue;
+        const std::string name = engine::ClassName(p);
+        if (name.rfind("uWp", 0) != 0) continue;
+        char part[128];
+        std::snprintf(part, sizeof(part), " +%zX %s %08X state %d stream %08X", off, name.c_str(), static_cast<unsigned>(p),
+                      ReadOr<std::int32_t>(p + 0x10E0, -1), ReadOr<std::uint32_t>(p + 0x1C90, 0));
+        line += part;
+    }
+    line += " | player " + std::to_string(engine::CurrentActionId(local)) + " " + engine::CurrentActionName(local);
+    if (line == g_wpWatchLast) return;
+    g_wpWatchLast = line;
+    RM_LOGW("wpwatch:%s", line.c_str());
+}
+
 void WatchUnit(double now) {
     if (g_pin.unit && now < g_pin.until) engine::WarpUnit(g_pin.unit, g_pin.dest);
+    WatchWeapons();
     if (g_watchPlayer) {
         const auto local = engine::LocalPlayer();
         const std::string action = local ? engine::CurrentActionName(local) : std::string("-");
@@ -3104,6 +3167,8 @@ void DriveArena(double now) {
         const auto result = run.CompleteArena(bossDown ? g->boss.diedAt : now);
         if (result.ok()) {
             SetStatus("arena cleared in " + std::to_string(static_cast<int>(result->time_seconds)) + " s");
+            RM_LOGI("arena %d cleared in %.0f s, rating %s, damage taken %.0f", result->arena, result->time_seconds,
+                    std::string(rm::RatingName(result->rating)).c_str(), result->damage_taken);
             if (g->settings.endMatchOnClear && g->match.inMatch) {
                 RequestMercMatchEnd();
                 g->arenaEndRequested = true;
@@ -3353,7 +3418,7 @@ void OpenChests(double now) {
         float pos[3] = {};
         const bool located = TakeTimeBonusPosition(pos);
         if (run.phase() != rm::Phase::ArenaActive) break;
-        const auto chest = run.OpenChest(now);
+        const auto chest = run.OpenChest(now, EquippedWeaponBaseId());
         if (!chest.ok()) {
             Report(chest.status(), "open chest");
             continue;
@@ -3371,6 +3436,7 @@ void OpenChests(double now) {
             line += "   " + Upper(Plain(chest->item_name)) + (chest->item_count > 1 ? " X" + std::to_string(chest->item_count) : "");
         }
         if (chest->supplies > 0) line += "   " + std::to_string(chest->supplies) + " SUPPLIES";
+        if (!chest->refined_name.empty()) line += "   " + Upper(Plain(chest->refined_name)) + " REFINED TO " + Upper(chest->refined_rarity);
         if (chest->key_used) line += "   KEY USED";
         g->notice = line;
         g->noticeUntil = now + 4.0;
@@ -3851,6 +3917,333 @@ std::string StrikeEnemy(std::uintptr_t enemy, int damage, int reaction, double n
     if (!hp || hp->hp <= 0) return "killed";
     if (reaction < 0) return "hit";
     return engine::StartAction(enemy, reaction, ReactionClass(reaction)) ? "reacts" : "hit (no reaction)";
+}
+
+// ---- The rarity remake: elements and legendary effects in the world (rm::WeaponProc) -------------
+// The core decides what a hit or a kill does (a burn, a freeze, an arc, a blast); this plays it.
+// The damage goes through the game's SubHp (director::Damage) and the deaths it causes are the
+// player's (g_specialVictims). Reactions are the enemies' own actions, found by name in their
+// table, and only for the classes whose reactions were seen in game (scripts/test_reactions.sh,
+// 2026-11-08: the town, village and soldier Majini, uEm10, uEm12 and uEm14): on fire, frozen,
+// acid, flash, blown away, a stagger, a head burst. The burning
+// soldier's death (DeadArmyBurn) asks for an effect file no PC archive has (em1026.efl: the game
+// ends), so it is never used; other classes take the damage alone. The boss takes none of it (the
+// core gives it more damage instead). A hit's procs are queued inside the game's damage call and
+// played on the next tick.
+constexpr double kElementTick = 0.5;
+constexpr double kReactionCooldown = 3.0;  // a reaction the mod starts, at most this often per enemy
+constexpr const char* kReactionClasses[] = {"uEm10", "uEm12", "uEm14"};
+
+enum class Reaction { Fire, Ice, Acid, Flash, Flyoff, Yoroke, HeadBurst, None };
+constexpr std::size_t kReactionKinds = 7;
+constexpr const char* kReactionSuffix[kReactionKinds] = {"ActDmgFire",   "ActDmgIce",    "ActDmgSulfate",        "ActDmgFlash",
+                                                         "ActDmgFlyoff", "ActDmgYoroke", "ActDeadHeadExplosion"};
+
+struct ClassReactions {
+    std::array<int, kReactionKinds> id{};
+    std::array<std::string, kReactionKinds> name;
+};
+std::map<std::string, ClassReactions> g_classReactions;
+
+struct ElementStatus {
+    double burnUntil = 0.0, burnDps = 0.0;
+    double poisonUntil = 0.0, poisonDps = 0.0;
+    double frozenUntil = 0.0;
+    double nextTick = 0.0;
+    double owed = 0.0;          // damage below one point, carried to the next tick
+    double reactedAt = -100.0;  // the last reaction the mod started on it
+};
+std::map<std::uintptr_t, ElementStatus> g_elementStatus;
+
+struct QueuedProc {
+    std::uintptr_t enemy = 0;  // the hit's target or the kill's victim
+    float at[3] = {};          // where it was then
+    rm::WeaponProc proc;
+};
+std::vector<QueuedProc> g_queuedProcs;
+std::map<std::string, int> g_procLogged;  // log lines per proc kind this match
+
+bool StatusActive(std::uintptr_t enemy, double now, double ElementStatus::*until) {
+    const auto it = g_elementStatus.find(enemy);
+    return it != g_elementStatus.end() && now < it->second.*until;
+}
+
+bool FrozenNow(std::uintptr_t enemy, double now) { return StatusActive(enemy, now, &ElementStatus::frozenUntil); }
+
+void UnitPosition(std::uintptr_t unit, float out[3]) {
+    for (int k = 0; k < 3; ++k) out[k] = ReadOr<float>(unit + re5::off::kUnitPosition + k * 4, 0.0f);
+}
+
+const ClassReactions* ReactionsOf(std::uintptr_t enemy) {
+    const std::string cls = engine::ClassName(enemy);
+    if (std::none_of(std::begin(kReactionClasses), std::end(kReactionClasses), [&cls](const char* c) { return cls == c; })) {
+        return nullptr;
+    }
+    auto it = g_classReactions.find(cls);
+    if (it == g_classReactions.end()) {
+        ClassReactions r;
+        r.id.fill(-1);
+        const auto names = engine::ActionNames(enemy);
+        if (names.empty()) return nullptr;  // not readable yet: looked up again later
+        std::string found;
+        for (std::size_t k = 0; k < kReactionKinds; ++k) {
+            const std::string suffix = kReactionSuffix[k];
+            for (std::size_t i = 0; i < names.size(); ++i) {
+                const std::string& n = names[i];
+                if (n.size() > suffix.size() && n.compare(n.size() - suffix.size(), suffix.size(), suffix) == 0) {
+                    r.id[k] = static_cast<int>(i);
+                    r.name[k] = n;
+                    break;
+                }
+            }
+            found += " " + suffix.substr(3) + "=" + std::to_string(r.id[k]);
+        }
+        RM_LOGI("elements: %s reactions:%s", cls.c_str(), found.c_str());
+        it = g_classReactions.emplace(cls, std::move(r)).first;
+    }
+    return &it->second;
+}
+
+// Not while it grabs the player, climbs, falls, flies, gets up or dies: a reaction then could
+// leave the player held or the enemy stuck.
+bool CanReact(std::uintptr_t enemy) {
+    const std::string action = engine::CurrentActionName(enemy);
+    if (action.empty()) return false;
+    for (const char* busy : {"Catch", "Hang", "Hold", "Dead", "Fall", "Ladder", "Jump", "Landing", "Window", "Wall", "Appear",
+                             "Demo", "Sit", "Door", "Ride", "Rise", "Flyoff", "Eat"}) {
+        if (action.find(busy) != std::string::npos) return false;
+    }
+    return true;
+}
+
+// Starts one of its reactions; `force` skips the cooldown (a kill's), `dead` allows it at zero health.
+bool React(std::uintptr_t enemy, Reaction r, double now, bool force = false, bool dead = false) {
+    if (r == Reaction::None || enemy == g->boss.unit) return false;
+    const ClassReactions* cr = ReactionsOf(enemy);
+    if (cr == nullptr) return false;
+    const auto k = static_cast<std::size_t>(r);
+    const int id = cr->id[k];
+    if (id < 0) return false;
+    if (engine::CurrentActionId(enemy) == id) return true;  // already in it
+    ElementStatus& st = g_elementStatus[enemy];
+    if (!force && now - st.reactedAt < kReactionCooldown) return false;
+    if (!dead && !CanReact(enemy)) return false;
+    if (!engine::StartAction(enemy, id, cr->name[k].c_str(), dead)) return false;
+    st.reactedAt = now;
+    return true;
+}
+
+// The mod's elemental damage. A Majini it kills takes `onKill` first: a dead one takes no action
+// and would only drop when its own one ends.
+bool ElementDamage(std::uintptr_t enemy, double amount, double now, Reaction onKill) {
+    if (enemy == 0 || enemy == g->boss.unit) return false;
+    const auto hp = engine::ReadHp(enemy);
+    if (!hp || hp->hp <= 0) return false;
+    const int dmg = std::max(1, static_cast<int>(std::lround(amount)));
+    if (dmg >= hp->hp) React(enemy, onKill, now, true);
+    g_specialVictims[enemy] = now;
+    return director::Damage(enemy, dmg);
+}
+
+// Living enemies within `radius` of `at` (3D), nearest first; never `except` nor the boss.
+std::vector<std::pair<std::uintptr_t, float>> EnemiesNear(const float at[3], float radius, std::uintptr_t except) {
+    std::vector<std::pair<std::uintptr_t, float>> out;
+    for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
+        if (e.hp <= 0 || e.object == except || e.object == g->boss.unit) continue;
+        float p[3];
+        UnitPosition(e.object, p);
+        const float dx = p[0] - at[0], dy = p[1] - at[1], dz = p[2] - at[2];
+        const float d = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (d <= radius) out.emplace_back(e.object, d);
+    }
+    std::sort(out.begin(), out.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+    return out;
+}
+
+// Sets it burning (a new burn keeps the higher rate and the later end); true when it took its
+// on-fire reaction.
+bool Ignite(std::uintptr_t enemy, double dps, double seconds, double now) {
+    if (enemy == g->boss.unit || dps <= 0.0) return false;
+    ElementStatus& st = g_elementStatus[enemy];
+    const bool fresh = now >= st.burnUntil;
+    st.burnDps = fresh ? dps : std::max(st.burnDps, dps);
+    st.burnUntil = std::max(st.burnUntil, now + seconds);
+    if (!fresh) return false;
+    st.nextTick = std::max(st.nextTick, now + kElementTick);
+    return React(enemy, Reaction::Fire, now);
+}
+
+// The equipped gun's inventory record (0: none).
+std::uintptr_t EquippedGunSlot() {
+    const auto player = engine::LocalPlayer();
+    if (!engine::Caps().inventory || !player) return 0;
+    const auto inv = player + re5::off::kPlayerInventory;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        if (ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) != 1) continue;
+        if ((ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) >> 8) != 1) return 0;
+        return slot;
+    }
+    return 0;
+}
+
+void QueueProcs(std::uintptr_t enemy, const std::vector<rm::WeaponProc>& procs) {
+    for (const rm::WeaponProc& p : procs) {
+        QueuedProc q;
+        q.enemy = enemy;
+        UnitPosition(enemy, q.at);
+        q.proc = p;
+        g_queuedProcs.push_back(std::move(q));
+    }
+}
+
+void ApplyProc(const QueuedProc& q, double now) {
+    const rm::WeaponProc& p = q.proc;
+    const std::string kind(rm::ProcKindName(p.kind));
+    int reached = 0;
+    bool reacted = false;
+    const char* note = "";
+    const auto alive = [](std::uintptr_t u) {
+        const auto hp = engine::ReadHp(u);
+        return hp && hp->hp > 0;
+    };
+    switch (p.kind) {
+        case rm::ProcKind::Burn:
+            if (!alive(q.enemy)) {
+                note = ", the target already dead";
+                break;
+            }
+            reacted = Ignite(q.enemy, p.dps, p.seconds, now);
+            reached = 1;
+            break;
+        case rm::ProcKind::Poison: {
+            if (!alive(q.enemy) || q.enemy == g->boss.unit) {
+                note = ", the target already dead";
+                break;
+            }
+            ElementStatus& st = g_elementStatus[q.enemy];
+            const bool fresh = now >= st.poisonUntil;
+            st.poisonDps = fresh ? p.dps : std::max(st.poisonDps, p.dps);
+            st.poisonUntil = std::max(st.poisonUntil, now + p.seconds);
+            if (fresh) {
+                st.nextTick = std::max(st.nextTick, now + kElementTick);
+                reacted = React(q.enemy, Reaction::Acid, now);
+            }
+            reached = 1;
+            break;
+        }
+        case rm::ProcKind::Freeze: {
+            if (!alive(q.enemy) || q.enemy == g->boss.unit) {
+                note = ", the target already dead";
+                break;
+            }
+            g_elementStatus[q.enemy].frozenUntil = now + p.seconds;
+            reacted = React(q.enemy, Reaction::Ice, now, true);
+            reached = 1;
+            break;
+        }
+        case rm::ProcKind::Shock:
+        case rm::ProcKind::Arc: {
+            if (p.kind == rm::ProcKind::Shock && alive(q.enemy)) reacted = React(q.enemy, Reaction::Flash, now);
+            int left = p.targets > 0 ? p.targets : 99;
+            for (const auto& [enemy, d] : EnemiesNear(q.at, static_cast<float>(p.radius), q.enemy)) {
+                (void)d;
+                if (left-- <= 0) break;
+                if (ElementDamage(enemy, p.damage, now, Reaction::Flyoff)) {
+                    ++reached;
+                    if (alive(enemy)) React(enemy, Reaction::Flash, now);
+                }
+            }
+            break;
+        }
+        case rm::ProcKind::IgniteAround:
+            if (alive(q.enemy)) reacted = Ignite(q.enemy, p.dps, p.seconds, now);
+            for (const auto& [enemy, d] : EnemiesNear(q.at, static_cast<float>(p.radius), q.enemy)) {
+                (void)d;
+                Ignite(enemy, p.dps, p.seconds, now);
+                ++reached;
+            }
+            break;
+        case rm::ProcKind::Execute: {
+            const auto hp = engine::ReadHp(q.enemy);
+            if (!hp || hp->hp <= 0 || q.enemy == g->boss.unit) {
+                note = ", the target already dead";
+                break;
+            }
+            reacted = React(q.enemy, Reaction::HeadBurst, now, true);  // its head bursts: it dies by it
+            g_specialVictims[q.enemy] = now;
+            director::Damage(q.enemy, hp->hp);
+            reached = 1;
+            break;
+        }
+        case rm::ProcKind::Explode:
+        case rm::ProcKind::Shatter: {
+            // The victim's head bursts (an explosion); everyone around takes the blast and is thrown.
+            if (p.kind == rm::ProcKind::Explode) reacted = React(q.enemy, Reaction::HeadBurst, now, true, true);
+            for (const auto& [enemy, d] : EnemiesNear(q.at, static_cast<float>(p.radius), q.enemy)) {
+                (void)d;
+                const Reaction thrown = p.kind == rm::ProcKind::Explode ? Reaction::Flyoff : Reaction::Yoroke;
+                if (ElementDamage(enemy, p.damage, now, Reaction::Flyoff)) {
+                    ++reached;
+                    if (alive(enemy)) React(enemy, thrown, now, true);
+                }
+            }
+            break;
+        }
+        case rm::ProcKind::Overkill: {
+            const auto closest = EnemiesNear(q.at, static_cast<float>(p.radius), q.enemy);
+            if (!closest.empty() && ElementDamage(closest.front().first, p.damage, now, Reaction::Flyoff)) reached = 1;
+            break;
+        }
+        case rm::ProcKind::Refill: {
+            const std::uintptr_t slot = EquippedGunSlot();
+            const int max = slot ? ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0) : 0;
+            if (slot && max > 0 && SafeStore<std::int32_t>(slot + re5::off::kSlotCount, max)) reached = 1;
+            break;
+        }
+    }
+    if (g_procLogged[kind]++ < 12) {
+        RM_LOGI("elements: %s (%s) on %s %08X: %.0f damage, %.0f per second for %.1f s, %.0f range, %d reached%s%s", kind.c_str(),
+                p.source.c_str(), engine::ClassName(q.enemy).c_str(), static_cast<unsigned>(q.enemy), p.damage, p.dps, p.seconds,
+                p.radius, reached, reacted ? ", its own reaction" : "", note);
+    }
+}
+
+// Each tick: the queued procs, then the burns and poisons (every kElementTick).
+void DriveElements(double now) {
+    if (!g->match.inMatch || g->run->phase() != rm::Phase::ArenaActive) {
+        g_elementStatus.clear();
+        g_queuedProcs.clear();
+        g_procLogged.clear();
+        return;
+    }
+    std::vector<QueuedProc> queued;
+    queued.swap(g_queuedProcs);
+    for (const QueuedProc& q : queued) ApplyProc(q, now);
+    if (g_elementStatus.empty()) return;
+    std::set<std::uintptr_t> living;
+    for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
+        if (e.hp > 0) living.insert(e.object);
+    }
+    for (auto it = g_elementStatus.begin(); it != g_elementStatus.end();) {
+        ElementStatus& st = it->second;
+        const bool burning = now < st.burnUntil, poisoned = now < st.poisonUntil, frozen = now < st.frozenUntil;
+        if (!living.count(it->first) || (!burning && !poisoned && !frozen && now - st.reactedAt > kReactionCooldown)) {
+            it = g_elementStatus.erase(it);
+            continue;
+        }
+        if ((burning || poisoned) && now >= st.nextTick) {
+            st.nextTick = now + kElementTick;
+            st.owed += ((burning ? st.burnDps : 0.0) + (poisoned ? st.poisonDps : 0.0)) * kElementTick;
+            const double whole = std::floor(st.owed);
+            if (whole >= 1.0) {
+                st.owed -= whole;
+                ElementDamage(it->first, whole, now, burning ? Reaction::Fire : Reaction::Acid);
+            }
+        }
+        ++it;
+    }
 }
 
 // He turns to face a point at once, the game's way (engine::TurnTo); true when his rotation then
@@ -4688,7 +5081,9 @@ std::uintptr_t g_grabBroken = 0;  // the hold action handled last (one try per g
 
 void DriveGrabBreak(double now) {
     rm::RunController& run = *g->run;
-    if (!run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || !run.state().character.build.break_grabs) return;
+    if (!run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || (!run.state().character.build.break_grabs && !g->devBreakGrabs)) {
+        return;
+    }
     const auto local = engine::LocalPlayer();
     if (!local) return;
     const auto action = ReadOr<std::uintptr_t>(local + re5::off::kPlayerAction, 0);
@@ -4874,7 +5269,7 @@ void DrawWeaponCard() {
     std::snprintf(text, sizeof(text), "%s   DAMAGE x%.2f, LEVEL +%d PERCENT", Upper(w->rarity).c_str(), w->base_mult,
                   static_cast<int>(std::lround(w->level_bonus * 100.0)));
     lines.emplace_back(text, IM_COL32(220, 220, 220, 235));
-    for (std::size_t i = 0; i < w->affixes.size() && i < 4; ++i) lines.emplace_back(Upper(Plain(w->affixes[i])), IM_COL32(200, 230, 200, 235));
+    for (std::size_t i = 0; i < w->affixes.size() && i < 8; ++i) lines.emplace_back(Upper(Plain(w->affixes[i])), IM_COL32(200, 230, 200, 235));
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     const float k = std::min(display.x / 1280.0f, display.y / 720.0f);
     const float ox = (display.x - 1280.0f * k) * 0.5f;
@@ -6225,6 +6620,10 @@ void PollDevCommand(double now) {
         g_watch = {};
         if (command.substr(6) != "off") g_watch.cls = command.substr(6);
         RM_LOGW("dev watch %s", g_watch.cls.empty() ? "off" : g_watch.cls.c_str());
+    } else if (command.rfind("wpwatch ", 0) == 0) {
+        g_wpWatch = command.substr(8) == "on";
+        g_wpWatchLast.clear();
+        RM_LOGW("dev wpwatch %s", g_wpWatch ? "on" : "off");
     } else if (command.rfind("watchplayer ", 0) == 0) {
         g_watchPlayer = command.substr(12) == "on";
         g_watchPlayerAction.clear();
@@ -6301,6 +6700,73 @@ void PollDevCommand(double now) {
         const std::string name = id >= 0 && id < static_cast<int>(names.size()) ? names[static_cast<std::size_t>(id)] : std::string();
         const bool started = !name.empty() && engine::StartAction(unit, id, name.c_str(), true);
         RM_LOGW("dev act %s %d (%s): %s", cls.c_str(), id, name.c_str(), started ? "started" : "refused");
+    } else if (command.rfind("gun ", 0) == 0 && run.HasActiveRun()) {
+        // "gun <base|held> <rarity> [elements|-] [effects|-]": the run's gun of that base becomes
+        // this one (comma lists of element names and unique affix ids; no regular bonuses).
+        std::istringstream words(command.substr(4));
+        std::string base, rarity, elements, effects;
+        words >> base >> rarity >> elements >> effects;
+        if (base == "held") base = EquippedWeaponBaseId().value_or(std::string());
+        rm::WeaponInstance w = rm::MakeStartingWeapon(base, std::string());
+        w.rarity = rm::ParseRarity(rarity).value_or(rm::Rarity::Common);
+        const auto split = [](const std::string& list) {
+            std::vector<std::string> out;
+            std::istringstream parts(list);
+            for (std::string part; std::getline(parts, part, ',');) {
+                if (!part.empty() && part != "-") out.push_back(part);
+            }
+            return out;
+        };
+        for (const std::string& e : split(elements)) {
+            if (const auto el = rm::ParseElement(e)) w.elements.push_back(*el);
+        }
+        for (const std::string& id : split(effects)) {
+            if (const rm::UniqueAffixDef* u = g->content->FindUnique(id)) {
+                w.affixes.push_back(rm::Affix{u->kind, u->value, u->threshold, u->id});
+            }
+        }
+        for (const auto& existing : run.state().weapons) {
+            if (existing.base_id == base) w.instance_id = existing.instance_id;
+        }
+        const rm::Status s = run.DevGrantWeapon(w);
+        RM_LOGW("dev gun %s %s: %zu elements, %zu effects: %s", base.c_str(), rm::RarityName(w.rarity).data(), w.elements.size(),
+                w.affixes.size(), s.ok() ? "held" : s.message.c_str());
+    } else if (command.rfind("effect ", 0) == 0) {
+        // "effect <path> [load]": is that effect list cached (and with `load`, load it from its
+        // file now; the reference is kept for the session).
+        std::istringstream words(command.substr(7));
+        std::string path, mode;
+        words >> path >> mode;
+        const bool cached = [&] {
+            const std::uintptr_t r = engine::EffectList(path.c_str(), false);
+            if (r) engine::ReleaseResource(r);
+            return r != 0;
+        }();
+        const std::uintptr_t loaded = !cached && mode == "load" ? engine::EffectList(path.c_str(), true) : 0;
+        RM_LOGW("dev effect %s: %s%s", path.c_str(), cached ? "cached" : "not cached",
+                mode == "load" && !cached ? (loaded ? ", loaded now" : ", NOT loaded") : "");
+    } else if (command.rfind("refine", 0) == 0 && run.HasActiveRun()) {
+        // "refine [base]": that gun (else the one in hand) one tier up, as a reward would.
+        std::string base = command.size() > 7 ? command.substr(7) : EquippedWeaponBaseId().value_or(std::string());
+        const rm::Status s = run.DevRefineWeapon(base.empty() ? std::nullopt : std::optional<std::string>(base));
+        std::string after;
+        for (const auto& w : run.state().weapons) {
+            if (w.base_id == base) after = std::string(rm::RarityName(w.rarity)) + ", " + std::to_string(w.elements.size()) + " elements";
+        }
+        RM_LOGW("dev refine %s: %s; now %s", base.c_str(), s.ok() ? "done" : s.message.c_str(), after.c_str());
+    } else if (command.rfind("mag ", 0) == 0) {
+        // "mag <n>": the rounds in the gun in hand (Last Word's last round).
+        const std::uintptr_t slot = EquippedGunSlot();
+        const int n = std::atoi(command.c_str() + 4);
+        RM_LOGW("dev mag %d: %s", n, slot && SafeStore<std::int32_t>(slot + re5::off::kSlotCount, n) ? "set" : "no gun in hand");
+    } else if (command.rfind("outgoing ", 0) == 0) {
+        // "outgoing <x>": every player hit's damage times x (developer; adapter.json dev.outgoing_multiplier).
+        g->settings.devOutgoingMultiplier = static_cast<float>(std::atof(command.c_str() + 9));
+        RM_LOGW("dev outgoing x%.2f", g->settings.devOutgoingMultiplier);
+    } else if (command.rfind("grabs ", 0) == 0) {
+        // "grabs break|game": every Majini grab broken at once (as Iron Grip), or left to the game.
+        g->devBreakGrabs = command.substr(6) == "break";
+        RM_LOGW("dev grabs %s", g->devBreakGrabs ? "broken" : "left to the game");
     } else if (command == "abandon" && run.HasActiveRun()) {
         // Ends the run as the overlay's "Abandon run" does; the match goes on as plain Mercenaries.
         Report(run.AbandonRun(now), "dev abandon run");
@@ -6633,7 +7099,20 @@ private:
             ctx.player_hp = g->match.localHp;
             ctx.player_hp_max = g->match.localMaxHp;
         }
+        // The rarity remake: the target's statuses, the boss, the rounds left (Last Word).
+        ctx.target_is_boss = hit.enemy != 0 && hit.enemy == g->boss.unit;
+        ctx.target_frozen = StatusActive(hit.enemy, ctx.now, &ElementStatus::frozenUntil);
+        ctx.target_poisoned = StatusActive(hit.enemy, ctx.now, &ElementStatus::poisonUntil);
+        if (const std::uintptr_t slot = EquippedGunSlot(); slot && !*ctx.is_melee) {
+            ctx.magazine_left = ReadOr<std::int32_t>(slot + re5::off::kSlotCount, -1);
+        }
         const auto result = g->run->ComputeOutgoingMultiplier(ctx);
+        if (!result.procs.empty()) QueueProcs(hit.enemy, result.procs);
+        static int magazineLogged = 0;
+        if (g->settings.probeHits && ctx.magazine_left && magazineLogged++ < 40) {
+            RM_LOGI("hit: %s, magazine %d left, x%.2f, %zu procs%s", ctx.weapon_id ? ctx.weapon_id->c_str() : "-", *ctx.magazine_left,
+                    result.multiplier, result.procs.size(), ctx.target_frozen ? ", frozen" : "");
+        }
         if (g->settings.probeHits && g->run->phase() == rm::Phase::ArenaActive) {
             RM_LOGD("outgoing core=%.4f crit=%d perk=%+.3f streak=%+.3f build=%+.3f weapon=%+.3f (%s%s) target %d/%d dev=%.2f",
                     result.multiplier, result.crit, result.breakdown.perk_bonus, result.breakdown.kill_streak_bonus,
@@ -6670,6 +7149,7 @@ private:
             if (r.attackerIsLocal) {
                 std::lock_guard lock(g->mutex);
                 if (g_hitSamples.size() < 64) g_hitSamples.push_back({r.enemy, Now() + 0.25});
+                g_specialVictims[r.enemy] = Now();  // its death soon after is the player's (fire, a fall)
             }
             return;
         }
@@ -6681,9 +7161,14 @@ private:
             kill.weapon_id = EquippedWeaponBaseId();
             kill.was_melee = engine::InMeleeAction(r.attacker);
         }
+        kill.target_is_boss = r.enemy == g->boss.unit;  // before EnemyKillId forgets the boss
+        kill.target_hp_max = r.maxHp;
+        kill.overkill = std::max(0, r.appliedDamage - r.hpBefore);
+        kill.target_frozen = StatusActive(r.enemy, kill.now, &ElementStatus::frozenUntil);
         kill.enemy_id = EnemyKillId(r.enemy, r.maxHp);
         kill.enemy_class = engine::ClassName(r.enemy);
         const auto outcome = g->run->OnEnemyKilled(kill);
+        if (!outcome.procs.empty()) QueueProcs(r.enemy, outcome.procs);
         if (outcome.counted) {
             RM_LOGI("kill counted: +%lld supplies, %d remaining%s", static_cast<long long>(outcome.supplies_awarded),
                     outcome.remaining, kill.was_melee.value_or(false) ? " (melee)" : "");
@@ -6791,6 +7276,7 @@ private:
         OpenChests(now);
         ApplyHeals();
         DriveSpecial(now);
+        DriveElements(now);
         DriveGrabBreak(now);
         TraceTwinShots(now);
         DrivePartner(now);
@@ -6849,6 +7335,7 @@ ImVec4 RarityColor(const std::string& rarity) {
     if (rarity == "rare") return ImVec4(0.40f, 0.65f, 1.00f, 1.0f);
     if (rarity == "epic") return ImVec4(0.75f, 0.45f, 1.00f, 1.0f);
     if (rarity == "legendary") return ImVec4(1.00f, 0.65f, 0.15f, 1.0f);
+    if (rarity == "exotic") return ImVec4(0.30f, 0.94f, 0.90f, 1.0f);
     return ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
 }
 

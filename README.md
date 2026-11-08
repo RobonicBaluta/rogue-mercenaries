@@ -66,7 +66,10 @@ empty: the mod's profile lives in `%LOCALAPPDATA%`, which the package never ship
    - **START RUN**: Solo, a random arena (one of the eight Mercenaries stages or one of the campaign areas in `configs/maps.json`) and your character and skin are handed to the game's own menu script, so no setup screen appears; the screen fades to black and the match loads about 1.5 s later. The run starts with it. Once a longer run is open (see **The ladder** under step 4), START RUN first asks for the **RUN LENGTH**: each length with the boss it ends on; a locked one is red and says which boss opens it.
    - **CHARACTERS**: pick who you play. All eight characters and every skin are available for now (the challenge unlocks come back once the roster is settled), whatever the game's own Mercenaries unlocks: the run starts the match with the costume directly. The character under the cursor is shown on the left, with the bust portrait the game's own character select uses (read from your game's files at runtime). Choosing a character opens its **SKINS**, each skin with its own portrait: most skins are a *build*, a strong rule with a cost (see **Skin builds** below), named in the row with its icon; the line below says what it does.
    - **PERKS**: three slots for the selected character, one per kind. *Style* defines how the character plays (Chris restocks a spray per arena, Sheva heals on kills); *Supply* is what a run starts with (grenade pouch, medkit, a shotgun for Chris); *Support* helps in bad situations (Second Wind, Last Stand below 30% health). Each slot opens its list, every perk with its icon: pick one (it shows SELECTED), press it again to clear the slot, and buy locked ones with Credits. The style slot falls back to the character's own trait. The fourth row, **SKIN**, names the selected skin's build and opens SKINS.
-   - **CREDITS**: your balance, lifetime records, the last run's results and weapon unlocks. Every RE5 gun is in the pool; the M93R (150), stun rod (100), grenade launcher (350, its explosive rounds then turn up in the shop and rewards), rocket launcher (400, one rocket) and flamethrower (300) are bought here first (added 2026-11-04, not yet played).
+   - **CREDITS**: your balance, lifetime records, the last run's results and weapon unlocks. Every RE5 gun is in the pool; the M93R (150), stun rod (100), grenade launcher (350, its explosive rounds then turn up in the shop and rewards), rocket launcher (400, one rocket) and flamethrower (300) are bought here first (added 2026-11-04, not yet played). The flamethrower
+     holds 100 fuel, which comes back by itself (5 a second once you stop firing for 1.5 s; there are no pumps here); held on
+     an enemy it sets Majini burning (they die within seconds), keeps the Chainsaw Majini staggered, and burns the bigger
+     ones and the dogs down more slowly.
    Every row of the main screen, CREDITS and the run's results has its icon next to it.
    Esc goes back one screen; locked entries are red, like the game's own disabled rows.
 3. Every run starts with one gun: the game's Mercenaries loadout is cut down to the weapon in your hands, its ammo and the knife when the first arena starts (for most costumes that is the pistol; Sheva keeps her VZ61), and your Supply perks then add their items and weapons (a weapon arrives with a full magazine). Everything else comes from rewards and the shop, which can offer any gun of `configs/weapons.json`: during a run every stage loads all of their models along with yours (about 20 MB), and what you buy comes with you to the next stage. The game's grid has nine slots; the number keys 1 to 4 pick its first four cells. (`configs/loadouts.json` still holds the item catalog and an optional point-budget roll, off by default.)
@@ -167,6 +170,34 @@ deals damage without shots on screen. Its kills count as yours.
 
 **Weapons.** Switching guns during an arena shows a card at the bottom right for a few seconds: the gun, its rarity
 and level, its damage factor, what its level adds, and its traits.
+
+**Weapon rarity.** A gun's rarity sets how many bonuses it rolls and how big they are: Uncommon one, Rare two,
+Epic and Legendary three, each rarity's bigger than the one below (a Legendary's twice the base roll). An **Epic** gun
+also carries an **element**, a **Legendary** one an element and a **legendary effect**, and an **Exotic** one (cyan)
+four bonuses, two elements and two legendary effects:
+
+| Element | What it does |
+|---|---|
+| Incendiary | Hits set the enemy on fire: a quarter of the hit's damage every second for 3 s. |
+| Shock | One hit in four stuns the enemy and arcs to two more within 5 m for 60 percent of the hit. |
+| Cryo | One hit in ten freezes the enemy for 3 s. A frozen Majini dies to the next hit (the game's own shatter); other enemies take 50 percent more while frozen. A frozen one that dies shatters: 40 percent of its health (up to 1200) to everyone within 3 m. |
+| Explosive | Kills blow up: half the victim's health (up to 1500) to everyone within 3.5 m, who are thrown. |
+| Toxic | Hits poison the enemy for 5 s, 12 percent of the hit every second; a poisoned one takes 25 percent more from everything. |
+
+Town, village and soldier Majini play the game's own reactions to these (on fire, frozen, acid, the flash stun,
+blown away, the head burst); other enemies take the damage alone, and a boss takes 15 to 20 percent more damage from
+the gun instead of a status. Legendary effects: **Executioner Rounds** (finishes off any enemy below 20 percent
+health; a boss takes double damage there), **Dragons Breath** (every hit sets the enemies around the target on
+fire), **Chain Lightning** (every 8th hit arcs to 4 enemies within 8 m for its full damage), **Bottomless** (kills
+refill the magazine), **Overkill** (damage past a kill hits the nearest enemy within 6 m), **Last Word** (the last
+round of a magazine kills any enemy; a boss takes triple damage), **Bloodthirst** (kills heal 3 percent of your
+health).
+
+**Refining** raises a gun one rarity: it keeps everything it has, its bonuses grow to the new rarity's size, and it
+gains what that rarity adds (its help line lists it). A refine is one of the reward choices now and then (about one
+arena in seven), and always after an arena rated A or S; the shop sells one now and then (40 supplies to reach
+Uncommon, up to 240 for Exotic); and one chest in about sixteen refines the gun in your hands. Legendary is the top
+until you beat the Giant Uroboros: from then on a Legendary refines to Exotic (the run results say so).
 
 **Wesker's special** picks its move, and its ring shows which one the button would make: **LUNGE**, his
 long-range melee, at an enemy up to 10 m away in a wide cone ahead that is reeling from a hit (shot in

@@ -7,12 +7,14 @@
 
 namespace rm {
 
-/// Shared rarity ladder for perks, weapons and reward bundles (ordered low -> high).
-enum class Rarity { Common = 0, Uncommon = 1, Rare = 2, Epic = 3, Legendary = 4 };
+/// Shared rarity ladder for perks, weapons and reward bundles (ordered low -> high). Exotic is a
+/// weapon's tier above Legendary, reached only by refining one (rm::RefineWeapon): its weights and
+/// prices in the economy tables default to 0, so nothing rolls it.
+enum class Rarity { Common = 0, Uncommon = 1, Rare = 2, Epic = 3, Legendary = 4, Exotic = 5 };
 
-inline constexpr std::size_t kRarityCount = 5;
+inline constexpr std::size_t kRarityCount = 6;
 inline constexpr std::array<Rarity, kRarityCount> kAllRarities = {
-    Rarity::Common, Rarity::Uncommon, Rarity::Rare, Rarity::Epic, Rarity::Legendary,
+    Rarity::Common, Rarity::Uncommon, Rarity::Rare, Rarity::Epic, Rarity::Legendary, Rarity::Exotic,
 };
 
 /// Per-rarity weights indexed by RarityIndex().

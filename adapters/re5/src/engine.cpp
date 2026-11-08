@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <cmath>
+#include <filesystem>
 #include <map>
 #include <mutex>
 #include <string>
@@ -529,6 +530,15 @@ constexpr std::size_t kListMotions = 0x60;  // rMotionList: its motion data (u16
 constexpr std::size_t kTrackSize = 0x20;    // a motion's track: +1 type (0..2 a bone's, 3..4 the root's), +3 bone id
 constexpr std::uint8_t kBodyBones = 64;     // bone ids 0..63: every player rig's body (the rest: clothing, hair)
 
+bool CallResourceGetTyped(std::uintptr_t manager, std::uintptr_t dti, const char* path, unsigned flags, std::uintptr_t& out) {
+    __try {
+        out = reinterpret_cast<ResourceGetFn>(re5::addr::kFnResourceGet)(manager, dti, path, flags);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
 bool CallResourceGet(std::uintptr_t manager, const char* path, std::uintptr_t& out) {
     __try {
         out = reinterpret_cast<ResourceGetFn>(re5::addr::kFnResourceGet)(manager, re5::addr::kDtiMotionList, path, kLookupOnly);
@@ -598,6 +608,35 @@ std::uintptr_t LoadedMotionList(const char* path) {
         return 0;
     }
     return list;
+}
+
+std::uintptr_t EffectList(const char* path, bool load) {
+    if (!g_caps.motions || !path) return 0;  // the same get and release as the motions'
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kResourceManager, 0);
+    if (!manager) return 0;
+    std::uintptr_t list = 0;
+    if (!CallResourceGetTyped(manager, re5::addr::kDtiEffectList, path, kLookupOnly, list)) {
+        RM_LOGW("effects: the lookup of %s faulted", path);
+        return 0;
+    }
+    if (list || !load) return list;
+    if (!EffectFileExists(path)) {
+        RM_LOGW("effects: %s.efl is not in nativePC_MT; not loaded", path);
+        return 0;
+    }
+    if (!CallResourceGetTyped(manager, re5::addr::kDtiEffectList, path, 0, list)) {
+        RM_LOGW("effects: loading %s faulted", path);
+        return 0;
+    }
+    return list;
+}
+
+bool EffectFileExists(const std::string& path) {
+    wchar_t exe[MAX_PATH] = {};
+    if (GetModuleFileNameW(nullptr, exe, MAX_PATH) == 0) return false;
+    std::filesystem::path file = std::filesystem::path(exe).parent_path() / "nativePC_MT" / (path + ".efl");
+    std::error_code ec;
+    return std::filesystem::is_regular_file(file, ec);
 }
 
 void ReleaseResource(std::uintptr_t resource) {

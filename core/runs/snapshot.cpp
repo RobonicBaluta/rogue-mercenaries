@@ -15,13 +15,58 @@ std::string Percent(double fraction) {
     return buf;
 }
 
+// A gun's lines: its elements first, then its legendary effects, then its bonuses.
+std::vector<std::string> WeaponLines(const WeaponInstance& w, const Content& content) {
+    std::vector<std::string> out;
+    for (Element e : w.elements) out.push_back(DescribeElement(e, &content));
+    for (const Affix& a : w.affixes) {
+        if (IsUniqueAffix(a.kind)) out.push_back(DescribeAffix(a, &content));
+    }
+    for (const Affix& a : w.affixes) {
+        if (!IsUniqueAffix(a.kind)) out.push_back(DescribeAffix(a, &content));
+    }
+    return out;
+}
+
 std::string JoinAffixes(const WeaponInstance& w, const Content& content) {
     std::string out;
-    for (const Affix& a : w.affixes) {
+    for (const std::string& line : WeaponLines(w, content)) {
         if (!out.empty()) out += "; ";
-        out += DescribeAffix(a, &content);
+        out += line;
     }
     return out.empty() ? std::string("no affixes") : out;
+}
+
+std::string Capitalised(std::string_view s) {
+    std::string out(s);
+    if (!out.empty() && out[0] >= 'a' && out[0] <= 'z') out[0] = static_cast<char>(out[0] - 'a' + 'A');
+    return out;
+}
+
+// What a refine adds: the new elements, effects and bonuses, and how much the old bonuses grow.
+std::string RefineDetail(const WeaponInstance* now, const WeaponInstance& refined, const Content& content) {
+    std::string out = "Becomes " + Capitalised(RarityName(refined.rarity)) + ".";
+    std::vector<std::string> gains;
+    for (Element e : refined.elements) {
+        if (now == nullptr || std::find(now->elements.begin(), now->elements.end(), e) == now->elements.end()) {
+            gains.push_back(DescribeElement(e, &content));
+        }
+    }
+    for (const Affix& a : refined.affixes) {
+        const bool had = now != nullptr && std::any_of(now->affixes.begin(), now->affixes.end(), [&a](const Affix& x) {
+            return x.kind == a.kind && x.unique_id == a.unique_id;
+        });
+        if (!had) gains.push_back(DescribeAffix(a, &content));
+    }
+    for (const std::string& g : gains) out += " " + g + ".";
+    if (now != nullptr) {
+        const auto& rules = content.economy().weapon_rarity;
+        const double from = rules[RarityIndex(now->rarity)].magnitude_mult;
+        const double to = rules[RarityIndex(refined.rarity)].magnitude_mult;
+        const bool has_bonus = std::any_of(now->affixes.begin(), now->affixes.end(), [](const Affix& a) { return !IsUniqueAffix(a.kind); });
+        if (has_bonus && from > 0.0 && to > from) out += " Its bonuses grow by " + Percent(to / from - 1.0) + ".";
+    }
+    return out;
 }
 
 // The maps.json name of an arena's map key; empty when unknown.
@@ -102,7 +147,7 @@ RunSnapshot RunController::Snapshot(double now) const {
         v.name = WeaponName(w, c);
         v.rarity = std::string(RarityName(w.rarity));
         v.level = w.level;
-        for (const Affix& a : w.affixes) v.affixes.push_back(DescribeAffix(a, &c));
+        v.affixes = WeaponLines(w, c);
         v.level_bonus = LevelDamageBonus(c.economy(), w.level);
         if (const WeaponBaseDef* base = c.FindWeapon(w.base_id)) v.base_mult = base->base_damage_mult;
         s.weapons.push_back(std::move(v));
@@ -128,6 +173,16 @@ RunSnapshot RunController::Snapshot(double now) const {
                 v.id = "supplies";
                 v.title = "+" + std::to_string(r.supplies) + " supplies";
                 break;
+            case RewardKind::Refine: {
+                v.id = r.target_instance_id;
+                const WeaponInstance* held = nullptr;
+                for (const WeaponInstance& w : run_.weapons) {
+                    if (w.instance_id == r.target_instance_id) held = &w;
+                }
+                v.title = "Refine " + WeaponName(r.weapon, c);
+                v.detail = RefineDetail(held, r.weapon, c);
+                break;
+            }
             case RewardKind::Item:
                 v.id = r.item_id;
                 if (const EquipmentDef* e = c.loadouts().FindEquipment(r.item_id)) {
@@ -174,6 +229,16 @@ RunSnapshot RunController::Snapshot(double now) const {
                 v.title = WeaponName(o.weapon, c) + " (" + v.rarity + ")";
                 v.detail = JoinAffixes(o.weapon, c);
                 break;
+            case ShopOfferKind::Refine: {
+                v.id = o.target_instance_id;
+                const WeaponInstance* held = nullptr;
+                for (const WeaponInstance& w : run_.weapons) {
+                    if (w.instance_id == o.target_instance_id) held = &w;
+                }
+                v.title = "Refine " + WeaponName(o.weapon, c);
+                v.detail = RefineDetail(held, o.weapon, c);
+                break;
+            }
             case ShopOfferKind::Perk:
                 v.id = o.perk_id;
                 if (const PerkDef* p = c.FindPerk(o.perk_id)) {

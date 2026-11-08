@@ -108,6 +108,7 @@ struct LadderUnlock {
         HardBoss,  // the length's hard boss is now a choice at its end
         Length,    // a length opened
         Finale,    // the finale arena follows its length now
+        Exotic,    // guns can be refined to Exotic now (economy refine.exotic_unlocked_by beaten)
     };
     Kind kind = Kind::HardBoss;
     std::string length_id;  // the length it concerns
@@ -207,6 +208,7 @@ struct RunState {
 
     std::vector<RewardChoice> reward_offer;
     double reward_rarity_shift = 0.0;
+    bool reward_refine_sure = false;  // the arena's rating guarantees a refine among the rewards (rerolls too)
     bool reward_chosen = false;
     std::vector<ShopOffer> shop_offers;
     int free_shop_rerolls = 0;  // left in this shop visit (the skin build's)
@@ -216,6 +218,7 @@ struct RunState {
 
     // Combat bookkeeping (reset per arena).
     std::vector<KillRecord> kill_records;
+    StringMap<int> weapon_hits;  // hits per weapon instance this run (Chain Lightning's every N-th)
     std::optional<double> last_melee_time;
     std::optional<double> player_hp;
     std::optional<double> player_hp_max;
