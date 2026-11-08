@@ -64,7 +64,7 @@ empty: the mod's profile lives in `%LOCALAPPDATA%`, which the package never ship
 1. Launch RE5 from Steam. Top right shows *Rogue Mercenaries – Play menu or F7*.
 2. In the game's **Play** menu choose **ROGUE MERCENARIES**, the last row (Up from the first row gets there). It opens the mod's own menu, drawn by the game itself:
    - **START RUN**: Solo, a random arena (one of the eight Mercenaries stages or one of the campaign areas in `configs/maps.json`) and your character and skin are handed to the game's own menu script, so no setup screen appears; the screen fades to black and the match loads about 1.5 s later. The run starts with it. Once a longer run is open (see **The ladder** under step 4), START RUN first asks for the **RUN LENGTH**: each length with the boss it ends on; a locked one is red and says which boss opens it.
-   - **CHARACTERS**: pick who you play. Every character and skin is available (the challenge unlocks come back once the roster is settled) except Wesker's: Midnight Wesker and S.T.A.R.S. Wesker are secret unlocks of the ladder's bosses, and Wesker stays locked until one of them opens; whatever the game's own Mercenaries unlocks: the run starts the match with the costume directly. The character under the cursor is shown on the left, with the bust portrait the game's own character select uses (read from your game's files at runtime). Choosing a character opens its **SKINS**, each skin with its own portrait: most skins are a *build*, a strong rule with a cost (see **Skin builds** below), named in the row with its icon; the line below says what it does.
+   - **CHARACTERS**: pick who you play. You start with Chris and Sheva in their BSAA outfits; everyone and everything else is earned (see **Unlocks** below), whatever the game's own Mercenaries unlocks: the run starts the match with the costume directly. A locked row is red and says what opens it and how far along you are (`2 of 5 done`); RUN RESULTS names what a run unlocked. The character under the cursor is shown on the left, with the bust portrait the game's own character select uses (read from your game's files at runtime). Choosing a character opens its **SKINS**, each skin with its own portrait: most skins are a *build*, a strong rule with a cost (see **Skin builds** below), named in the row with its icon; the line below says what it does.
    - **PERKS**: three slots for the selected character, one per kind. *Style* defines how the character plays (Chris restocks a spray per arena, Sheva heals on kills); *Supply* is what a run starts with (grenade pouch, medkit, a shotgun for Chris); *Support* helps in bad situations (Second Wind, Last Stand below 30% health). Each slot opens its list, every perk with its icon: pick one (it shows SELECTED), press it again to clear the slot, and buy locked ones with Credits. The style slot falls back to the character's own trait. The fourth row, **SKIN**, names the selected skin's build and opens SKINS.
    - **CREDITS**: your balance, lifetime records, the last run's results and weapon unlocks. Every RE5 gun is in the pool; the M93R (150), stun rod (100), grenade launcher (350, its explosive rounds then turn up in the shop and rewards), rocket launcher (400, one rocket) and flamethrower (300) are bought here first (added 2026-11-04, not yet played). The flamethrower
      holds 100 fuel, which comes back by itself (5 a second once you stop firing for 1.5 s; there are no pumps here); held on
@@ -151,6 +151,29 @@ the others are written and wait for a playtest (2026-11-03).
 | Excella | Dress | Ambition | Every melee kill raises one stat for the rest of the run, up to its cap: damage (+4 percent, to +100), defence (+3, to +70), health (+5, to +100), critical chance (+2, to +30), movement speed (+3, to +60), healing (+5, to +50) or supplies (+4, to +50). |
 | Wesker | Midnight | Uroboros Speed | Special: a dash, or a lunge at an enemy ahead (below); a second special, the burst. Untouchable while they act. 70 percent of his health. |
 | Wesker | S.T.A.R.S. | Iron Fist | Melee hits three times as hard. Only his own Samurai Edge, Lightning Hawk and Hydra can be bought or used. |
+
+**Unlocks.** Lifetime progress, kept in your profile. A character's first skin comes with the character.
+
+| Character or skin | How it opens |
+|---|---|
+| Jill | Complete a run as Chris |
+| Josh | Complete a run as Sheva |
+| Barry | Kill 500 enemies in total |
+| Rebecca | Clear 5 arenas without taking damage |
+| Excella | Earn 1500 credits in total |
+| Leon (needs his mod) | Beat Uroboros Aheri |
+| Wesker | Secret: his two skins open with bosses of the ladder, and he with the first of them |
+| Chris: Safari, Warrior | Complete 2, 5 runs as Chris |
+| Chris: S.T.A.R.S. | Earn an S rating in 3 arenas |
+| Chris: Heavy Metal | Kill 1500 enemies in total |
+| Sheva: Clubbin', Fairy Tale | Complete 2, 5 runs as Sheva |
+| Sheva: Tribal | Kill 250 enemies in total |
+| Sheva: Business | Earn 750 credits in total |
+| Sheva: Hound Wolf Squad (mod) | Clear 8 arenas in one run |
+| Jill: Battle Suit | Complete a run as Jill |
+| Jill: Classic (mod) | Beat the Giant Uroboros |
+| Excella: Experimenter (mod) | Complete 3 runs as Excella |
+| Leon: Jacket (mod) | Complete 3 runs as Leon |
 
 **Mod skins (optional).** Some skins wear a costume mod made by someone else, from its creator's page on Nexus Mods.
 None of it comes with ROGUE MERCENARIES: without the mod the game plays as always, and SKINS lists the skin in red,

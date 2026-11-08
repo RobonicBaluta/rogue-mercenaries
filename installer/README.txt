@@ -8,8 +8,8 @@ WHAT IT IS
   there is no clock; from the second arena on, enemies from other stages join in, and
   later arenas get harder. After each arena you pick a reward, shop with the run's
   supplies, and choose the next arena. A run banks Credits, which unlock perks and
-  weapons in the mod's menu. Every character and skin is open from the start except
-  Wesker: his two skins are secret unlocks.
+  weapons in the mod's menu. You start with Chris and Sheva; every other character and
+  skin is earned, and its locked row says how (some are secret).
 
 THE LADDER
   Your first runs are 4 arenas long and end on a boss. Beating bosses opens harder

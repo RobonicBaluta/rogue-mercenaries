@@ -1,5 +1,5 @@
 {
-  "_comment": "Playable characters. Every character and skin is available from the start (the challenge fields unlock_kind/unlock_count/unlock_text/unlock_character, see core/include/rm/characters.h, are kept for later). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin is a build (ROADMAP M8, written by scripts/write_perks.py): 'build' holds its rules (weapon filters, damage by weapon category, supplies, free shop rerolls, rarity, uncapped upgrades, a starting weapon, max health), and a skin without one yet keeps a small trait (a 'skin' perk). costume_index is the class and the model each slot loads, checked in game: 0..2 and 10 Heavy Metal, 14 Warrior Chris; 3 and 11 Fairy Tale, 15 Business Sheva; 9 Wesker S.T.A.R.S.; 12 Josh, 13 Excella, 16 Barry, 17 Rebecca. Text shown by the game font: letters, digits, space, comma and period only. A skin with 'mod' wears a third-party mod's look (name, author, url: its page; files: the archives read from RogueMercenaries\\mods instead of the game's, with the size checked); without the mod it is listed but not selectable.",
+  "_comment": "Playable characters. Chris and Sheva and their first skins are open from the start; every other character and skin is earned (unlock_kind/unlock_count/unlock_text/unlock_character/unlock_boss, see core/include/rm/characters.h; a character's first skin comes with it). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin is a build (ROADMAP M8, written by scripts/write_perks.py): 'build' holds its rules (weapon filters, damage by weapon category, supplies, free shop rerolls, rarity, uncapped upgrades, a starting weapon, max health), and a skin without one yet keeps a small trait (a 'skin' perk). costume_index is the class and the model each slot loads, checked in game: 0..2 and 10 Heavy Metal, 14 Warrior Chris; 3 and 11 Fairy Tale, 15 Business Sheva; 9 Wesker S.T.A.R.S.; 12 Josh, 13 Excella, 16 Barry, 17 Rebecca. Text shown by the game font: letters, digits, space, comma and period only. A skin with 'mod' wears a third-party mod's look (name, author, url: its page; files: the archives read from RogueMercenaries\\mods instead of the game's, with the size checked); without the mod it is listed but not selectable.",
   "schema_version": 1,
   "characters": [
     {
@@ -39,7 +39,11 @@
               "0x010A": 10
             },
             "max_health_mult": 1.25
-          }
+          },
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "chris",
+          "unlock_count": 2,
+          "unlock_text": "Complete 2 runs as Chris"
         },
         {
           "id": "chris_stars",
@@ -50,7 +54,10 @@
             "name": "Field Kit",
             "icon": "medkit",
             "summary": "A first aid spray on every arena clear."
-          }
+          },
+          "unlock_kind": "s_rank_arenas",
+          "unlock_count": 3,
+          "unlock_text": "Earn an S rating in 3 arenas"
         },
         {
           "id": "chris_warrior",
@@ -72,7 +79,11 @@
               "handgun": 0.25,
               "magnum": 0.25
             }
-          }
+          },
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "chris",
+          "unlock_count": 5,
+          "unlock_text": "Complete 5 runs as Chris"
         },
         {
           "id": "chris_heavy_metal",
@@ -88,7 +99,10 @@
             "ammo_stack_mult": 3,
             "shop_weapon": "gatling",
             "shop_weapon_price": 100
-          }
+          },
+          "unlock_kind": "total_kills",
+          "unlock_count": 1500,
+          "unlock_text": "Kill 1500 enemies in total"
         }
       ]
     },
@@ -126,7 +140,11 @@
             "summary": "Half again as many supplies, and one free shop reroll at every shop.",
             "supplies_mult": 1.5,
             "free_shop_rerolls": 1
-          }
+          },
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "sheva",
+          "unlock_count": 2,
+          "unlock_text": "Complete 2 runs as Sheva"
         },
         {
           "id": "sheva_tribal",
@@ -144,7 +162,10 @@
             "category_damage": {
               "bow": 0.5
             }
-          }
+          },
+          "unlock_kind": "total_kills",
+          "unlock_count": 250,
+          "unlock_text": "Kill 250 enemies in total"
         },
         {
           "id": "sheva_business",
@@ -163,7 +184,10 @@
                 "smg"
               ]
             }
-          }
+          },
+          "unlock_kind": "credits_earned",
+          "unlock_count": 750,
+          "unlock_text": "Earn 750 credits in total"
         },
         {
           "id": "sheva_fairy_tale",
@@ -180,7 +204,11 @@
                 "m3"
               ]
             }
-          }
+          },
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "sheva",
+          "unlock_count": 5,
+          "unlock_text": "Complete 5 runs as Sheva"
         },
         {
           "id": "sheva_hound_wolf",
@@ -216,7 +244,10 @@
               "incendiary"
             ],
             "supplies_mult": 0.75
-          }
+          },
+          "unlock_kind": "best_arena",
+          "unlock_count": 8,
+          "unlock_text": "Clear 8 arenas in one run"
         }
       ]
     },
@@ -266,7 +297,11 @@
               "power": 90,
               "duration_seconds": 1.5
             }
-          }
+          },
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "jill",
+          "unlock_count": 1,
+          "unlock_text": "Complete a run as Jill"
         },
         {
           "id": "jill_classic",
@@ -320,9 +355,17 @@
               ]
             },
             "max_health_mult": 0.85
-          }
+          },
+          "unlock_kind": "boss_beaten",
+          "unlock_boss": "boss:uEm43",
+          "unlock_count": 1,
+          "unlock_text": "Beat the Giant Uroboros"
         }
-      ]
+      ],
+      "unlock_kind": "runs_completed_as",
+      "unlock_character": "chris",
+      "unlock_count": 1,
+      "unlock_text": "Complete a run as Chris"
     },
     {
       "id": "josh",
@@ -358,7 +401,11 @@
             }
           }
         }
-      ]
+      ],
+      "unlock_kind": "runs_completed_as",
+      "unlock_character": "sheva",
+      "unlock_count": 1,
+      "unlock_text": "Complete a run as Sheva"
     },
     {
       "id": "barry",
@@ -395,7 +442,10 @@
             "max_health_mult": 1.5
           }
         }
-      ]
+      ],
+      "unlock_kind": "total_kills",
+      "unlock_count": 500,
+      "unlock_text": "Kill 500 enemies in total"
     },
     {
       "id": "rebecca",
@@ -430,7 +480,10 @@
             "heal_damage_seconds": 12
           }
         }
-      ]
+      ],
+      "unlock_kind": "no_damage_arenas",
+      "unlock_count": 5,
+      "unlock_text": "Clear 5 arenas without taking damage"
     },
     {
       "id": "excella",
@@ -505,9 +558,16 @@
             "refine_every_shop": true,
             "refine_price_mult": 0.5,
             "max_health_mult": 0.8
-          }
+          },
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "excella",
+          "unlock_count": 3,
+          "unlock_text": "Complete 3 runs as Excella"
         }
-      ]
+      ],
+      "unlock_kind": "credits_earned",
+      "unlock_count": 1500,
+      "unlock_text": "Earn 1500 credits in total"
     },
     {
       "id": "wesker",
@@ -555,6 +615,7 @@
           },
           "unlock_kind": "boss_beaten",
           "unlock_boss": "boss:uEm81",
+          "unlock_count": 1,
           "unlock_text": "Locked"
         },
         {
@@ -576,6 +637,7 @@
           },
           "unlock_kind": "boss_beaten",
           "unlock_boss": "boss:uEm82",
+          "unlock_count": 1,
           "unlock_text": "Locked"
         }
       ]
@@ -666,7 +728,11 @@
             "free_shop_rerolls": 1,
             "rarity_shift": 0.3,
             "supplies_mult": 0.8
-          }
+          },
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "leon",
+          "unlock_count": 3,
+          "unlock_text": "Complete 3 runs as Leon"
         }
       ],
       "starting_passive": "leon_roundhouse",
@@ -674,7 +740,11 @@
         "leon_suplex",
         "leon_agent_training",
         "leon_matilda"
-      ]
+      ],
+      "unlock_kind": "boss_beaten",
+      "unlock_boss": "boss:uEm41",
+      "unlock_count": 1,
+      "unlock_text": "Beat Uroboros Aheri"
     }
   ]
 }

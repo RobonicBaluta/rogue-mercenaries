@@ -1,7 +1,9 @@
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <set>
 #include <string>
+#include <vector>
 
 #include <catch_amalgamated.hpp>
 
@@ -116,26 +118,59 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
     CHECK(sheva->enabled);
     CHECK(chris->unlock_cost_credits == 0);
     CHECK(sheva->unlock_cost_credits == 0);
-    // Everyone is enabled and available from the start (the challenge machinery stays for later),
-    // but for skins a ladder boss unlocks (the user, 2026-11-07: Midnight Wesker by beating him).
-    for (const CharacterDef& other : c.characters()) {
-        if (other.id == "chris" || other.id == "sheva") continue;
-        INFO(other.id);
-        CHECK(other.enabled);
-        CHECK(other.unlock.kind == ChallengeKind::None);
-        REQUIRE_FALSE(other.skins.empty());
-        for (const SkinDef& skin : other.skins) {
-            INFO(skin.id);
-            CHECK((skin.unlock.kind == ChallengeKind::None || skin.unlock.kind == ChallengeKind::BossBeaten));
-            if (skin.unlock.kind == ChallengeKind::BossBeaten) {
-                // Its boss is one a run can end on.
-                bool reachable = false;
-                for (const MapDef& m : c.maps()) reachable = reachable || (m.boss && "boss:" + m.boss->unit_class == skin.unlock.boss);
-                CHECK(reachable);
+    // Only Chris and Sheva with their first skins are open from the start; everything else is earned
+    // (the user, 2026-11-08: "except Sheva base and Chris base all the other characters should be
+    // unlocked via meta achievements").
+    const auto earnable = [&c](const Challenge& u) {
+        CHECK(u.count >= 1);
+        // Drawn by the game font; the menus add the full stop.
+        CHECK_FALSE(u.text.empty());
+        CHECK(u.text.back() != '.');
+        CHECK(u.text.size() <= 44);
+        for (const char ch : u.text) CHECK((std::isalnum(static_cast<unsigned char>(ch)) || ch == ' ' || ch == ',' || ch == '.'));
+        if (u.kind == ChallengeKind::RunsCompletedAs) CHECK(c.FindCharacter(u.character) != nullptr);
+        if (u.kind == ChallengeKind::BossBeaten) {
+            // A boss of the ladder, one a run really fights; Uroboros Mkono's end is not known yet.
+            bool reachable = false;
+            const auto& ladder = c.economy().ladder;
+            std::vector<int> keys{ladder.finale.boss};
+            for (const auto& l : ladder.lengths) {
+                keys.push_back(l.easy_boss);
+                keys.insert(keys.end(), l.hard_bosses.begin(), l.hard_bosses.end());
             }
+            for (const int key : keys) {
+                const MapDef* m = c.FindMapByStage(key);
+                reachable = reachable || (m != nullptr && m->boss && "boss:" + m->boss->unit_class == u.boss);
+            }
+            CHECK(reachable);
+            CHECK(u.boss != "boss:uEm42");
         }
-        CHECK(other.unlock_cost_credits == 0);
-        CHECK(CheckCharacter(&other, {}) == CharacterGate::Selectable);
+    };
+    for (const CharacterDef& ch : c.characters()) {
+        INFO(ch.id);
+        CHECK(ch.enabled);
+        CHECK(ch.unlock_cost_credits == 0);
+        REQUIRE_FALSE(ch.skins.empty());
+        const bool base = ch.id == "chris" || ch.id == "sheva";
+        if (base) {
+            CHECK(ch.unlock.kind == ChallengeKind::None);
+            CHECK(CheckCharacter(&ch, {}) == CharacterGate::Selectable);
+        } else if (ch.id != "wesker") {  // his two skins are his locks
+            CHECK(ch.unlock.kind != ChallengeKind::None);
+            earnable(ch.unlock);
+            CHECK(CheckCharacter(&ch, {}) == CharacterGate::Locked);
+        }
+        for (std::size_t k = 0; k < ch.skins.size(); ++k) {
+            const SkinDef& skin = ch.skins[k];
+            INFO(skin.id);
+            if (k == 0 && ch.id != "wesker") {
+                CHECK(skin.unlock.kind == ChallengeKind::None);  // it comes with the character
+                continue;
+            }
+            CHECK(skin.unlock.kind != ChallengeKind::None);
+            CHECK(CheckSkin(skin, {}) == CharacterGate::Locked);
+            earnable(skin.unlock);
+        }
     }
     const PerkDef* boulder = c.FindPerk("chris_pocket_grenades");
     const PerkDef* marksman = c.FindPerk("sheva_flash_tactics");

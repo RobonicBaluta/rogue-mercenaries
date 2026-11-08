@@ -371,6 +371,41 @@ for p in perks:
 # Midnight Wesker opens with the boss Wesker beaten, S.T.A.R.S. Wesker with Uroboros Wesker (the user's
 # ladder, 2026-11-07); until one of them is beaten Wesker himself is locked.
 SKIN_BOSS_UNLOCKS = {'wesker_midnight': 'boss:uEm81', 'wesker_stars': 'boss:uEm82'}
+# Everything but the two base characters is earned (the user, 2026-11-08: "except Sheva base and
+# Chris base all the other characters should be unlocked via meta achievements"). A character's first
+# skin comes with it; every other skin has its own. Progress is the profile's lifetime stats, shown as
+# "2 of 5 done" while locked. unlock_text is drawn by the game font (the menus add the full stop).
+def _runs_as(who, name, n):
+    text = f'Complete a run as {name}' if n == 1 else f'Complete {n} runs as {name}'
+    return {'unlock_kind': 'runs_completed_as', 'unlock_character': who, 'unlock_count': n, 'unlock_text': text}
+def _stat(kind, n, text):
+    return {'unlock_kind': kind, 'unlock_count': n, 'unlock_text': text}
+def _boss(key, text):
+    return {'unlock_kind': 'boss_beaten', 'unlock_boss': key, 'unlock_count': 1, 'unlock_text': text}
+CHARACTER_UNLOCKS = {
+    'jill': _runs_as('chris', 'Chris', 1),
+    'josh': _runs_as('sheva', 'Sheva', 1),
+    'barry': _stat('total_kills', 500, 'Kill 500 enemies in total'),
+    'rebecca': _stat('no_damage_arenas', 5, 'Clear 5 arenas without taking damage'),
+    'excella': _stat('credits_earned', 1500, 'Earn 1500 credits in total'),
+    'leon': _boss('boss:uEm41', 'Beat Uroboros Aheri'),
+}
+SKIN_UNLOCKS = {
+    'chris_safari': _runs_as('chris', 'Chris', 2),
+    'chris_stars': _stat('s_rank_arenas', 3, 'Earn an S rating in 3 arenas'),
+    'chris_warrior': _runs_as('chris', 'Chris', 5),
+    'chris_heavy_metal': _stat('total_kills', 1500, 'Kill 1500 enemies in total'),
+    'sheva_clubbin': _runs_as('sheva', 'Sheva', 2),
+    'sheva_tribal': _stat('total_kills', 250, 'Kill 250 enemies in total'),
+    'sheva_business': _stat('credits_earned', 750, 'Earn 750 credits in total'),
+    'sheva_fairy_tale': _runs_as('sheva', 'Sheva', 5),
+    'sheva_hound_wolf': _stat('best_arena', 8, 'Clear 8 arenas in one run'),
+    'jill_battle_suit': _runs_as('jill', 'Jill', 1),
+    'jill_classic': _boss('boss:uEm43', 'Beat the Giant Uroboros'),
+    'excella_experimenter': _runs_as('excella', 'Excella', 3),
+    'leon_jacket': _runs_as('leon', 'Leon', 3),
+}
+UNLOCK_FIELDS = ('unlock_kind', 'unlock_count', 'unlock_character', 'unlock_boss', 'unlock_text')
 # Supported third-party mods (2026-11-08, the user's list: "not mandatory", "you need to go to the
 # original creators mod page and get it to endorse it"). Each is a skin that stands in for a costume
 # (its build and trait are that skin's); the player unzips the mod into RogueMercenaries\mods and the
@@ -429,6 +464,9 @@ for m in MOD_SKINS:
 for ch in c['characters']:
     ch['starting_passive'] = passives[ch['id']]
     ch['skill_pool'] = pools[ch['id']]
+    for field in UNLOCK_FIELDS:
+        ch.pop(field, None)
+    ch.update(CHARACTER_UNLOCKS.get(ch['id'], {}))
     for s in ch.get('skins', []):
         own = s['id'] if s['id'] in BUILDS else MOD_BASE.get(s['id'], s['id'])  # a mod skin without its own build wears its base's
         trait = own + '_trait'
@@ -442,14 +480,17 @@ for ch in c['characters']:
             s.pop('build', None)
         # Skins a boss unlocks (the user's ladder, 2026-11-07: "once you get midnight wesker you unlock
         # him", the description not saying how). The menus add the full stop.
-        for field in ('unlock_kind', 'unlock_boss', 'unlock_text'):
+        for field in UNLOCK_FIELDS:
             s.pop(field, None)
+        s.update(SKIN_UNLOCKS.get(s['id'], {}))
         if s['id'] in SKIN_BOSS_UNLOCKS:
             s['unlock_kind'] = 'boss_beaten'
             s['unlock_boss'] = SKIN_BOSS_UNLOCKS[s['id']]
+            s['unlock_count'] = 1
             s['unlock_text'] = 'Locked'
-c['_comment'] = ("Playable characters. Every character and skin is available from the start (the challenge fields unlock_kind/unlock_count/"
-                 "unlock_text/unlock_character, see core/include/rm/characters.h, are kept for later). starting_weapons: the first entry is "
+c['_comment'] = ("Playable characters. Chris and Sheva and their first skins are open from the start; every other character and skin "
+                 "is earned (unlock_kind/unlock_count/unlock_text/unlock_character/unlock_boss, see core/include/rm/characters.h; a "
+                 "character's first skin comes with it). starting_weapons: the first entry is "
                  "the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come "
                  "from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks "
                  "the character can unlock. A skin is a build (ROADMAP M8, written by scripts/write_perks.py): 'build' holds its rules "

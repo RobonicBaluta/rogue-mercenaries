@@ -906,7 +906,13 @@ int Simulator::Run() {
     ro.capabilities = caps_;
     ro.sink = &sink;
     ro.damage_sample_every = 50;
-    RunController rc(content_, Profile{}, ro);
+    // Every build is played in turn, earned or not: the simulated profile has them all.
+    Profile everyone;
+    for (const CharacterDef& c : content_->characters()) {
+        everyone.unlocked_characters.insert(c.id);
+        for (const SkinDef& skin : c.skins) everyone.unlocked_characters.insert(skin.id);
+    }
+    RunController rc(content_, std::move(everyone), ro);
 
     const auto start = std::chrono::steady_clock::now();
     const std::array<Policy, 3> mix = {Policy::Random, Policy::Greedy, Policy::Safe};
