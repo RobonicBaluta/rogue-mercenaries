@@ -57,6 +57,7 @@ set(RM_RE5_SOURCES
     src/resources.cpp
     src/world.cpp
     src/host.cpp
+    src/file_redirect.cpp
     dinput8.def)
 
 if(TARGET rm_core AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/mod.cpp)

@@ -319,17 +319,44 @@ for p in perks:
         assert all(ch.isalnum() or ch in ' ,.-' for ch in p['description']), (p['id'], p['description'])
 
 SKIN_BOSS_UNLOCKS = {'wesker_midnight': 'boss:uEm81'}
+# Supported third-party mods (2026-11-08, the user's list: "not mandatory", "you need to go to the
+# original creators mod page and get it to endorse it"). Each is a skin that stands in for a costume
+# (its build and trait are that skin's); the player unzips the mod into RogueMercenaries\mods and the
+# adapter reads the listed archives from there (adapters/re5/src/file_redirect.cpp). Never shipped
+# with this mod. Sizes are of the version checked in game (scripts/test_skin_mod.sh).
+MOD_SKINS = [
+    {'character': 'excella', 'base': 'excella_dress', 'id': 'excella_experimenter', 'name': 'Experimenter',
+     'mod': {'name': 'Excella the Experimenter', 'author': 'TheGrimrose',
+             'url': 'https://www.nexusmods.com/residentevil5goldedition/mods/387',
+             'files': [{'name': 'uPl05ExcellaNormal.arc', 'size': 13847141}]}},
+    {'character': 'sheva', 'base': 'sheva_fairy_tale', 'id': 'sheva_hound_wolf', 'name': 'Hound Wolf Squad',
+     'mod': {'name': 'Hound Wolf Squad Sheva', 'author': 'Angeltitilxyz',
+             'url': 'https://www.nexusmods.com/residentevil5goldedition/mods/1177',
+             'files': [{'name': 'uPl01ShebaCos4.arc', 'size': 66242900}]}},
+]
+MOD_BASE = {m['id']: m['base'] for m in MOD_SKINS}
+for m in MOD_SKINS:
+    ch = next(x for x in c['characters'] if x['id'] == m['character'])
+    base = next(x for x in ch['skins'] if x['id'] == m['base'])
+    entry = next((x for x in ch['skins'] if x['id'] == m['id']), None)
+    if entry is None:
+        entry = {'id': m['id']}
+        ch['skins'].append(entry)
+    entry['name'] = m['name']
+    entry['costume_index'] = base['costume_index']
+    entry['mod'] = m['mod']
 for ch in c['characters']:
     ch['starting_passive'] = passives[ch['id']]
     ch['skill_pool'] = pools[ch['id']]
     for s in ch.get('skins', []):
-        trait = s['id'] + '_trait'
+        own = MOD_BASE.get(s['id'], s['id'])  # a mod skin wears its base skin's build
+        trait = own + '_trait'
         if trait in skin_traits:
             s['starting_passive'] = trait
         else:
             s.pop('starting_passive', None)
-        if s['id'] in BUILDS:
-            s['build'] = BUILDS[s['id']]
+        if own in BUILDS:
+            s['build'] = BUILDS[own]
         else:
             s.pop('build', None)
         # Skins a boss unlocks (the user's ladder, 2026-11-07: "once you get midnight wesker you unlock
@@ -350,7 +377,9 @@ c['_comment'] = ("Playable characters. Every character and skin is available fro
                  "max health), and a skin without one yet keeps a small trait (a 'skin' perk). costume_index is the class and the model each "
                  "slot loads, checked in game: 0..2 and 10 Heavy Metal, 14 Warrior Chris; 3 and 11 Fairy Tale, 15 Business Sheva; 9 Wesker "
                  "S.T.A.R.S.; 12 Josh, 13 Excella, 16 Barry, 17 Rebecca. Text shown by the game font: letters, digits, space, comma and "
-                 "period only.")
+                 "period only. A skin with 'mod' wears a third-party mod's look (name, author, url: its page; files: the archives "
+                 "read from RogueMercenaries\\mods instead of the game's, with the size checked); without the mod it is listed but "
+                 "not selectable.")
 json.dump(c, open('configs/characters.json', 'w'), indent=2)
 open('configs/characters.json', 'a').write('\n')
 

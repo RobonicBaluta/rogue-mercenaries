@@ -278,6 +278,10 @@ public:
     /// Weapons the adapter can place in the current match (base ids); rewards and the shop
     /// offer only those. Clear with std::nullopt.
     void SetPlaceableWeapons(std::optional<StringSet> bases) { placeable_weapons_ = std::move(bases); }
+    /// The mod skins whose mod files the adapter found (SkinDef::mod); the others are NotInstalled.
+    void SetInstalledModSkins(StringSet skin_ids) { installed_mod_skins_ = std::move(skin_ids); }
+    /// A skin's gate: its challenge, then (a mod skin) whether its mod is installed.
+    [[nodiscard]] CharacterGate SkinGate(const SkinDef& skin) const;
     [[nodiscard]] const Capabilities& capabilities() const { return caps_; }
     void SetEventSink(IEventSink* sink) { sink_ = sink; }
     [[nodiscard]] const Content& content() const { return *content_; }
@@ -558,6 +562,7 @@ private:
     int first_arena_ = -1;
     std::optional<Director> director_;
     std::optional<StringSet> placeable_weapons_;
+    StringSet installed_mod_skins_;
     int dev_supply_grants_ = 0;
     int external_supply_changes_ = 0;
     IEventSink* sink_ = nullptr;

@@ -45,6 +45,7 @@ std::string_view CharacterGateName(CharacterGate g) {
         case CharacterGate::Unknown: return "unknown";
         case CharacterGate::Disabled: return "disabled";
         case CharacterGate::Locked: return "locked";
+        case CharacterGate::NotInstalled: return "not_installed";
     }
     return "unknown";
 }

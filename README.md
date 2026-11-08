@@ -152,6 +152,21 @@ the others are written and wait for a playtest (2026-11-03).
 | Wesker | Midnight | Uroboros Speed | Special: a dash, or a lunge at an enemy ahead (below); a second special, the burst. Untouchable while they act. 70 percent of his health. |
 | Wesker | S.T.A.R.S. | Iron Fist | Melee hits three times as hard. Only his own Samurai Edge, Lightning Hawk and Hydra can be bought or used. |
 
+**Mod skins (optional).** Some skins wear a costume mod made by someone else, from its creator's page on Nexus Mods.
+None of it comes with ROGUE MERCENARIES: without the mod the game plays as always, and SKINS lists the skin in red,
+saying whose mod it is; pressing it opens the mod's page (get it there, and endorse it). Unzip the download into
+`Resident Evil 5\RogueMercenaries\mods` (any folder below it, as it unpacks); the skin can then be worn, with the
+build of the outfit it stands in for. The mod's files are read from that folder only while you wear its skin: nothing
+in the game's own folders is changed, the original outfit keeps its look, and deleting the folder removes the mod.
+Use this folder, not a mod manager: one that installs the mod into the game replaces the original outfit everywhere.
+
+| Character | Skin | Mod (creator) | Stands in for |
+|---|---|---|---|
+| Excella | Experimenter | [Excella the Experimenter](https://www.nexusmods.com/residentevil5goldedition/mods/387) (TheGrimrose) | Dress (Ambition) |
+| Sheva | Hound Wolf Squad | [Hound Wolf Squad Sheva](https://www.nexusmods.com/residentevil5goldedition/mods/1177) (Angeltitilxyz) | Fairy Tale (Enchanted Arms) |
+
+Only the costume file of a mod is used: the Excella mod's other files (her weapons, items, menus and music) are not.
+
 **Keys.** Chests need a key (Jill's BSAA outfit excepted). A kill of a Majini drops one 8 percent of the time; you
 hold up to 9 and the HUD's right side shows how many. A chest opened without a key says *LOCKED* and stands again at
 the same spot a moment later.

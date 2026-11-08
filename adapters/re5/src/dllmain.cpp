@@ -8,6 +8,7 @@
 #include "dev_audio.h"
 #include "dev_capture.h"
 #include "engine.h"
+#include "file_redirect.h"
 #include "hooks.h"
 #include "log.h"
 #include "menu_probe.h"
@@ -117,6 +118,8 @@ DWORD WINAPI Worker(LPVOID) {
     if (settings.developerMode && settings.devMenuProbe && engine::Caps().buildIdentity) {
         menuprobe::Install();
     }
+    // Supported third-party mods: their files read from their own folder (empty until a mod skin is chosen).
+    fileredirect::Install();
     // Enable everything in one batch: MinHook suspends every thread per apply,
     // and repeated suspensions coincided with silent clean exits of the game.
     const DWORD applyStart = GetTickCount();

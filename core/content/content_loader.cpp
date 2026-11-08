@@ -1098,7 +1098,42 @@ void ParseSkins(const Diag& file, const json& e, CharacterDef& c) {
         if (!ReadId(d, s, skin.id)) continue;
         d = file.Sub(" skin " + Q(skin.id));
         CheckKeys(d, s, {"id", "name", "costume_index", "starting_weapons", "starting_passive", "skill_pool",
-                         "unlock_kind", "unlock_count", "unlock_character", "unlock_boss", "unlock_text", "build"});
+                         "unlock_kind", "unlock_count", "unlock_character", "unlock_boss", "unlock_text", "build", "mod"});
+        if (const json* m = Get(s, "mod")) {
+            const Diag md = d.Sub(": mod");
+            if (!m->is_object()) {
+                md.Error("must be an object");
+            } else {
+                SkinMod mod;
+                CheckKeys(md, *m, {"name", "author", "url", "files"});
+                GetString(md, *m, "name", mod.name, true);
+                GetString(md, *m, "author", mod.author, false);
+                GetString(md, *m, "url", mod.url, true);
+                // Only a mod page: the menu opens it in the browser.
+                if (mod.url.rfind("https://www.nexusmods.com/", 0) != 0) md.Error("field 'url' must be a https://www.nexusmods.com/ page");
+                const json* files = Get(*m, "files");
+                if (files == nullptr || !files->is_array() || files->empty()) {
+                    md.Error("field 'files' must list the mod's archives");
+                } else {
+                    for (const json& f : *files) {
+                        SkinModFile entry;
+                        if (!f.is_object()) {
+                            md.Error("a file must be an object {name, size}");
+                            continue;
+                        }
+                        CheckKeys(md, f, {"name", "size"});
+                        GetString(md, f, "name", entry.name, true);
+                        GetInt(md, f, "size", entry.size, false);
+                        const bool plain = !entry.name.empty() && entry.name.find_first_of("\\/:") == std::string::npos;
+                        if (!plain || entry.name.size() < 5 || entry.name.compare(entry.name.size() - 4, 4, ".arc") != 0) {
+                            md.Error("file " + Q(entry.name) + " must be an archive's bare name (\"uPl05ExcellaNormal.arc\")");
+                        }
+                        mod.files.push_back(std::move(entry));
+                    }
+                }
+                skin.mod = std::move(mod);
+            }
+        }
         if (const json* b = Get(s, "build")) {
             if (b->is_object()) {
                 ParseBuild(d.Sub(": build"), *b, skin.build);
@@ -1114,6 +1149,7 @@ void ParseSkins(const Diag& file, const json& e, CharacterDef& c) {
         GetString(d, s, "starting_passive", skin.starting_passive, false);
         GetStringList(d, s, "skill_pool", skin.skill_pool, false);
         ParseChallenge(d, s, skin.unlock);
+        if (skin.mod && skin.costume_index < 0) d.Error("a mod skin needs the costume_index it stands in for");
         c.skins.push_back(std::move(skin));
     }
 }

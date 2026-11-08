@@ -1,5 +1,5 @@
 {
-  "_comment": "Playable characters. Every character and skin is available from the start (the challenge fields unlock_kind/unlock_count/unlock_text/unlock_character, see core/include/rm/characters.h, are kept for later). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin is a build (ROADMAP M8, written by scripts/write_perks.py): 'build' holds its rules (weapon filters, damage by weapon category, supplies, free shop rerolls, rarity, uncapped upgrades, a starting weapon, max health), and a skin without one yet keeps a small trait (a 'skin' perk). costume_index is the class and the model each slot loads, checked in game: 0..2 and 10 Heavy Metal, 14 Warrior Chris; 3 and 11 Fairy Tale, 15 Business Sheva; 9 Wesker S.T.A.R.S.; 12 Josh, 13 Excella, 16 Barry, 17 Rebecca. Text shown by the game font: letters, digits, space, comma and period only.",
+  "_comment": "Playable characters. Every character and skin is available from the start (the challenge fields unlock_kind/unlock_count/unlock_text/unlock_character, see core/include/rm/characters.h, are kept for later). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin is a build (ROADMAP M8, written by scripts/write_perks.py): 'build' holds its rules (weapon filters, damage by weapon category, supplies, free shop rerolls, rarity, uncapped upgrades, a starting weapon, max health), and a skin without one yet keeps a small trait (a 'skin' perk). costume_index is the class and the model each slot loads, checked in game: 0..2 and 10 Heavy Metal, 14 Warrior Chris; 3 and 11 Fairy Tale, 15 Business Sheva; 9 Wesker S.T.A.R.S.; 12 Josh, 13 Excella, 16 Barry, 17 Rebecca. Text shown by the game font: letters, digits, space, comma and period only. A skin with 'mod' wears a third-party mod's look (name, author, url: its page; files: the archives read from RogueMercenaries\\mods instead of the game's, with the size checked); without the mod it is listed but not selectable.",
   "schema_version": 1,
   "characters": [
     {
@@ -169,6 +169,34 @@
           "id": "sheva_fairy_tale",
           "name": "Fairy Tale",
           "costume_index": 11,
+          "build": {
+            "name": "Enchanted Arms",
+            "icon": "star",
+            "summary": "Starts with a legendary M3 that upgrades without limit.",
+            "starting_weapon": "m3",
+            "starting_weapon_rarity": "legendary",
+            "uncapped_upgrades": {
+              "ids": [
+                "m3"
+              ]
+            }
+          }
+        },
+        {
+          "id": "sheva_hound_wolf",
+          "name": "Hound Wolf Squad",
+          "costume_index": 11,
+          "mod": {
+            "name": "Hound Wolf Squad Sheva",
+            "author": "Angeltitilxyz",
+            "url": "https://www.nexusmods.com/residentevil5goldedition/mods/1177",
+            "files": [
+              {
+                "name": "uPl01ShebaCos4.arc",
+                "size": 66242900
+              }
+            ]
+          },
           "build": {
             "name": "Enchanted Arms",
             "icon": "star",
@@ -364,6 +392,45 @@
           "id": "excella_dress",
           "name": "Dress",
           "costume_index": 13,
+          "build": {
+            "name": "Ambition",
+            "icon": "crown",
+            "summary": "Every melee kill raises one of seven stats for the run, each to a cap: damage, speed, healing and more.",
+            "melee_kill_stats": {
+              "damage": 0.06,
+              "defense": 0.045,
+              "max_health": 0.075,
+              "crit": 0.03,
+              "move_speed": 0.045,
+              "heal": 0.075,
+              "supplies": 0.06
+            },
+            "melee_kill_caps": {
+              "damage": 1.0,
+              "defense": 0.7,
+              "max_health": 1.0,
+              "crit": 0.3,
+              "move_speed": 0.6,
+              "heal": 0.5,
+              "supplies": 0.5
+            }
+          }
+        },
+        {
+          "id": "excella_experimenter",
+          "name": "Experimenter",
+          "costume_index": 13,
+          "mod": {
+            "name": "Excella the Experimenter",
+            "author": "TheGrimrose",
+            "url": "https://www.nexusmods.com/residentevil5goldedition/mods/387",
+            "files": [
+              {
+                "name": "uPl05ExcellaNormal.arc",
+                "size": 13847141
+              }
+            ]
+          },
           "build": {
             "name": "Ambition",
             "icon": "crown",

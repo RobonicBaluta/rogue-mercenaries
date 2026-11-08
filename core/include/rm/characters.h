@@ -117,6 +117,22 @@ struct SkinBuild {
 /// A character skin (costume). Overrides change the archetype a little: the weapons a run
 /// can start with, the starting perk and extra character skills. Empty fields keep the
 /// character's own values.
+/// A third-party mod a skin wears (the supported mods, 2026-11-08): the player gets it from its
+/// creator's page and unzips it into RogueMercenaries\mods; the adapter reads the listed files from
+/// there instead of the game's (nothing in the game folder is written). Without it the skin is
+/// listed but not selectable (CharacterGate::NotInstalled), with where to get it.
+struct SkinModFile {
+    std::string name;       // the archive's file name ("uPl05ExcellaNormal.arc", under nativePC_MT\Image\Archive)
+    std::int64_t size = 0;  // its size in the supported version (0: any)
+};
+
+struct SkinMod {
+    std::string name;    // the mod's title on its page
+    std::string author;  // its creator (empty: unknown)
+    std::string url;     // its page (https://www.nexusmods.com/...)
+    std::vector<SkinModFile> files;
+};
+
 struct SkinDef {
     std::string id;
     std::string name;
@@ -127,6 +143,7 @@ struct SkinDef {
     std::vector<std::string> skill_pool;
     Challenge unlock;
     SkinBuild build;
+    std::optional<SkinMod> mod;  // a third-party mod's look (costume_index: the costume it stands in for)
 };
 
 /// Playable character definition (configs/characters.json).
@@ -157,7 +174,8 @@ struct CharacterDef {
     SkinBuild build;
 };
 
-enum class CharacterGate { Selectable, Unknown, Disabled, Locked };
+/// NotInstalled: a mod skin whose mod is not in RogueMercenaries\mods (RunController::SetInstalledModSkins).
+enum class CharacterGate { Selectable, Unknown, Disabled, Locked, NotInstalled };
 std::string_view CharacterGateName(CharacterGate g);
 
 /// Selectability for StartRun: unknown/disabled/locked characters are rejected.

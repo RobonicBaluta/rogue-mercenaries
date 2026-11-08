@@ -4,6 +4,7 @@
 // completes it and (optionally) ends the match through the game's own timer.
 
 #include <windows.h>
+#include <shellapi.h>
 #include <shlobj.h>
 
 #include <algorithm>
@@ -28,6 +29,7 @@
 #include <nlohmann/json.hpp>
 
 #include "engine.h"
+#include "file_redirect.h"
 #include "imgui.h"
 #include "icons.h"
 #include "portraits.h"
@@ -592,6 +594,96 @@ std::uint32_t RarityColour(std::string_view rarity) {
     if (rarity == "legendary") return 0xFFFFB040u;
     if (rarity == "exotic") return 0xFF4CF0E6u;
     return 0;
+}
+
+// ---- Supported third-party mods (2026-11-08) ---------------------------------------------------
+// A mod skin (rm::SkinDef::mod) wears a mod the player got from its creator's page and unzipped
+// into <game>\RogueMercenaries\mods (any folder below it): its archives, found there by name and
+// size, are read in place of the game's own while that skin is chosen or played (file_redirect),
+// so the game folder is never written and the costume it stands in for keeps its own look. A mod
+// skin without its mod is listed in SKINS but not selectable; pressing it opens the mod's page.
+std::map<std::string, std::vector<fileredirect::Redirect>> g_modSkinFiles;  // installed mod skin -> its redirects
+std::string g_modRedirectSkin = "-";  // the skin whose redirects are set ("" none, "-" never set)
+bool g_devRedirects = false;          // dev redirect set them by hand: left alone
+
+std::filesystem::path ModsFolder() { return g->paths.modDir / L"mods"; }
+
+std::string LowerAscii(std::string s) {
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return s;
+}
+
+// Every mod skin whose files are all in the mods folder (by name, any case, and the size listed).
+void ScanModSkins() {
+    std::map<std::string, std::vector<std::filesystem::path>> byName;  // lowercase file name -> paths
+    std::error_code ec;
+    const std::filesystem::path root = ModsFolder();
+    if (std::filesystem::is_directory(root, ec)) {
+        for (auto it = std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, ec);
+             !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+            if (it->is_regular_file(ec)) byName[LowerAscii(it->path().filename().string())].push_back(it->path());
+        }
+    }
+    std::map<std::string, std::vector<fileredirect::Redirect>> found;
+    rm::StringSet installed;
+    std::string line;
+    for (const rm::CharacterDef& c : g->content->characters()) {
+        for (const rm::SkinDef& s : c.skins) {
+            if (!s.mod) continue;
+            std::vector<fileredirect::Redirect> redirects;
+            std::string missing;
+            for (const rm::SkinModFile& f : s.mod->files) {
+                static const std::vector<std::filesystem::path> kNone;
+                const auto named = byName.find(LowerAscii(f.name));
+                const std::vector<std::filesystem::path>& candidates = named != byName.end() ? named->second : kNone;
+                std::optional<std::filesystem::path> match;
+                for (const auto& p : candidates) {
+                    std::error_code sizeError;
+                    const auto size = std::filesystem::file_size(p, sizeError);
+                    if (!sizeError && (f.size <= 0 || static_cast<std::int64_t>(size) == f.size)) match = p;
+                }
+                if (!match) {
+                    missing += " " + f.name + (named != byName.end() ? " (another version: its size differs)" : "");
+                    continue;
+                }
+                const std::string tail = "Image\\Archive\\" + f.name;
+                redirects.push_back({std::wstring(tail.begin(), tail.end()), match->wstring()});
+            }
+            if (missing.empty()) {
+                found[s.id] = std::move(redirects);
+                installed.insert(s.id);
+            }
+            line += " " + s.id + (missing.empty() ? " installed" : " missing" + missing) + ";";
+        }
+    }
+    const bool changed = found.size() != g_modSkinFiles.size() ||
+                         !std::equal(found.begin(), found.end(), g_modSkinFiles.begin(),
+                                     [](const auto& a, const auto& b) { return a.first == b.first; });
+    g_modSkinFiles = std::move(found);
+    g->run->SetInstalledModSkins(std::move(installed));
+    if (changed || g_modRedirectSkin == "-") RM_LOGI("mods: %s:%s", ModsFolder().string().c_str(), line.empty() ? " no mod skins" : line.c_str());
+    g_modRedirectSkin = "-";  // set again on the next tick
+}
+
+// The redirects of the skin chosen or played now (each tick; only a change touches them).
+void UpdateModRedirects() {
+    if (g_devRedirects) return;
+    rm::RunController& run = *g->run;
+    const std::string skin = run.HasActiveRun() ? run.state().skin_id : g->selectedSkin;
+    const auto it = g_modSkinFiles.find(skin);
+    const std::string key = it == g_modSkinFiles.end() ? std::string() : skin;
+    if (key == g_modRedirectSkin) return;
+    g_modRedirectSkin = key;
+    fileredirect::SetRedirects(it == g_modSkinFiles.end() ? std::vector<fileredirect::Redirect>{} : it->second);
+    if (!key.empty()) RM_LOGI("mods: %s wears its mod (%zu files read from the mods folder)", key.c_str(), it->second.size());
+}
+
+// A mod's page in the browser (only a Nexus Mods page, as the content allows).
+void OpenModPage(const rm::SkinMod& mod) {
+    if (mod.url.rfind("https://www.nexusmods.com/", 0) != 0) return;
+    const std::wstring url(mod.url.begin(), mod.url.end());
+    const auto result = reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+    RM_LOGI("mods: opening %s (%s)", mod.url.c_str(), result > 32 ? "ok" : "failed");
 }
 
 // The offers a reward or shop screen lists, logged when they change ("rewards: ...", "shop: ...").
@@ -1183,6 +1275,7 @@ private:
                 break;
             }
             case ScreenId::Skins: {
+                ScanModSkins();  // a mod unzipped while the game runs shows at once
                 const auto characters = run.Characters();
                 if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) break;
                 const auto& c = characters[g->selectedCharacter];
@@ -1196,14 +1289,22 @@ private:
                     // M8: a skin with a build says what it does; the others what their trait does.
                     const rm::SkinDef* skinDef = def != nullptr ? rm::FindSkin(*def, s.id) : nullptr;
                     if (skinDef != nullptr && !skinDef->build.name.empty()) {
-                        item.label += " - " + Upper(Plain(skinDef->build.name));
+                        // A mod skin says MOD instead: its build is the outfit's it stands in for (in its help).
+                        if (!skinDef->mod) item.label += " - " + Upper(Plain(skinDef->build.name));
                         item.icon = skinDef->build.icon;
                     }
                     std::string summary = skinDef != nullptr ? skinDef->build.summary : std::string();
                     if (summary.empty() && skinDef != nullptr && !skinDef->starting_passive.empty()) {
                         if (const rm::PerkDef* trait = run.content().FindPerk(skinDef->starting_passive)) summary = trait->description;
                     }
-                    if (s.gate == rm::CharacterGate::Selectable) {
+                    if (skinDef != nullptr && skinDef->mod) item.label += "   MOD";
+                    if (s.gate == rm::CharacterGate::NotInstalled && skinDef != nullptr && skinDef->mod) {
+                        // Not installed: where to get it (the menu's two help lines of 54).
+                        item.locked = true;
+                        const rm::SkinMod& mod = *skinDef->mod;
+                        item.help = (mod.author.empty() ? std::string("A free mod on Nexus Mods.") : "A free mod by " + Plain(mod.author) + ".") +
+                                    " Press to open its page,\nendorse it, and unzip it in RogueMercenaries, mods.";
+                    } else if (s.gate == rm::CharacterGate::Selectable) {
                         const bool selected = current != nullptr && current->id == s.id;
                         if (selected) item.label += "   SELECTED";
                         item.help = !summary.empty() ? Plain(summary)
@@ -1488,6 +1589,12 @@ private:
                 if (index < 0 || index >= static_cast<int>(skins.size())) break;
                 if (skins[index].gate == rm::CharacterGate::Selectable) {
                     g->selectedSkin = skins[index].id;
+                    d.outcome = Outcome::Refresh;
+                } else if (skins[index].gate == rm::CharacterGate::NotInstalled) {
+                    // A mod skin without its mod: its page, to get it there (and endorse it).
+                    const rm::CharacterDef* def = run.content().FindCharacter(characters[g->selectedCharacter].id);
+                    const rm::SkinDef* skinDef = def != nullptr ? rm::FindSkin(*def, skins[index].id) : nullptr;
+                    if (skinDef != nullptr && skinDef->mod) OpenModPage(*skinDef->mod);
                     d.outcome = Outcome::Refresh;
                 } else {
                     d.outcome = Outcome::Denied;
@@ -6620,6 +6727,31 @@ void PollDevCommand(double now) {
         g_watch = {};
         if (command.substr(6) != "off") g_watch.cls = command.substr(6);
         RM_LOGW("dev watch %s", g_watch.cls.empty() ? "off" : g_watch.cls.c_str());
+    } else if (command.rfind("openlog ", 0) == 0) {
+        // "openlog on|off": every .arc the game opens, logged (a mod's files: when they load).
+        fileredirect::SetLogOpens(command.substr(8) == "on");
+        RM_LOGW("dev openlog %s", command.substr(8).c_str());
+    } else if (command == "redirect clear") {
+        fileredirect::SetRedirects({});
+        g_devRedirects = false;
+        g_modRedirectSkin = "-";
+        RM_LOGW("dev redirect: none (mod skins set them again)");
+    } else if (command.rfind("redirect ", 0) == 0) {
+        // "redirect <path tail> <file>": the game's opens of a path ending in the tail read the file
+        // instead ("redirect Image\Archive\uPl05ExcellaNormal.arc G:\mods\x.arc"; the file's path
+        // may hold spaces, the tail may not).
+        const std::string rest = command.substr(9);
+        const auto space = rest.find(' ');
+        auto redirects = fileredirect::Redirects();
+        if (space != std::string::npos) {
+            const std::string tail = rest.substr(0, space), target = rest.substr(space + 1);
+            const std::filesystem::path targetPath(target);
+            const bool exists = std::filesystem::is_regular_file(targetPath);
+            redirects.push_back({std::wstring(tail.begin(), tail.end()), targetPath.wstring()});
+            fileredirect::SetRedirects(redirects);
+            g_devRedirects = true;  // mod skins leave them alone until "redirect clear"
+            RM_LOGW("dev redirect %s -> %s%s (%zu in all)", tail.c_str(), target.c_str(), exists ? "" : " (NO SUCH FILE)", redirects.size());
+        }
     } else if (command.rfind("wpwatch ", 0) == 0) {
         g_wpWatch = command.substr(8) == "on";
         g_wpWatchLast.clear();
@@ -6919,6 +7051,11 @@ void PollDevCommand(double now) {
         // and leaving it saves the game).
         nativemenu::OpenOnPlayMenu(nativemenu::ScreenId::Main);
         RM_LOGW("dev rogue: the mod menu opens at the next Play menu");
+    } else if (command == "rogue skins" || command == "rogue characters") {
+        // "rogue skins|characters": the mod menu opens on that screen at the next Play menu (the
+        // selected character's skins: dev select first).
+        nativemenu::OpenOnPlayMenu(command == "rogue skins" ? nativemenu::ScreenId::Skins : nativemenu::ScreenId::Characters);
+        RM_LOGW("dev %s: opens at the next Play menu", command.c_str());
     } else if (command.rfind("select ", 0) == 0 && !run.HasActiveRun()) {
         // "select <skin id>": the character and skin the next START RUN plays, as the CHARACTERS
         // and SKINS screens choose them.
@@ -7277,6 +7414,7 @@ private:
         ApplyHeals();
         DriveSpecial(now);
         DriveElements(now);
+        UpdateModRedirects();
         DriveGrabBreak(now);
         TraceTwinShots(now);
         DrivePartner(now);
@@ -7714,6 +7852,7 @@ void ModCapabilitiesReady() {
     g->run->SetCapabilities(VerifiedCapabilities());
     g->run->SetInventory(&g_inventoryBridge);
     RM_LOGI("core capabilities: %s", g->run->capabilities().ToString().c_str());
+    ScanModSkins();
 }
 
 void ModShutdown() {

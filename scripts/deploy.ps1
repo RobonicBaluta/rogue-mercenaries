@@ -69,7 +69,12 @@ switch ($Mode) {
         $targetDll = Join-Path $GameDir 'dinput8.dll'
         if (Test-Path -LiteralPath $targetDll) { throw "$targetDll exists and was not installed by this script; refusing to overwrite." }
         $modDir = Join-Path $GameDir 'RogueMercenaries'
-        if (Test-Path -LiteralPath $modDir) { throw "$modDir exists without a manifest; refusing." }
+        # The player's own mods folder (supported third-party mods) survives an uninstall and is not ours
+        # to remove: a folder holding nothing else is fine.
+        if (Test-Path -LiteralPath $modDir) {
+            $other = @(Get-ChildItem -LiteralPath $modDir -Force | Where-Object { $_.Name -ne 'mods' })
+            if ($other.Count -gt 0) { throw "$modDir exists without a manifest; refusing." }
+        }
 
         $files = @()
         $configDst = Join-Path $modDir 'configs'

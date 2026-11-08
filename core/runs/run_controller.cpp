@@ -469,14 +469,19 @@ Status RunController::SuspendRun(double now) {
 
 // ---- meta progression ----------------------------------------------------------------------
 
+CharacterGate RunController::SkinGate(const SkinDef& skin) const {
+    const CharacterGate gate = CheckSkin(skin, profile_.unlocked_characters);
+    if (gate == CharacterGate::Selectable && skin.mod && !installed_mod_skins_.count(skin.id)) return CharacterGate::NotInstalled;
+    return gate;
+}
+
 std::vector<CharacterAvailability> RunController::Characters() const {
     std::vector<CharacterAvailability> out;
     for (const CharacterDef& c : content_->characters()) {
         CharacterAvailability a{c.id, c.name, CheckCharacter(&c, profile_.unlocked_characters), c.unlock_cost_credits,
                                 c.unlock.text, CheckChallenge(c, profile_.stats), c.costume_index};
         for (const SkinDef& s : c.skins) {
-            a.skins.push_back({s.id, s.name, s.costume_index, CheckSkin(s, profile_.unlocked_characters), s.unlock.text,
-                               CheckChallenge(s.unlock, profile_.stats)});
+            a.skins.push_back({s.id, s.name, s.costume_index, SkinGate(s), s.unlock.text, CheckChallenge(s.unlock, profile_.stats)});
         }
         if (!c.skins.empty() && c.skins.front().costume_index >= 0) a.costume_index = c.skins.front().costume_index;
         out.push_back(std::move(a));
@@ -698,14 +703,18 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
             return Fail(op, ErrorCode::Disabled, "character '" + std::string(character_id) + "' is not available yet");
         case CharacterGate::Locked:
             return Fail(op, ErrorCode::Locked, "character '" + std::string(character_id) + "' is locked");
-        case CharacterGate::Selectable: break;
+        case CharacterGate::Selectable:
+        case CharacterGate::NotInstalled: break;  // a skin's gate only
     }
     const SkinDef* skin = FindSkin(*ch, skin_id);
     if (skin == nullptr) {
         return Fail(op, ErrorCode::UnknownId, "unknown skin '" + std::string(skin_id) + "' for " + ch->id);
     }
-    if (CheckSkin(*skin, profile_.unlocked_characters) == CharacterGate::Locked) {
-        return Fail(op, ErrorCode::Locked, "skin '" + skin->id + "' is locked");
+    switch (SkinGate(*skin)) {
+        case CharacterGate::Locked: return Fail(op, ErrorCode::Locked, "skin '" + skin->id + "' is locked");
+        case CharacterGate::NotInstalled:
+            return Fail(op, ErrorCode::NotEligible, "skin '" + skin->id + "' needs its mod (" + skin->mod->name + ")");
+        default: break;
     }
     const EconomyConfig& eco = content_->economy();
     // The ladder's length (EconomyConfig::Ladder): the first one unless named.

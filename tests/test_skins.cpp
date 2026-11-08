@@ -202,3 +202,55 @@ TEST_CASE("item perks grant inventory items on kills and arena clears", "[charac
     test::KillN(quiet.rc, 2, 1.0);
     CHECK(quiet.rc.ConsumeItemGrants().empty());
 }
+
+// Supported third-party mods (2026-11-08): a mod skin is listed but not selectable until the
+// adapter finds its mod's files; the content only takes a Nexus Mods page and bare archive names.
+TEST_CASE("a mod skin needs its mod installed", "[characters]") {
+    const json mod = {{"name", "Night Suit"},
+                      {"author", "Someone"},
+                      {"url", "https://www.nexusmods.com/residentevil5goldedition/mods/1"},
+                      {"files", json::array({json{{"name", "uPl00ChrisCos1.arc"}, {"size", 1234}}})}};
+    auto content = test::Load(test::EditFixture([&](json&, json&, json& characters, json&, json&) {
+        characters["characters"][0]["skins"] = json::array({
+            json{{"id", "alpha_base"}, {"name", "Base"}, {"costume_index", 0}},
+            json{{"id", "alpha_mod"}, {"name", "Night Suit"}, {"costume_index", 0}, {"mod", mod}},
+        });
+    }));
+    const SkinDef* skin = FindSkin(*content->FindCharacter("alpha"), "alpha_mod");
+    REQUIRE(skin != nullptr);
+    REQUIRE(skin->mod.has_value());
+    CHECK(skin->mod->author == "Someone");
+    REQUIRE(skin->mod->files.size() == 1);
+    CHECK(skin->mod->files[0].size == 1234);
+
+    test::Harness h(content);
+    const auto gate = [&] {
+        const auto characters = h.rc.Characters();
+        for (const auto& s : Find(characters, "alpha")->skins) {
+            if (s.id == "alpha_mod") return s.gate;
+        }
+        return CharacterGate::Unknown;
+    };
+    CHECK(gate() == CharacterGate::NotInstalled);
+    CHECK(h.rc.StartRun("alpha", 5, "alpha_mod").code == ErrorCode::NotEligible);
+    h.rc.SetInstalledModSkins({"alpha_mod"});
+    CHECK(gate() == CharacterGate::Selectable);
+    REQUIRE(h.rc.StartRun("alpha", 5, "alpha_mod").ok());
+    CHECK(h.rc.state().skin_id == "alpha_mod");
+
+    // Only a Nexus Mods page, only bare archive names, and the costume it stands in for.
+    const auto errors = [&](const std::function<void(json&)>& edit) {
+        json bad = {{"id", "alpha_mod"}, {"name", "Bad"}, {"costume_index", 0}, {"mod", mod}};
+        edit(bad);
+        return Content::LoadFromStrings(test::EditFixture([&](json&, json&, json& characters, json&, json&) {
+                   characters["characters"][0]["skins"] = json::array({json{{"id", "alpha_base"}, {"name", "Base"}}, bad});
+               }))
+            .errors;
+    };
+    const auto has = [](const std::vector<std::string>& errs, std::string_view needle) {
+        return std::any_of(errs.begin(), errs.end(), [&](const std::string& e) { return e.find(needle) != std::string::npos; });
+    };
+    CHECK(has(errors([](json& s) { s["mod"]["url"] = "https://example.com/x"; }), "nexusmods.com"));
+    CHECK(has(errors([](json& s) { s["mod"]["files"][0]["name"] = "..\\x.arc"; }), "bare name"));
+    CHECK(has(errors([](json& s) { s.erase("costume_index"); }), "costume_index it stands in for"));
+}
