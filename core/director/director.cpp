@@ -201,14 +201,21 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::ar
                                          const PointFilter& prefer) {
     std::vector<SpawnRequest> out;
     last_now_ = now;
+    if (first_tick_ < 0.0) first_tick_ = now;
+    boss_waiting_ = BossWaits(now, player);
+    const bool storySpot = map_.boss && map_.boss->spawn.has_value();
     int cap = std::max(1, map_.max_alive);
     if (threat_.max_alive > 0) cap = std::min(cap, threat_.max_alive);
-    while (requested_ < budget_ && alive() + pending() < cap && now >= next_spawn_time_) {
+    while (!boss_waiting_ && requested_ < budget_ && alive() + pending() < cap && now >= next_spawn_time_) {
         const MapEnemy* enemy = PickSpecial();
         if (enemy == nullptr) enemy = PickEnemy();
-        int point = prefer ? PickPoint(player, prefer) : -1;
-        if (point < 0) point = PickPoint(player);
-        if (enemy == nullptr || point < 0) break;
+        // A boss with a story spot appears there; any other unit at a map point.
+        int point = -1;
+        if (!storySpot) {
+            point = prefer ? PickPoint(player, prefer) : -1;
+            if (point < 0) point = PickPoint(player);
+        }
+        if (enemy == nullptr || (!storySpot && point < 0)) break;
         SpawnRequest r;
         r.ticket = next_ticket_++;
         r.unit_class = enemy->unit_class;
@@ -241,10 +248,11 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::ar
                 if (name == "arm") r.arm = static_cast<std::int64_t>(value);
             }
         }
-        r.pos = map_.points[static_cast<std::size_t>(point)];
+        r.pos = storySpot ? *map_.boss->spawn : map_.points[static_cast<std::size_t>(point)];
         if (map_.boss) {
             r.boss = true;
             r.hp = static_cast<int>(std::lround(map_.boss->hp * std::max(0.1, threat_.boss_hp_mult)));
+            if (storySpot) r.facing = map_.boss->facing;
         }
         pending_.emplace_back(r.ticket, point);
         ticket_enemy_[r.ticket] = enemy;
@@ -255,6 +263,13 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::ar
         if (requested_ > cap) next_spawn_time_ = now + kSpawnInterval;
     }
     return out;
+}
+
+bool Director::BossWaits(double now, const std::optional<std::array<double, 3>>& player) const {
+    if (!map_.boss || !map_.boss->spawn || map_.boss->trigger <= 0.0 || requested_ > 0 || !player) return false;
+    const MapBoss& b = *map_.boss;
+    if (b.trigger_wait > 0.0 && now - first_tick_ >= b.trigger_wait) return false;
+    return DistanceSq(*b.spawn, *player) > b.trigger * b.trigger;
 }
 
 void Director::Spawned(std::uint64_t ticket, const std::string& unit_id) {

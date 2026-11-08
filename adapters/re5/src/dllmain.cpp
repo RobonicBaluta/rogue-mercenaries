@@ -10,6 +10,7 @@
 #include "engine.h"
 #include "file_redirect.h"
 #include "area_cameras.h"
+#include "stage_fixes.h"
 #include "hooks.h"
 #include "log.h"
 #include "menu_probe.h"
@@ -115,6 +116,7 @@ DWORD WINAPI Worker(LPVOID) {
         world::Install();
         host::Install();
         areacams::Install();
+        stagefix::Install();
         if (settings.directStart) autopilot::Install();
     }
     if (settings.developerMode && settings.devMenuProbe && engine::Caps().buildIdentity) {

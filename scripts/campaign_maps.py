@@ -82,6 +82,21 @@ BOSSES = {
     # 25 a pistol hit on his body (build/runs/20261108-153415-bossarena-uEm82-s508): 3000, about 120
     # pistol hits (180 at the 12-arena run's 1.5).
     508: {'class': 'uEm82', 'name': 'Uroboros Wesker', 'article': '', 'hp': 3000, 'preload': ['uEm8c', 'uEm8e']},
+    # The stronger Uroboros of the flamethrower room (uEm41, 2026-11-08): it walks, runs, beats down
+    # and grabs on its own; its arm and core parts come with it. The room's own setup is skipped in a
+    # run (adapter stage_fixes.cpp: it crashed with no flamethrower). It waits in its room where the
+    # story sets it (the s308 set's position and turn, its story health 15000) and appears once the
+    # player comes within 15 m, or after 90 s (the user, 2026-11-08: "spawn ... where they are
+    # supposed to be, right now it spawns in the corridor if you don't move"). 80 a pistol hit on its
+    # body, 200 on a weak spot (build/runs/20261108-181644-bossarena-uEm41-s308): 12000, about 150
+    # body hits (225 at the 12-arena run's 1.5).
+    308: {'class': 'uEm41', 'name': 'Uroboros Aheri', 'hp': 12000, 'preload': ['uEm41Arm', 'uEm41Core', 'uOm0019'],
+          'spawn': (-11691.4, 0.0, -18013.9), 'facing': 1.4286, 'trigger': 1500, 'trigger_wait': 90},
+    # Excella's Uroboros (uEm42, 2026-11-08): its body, four cores, slime and tentacles. A mass that
+    # rises beside the deck: it appears where the story sets it (the s511 set Uro3_Battle's position
+    # and turn; at a waypoint it hung 33 m up, the user: "it spawned incorrectly") and never moves.
+    511: {'class': 'uEm42', 'name': 'Uroboros Mkono', 'hp': 28000, 'preload': ['uEm42Core', 'uEm42Slime', 'uEm42Tentacle', 'uOm0019'],
+          'spawn': (1248.0, 0.0, 21800.0), 'facing': 0.0},
 }
 BOSS_PLAYER_DISTANCE = (1000, 2500)  # the boss appears within sight, not on top of the player
 # Kept for developer tests but out of the run rotation ("rotation": false), with the reason.
@@ -98,7 +113,7 @@ NAMES = {
     202: 'Marsh Village', 204: 'Port', 300: 'Cave Shrine', 302: 'Ruin Passages', 310: 'Underground Facility',
     314: 'Mine Scaffolds', 500: 'Cargo Hold', 503: 'Freighter Deck', 505: 'Factory Floor', 506: 'Steel Docks',
     508: 'Volcano', 700: 'Spencer Mansion', 103: 'Pump Rooms', 304: 'Capsule Dome', 309: 'Temple Hall',
-    108: 'Field Office',
+    108: 'Field Office', 308: 'Tiled Labs', 511: 'Upper Deck',
 }
 
 
@@ -189,6 +204,12 @@ for stage in args.stages:
         entry['preload'] = boss['preload']
         entry['boss'] = {'class': boss['class'], 'name': boss['name'], **({'article': boss['article']} if 'article' in boss else {}),
                          'hp': boss['hp']}
+        # Its story spot (the director spawns it there, not at a waypoint) and when it appears.
+        if 'spawn' in boss:
+            entry['boss']['spawn'] = [round(c, 1) for c in boss['spawn']]
+        for key in ('facing', 'trigger', 'trigger_wait'):
+            if key in boss:
+                entry['boss'][key] = boss[key]
     # An area made again keeps its place in the list (the run map draws from it in order).
     if any(m['stage'] == stage for m in doc['maps']):
         doc['maps'] = [entry if m['stage'] == stage else m for m in doc['maps']]

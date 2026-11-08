@@ -491,6 +491,14 @@ std::vector<CharacterAvailability> RunController::Characters() const {
             std::none_of(a.skins.begin(), a.skins.end(), [](const SkinAvailability& s) { return s.gate == CharacterGate::Selectable; })) {
             a.gate = CharacterGate::NotInstalled;
         }
+        // A character whose every skin is locked (Wesker, until a boss opens one of his) is locked
+        // too, with his skins' text and no progress shown: nothing of him can be played yet.
+        if (!a.skins.empty() && a.gate == CharacterGate::Selectable &&
+            std::all_of(a.skins.begin(), a.skins.end(), [](const SkinAvailability& s) { return s.gate == CharacterGate::Locked; })) {
+            a.gate = CharacterGate::Locked;
+            a.unlock_text = a.skins.front().unlock_text;
+            a.challenge = {};
+        }
         if (!c.skins.empty() && c.skins.front().costume_index >= 0) a.costume_index = c.skins.front().costume_index;
         out.push_back(std::move(a));
     }

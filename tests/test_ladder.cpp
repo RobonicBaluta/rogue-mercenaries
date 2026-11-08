@@ -1,7 +1,9 @@
 // The ladder (EconomyConfig::Ladder, the user's progression of 2026-11-07): run lengths that end on
 // an easy boss, then a choice of easy or hard, the hard one opening the next length; a finale arena
 // after the last length once the listed bosses are beaten; later arenas of a long run harder.
+#include <algorithm>
 #include <string>
+#include <vector>
 
 #include <catch_amalgamated.hpp>
 #include <nlohmann/json.hpp>
@@ -239,4 +241,39 @@ TEST_CASE("a skin can be unlocked by beating a boss", "[ladder]") {
     test::Harness h(test::Load(src), beaten);
     (void)h.rc.Characters();  // unlocks are evaluated with the profile
     REQUIRE(h.rc.StartRun("alpha", 1, "alpha_secret").ok());
+}
+
+TEST_CASE("a character whose every skin a boss locks is locked until one opens", "[ladder]") {
+    ContentSources src = LadderSources();
+    nlohmann::json characters = nlohmann::json::parse(src.characters);
+    for (auto& c : characters["characters"]) {
+        if (c["id"] != "alpha") continue;
+        c["skins"] = nlohmann::json::array(
+            {{{"id", "alpha_night"}, {"name", "Night"}, {"unlock_kind", "boss_beaten"}, {"unlock_boss", "boss:uEm81"},
+              {"unlock_text", "Locked"}},
+             {{"id", "alpha_star"}, {"name", "Star"}, {"unlock_kind", "boss_beaten"}, {"unlock_boss", "boss:uEm82"},
+              {"unlock_text", "Locked"}}});
+    }
+    src.characters = characters.dump();
+    const auto find = [](const std::vector<CharacterAvailability>& list, const std::string& id) {
+        const auto it = std::find_if(list.begin(), list.end(), [&id](const CharacterAvailability& a) { return a.id == id; });
+        REQUIRE(it != list.end());
+        return *it;
+    };
+    test::Harness locked(test::Load(src));
+    const CharacterAvailability before = find(locked.rc.Characters(), "alpha");
+    CHECK(before.gate == CharacterGate::Locked);
+    CHECK(before.unlock_text == "Locked");
+    CHECK(before.challenge.target == 0);  // no "0 of 1 done": how it opens stays a secret
+    CHECK(locked.rc.StartRun("alpha", 1).code == ErrorCode::Locked);
+
+    Profile beaten;
+    beaten.stats.bosses_beaten = {"boss:uEm82"};
+    test::Harness h(test::Load(src), beaten);
+    const CharacterAvailability after = find(h.rc.Characters(), "alpha");
+    CHECK(after.gate == CharacterGate::Selectable);
+    REQUIRE(after.skins.size() == 2);
+    CHECK(after.skins[0].gate == CharacterGate::Locked);
+    CHECK(after.skins[1].gate == CharacterGate::Selectable);
+    CHECK(h.rc.StartRun("alpha", 1, "alpha_star").ok());
 }

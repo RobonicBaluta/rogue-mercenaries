@@ -555,7 +555,7 @@
           },
           "unlock_kind": "boss_beaten",
           "unlock_boss": "boss:uEm81",
-          "unlock_text": "Locked."
+          "unlock_text": "Locked"
         },
         {
           "id": "wesker_stars",
@@ -573,7 +573,10 @@
               ]
             },
             "melee_damage": 2.0
-          }
+          },
+          "unlock_kind": "boss_beaten",
+          "unlock_boss": "boss:uEm82",
+          "unlock_text": "Locked"
         }
       ]
     },

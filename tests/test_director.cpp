@@ -418,6 +418,11 @@ TEST_CASE("maps.json is validated", "[director]") {
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "b", "name": "B", "stage": 103, "points": [[0,0,0]], "boss": {"class": "uEm40", "name": "U", "hp": 40000}}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "b", "name": "B", "stage": 103, "points": [[0,0,0]], "boss": {"class": "uEm40"}}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]]}]})").empty());  // no roster, no boss
+    // A story spot: [x, y, z]; its turn and trigger only with it.
+    CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "b", "name": "B", "stage": 308, "points": [[0,0,0]], "boss": {"class": "uEm41", "name": "A", "spawn": [1, 2, 3], "facing": 1.4, "trigger": 1500, "trigger_wait": 90}}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "b", "name": "B", "stage": 308, "points": [[0,0,0]], "boss": {"class": "uEm41", "name": "A", "spawn": [1, 2]}}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "b", "name": "B", "stage": 308, "points": [[0,0,0]], "boss": {"class": "uEm41", "name": "A", "trigger": 1500}}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "b", "name": "B", "stage": 308, "points": [[0,0,0]], "boss": {"class": "uEm41", "name": "A", "spawn": [1, 2, 3], "trigger": -1}}]})").empty());
     // A start is a position.
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "start": [1, -2, 3], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "start": [1, 2], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
@@ -455,4 +460,47 @@ TEST_CASE("on a boss map the director spawns the boss alone and its death clears
     const auto b = retry.Tick(1.0, std::nullopt);
     REQUIRE(b.size() == 1);
     CHECK(b[0].boss);
+}
+
+TEST_CASE("a boss with a story spot appears there once the player comes near", "[director]") {
+    // Uroboros Aheri waits in its room (2026-11-08, the user: "spawn ... where they are supposed to
+    // be, right now it spawns in the corridor if you don't move").
+    MapDef map = TestMap(5);
+    map.boss = MapBoss{"uEm41", "Uroboros Aheri", 15000};
+    map.boss->spawn = std::array<double, 3>{5000, 0, 5000};
+    map.boss->facing = 1.5;
+    map.boss->trigger = 1500;
+    map.boss->trigger_wait = 90;
+    Director d(map, 1, 3, 9);
+    const std::array<double, 3> far{0, 0, 0}, near{4000, 0, 4500};
+    CHECK(d.Tick(0.0, far).empty());
+    CHECK(d.WaitingForPlayer());
+    CHECK(d.Tick(30.0, far).empty());
+    const auto r = d.Tick(31.0, near);
+    REQUIRE(r.size() == 1);
+    CHECK_FALSE(d.WaitingForPlayer());
+    CHECK(r[0].boss);
+    CHECK(r[0].pos == std::array<double, 3>{5000, 0, 5000});  // its spot, not a map point
+    REQUIRE(r[0].facing.has_value());
+    CHECK(*r[0].facing == 1.5);
+    // Never reached: it appears at its spot when the wait runs out.
+    Director late(map, 1, 3, 9);
+    CHECK(late.Tick(0.0, far).empty());
+    CHECK(late.Tick(89.0, far).empty());
+    const auto l = late.Tick(90.0, far);
+    REQUIRE(l.size() == 1);
+    CHECK(l[0].pos == std::array<double, 3>{5000, 0, 5000});
+    // No trigger: at once, at its spot (Uroboros Mkono rises beside the deck).
+    map.boss->trigger = 0;
+    Director now(map, 1, 3, 9);
+    const auto n = now.Tick(0.0, far);
+    REQUIRE(n.size() == 1);
+    CHECK(n[0].pos == std::array<double, 3>{5000, 0, 5000});
+    // A boss without one comes from a map point and leaves its turn to the adapter.
+    map.boss = MapBoss{"uEm40", "Uroboros", 6000};
+    Director plain(map, 1, 3, 9);
+    const auto p = plain.Tick(0.0, far);
+    REQUIRE(p.size() == 1);
+    CHECK_FALSE(p[0].facing.has_value());
+    CHECK(std::find(map.points.begin(), map.points.end(), p[0].pos) != map.points.end());
 }

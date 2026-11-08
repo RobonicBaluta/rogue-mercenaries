@@ -73,6 +73,24 @@ std::uint32_t __fastcall Em82MayHurtDetour(std::uintptr_t self, void*, std::uint
     }
     return 1;
 }
+
+// Uroboros Aheri (uEm41) as a run's boss: its update (0x008B6040) runs the Uroboros' (0x008AE2B0)
+// and then sets its health back to its maximum (vtable +0x10C, the same call its grab kills the
+// player with), so gunfire never wears it down (2026-11-08: 15000 -> 14920, then 15000 again; its
+// end in the story is the flamethrower room's). The run's boss runs the update without that.
+using UpdateFn = void(__fastcall*)(std::uintptr_t self, void* edx);
+UpdateFn g_origEm41Update = nullptr;
+std::atomic<int> g_em41Logged{0};
+
+void __fastcall Em41UpdateDetour(std::uintptr_t self, void* edx) {
+    if (self == 0 || self != g_gunfireBoss.load(std::memory_order_relaxed)) {
+        g_origEm41Update(self, edx);
+        return;
+    }
+    *reinterpret_cast<std::uint8_t*>(self + re5::off::kEm41UpdateFlag) = 0;
+    reinterpret_cast<UpdateFn>(re5::addr::kFnEm40Update)(self, nullptr);
+    if (g_em41Logged.fetch_add(1) == 0) RM_LOGI("boss: uEm41 updates without its full-health refill");
+}
 std::atomic<int> g_hitProbeLines{0};
 
 std::uint32_t __fastcall HitCheckDetour(std::uintptr_t self, void*, std::uintptr_t part) {
@@ -243,6 +261,10 @@ bool InstallCombatHooks() {
         Hook(re5::addr::kFnEm82MayHurt, reinterpret_cast<void*>(&Em82MayHurtDetour), reinterpret_cast<void**>(&g_origEm82MayHurt),
              "uEm82 may-hurt (a run's boss takes gunfire)");
     }
+    if (ok && caps.bossNoRefill) {
+        Hook(re5::addr::kFnEm41Update, reinterpret_cast<void*>(&Em41UpdateDetour), reinterpret_cast<void**>(&g_origEm41Update),
+             "uEm41 update (a run's boss keeps the damage it takes)");
+    }
     if (ok && caps.hitCheckProbe) {
         Hook(re5::addr::kFnEnemyHitCheck, reinterpret_cast<void*>(&HitCheckDetour), reinterpret_cast<void**>(&g_origHitCheck),
              "enemy hit check (developer probe)");
@@ -252,7 +274,10 @@ bool InstallCombatHooks() {
 }
 
 void SetBossTakesGunfire(std::uintptr_t unit) {
-    if (g_gunfireBoss.exchange(unit) != unit) g_gunfireLogged = 0;
+    if (g_gunfireBoss.exchange(unit) != unit) {
+        g_gunfireLogged = 0;
+        g_em41Logged = 0;
+    }
 }
 
 void SetHitProbe(std::uintptr_t unit) {

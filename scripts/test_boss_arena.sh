@@ -10,6 +10,8 @@
 # profile; checks the save.
 #   PRELOAD (archives loaded with the stage too)  STAGE  CLASS  SIDE (default 60)  DISTANCE (default 400)  SHOTS (default 6)  KILLSHOTS (default 20)
 #   FREE (seconds the boss fights the invulnerable player first, a capture every 5 s; default 0)
+#   ACTS (its own actions by id, one per free-fight capture)  PARTS (dev enemies and actions)  NOBRING (shots where the
+#   player aims: the boss is never moved; Uroboros Mkono stays at its story spot)
 cd "$(dirname "$0")/.."
 D="$LOCALAPPDATA/RogueMercenaries"
 LOG="$D/logs/adapter.log"
@@ -56,25 +58,39 @@ wait_for "phase idle -> arena_active" 1 120 || { echo "the arena did not start";
 if [ $ok = 1 ]; then
     dev "watch $CLASS"
     sleep 2; cap 00-start  # before the boss comes (8 s after the arena begins)
+    # WARP "x y z": a boss that waits at its story spot (maps.json boss trigger) must still be waiting
+    # past the arena's 8 s; then the player is moved there and it appears.
+    if [ -n "${WARP:-}" ]; then
+        sleep 10
+        echo "before the warp: $(count "director: boss $CLASS .*spawned") boss spawn(s) (0 expected)"
+        cap 00-waiting; dev "warp $WARP"
+    fi
     if wait_for "director: boss $CLASS .*spawned" 1 40; then
         echo "spawn: $(since | grep -E "director: boss $CLASS .*spawned" | tail -1 | cut -c25-200)"
         wait_for "director: boss health" 1 8 && echo "health: $(since | grep 'director: boss health' | tail -1 | cut -c25-200)"
         sleep 3; cap 01-boss
+        # PARTS: every enemy unit (dev enemies) and the boss's action table (dev actions) once it is in.
+        [ -n "${PARTS:-}" ] && { dev enemies; dev "actions $CLASS"; }
         if [ "${FREE:-0}" -gt 0 ]; then
-            for t in $(seq 5 5 "$FREE"); do sleep 4; cap "01-free-$t"; done
+            # ACTS: the boss's own actions by id, one started at each capture of the free fight.
+            set -- ${ACTS:-}
+            for t in $(seq 5 5 "$FREE"); do
+                sleep 4; cap "01-free-$t"
+                if [ $# -gt 0 ]; then dev "act $CLASS $1"; shift; [ -n "${PARTS:-}" ] && dev enemies; fi
+            done
             echo "free fight: $(since | grep "watch: $CLASS hp" | grep -oE 'action [0-9]+ [A-Za-z0-9_]+' | uniq | head -30 | tr '\n' ';' | cut -c1-500)"
             echo "   player: $(since | grep -oE 'c[A-Za-z0-9]+_PL' | sort | uniq -c | tr '\n' ' ')"
             since | grep -E "boss: |camera: |player died" | cut -c25-200 | head -6
         fi
         keys "rdown+1200"
-        for _ in $(seq 1 "$SHOTS"); do quick "bring $CLASS $DISTANCE $SIDE 2.0"; keys "lclick+350"; done
+        for _ in $(seq 1 "$SHOTS"); do [ -z "${NOBRING:-}" ] && quick "bring $CLASS $DISTANCE $SIDE 2.0"; keys "lclick+350"; done
         sleep 1; cap 02-hud-after-shots
         echo "hits at full health: $(since | grep -c "enemy_hit .*class=$CLASS")"
         since | grep -E "enemy_hit .*class=$CLASS" | head -3 | cut -c25-200
         dev "enemyhp 1"
         for i in $(seq 1 "$KILLSHOTS"); do
             [ "$(count "enemy_hit .*class=$CLASS.*killed=1|died \(")" -ge 1 ] && break
-            quick "bring $CLASS $DISTANCE $SIDE 2.0"; keys "lclick+350"
+            [ -z "${NOBRING:-}" ] && quick "bring $CLASS $DISTANCE $SIDE 2.0"; keys "lclick+350"
             [ $((i % 8)) = 0 ] && sleep 2.5  # a reload
         done
         keys "rup+300"

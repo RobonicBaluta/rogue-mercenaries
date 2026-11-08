@@ -31,6 +31,7 @@
 #include "engine.h"
 #include "file_redirect.h"
 #include "area_cameras.h"
+#include "stage_fixes.h"
 #include "imgui.h"
 #include "icons.h"
 #include "portraits.h"
@@ -2906,7 +2907,10 @@ void TraceDirectorArena(double now, const std::optional<std::array<double, 3>>& 
 
 // Bosses that fight from where they are and move themselves (the giant Uroboros of the capsule
 // dome: its Shift takes it around the dome); the mod never moves them.
-bool BossHoldsGround(const std::string& cls) { return cls == "uEm43"; }
+// Uroboros Mkono (uEm42) is a mass that rises beside the tanker's deck from its story spot (its
+// map's boss "spawn", s511 set Uro3_Battle) and never walks: moved, it hung in the air or sank into
+// the deck (2026-11-08: the user, "it spawned incorrectly ... you were hitting it from below").
+bool BossHoldsGround(const std::string& cls) { return cls == "uEm43" || cls == "uEm42"; }
 
 // Enemies that cannot reach the player (behind a door the story opens, on a ledge, a boss at a
 // door) are moved: one far from the player that has not moved 1.5 m in 12 s (8 s for a boss), and
@@ -3158,6 +3162,9 @@ constexpr ScriptedFall kScriptedFalls[] = {
     {"uEm84", "cEm84ActDieNormal", 0.3}, {"uEm83", "cEm83ActDieNormal", 0.3},
     // Uroboros Wesker fights on at zero health too (his end is the story's): his last pinned fall.
     {"uEm82", "cEm82DmgLastPinionDie", 0.0},
+    // Uroboros Aheri (uEm41) has the Uroboros' deaths; its own health is 32767 (its end in the story
+    // is the flamethrower room's), so one is given if it has not begun its own.
+    {"uEm41", "cEm40ActDead", 0.3},
 };
 std::uintptr_t g_fallDone = 0;
 
@@ -3180,6 +3187,58 @@ constexpr ScriptedKill kScriptedKills[] = {
     {"uEm81", "cEm80ActAtkSyutoStart", "cEm80ActAtkKick"},
     {"uEm80", "cEm80ActAtkSyutoStart", "cEm80ActAtkKick"},
 };
+
+// A boss's hold that ends in a kill. The Uroboros' near grab and Uroboros Aheri's share one hold
+// (cEm40ActNearCatchOk, cEm41ActNearCatchOk: update 0x008ABF90): it loops, then plays its kill and
+// sets the player's health to 0, past the run's health and the developer invulnerability (2026-11-08,
+// build/runs/20261108-174744-bossarena-uEm41-s308: caught at full health, dead 11 s later). The
+// player mashes to break free, which starts the grabber's NearEscape: it puts the player into his
+// own escape (0x008B0880). In a run that escape comes after kHoldRelease if he is still held (the
+// far grabs drain a little and pull him in; they do not kill). research/re5-engine-map.md.
+struct BossHold {
+    const char* hold;
+    const char* escape;
+};
+constexpr BossHold kLethalHolds[] = {
+    {"cEm40ActNearCatchOk", "cEm40ActNearEscape"},
+    {"cEm41ActNearCatchOk", "cEm40ActNearEscape"},
+};
+constexpr double kHoldRelease = 4.0;
+
+const BossHold* LethalHold(const std::string& action) {
+    for (const BossHold& h : kLethalHolds) {
+        if (action == h.hold) return &h;
+    }
+    return nullptr;
+}
+
+bool ReleaseHold(std::uintptr_t grabber, const BossHold& h) {
+    const auto ids = engine::ActionIdsOf(grabber, h.escape);
+    return !ids.empty() && engine::StartAction(grabber, ids.front(), h.escape);
+}
+
+void ReleaseBossHolds(double now) {
+    static std::uintptr_t heldBy = 0;
+    static double since = 0.0;
+    static bool done = false;
+    const std::uintptr_t unit = g->boss.unit;
+    const std::string action = unit && g->run->HasActiveRun() ? engine::CurrentActionName(unit) : std::string();
+    const BossHold* h = LethalHold(action);
+    if (h == nullptr) {
+        heldBy = 0;
+        return;
+    }
+    if (heldBy != unit) {
+        heldBy = unit;
+        since = now;
+        done = false;
+    }
+    if (done || now - since < kHoldRelease) return;
+    done = true;
+    const bool ok = ReleaseHold(unit, *h);
+    RM_LOGI("boss: %s held the player %.1f s in %s (a kill at its end); %s", engine::ClassName(unit).c_str(), now - since,
+            action.c_str(), ok ? (std::string(h->escape) + ", he is let go").c_str() : "no escape found, left as it is");
+}
 
 void TameBossKills() {
     const std::uintptr_t unit = g->boss.unit;
@@ -3363,7 +3422,33 @@ void WatchWeapons() {
     RM_LOGW("wpwatch:%s", line.c_str());
 }
 
+// Uroboros Mkono's four cores (uEm42Core, at uEm42 +0x2104..+0x2110, made by its init 0x008C0450):
+// each one's action and health logged on every change while it is a boss, so a playtest shows what
+// shooting them does (they open and close on their own timer; damage, break and regrow are their
+// actions). research/re5-engine-map.md "Uroboros Mkono".
+void WatchMkonoCores() {
+    static std::string last[4];
+    const std::uintptr_t boss = g->boss.unit;
+    if (!boss || engine::ClassName(boss) != "uEm42") {
+        for (auto& l : last) l.clear();
+        return;
+    }
+    for (int i = 0; i < 4; ++i) {
+        const auto core = ReadOr<std::uintptr_t>(boss + 0x2104 + i * 4, 0);
+        if (!core || engine::ClassName(core) != "uEm42Core") continue;
+        const auto hp = engine::ReadHp(core);
+        char line[160];
+        std::snprintf(line, sizeof(line), "%s hp %d/%d flags %02X", engine::CurrentActionName(core).c_str(), hp ? hp->hp : -1,
+                      hp ? hp->max : -1, ReadOr<std::uint8_t>(core + 0x18DC, 0));
+        if (last[i] == line) continue;
+        last[i] = line;
+        const auto bossHp = engine::ReadHp(boss);
+        RM_LOGI("mkono: core %d %s (Mkono %s, hp %d)", i, line, engine::CurrentActionName(boss).c_str(), bossHp ? bossHp->hp : -1);
+    }
+}
+
 void WatchUnit(double now) {
+    WatchMkonoCores();
     if (g_pin.unit && now < g_pin.until) {
         engine::WarpUnit(g_pin.unit, g_pin.dest);
         if (g_pin.turn) engine::TurnTo(g_pin.unit, g_pin.yaw, 0);
@@ -3527,13 +3612,23 @@ void DriveDirector(double now) {
     const rm::MapDef* arenaMap = CurrentMap();
     const bool bossArena = arenaMap != nullptr && arenaMap->boss.has_value();
     const double grace = bossArena ? kBossGraceSeconds : kDirectorGraceSeconds;
+    // A boss waiting at its story spot for the player (Uroboros Aheri in its room) is found, not
+    // counted down to.
+    const bool bossWaits = bossArena && arenaMap->boss->spawn && arenaMap->boss->trigger > 0.0;
+    const bool noBossYet = bossArena && run.director() != nullptr && run.director()->alive() + run.director()->pending() == 0 &&
+                           run.director()->dead() == 0;
     if (g->arenaBeganAt >= 0.0 && now - g->arenaBeganAt < grace) {
-        if (bossArena && run.director() != nullptr && run.director()->alive() + run.director()->pending() == 0) {
+        if (noBossYet) {
             const int left = static_cast<int>(std::ceil(grace - (now - g->arenaBeganAt)));
-            g->notice = Upper(Plain(arenaMap->boss->name)) + " IS COMING   " + std::to_string(left);
+            g->notice = bossWaits ? "FIND " + Upper(Plain(arenaMap->boss->name))
+                                  : Upper(Plain(arenaMap->boss->name)) + " IS COMING   " + std::to_string(left);
             g->noticeUntil = now + 0.3;
         }
         return;
+    }
+    if (noBossYet && bossWaits && run.director()->WaitingForPlayer()) {
+        g->notice = "FIND " + Upper(Plain(arenaMap->boss->name));
+        g->noticeUntil = now + 0.3;
     }
     std::optional<std::array<double, 3>> player;
     if (const auto local = engine::LocalPlayer()) {
@@ -3550,6 +3645,8 @@ void DriveDirector(double now) {
         spec.unitClass = r.unit_class;
         for (int i = 0; i < 3; ++i) spec.pos[i] = static_cast<float>(r.pos[i]);
         if (player) spec.facing = static_cast<float>(std::atan2((*player)[0] - r.pos[0], (*player)[2] - r.pos[2]));
+        // A boss at its story spot turns the way the story turns it (its set's angle).
+        if (r.facing) spec.facing = static_cast<float>(*r.facing);
         spec.weapon = static_cast<int>(r.arm);
         spec.fields = r.fields;
         // A boss senses the player across its arena: the widest search the game's own spawns use
@@ -5544,6 +5641,22 @@ void DriveGrabBreak(double now) {
     const auto hp = grabber ? engine::ReadHp(grabber) : std::nullopt;
     if (cls.rfind("uEm", 0) != 0 || !hp || hp->hp <= 0) {
         RM_LOGI("iron grip: %s, no grabber found (%s); left to the game", name.c_str(), cls.empty() ? "none" : cls.c_str());
+        return;
+    }
+    // A Uroboros' grab: let go through its own escape once it holds him (kLethalHolds); while it
+    // still reaches for him, asked again on the next frame.
+    if (cls == "uEm40" || cls == "uEm41") {
+        const BossHold* h = LethalHold(engine::CurrentActionName(grabber));
+        if (h == nullptr) {
+            g_grabBroken = 0;
+            return;
+        }
+        const bool let = ReleaseHold(grabber, *h);
+        RM_LOGI("iron grip: %s by %s %s", name.c_str(), cls.c_str(), let ? "let go (its escape)" : "kept its hold (no escape found)");
+        if (let) {
+            g->notice = "IRON GRIP";
+            g->noticeUntil = now + 1.2;
+        }
         return;
     }
     const bool thrown = engine::StartAction(grabber, re5::off::kEm10DmgFlyoff, ReactionClass(re5::off::kEm10DmgFlyoff)) ||
@@ -7767,6 +7880,7 @@ private:
         DriveDirector(now);
         DriveBossFall(now);
         TameBossKills();
+        ReleaseBossHolds(now);
         WatchEventCamera(now);
         DriveArena(now);
         DetectEnemyDeaths(now);
@@ -7786,6 +7900,7 @@ private:
         // A run's campaign area keeps the player camera: its camera zones and scripted zone
         // cameras are off (user playtest 2026-11-08, the Volcano).
         areacams::SetRunWantsOff(g->run->HasActiveRun() && CurrentMapKey() >= kFirstCampaignStage);
+        stagefix::SetInRun(g->run->HasActiveRun());
         // The run's boss takes gunfire where its own check would refuse it (Uroboros Wesker).
         SetBossTakesGunfire(g->boss.unit);
         // A match a run played in stays a run's match until it is gone, so quitting it writes no

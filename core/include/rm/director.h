@@ -48,6 +48,14 @@ struct MapBoss {
     std::string name;        // shown in the route menu and on the HUD
     int hp = 0;              // > 0: its health once spawned (the game's own suits story weapons)
     std::string article = "the";  // before its name in a sentence ("the Uroboros"; "" for a person)
+    /// Where the story sets it (its set's position): it appears there, not at a map point
+    /// (2026-11-08, the user: "spawn ... where they are supposed to be").
+    std::optional<std::array<double, 3>> spawn;
+    std::optional<double> facing;  // its set's turn about Y (radians), with a spawn
+    /// With a spawn: it appears once the player comes within `trigger` of it (0: at once), or
+    /// `trigger_wait` seconds after the director's first tick, whichever comes first (0: no limit).
+    double trigger = 0.0;
+    double trigger_wait = 0.0;
     /// Its name in a sentence: "the Uroboros", "Wesker".
     [[nodiscard]] std::string Phrase() const { return article.empty() ? name : article + " " + name; }
 };
@@ -119,6 +127,7 @@ struct SpawnRequest {
     SpawnFields fields;  // from the picked profile (empty = adapter defaults)
     int hp = 0;          // > 0: the unit's health once spawned (bosses)
     bool boss = false;
+    std::optional<double> facing;  // a boss's story turn (MapBoss::facing); else the adapter's choice
 };
 
 /// Runs one arena: `budget` enemies in total, at most `max_alive` at once, refilled as they
@@ -165,6 +174,8 @@ public:
     [[nodiscard]] int dead() const { return dead_; }
     [[nodiscard]] int alive() const { return static_cast<int>(alive_.size()); }
     [[nodiscard]] int pending() const { return static_cast<int>(pending_.size()); }
+    /// A boss with a story spot that waits for the player to come near (as of the last Tick).
+    [[nodiscard]] bool WaitingForPlayer() const { return boss_waiting_; }
     [[nodiscard]] int remaining() const { return budget_ - dead_; }
     [[nodiscard]] bool complete() const { return dead_ >= budget_; }
     [[nodiscard]] const MapDef& map() const { return map_; }
@@ -180,6 +191,7 @@ private:
     [[nodiscard]] bool Fits(int threat) const { return pick_level_ <= 0 || threat <= pick_level_; }
     [[nodiscard]] int Active(const MapEnemy* enemy) const;  // alive + pending of that roster entry
     int PickPoint(const std::optional<std::array<double, 3>>& player, const PointFilter& accept = {});
+    [[nodiscard]] bool BossWaits(double now, const std::optional<std::array<double, 3>>& player) const;
 
     MapDef map_;
     int budget_ = 0;
@@ -193,6 +205,8 @@ private:
     double next_spawn_time_ = 0.0;
     int last_point_ = -1;
     double last_now_ = 0.0;
+    double first_tick_ = -1.0;  // the first Tick's time (a boss's trigger_wait counts from it)
+    bool boss_waiting_ = false;
     StringMap<std::uint64_t> alive_;                 // unit id -> ticket
     std::vector<std::pair<std::uint64_t, int>> pending_;  // ticket -> point index
     std::vector<int> point_failures_;

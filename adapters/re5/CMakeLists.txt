@@ -59,6 +59,7 @@ set(RM_RE5_SOURCES
     src/host.cpp
     src/file_redirect.cpp
     src/area_cameras.cpp
+    src/stage_fixes.cpp
     dinput8.def)
 
 if(TARGET rm_core AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/mod.cpp)

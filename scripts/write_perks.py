@@ -368,7 +368,9 @@ for p in perks:
         assert len(help_lines(p['description'])) <= 2, (p['id'], help_lines(p['description']))
         assert all(ch.isalnum() or ch in ' ,.-' for ch in p['description']), (p['id'], p['description'])
 
-SKIN_BOSS_UNLOCKS = {'wesker_midnight': 'boss:uEm81'}
+# Midnight Wesker opens with the boss Wesker beaten, S.T.A.R.S. Wesker with Uroboros Wesker (the user's
+# ladder, 2026-11-07); until one of them is beaten Wesker himself is locked.
+SKIN_BOSS_UNLOCKS = {'wesker_midnight': 'boss:uEm81', 'wesker_stars': 'boss:uEm82'}
 # Supported third-party mods (2026-11-08, the user's list: "not mandatory", "you need to go to the
 # original creators mod page and get it to endorse it"). Each is a skin that stands in for a costume
 # (its build and trait are that skin's); the player unzips the mod into RogueMercenaries\mods and the
@@ -439,14 +441,13 @@ for ch in c['characters']:
         else:
             s.pop('build', None)
         # Skins a boss unlocks (the user's ladder, 2026-11-07: "once you get midnight wesker you unlock
-        # him", the description not saying how). S.T.A.R.S. Wesker waits for Uroboros Wesker, whose
-        # fight does not work yet: locked now he could not be had.
+        # him", the description not saying how). The menus add the full stop.
         for field in ('unlock_kind', 'unlock_boss', 'unlock_text'):
             s.pop(field, None)
         if s['id'] in SKIN_BOSS_UNLOCKS:
             s['unlock_kind'] = 'boss_beaten'
             s['unlock_boss'] = SKIN_BOSS_UNLOCKS[s['id']]
-            s['unlock_text'] = 'Locked.'
+            s['unlock_text'] = 'Locked'
 c['_comment'] = ("Playable characters. Every character and skin is available from the start (the challenge fields unlock_kind/unlock_count/"
                  "unlock_text/unlock_character, see core/include/rm/characters.h, are kept for later). starting_weapons: the first entry is "
                  "the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come "
@@ -540,8 +541,9 @@ e['ladder'] = {
         {'id': 'long', 'name': 'Long', 'arenas': 8, 'easy_boss': 108, 'hard_boss': 309,
          'unlocked_by': 'short:hard', 'boss_hp_mult': 1.3},
         # The user's 12 ends on Uroboros Wesker on the Volcano (s508; 2026-11-08: his body takes
-        # gunfire in a run).
-        {'id': 'marathon', 'name': 'Marathon', 'arenas': 12, 'easy_boss': 508,
+        # gunfire in a run), then also on Uroboros Aheri in the Tiled Labs (s308, 2026-11-08: the
+        # user's "stronger flamethrower Uroboros").
+        {'id': 'marathon', 'name': 'Marathon', 'arenas': 12, 'easy_boss': 508, 'hard_boss': 308,
          'unlocked_by': 'long:hard', 'boss_hp_mult': 1.5},
     ],
     # The 13th arena: Wesker, once the hard bosses of 4 and 8 and the 12's boss are beaten.

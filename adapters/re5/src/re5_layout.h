@@ -79,8 +79,21 @@ constexpr std::uintptr_t kFnEnemyHitCheck = 0x009E0700;
 // region of 0x3C and up hurts while his core part (+0x1F50) is open (its type 2, its +0x1E24
 // clear); any other drains his gauges (+0x1F9C, +0x1FA0) and does not (research/re5-engine-map.md).
 constexpr std::uintptr_t kFnEm82MayHurt = 0x009217E0;
+// Uroboros Aheri's (uEm41, vtable 0x00F7D160 slot +0x18) update: `byte [esi+0x2118] = 0`, the
+// Uroboros' update 0x008AE2B0, then its health set to its maximum (+0x1366) through vtable +0x10C
+// (hooks_combat.cpp: a run's boss skips that).
+constexpr std::uintptr_t kFnEm41Update = 0x008B6040;
+constexpr std::uintptr_t kFnEm40Update = 0x008AE2B0;
 // The flamethrower's unit, uWp21 (research/re5-engine-map.md, "The flamethrower").
 constexpr std::uintptr_t kVtableWp21 = 0x0102D0C8;
+// Stage s308's setup (aS308, vtable slot of 0x00F557B0; DTI 0x011B0DF4): the player's flamethrower
+// looked up in the model list [0x011B2200] (0x007F2FD0, thiscall (kind, id), ret 8: a uBioModel
+// whose +0xD50/+0xD54 match), and its fuel at +0x1AF8 read whether found or not; the scenes' base
+// setup 0x0072D240 (thiscall) is what it calls first (stage_fixes.cpp).
+constexpr std::uintptr_t kFnS308Setup = 0x0074CFB0;
+constexpr std::uintptr_t kFnSceneBaseSetup = 0x0072D240;
+constexpr std::uintptr_t kFnFindModel = 0x007F2FD0;
+constexpr std::uintptr_t kModelList = 0x011B2200;
 constexpr std::uintptr_t kFnPlActTestStart = 0x00C91600;
 constexpr std::uintptr_t kFnPlActTestUpdate = 0x00C76EA0;
 constexpr std::uintptr_t kFnActionDefaultDone = 0x00C71510;
@@ -422,6 +435,7 @@ constexpr std::size_t kEnemyTarget = 0x1BA4;
 // uEm40: the yaw its walk still has to turn (radians, + = more yaw; the walk 0x008AB4A0 turns by it
 // through 0x008A79C0 and lowers it as it turns). Nothing sets it without the boss's state machine.
 constexpr std::size_t kEm40TurnLeft = 0x1B74;
+constexpr std::size_t kEm41UpdateFlag = 0x2118;  // cleared first by Aheri's update
 constexpr std::size_t kPlayerThreatPoint = 0x2E10;  // float x, y, z: what a dodge is relative to
 constexpr std::size_t kPlayerDodgeOwner = 0x2D64;   // the dodge prep's object (+0x220)
 constexpr std::size_t kDodgePrepOffset = 0x220;
@@ -810,6 +824,19 @@ inline constexpr Signature kSignatures[] = {
     // Uroboros Wesker's "may this hit hurt": `cmp ax, 0x3C`, `mov ecx, [esi+0x1F50]`; his getDTI.
     {"em82_may_hurt", addr::kFnEm82MayHurt, "8B 44 24 04 53 33 DB 66 3D 3C 00 56 8B F1 72 38 8B 8E 50 1F 00 00 83 C0 C4 0F B7 C0"},
     {"uem82_get_dti", 0x0092F860, "B8 60 12 1F 01 C3"},
+    // Uroboros Aheri's update (its refill: `movzx ecx, word [esi+0x1366]`, `call [eax+0x10C]`), the
+    // Uroboros' update and Aheri's getDTI.
+    {"em41_update", addr::kFnEm41Update, "56 8B F1 C6 86 18 21 00 00 00 E8 61 82 FF FF 0F B7 8E 66 13 00 00 8B 06 8B 90 0C 01 00 00 51 8B"},
+    {"em40_update", addr::kFnEm40Update, "55 8B EC 83 E4 F0 83 EC 24 53 56 8B F1 8B 86 A4 1B 00 00 33"},
+    {"uem41_get_dti", 0x008BA110, "B8 38 D4 1E 01 C3"},
+    // s308's setup: `sub esp, 0x14; push ebp; mov ebp, ecx; call 0x0072D240`, `test [eax+0x10434], 0x500`;
+    // its read of the flamethrower's fuel (`mov edx, [ebp+0x664]; mov eax, [edx+0x1AF8]`); the
+    // model lookup; the base setup; aS308's getDTI.
+    {"s308_setup", addr::kFnS308Setup, "83 EC 14 55 8B E9 E8 85 02 FE FF A1 A4 40 23 01 F7 80 34 04 01 00 00 05"},
+    {"s308_fuel_read", 0x0074D124, "8B 95 64 06 00 00 8B 82 F8 1A 00 00"},
+    {"find_model", addr::kFnFindModel, "51 53 55 56 8B D9 8B 6B 24 57 33 FF 85 ED 76 5F 8B 43 30 83 3C B8 00"},
+    {"scene_base_setup", addr::kFnSceneBaseSetup, "83 EC 08 53 55 89 4C 24 0C 8B 0D 64 9C 24 01 56"},
+    {"as308_get_dti", 0x0074DC70, "B8 F4 0D 1B 01 C3"},
     {"enemy_hit_check", addr::kFnEnemyHitCheck, "55 8B 6C 24 08 56 85 ED 8B F1 8B C5 0F 44 C6 57 8B B8 9C 12 00 00 85 FF"},
     // The fader's constructor: `mov [esi], 0x00F67828; mov [0x011E8804], esi; [esi+0x20..0x2C] = 0`.
     {"fader_ctor", 0x007F1B78, "33 C0 C7 06 28 78 F6 00 89 35 04 88 1E 01 89 46 20 89 46 24 89 46 28 89 46 2C"},

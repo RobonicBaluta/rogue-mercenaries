@@ -1390,7 +1390,7 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
             if (!boss->is_object()) {
                 bd.Error("must be an object");
             } else {
-                CheckKeys(bd, *boss, {"class", "name", "article", "hp"});
+                CheckKeys(bd, *boss, {"class", "name", "article", "hp", "spawn", "facing", "trigger", "trigger_wait"});
                 MapBoss b;
                 GetString(bd, *boss, "class", b.unit_class, true);
                 if (b.unit_class.rfind("uEm", 0) != 0) bd.Error("class must be an enemy class (uEm..)");
@@ -1399,6 +1399,23 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
                 std::int64_t hp = 0;
                 if (GetInt(bd, *boss, "hp", hp, false) && (hp < 0 || hp > 32767)) bd.Error("hp must be 0..32767");
                 b.hp = static_cast<int>(hp);
+                // Its story spot (and turn); with "trigger" it appears once the player comes that near.
+                if (const auto sp = boss->find("spawn"); sp != boss->end()) {
+                    if (!sp->is_array() || sp->size() != 3 || !(*sp)[0].is_number() || !(*sp)[1].is_number() || !(*sp)[2].is_number()) {
+                        bd.Error("field 'spawn' must be [x, y, z]");
+                    } else {
+                        b.spawn = std::array<double, 3>{(*sp)[0].get<double>(), (*sp)[1].get<double>(), (*sp)[2].get<double>()};
+                    }
+                }
+                double facing = 0.0;
+                if (GetNumber(bd, *boss, "facing", facing, false)) b.facing = facing;
+                if (GetNumber(bd, *boss, "trigger", b.trigger, false) && b.trigger < 0) bd.Error("field 'trigger' must be >= 0");
+                if (GetNumber(bd, *boss, "trigger_wait", b.trigger_wait, false) && b.trigger_wait < 0) {
+                    bd.Error("field 'trigger_wait' must be >= 0");
+                }
+                if (!b.spawn && (b.facing || boss->contains("trigger") || boss->contains("trigger_wait"))) {
+                    bd.Error("'facing', 'trigger' and 'trigger_wait' need 'spawn'");
+                }
                 map.boss = std::move(b);
             }
         }
