@@ -97,6 +97,7 @@ if(RM_BUILD_TESTS)
         tests/test_items.cpp
         tests/test_director.cpp
         tests/test_inventory_plan.cpp
+        tests/test_gun_levels.cpp
         tests/test_run_map.cpp
         tests/test_inflate.cpp
         tests/test_builds.cpp

@@ -67,10 +67,14 @@ PLAY
     - Chests (clock statues) give supplies and items. Most need a key; Majini
       sometimes drop keys.
     - Keys 1 to 4 pick the first four inventory cells.
+    - Sniper rifles aim over the shoulder like any gun. While aiming, press Z (the right
+      stick's click on a controller) to look through the scope, and again to leave it.
     - Skins with a special: Q on the keyboard, or LB+RB together on a controller. A
       second special: X, or both sticks pressed together.
     - Between arenas: ARENA CLEARED, then CHOOSE A REWARD, then SHOP (ORGANIZE INVENTORY
       opens the game's own inventory screen), then NEXT ROUTE.
+    - A weapon upgrade adds damage, and more rounds and a faster reload as far as that gun
+      has levels left (a few guns, like the Px4 and the launchers, have none).
     - What does not fit in your nine cells waits in the storage of ORGANIZE INVENTORY.
       A gun that went there stays named at the top of the SHOP until you open ORGANIZE,
       and a gun offered while your grid is full says TO STORAGE.

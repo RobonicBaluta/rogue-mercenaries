@@ -64,6 +64,8 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
             }
         }
         settings.special2Key = json.value("special2_key_scancode", settings.special2Key);
+        settings.sniperNormalAim = json.value("sniper_normal_aim", settings.sniperNormalAim);
+        settings.scopeKey = json.value("scope_key_scancode", settings.scopeKey);
         if (json.contains("special2_pad") && json["special2_pad"].is_array()) {
             settings.special2Pad.clear();
             for (const auto& b : json["special2_pad"]) {

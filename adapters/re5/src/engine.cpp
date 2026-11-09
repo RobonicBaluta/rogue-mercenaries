@@ -177,6 +177,8 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.partner = g_caps.players && g_caps.gameWork && SignatureOk("player_add") && SignatureOk("class_by_id");
     g_caps.partnerDeath = g_caps.partner && SignatureOk("player_death_event");
     g_caps.equipCell = g_caps.inventory && SignatureOk("player_equip_cell");
+    g_caps.weaponLevels = g_caps.inventory && SignatureOk("weapon_reload_levels") && SignatureOk("weapon_capacity_levels");
+    g_caps.weaponScope = g_caps.inventory && g_caps.actions && SignatureOk("weapon_record") && SignatureOk("weapon_scope_read");
     g_caps.twinGuns = SignatureOk("item_unit_create") && SignatureOk("unit_set_euler") && SignatureOk("unit_attach") &&
                       SignatureOk("wp76_fire") && DtiName(re5::addr::kDtiWp76) == "uWp76";
     g_caps.jointPosition = SignatureOk("joint_position");

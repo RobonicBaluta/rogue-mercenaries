@@ -97,6 +97,8 @@ struct Options {
     std::string out = "build/sim";
     std::string capabilities = "all";
     std::string policy = "mix";
+    std::string length;           // a run length of the ladder ("": the first)
+    std::string refine = "off";   // off, normal (takes and buys refines) or saver (little else)
     double hit_scale = 1.0;  // enemies hit this much more often (calibration)
     int log_runs = 0;
     std::string date;
@@ -123,6 +125,10 @@ bool ParseArgs(int argc, char** argv, Options& o) {
             o.capabilities = v;
         } else if (a == "--policy" && next(v)) {
             o.policy = v;
+        } else if (a == "--length" && next(v)) {
+            o.length = v;
+        } else if (a == "--refine" && next(v)) {
+            o.refine = v;
         } else if (a == "--hit-scale" && next(v)) {
             o.hit_scale = std::stod(v);
         } else if (a == "--log-runs" && next(v)) {
@@ -133,6 +139,7 @@ bool ParseArgs(int argc, char** argv, Options& o) {
             return false;
         }
     }
+    if (o.refine != "off" && o.refine != "normal" && o.refine != "saver") return false;
     return o.runs > 0 && o.hit_scale > 0.0 && (o.policy == "mix" || o.policy == "random" || o.policy == "greedy" || o.policy == "safe");
 }
 
@@ -201,9 +208,14 @@ PerkTraits Traits(const PerkDef& p) {
     return t;
 }
 
+enum class RefineMode { Off, Normal, Saver };
+RefineMode g_refineMode = RefineMode::Off;
+
 double ScoreReward(const RewardChoice& c, Policy policy, const Content& content) {
     const double r = static_cast<double>(RarityIndex(c.rarity));
     switch (c.kind) {
+        case RewardKind::Refine:
+            return g_refineMode == RefineMode::Off ? 0.0 : g_refineMode == RefineMode::Saver ? 50.0 + r : 12.0 + r;
         case RewardKind::Perk: {
             const PerkTraits t = Traits(*content.FindPerk(c.perk_id));
             if (policy == Policy::Greedy) return t.offense ? 10.0 + 2.0 * r : 3.0 + r;
@@ -211,7 +223,7 @@ double ScoreReward(const RewardChoice& c, Policy policy, const Content& content)
         }
         case RewardKind::Weapon:
             return (policy == Policy::Greedy ? 6.0 : 4.0) + 2.0 * r + static_cast<double>(c.weapon.affixes.size());
-        case RewardKind::Supplies: return policy == Policy::Greedy ? 1.0 : 3.0;
+        case RewardKind::Supplies: return g_refineMode == RefineMode::Saver ? 20.0 : policy == Policy::Greedy ? 1.0 : 3.0;
         case RewardKind::Item: {
             // Healing first when playing safe, grenades and ammo otherwise.
             const EquipmentDef* e = content.loadouts().FindEquipment(c.item_id);
@@ -283,6 +295,7 @@ struct Stats {
     std::map<std::string, std::int64_t> runs_by_policy, completed_by_policy;
     std::map<std::string, std::int64_t> runs_by_character;
     std::vector<std::int64_t> arenas_cleared_hist;  // index = arenas cleared, 0..arena_count
+    std::array<std::int64_t, 8> top_guns{};  // completed runs by legendary-or-better guns held at the end
     std::map<std::string, BuildStats> builds;       // by skin id
     std::map<int, std::int64_t> death_arena_hist;
     std::int64_t supplies_earned = 0, supplies_spent = 0;
@@ -645,6 +658,15 @@ void Simulator::ChooseReward(RunController& rc, Rng& player, Policy policy) {
 }
 
 void Simulator::Shop(RunController& rc, Rng& player, Policy policy, double& hp) {
+    if (g_refineMode == RefineMode::Saver) {
+        // With money to spare, NEW STOCK looks for a refine.
+        for (int i = 0; i < 2; ++i) {
+            const auto& now = rc.ShopOffers();
+            if (std::any_of(now.begin(), now.end(), [](const ShopOffer& o) { return o.kind == ShopOfferKind::Refine; })) break;
+            const std::int64_t price = rc.ShopRestockPrice();
+            if (price <= 0 || rc.state().supplies.balance() < price + 150 || !rc.RerollShop().ok()) break;
+        }
+    }
     const auto& offers = rc.ShopOffers();
     for (const ShopOffer& o : offers) {
         if (o.kind == ShopOfferKind::Perk) {
@@ -679,6 +701,11 @@ void Simulator::Shop(RunController& rc, Rng& player, Policy policy, double& hp) 
                 if (o.kind == ShopOfferKind::Perk && Traits(*content_->FindPerk(o.perk_id)).defense) score = 7.0 + r;
                 if (o.kind == ShopOfferKind::WeaponUpgrade) score = 4.0;
                 break;
+        }
+        if (g_refineMode == RefineMode::Saver) {
+            score = o.kind == ShopOfferKind::Refine ? 50.0 + r : (o.kind == ShopOfferKind::Heal && hp < 0.5 * HpMax(rc) ? 40.0 : 0.0);
+        } else if (g_refineMode == RefineMode::Normal && o.kind == ShopOfferKind::Refine && policy != Policy::Random) {
+            score = std::max(score, 8.0 + r);
         }
         if (score > 0.0) wanted.emplace_back(score, i);
     }
@@ -805,7 +832,7 @@ void Simulator::PlayRun(RunController& rc, int index, Policy policy) {
         }
     }
     for (const std::string& id : rc.EquippedPerks(character)) ++s_.perk_equips[id];
-    if (!rc.StartRun(character, run_seed, b.skin).ok()) {
+    if (!rc.StartRun(character, run_seed, b.skin, opts_.length).ok()) {
         std::cerr << "StartRun failed for run " << index << " (" << character << " " << b.skin << ")\n";
         return;
     }
@@ -839,6 +866,8 @@ void Simulator::PlayRun(RunController& rc, int index, Policy policy) {
         }
         CheckBalances(rc);
     }
+    std::size_t topGuns = 0;
+    for (const WeaponInstance& w : rc.state().weapons) topGuns += RarityIndex(w.rarity) >= RarityIndex(Rarity::Legendary) ? 1u : 0u;
     if (rc.HasActiveRun() && rc.phase() != Phase::RunComplete && rc.phase() != Phase::RunFailed) rc.AbandonRun(t);
     const Result<RunSummary> summary = rc.EndRun();
     if (!summary.ok()) {
@@ -848,6 +877,7 @@ void Simulator::PlayRun(RunController& rc, int index, Policy policy) {
     const RunSummary& sum = summary.value();
     if (sum.completed) {
         ++s_.completed;
+        ++s_.top_guns[std::min<std::size_t>(topGuns, s_.top_guns.size() - 1)];
         ++s_.completed_by_policy[PolicyName(policy)];
         s_.credits_banked_completed += sum.credits_banked;
         ++build_->completed;
@@ -912,6 +942,10 @@ int Simulator::Run() {
         everyone.unlocked_characters.insert(c.id);
         for (const SkinDef& skin : c.skins) everyone.unlocked_characters.insert(skin.id);
     }
+    for (const auto& length : content_->economy().ladder.lengths) {
+        if (!length.unlocked_by.empty()) everyone.stats.bosses_beaten.insert(length.unlocked_by);
+    }
+    g_refineMode = opts_.refine == "saver" ? RefineMode::Saver : opts_.refine == "normal" ? RefineMode::Normal : RefineMode::Off;
     RunController rc(content_, std::move(everyone), ro);
 
     const auto start = std::chrono::steady_clock::now();
@@ -925,6 +959,21 @@ int Simulator::Run() {
         PlayRun(rc, i, policy);
     }
     if (jsonl) jsonl->Flush();
+    if (g_refineMode != RefineMode::Off) {
+        std::int64_t done = 0, guns = 0;
+        for (std::size_t n = 0; n < s_.top_guns.size(); ++n) {
+            done += s_.top_guns[n];
+            guns += static_cast<std::int64_t>(n) * s_.top_guns[n];
+        }
+        std::cout << "refine " << opts_.refine << " " << (opts_.length.empty() ? "first" : opts_.length) << ": completed " << done << "/" << s_.runs
+                  << " mean " << (done ? static_cast<double>(guns) / static_cast<double>(done) : 0.0) << " dist";
+        for (std::size_t n = 0; n < s_.top_guns.size(); ++n) {
+            std::cout << " " << n << "=" << (done ? 100 * s_.top_guns[n] / done : 0) << "%";
+        }
+        std::cout << " ratings";
+        for (const auto& [rating, count] : s_.ratings) std::cout << " " << rating << "=" << count;
+        std::cout << " supplies/run " << (s_.runs ? s_.supplies_earned / s_.runs : 0) << "\n";
+    }
     const double seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     s_.negative_balance += sink.negative_balance_events;

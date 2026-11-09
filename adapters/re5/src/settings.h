@@ -84,6 +84,10 @@ struct Settings {
     // A build's second special (Wesker's burst): X, and both sticks pressed together.
     int special2Key = 0x2D;
     std::vector<std::string> special2Pad = {"LS", "RS"};
+    // Sniper rifles aim over the shoulder like any gun in a run; the scope is one button away while
+    // aiming: this key (DirectInput scancode, default Z) or the right stick's click.
+    bool sniperNormalAim = true;
+    int scopeKey = 0x2C;
 };
 
 Paths ResolvePaths(void* module);

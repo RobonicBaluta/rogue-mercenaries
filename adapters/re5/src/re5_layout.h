@@ -138,6 +138,13 @@ constexpr std::uintptr_t kDtiEffectList = 0x0124ABE0;  // rEffectList (build/dti
 // +0x2D9C) and sets the slot's bit in game work +0x478. The Port stage's own code (0x00741690)
 // adds Josh this way: (2, 4, 0, 0), then sets +0x2DAC |= 1 and his position (+0x30).
 constexpr std::uintptr_t kFnPlayerAdd = 0x007E9A50;
+// The game's per-gun data, indexed by the item's low byte (research/re5-engine-map.md "Gun stat tables").
+constexpr std::uintptr_t kWeaponRecords = 0x011B5170;       // 0x140 bytes each (0x00770380)
+constexpr std::size_t kWeaponRecordSize = 0x140;
+constexpr int kWeaponRecordCount = 0x50;
+constexpr std::uintptr_t kWeaponCapacityLevels = 0x011C06A0;  // int32 rounds by LvBulletMax
+constexpr std::uintptr_t kWeaponReloadLevels = 0x011C0664;    // float time multiplier by LvReloadSpeed
+constexpr std::size_t kWeaponLevelStride = 0x1E8;
 // A player's execution (a chainsaw's, every enemy kill move, the die_* actions): thiscall (player
 // number, or -1 for the first one down). Starts the death camera that ends in the game over; only
 // the campaign's mode filters which player it is for (research/re5-engine-map.md).
@@ -496,6 +503,9 @@ constexpr int kEm10DmgHead = 0x6D;    // cEm10ActDmgHead: head stagger (the mele
 constexpr int kEm10DmgFlyoff = 0x73;  // cEm10ActDmgFlyoff: blown away
 constexpr int kEm10DmgYoroke = 0x7C;  // cEm10ActDmgYoroke: stagger
 // uPlayer
+constexpr std::size_t kWeaponScopeType = 0x98;   // weapon record: not 0 = aims through a scope (the game reads it every frame)
+constexpr std::size_t kSlotLevelReload = 0x22;   // byte of the slot's levels (kSlotUpgrades + 2)
+constexpr std::size_t kSlotLevelCapacity = 0x23; // byte of the slot's levels (kSlotUpgrades + 3)
 constexpr std::size_t kPlayerWeaponCell = 0x2DD8;  // int32: the grid cell of what is in the hands
 constexpr std::size_t kPlayerNumber = 0x2D9C;   // uint8, copied into enemy+0x136C on hit
 constexpr std::size_t kPlayerControl = 0x2DA8;  // int32 from game work +0x480 + slot*4: 0 the local player, 1 a computer one
@@ -711,6 +721,10 @@ inline constexpr Signature kSignatures[] = {
     // cmp [edi+esi*4+0x24], 0; jz; pop edi; xor eax, eax`.
     {"player_death_event", addr::kFnPlayerDeathEvent, "51 55 8B E9 89 6C 24 04 E8 A3 E2 FF FF 8B 0D DC 27 1B 01 E8 48 90 07 00"},
     {"player_equip_cell", addr::kFnPlayerEquipCell, "56 57 8B 7C 24 0C 83 FF 0F 8B F1 75 13 57 8D 8E A0 21 00 00 E8 97 7F 0D 00"},
+    {"weapon_record", 0x00770380, "8B 44 24 04 8B C8 81 E1 00 FF 00 00 81 F9 00 01 00 00 74 03 33 C0 C3 25 FF 00 00 00 8D 04 80 C1 E0 06 05 70 51 1B 01 C3"},
+    {"weapon_scope_read", 0x00B699E2, "83 B8 98 00 00 00 00 75 24 A1 58 21 1B 01"},
+    {"weapon_reload_levels", 0x00A34A70, "8B 44 24 04 3D 50 01 00 00 72 03 D9 EE C3 8B C8 81 E1 00 FF 00 00 81 F9 00 01 00 00 75 ED 25 FF 00 00 00 6B C0 7A 03 44 24 08 D9 04 85 64 06 1C 01 C3"},
+    {"weapon_capacity_levels", 0x00C4C0AD, "0F B6 49 23 25 FF 00 00 00 6B C0 7A 03 C1 8B 04 85 A0 06 1C 01 C2 04 00"},
     {"player_add", addr::kFnPlayerAdd, "56 8B 74 24 08 83 FE FF 57 8B F9 7E 13 83 FE 04 7D 0E 83 7C B7 24 00 74 07 5F 33 C0"},
     {"item_unit_create", addr::kFnItemUnitCreate, "8B 54 24 04 56 8B 35 90 60 1F 01 39 72 04 74 19 8B 42 10 85"},
     {"unit_set_euler", addr::kFnUnitSetEuler, "55 8B EC 83 E4 F0 83 EC 74 0F 57 C0 F3 0F 10 25 34 34 0A 01"},

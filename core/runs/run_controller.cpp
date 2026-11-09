@@ -355,6 +355,17 @@ std::vector<LadderUnlock> RunController::LadderUnlocksFor(const std::vector<std:
     return out;
 }
 
+namespace {
+
+// A refine's chance for this run: longer than the runs the odds are set for, the same odds are spread
+// over its arenas (a long run ended with three or four legendary guns, 2026-11-09).
+double RefineChance(const EconomyConfig::Refine& refine, double chance, int arena_count) {
+    if (refine.chances_for_arenas <= 0 || arena_count <= refine.chances_for_arenas) return chance;
+    return chance * static_cast<double>(refine.chances_for_arenas) / static_cast<double>(arena_count);
+}
+
+}  // namespace
+
 Rarity RunController::MaxRefineRarity() const {
     const EconomyConfig& eco = content_->economy();
     const auto& exotic = eco.weapon_rarity[RarityIndex(Rarity::Exotic)];
@@ -382,7 +393,8 @@ void RunController::AddRefineReward(bool sure) {
     if (!refine.enabled || run_.reward_offer.empty()) return;
     const WeaponInstance* target = RefineTarget(std::nullopt);
     if (target == nullptr) return;
-    if (!sure && !(refine.reward_chance > 0.0 && streams_->reward.NextDouble() < refine.reward_chance)) return;
+    const double chance = RefineChance(refine, refine.reward_chance, run_.arena_count);
+    if (!sure && !(chance > 0.0 && streams_->reward.NextDouble() < chance)) return;
     RewardChoice choice;
     choice.kind = RewardKind::Refine;
     choice.weapon = RefineWeapon(streams_->reward, *content_, caps_, *target);
@@ -397,7 +409,8 @@ void RunController::AddRefineOffer() {
     const WeaponInstance* target = RefineTarget(std::nullopt);
     const SkinBuild& build = run_.character.build;
     if (target == nullptr) return;
-    if (!build.refine_every_shop && !(refine.shop_chance > 0.0 && streams_->shop.NextDouble() < refine.shop_chance)) return;
+    const double chance = RefineChance(refine, refine.shop_chance, run_.arena_count);
+    if (!build.refine_every_shop && !(chance > 0.0 && streams_->shop.NextDouble() < chance)) return;
     ShopOffer o;
     o.kind = ShopOfferKind::Refine;
     o.weapon = RefineWeapon(streams_->shop, *content_, caps_, *target);
@@ -1388,9 +1401,12 @@ Result<ArenaResult> RunController::CompleteArena(double now) {
     run_.results.push_back(result);
 
     run_.reward_rarity_shift = route.rarity_bonus + eco.rewards.rating_rarity_bonus[RatingIndex(rating)];
-    // A refine among the rewards now and then; always after a top-rated arena.
+    // A refine among the rewards now and then; likelier after a top-rated arena. Decided here, once
+    // an arena: a reroll of the offer keeps it.
     const auto sure_rating = ParseRating(eco.refine.reward_rating);
-    run_.reward_refine_sure = sure_rating && RatingIndex(rating) <= RatingIndex(*sure_rating);
+    const double rated_chance = RefineChance(eco.refine, eco.refine.reward_rated_chance, run_.arena_count);
+    run_.reward_refine_sure = sure_rating && RatingIndex(rating) <= RatingIndex(*sure_rating) &&
+                              (rated_chance >= 1.0 || streams_->reward.NextDouble() < rated_chance);
     // The last arena offers nothing: there is nothing left to use a reward on.
     run_.reward_offer.clear();
     if (run_.arena_index < run_.arena_count) {
@@ -1930,7 +1946,8 @@ Result<ChestReward> RunController::OpenChest(double now, std::optional<std::stri
 
     const OfferContext ctx = MakeOfferContext(0.0);
     // Sometimes a chest refines the gun in hand one tier (the rarity remake): on top of the rest.
-    if (eco.refine.enabled && eco.refine.chest_chance > 0.0 && rng.NextDouble() < eco.refine.chest_chance) {
+    const double chest_refine = RefineChance(eco.refine, eco.refine.chest_chance, run_.arena_count);
+    if (eco.refine.enabled && chest_refine > 0.0 && rng.NextDouble() < chest_refine) {
         if (const WeaponInstance* target = RefineTarget(held_weapon)) {
             const WeaponInstance refined = RefineWeapon(rng, *content_, caps_, *target);
             const std::string id = target->instance_id;

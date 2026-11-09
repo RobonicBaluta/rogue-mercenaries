@@ -55,6 +55,7 @@
 
 #include "rm/content.h"
 #include "rm/diagnostics.h"
+#include "rm/gun_levels.h"
 #include "rm/inventory_plan.h"
 #include "rm/profile.h"
 #include "rm/rosters.h"
@@ -459,6 +460,7 @@ using WeaponLevels = std::array<std::uint32_t, 2>;
 struct RunWeaponLevels {
     std::string runId;
     std::map<std::uint32_t, WeaponLevels> byItem;
+    std::map<std::uint32_t, int> shopSteps;  // SHOP upgrades already counted in byItem's capacity and reload
 };
 RunWeaponLevels g_weaponLevels;
 
@@ -466,6 +468,7 @@ std::map<std::uint32_t, WeaponLevels>& RunLevels() {
     if (g_weaponLevels.runId != g->run->state().run_id) {
         g_weaponLevels.runId = g->run->state().run_id;
         g_weaponLevels.byItem.clear();
+        g_weaponLevels.shopSteps.clear();
     }
     return g_weaponLevels.byItem;
 }
@@ -481,16 +484,69 @@ void RecordWeaponLevels() {
     }
 }
 
+// The SHOP upgrades of a gun: its highest level in the run, less the level it starts at.
+int ShopUpgradesOf(std::uint32_t id) {
+    int steps = 0;
+    for (const rm::WeaponInstance& w : g->run->state().weapons) {
+        const rm::WeaponBaseDef* base = g->content->FindWeapon(w.base_id);
+        if (base != nullptr && base->game_item >= 0 && RecordItemId(static_cast<std::uint32_t>(base->game_item)) == id) steps = std::max(steps, w.level - 1);
+    }
+    return steps;
+}
+
+// The game's own level tables for this item, as the record names it (the grenade launcher's is 0x010C).
+rm::GunLevelTables GunTables(std::uint32_t rawItem) {
+    rm::GunLevelTables tables;
+    const std::size_t row = (rawItem & 0xFF) * re5::addr::kWeaponLevelStride;
+    for (std::size_t level = 0; level < tables.capacity.size(); ++level) {
+        tables.capacity[level] = ReadOr<std::int32_t>(re5::addr::kWeaponCapacityLevels + row + level * 4, 0);
+        tables.reload[level] = ReadOr<float>(re5::addr::kWeaponReloadLevels + row + level * 4, 1.0f);
+    }
+    return tables;
+}
+
+// Each SHOP upgrade also moves the gun's own capacity and reload levels one step, as far as that
+// gun has levels (the user, 2026-11-09). The game reads them live: rounds at the next reload.
+void RaiseForShopUpgrades(const GridCell& c, WeaponLevels& levels, int steps) {
+    const std::uint32_t raw = ReadOr<std::uint32_t>(c.record + re5::off::kSlotItemId, 0);
+    if ((raw & 0xFF00) != 0x100 || raw >= 0x150) return;
+    const rm::GunStatLevels before{static_cast<int>((levels[0] >> 24) & 0xFF), static_cast<int>((levels[0] >> 16) & 0xFF)};
+    const rm::GunLevelTables tables = GunTables(raw);
+    const rm::GunStatLevels after = rm::RaiseGunLevels(tables, before, steps);
+    levels[0] = (levels[0] & 0x0000FFFFu) | (static_cast<std::uint32_t>(after.reload) << 16) | (static_cast<std::uint32_t>(after.capacity) << 24);
+    RM_LOGI("upgrades: %04X +%d: capacity level %d -> %d (%d rounds), reload level %d -> %d (x%.2f)", c.id, steps, before.capacity, after.capacity,
+            tables.capacity[static_cast<std::size_t>(std::clamp(after.capacity, 0, rm::kGunStatLevels - 1))], before.reload, after.reload,
+            tables.reload[static_cast<std::size_t>(std::clamp(after.reload, 0, rm::kGunStatLevels - 1))]);
+}
+
 void ApplyWeaponLevels() {
     if (!g->run->HasActiveRun()) return;
     auto& levels = RunLevels();
     for (const GridCell& c : ReadGrid()) {
-        const auto it = c.record ? levels.find(c.id) : levels.end();
+        if (!c.record) continue;
+        auto it = levels.find(c.id);
+        const bool gun = ItemStackMax(c.id) == 0;
+        int& counted = g_weaponLevels.shopSteps[c.id];
+        const int due = gun && engine::Caps().weaponLevels ? ShopUpgradesOf(c.id) : counted;
+        if (due > counted) {
+            WeaponLevels raised = it != levels.end() ? it->second : SlotLevels(c.record);
+            RaiseForShopUpgrades(c, raised, due - counted);
+            counted = due;
+            it = levels.insert_or_assign(c.id, raised).first;
+        }
         if (it == levels.end() || SlotLevels(c.record) == it->second) continue;
         SafeStore(c.record + re5::off::kSlotUpgrades, it->second[0]);
         SafeStore(c.record + re5::off::kSlotUpgrades + 4, it->second[1]);
         RM_LOGI("upgrades: %04X levels %08X %08X", c.id, it->second[0], it->second[1]);
     }
+}
+
+// A SHOP upgrade shows on the gun right away, wherever it was bought from.
+void DriveWeaponLevels(double now) {
+    static double nextAt = 0.0;
+    if (now < nextAt) return;
+    nextAt = now + 0.5;
+    ApplyWeaponLevels();
 }
 
 // Every character's knife: 0x0101, Excella's 0x010E, Wesker's 0x0123, the others' 0x0124.
@@ -843,6 +899,7 @@ void LogOffersOnce(const char* what, const std::vector<rm::OfferView>& offers) {
 
 // Help line for a reward or shop offer in the game font (letters, digits, space, comma, period).
 std::string OfferDetail(const rm::OfferView& o) {
+    if (o.kind == "upgrade" && !o.detail.empty()) return Plain(o.detail) + "\nMore rounds, faster reload, if it has levels left.";
     if (!o.detail.empty()) return Plain(o.detail);
     if (o.kind == "heal") return "Restores half of your health.";
     if (o.kind == "upgrade") return "One more damage level for this weapon.";
@@ -4192,6 +4249,85 @@ bool ActionAllowsSpecial(const std::string& action) {
     return false;
 }
 
+// Sniper rifles (the weapon records whose scope type is not 0) aim over the shoulder like any gun in
+// a run; the scope is a button away while aiming (the user, 2026-11-09). The game reads the scope
+// type of the gun in hand every frame (the camera, the reticle: research/re5-engine-map.md "Gun
+// stat tables"), so 0 plays it the normal guns' way and the real value brings the scope back; the
+// aim is started over so its opening sees the change. Off again when the player stops aiming.
+struct ScopeState {
+    std::map<std::uintptr_t, std::int32_t> originals;  // weapon record's scope type -> the game's value
+    bool open = false;
+    bool buttonWas = false;
+    double aimedAt = -1.0e9;
+};
+ScopeState g_scope;
+constexpr double kScopeAimGrace = 0.4;  // a moment out of the aim's actions (a shot's end) keeps it
+
+void RestoreScopes() {
+    for (const auto& [address, value] : g_scope.originals) SafeStore<std::int32_t>(address, value);
+    if (!g_scope.originals.empty()) RM_LOGI("scope: the game's %zu scopes put back", g_scope.originals.size());
+    g_scope = {};
+}
+
+bool ScopeButtonDown() {
+    if (RawKeyDown(g->settings.scopeKey)) return true;
+    const unsigned short xbuttons = RawXInputButtons();
+    const auto joy = [](const char* name) {
+        const auto it = g_joypadButtons.find(name);
+        return it != g_joypadButtons.end() && RawJoyButton(it->second);
+    };
+    // The right stick's click alone: with the left one too it is the second special.
+    const bool right = (xbuttons & XInputBit("RS")) != 0 || joy("RS");
+    const bool left = (xbuttons & XInputBit("LS")) != 0 || joy("LS");
+    return right && !left;
+}
+
+void DriveScope(double now) {
+    if (!engine::Caps().weaponScope || !g->settings.sniperNormalAim) return;
+    const auto local = g->match.inMatch && g->run->HasActiveRun() ? engine::LocalPlayer() : 0;
+    if (!local) {
+        if (!g_scope.originals.empty()) RestoreScopes();
+        return;
+    }
+    if (g_scope.originals.empty()) {
+        for (int i = 0; i < re5::addr::kWeaponRecordCount; ++i) {
+            const auto address = re5::addr::kWeaponRecords + static_cast<std::size_t>(i) * re5::addr::kWeaponRecordSize + re5::off::kWeaponScopeType;
+            const auto value = ReadOr<std::int32_t>(address, 0);
+            if (value != 0) g_scope.originals[address] = value;
+        }
+        RM_LOGI("scope: %zu scoped guns aim like any gun in a run", g_scope.originals.size());
+        if (g_scope.originals.empty()) return;
+    }
+    // The gun in hand, if it is one of them.
+    std::uintptr_t held = 0;
+    const auto inv = local + re5::off::kPlayerInventory;
+    for (int i = 0; i < re5::off::kInventorySlots && !held; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1 || ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) != 1) continue;
+        const auto raw = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
+        const auto address = re5::addr::kWeaponRecords + (raw & 0xFF) * re5::addr::kWeaponRecordSize + re5::off::kWeaponScopeType;
+        if ((raw & 0xFF00) == 0x100 && g_scope.originals.count(address)) held = address;
+    }
+    const std::string action = engine::CurrentActionName(local);
+    if (held && (action.rfind("cPlAction_pl_act_weapon_ready", 0) == 0 || action.rfind("cPlAction_pl_act_weapon_fire", 0) == 0)) g_scope.aimedAt = now;
+    const bool aiming = held && now - g_scope.aimedAt < kScopeAimGrace;
+    const bool button = ScopeButtonDown();
+    const bool pressed = button && !g_scope.buttonWas;
+    g_scope.buttonWas = button;
+    const bool wasOpen = g_scope.open;
+    if (!aiming) g_scope.open = false;
+    else if (pressed) g_scope.open = !g_scope.open;
+    for (const auto& [address, value] : g_scope.originals) {
+        const std::int32_t wanted = g_scope.open && address == held ? value : 0;
+        if (ReadOr<std::int32_t>(address, wanted) != wanted) SafeStore<std::int32_t>(address, wanted);
+    }
+    if (g_scope.open == wasOpen || !aiming) return;
+    RM_LOGI("scope: %s (%s)", g_scope.open ? "through the scope" : "over the shoulder", action.c_str());
+    static const char* const kAimStart = "cPlAction_pl_act_weapon_ready_begin";
+    const auto ids = engine::ActionIdsOf(local, kAimStart);
+    if (ids.empty() || !engine::StartAction(local, ids.front(), kAimStart)) RM_LOGW("scope: the aim could not be started over");
+}
+
 // The game's own screens and pause: its pause menu, a paused world, the item screen.
 bool ItemScreenOpen() {
     const auto game = ReadMercTimer().object;
@@ -6403,6 +6539,7 @@ std::string AdapterResumeState() {
     nlohmann::json levels = nlohmann::json::object();
     for (const auto& [id, l] : RunLevels()) levels[std::to_string(id)] = {l[0], l[1]};
     j["levels"] = std::move(levels);
+    j["level_steps"] = g_weaponLevels.shopSteps;
     return j.dump();
 }
 
@@ -6433,6 +6570,8 @@ bool RestoreAdapterResumeState(const std::string& text) {
         for (const auto& [key, l] : levels.items()) {
             RunLevels()[static_cast<std::uint32_t>(std::stoul(key))] = {l.at(0).get<std::uint32_t>(), l.at(1).get<std::uint32_t>()};
         }
+        g_weaponLevels.shopSteps.clear();
+        if (j.contains("level_steps")) g_weaponLevels.shopSteps = j.at("level_steps").get<std::map<std::uint32_t, int>>();
     } catch (const std::exception& e) {
         RM_LOGW("resume: the adapter's state could not be read (%s)", e.what());
         return false;
@@ -8031,7 +8170,9 @@ private:
         // Items earned by perks, rewards and the shop wait until the player is in a match.
         if (g->match.inMatch && engine::LocalPlayer() && g->run->phase() != rm::Phase::Idle && ReadMercTimer().recent) {
             ApplyItemGrants();
+            DriveWeaponLevels(now);
         }
+        DriveScope(now);
         if (g->settings.developerMode) ProbeScene();
         PollDevCommand(now);
         PollItemBox();

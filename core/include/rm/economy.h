@@ -63,6 +63,8 @@ struct EconomyConfig {
         bool enabled = false;
         double reward_chance = 0.0;
         std::string reward_rating = "S";
+        double reward_rated_chance = 1.0;  // the chance of it after an arena at reward_rating or better
+        int chances_for_arenas = 0;  // the chances are for a run of this many arenas; a longer run's are scaled down to match (0: never)
         double shop_chance = 0.0;
         double chest_chance = 0.0;
         std::array<std::int64_t, kRarityCount> price{};

@@ -34,6 +34,8 @@ struct Verified {
     bool partner = false;       // a computer player added the game's way (E22: Josh's backup)
     bool partnerDeath = false;  // a partner's execution does not end the run
     bool equipCell = false;     // the game's own change of the item in the hands
+    bool weaponLevels = false;  // a gun's capacity and reload levels (a SHOP upgrade raises them)
+    bool weaponScope = false;   // a gun's scope can be turned off (sniper rifles aim like any gun)
     bool twinGuns = false;      // the boss Jill's SMG units on the player (E16 spike, developer commands)
     bool jointPosition = false; // a character's bone in the world (E16: the twin guns' shots leave her hands)
     bool hitAttacker = false;

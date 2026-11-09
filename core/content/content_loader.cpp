@@ -1624,9 +1624,13 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     }
     if (const json* s = Get(doc, "refine")) {  // optional: without it no gun is refined
         const Diag sd = d.Sub(": refine");
-        CheckKeys(sd, *s, {"_comment", "reward_chance", "reward_rating", "shop_chance", "chest_chance", "price",
+        CheckKeys(sd, *s, {"_comment", "reward_chance", "reward_rating", "reward_rated_chance", "chances_for_arenas", "shop_chance", "chest_chance", "price",
                            "exotic_unlocked_by"});
         eco.refine.enabled = true;
+        GetIntRange(sd, *s, "chances_for_arenas", eco.refine.chances_for_arenas, false, 0, 99);
+        if (GetNumber(sd, *s, "reward_rated_chance", eco.refine.reward_rated_chance, false)) {
+            CheckRange(sd, "reward_rated_chance", eco.refine.reward_rated_chance, 0.0, 1.0);
+        }
         if (GetNumber(sd, *s, "reward_chance", eco.refine.reward_chance, false)) {
             CheckRange(sd, "reward_chance", eco.refine.reward_chance, 0.0, 1.0);
         }

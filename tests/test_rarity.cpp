@@ -317,6 +317,45 @@ TEST_CASE("rarity remake: refines from the rewards, the shop and chests", "[weap
         // A reroll keeps the sure refine.
         REQUIRE(h.rc.state().phase == Phase::Shop);
     }
+    SECTION("a top-rated arena's refine can be a chance") {
+        test::Harness h(test::Load(RemakeSources([](nlohmann::json&, nlohmann::json& economy) {
+            economy["refine"]["reward_rating"] = "C";  // any rating
+            economy["refine"]["reward_rated_chance"] = 0.0;
+        })));
+        REQUIRE(h.rc.StartRun("alpha", 1).ok());
+        REQUIRE(h.rc.DevGrantWeapon(Gun("shotgun", "w_sg", Rarity::Rare)).ok());
+        test::ClearArena(h.rc, 0.0);
+        const bool any = std::any_of(h.rc.state().reward_offer.begin(), h.rc.state().reward_offer.end(),
+                                     [](const RewardChoice& c) { return c.kind == RewardKind::Refine; });
+        CHECK_FALSE(any);
+    }
+    SECTION("a longer run's refine chances are spread over its arenas") {
+        const auto refineShops = [](int arenas_it_is_set_for) {
+            test::Harness h(test::Load(RemakeSources([arenas_it_is_set_for](nlohmann::json&, nlohmann::json& economy) {
+                economy["refine"]["shop_chance"] = 1.0;
+                economy["refine"]["reward_rating"] = "S";
+                economy["refine"]["chances_for_arenas"] = arenas_it_is_set_for;
+            })));
+            int seen = 0;
+            for (std::uint64_t seed = 1; seed <= 60; ++seed) {
+                REQUIRE(h.rc.StartRun("alpha", seed).ok());
+                REQUIRE(h.rc.DevGrantWeapon(Gun("shotgun", "w_sg", Rarity::Rare)).ok());
+                test::ClearArena(h.rc, 0.0);
+                REQUIRE(h.rc.ContinueToRewards().ok());
+                if (h.rc.state().phase == Phase::RewardSelection) REQUIRE(h.rc.ChooseReward(0).ok());
+                const auto& offers = h.rc.state().shop_offers;
+                seen += std::any_of(offers.begin(), offers.end(), [](const ShopOffer& o) { return o.kind == ShopOfferKind::Refine; }) ? 1 : 0;
+                (void)h.rc.AbandonRun(1.0);
+                REQUIRE(h.rc.EndRun().ok());
+            }
+            return seen;
+        };
+        const int arena_count = 4;  // the test run's length
+        CHECK(refineShops(arena_count) == 60);
+        const int spread = refineShops(1);  // set for one arena: a quarter of the chance here
+        CHECK(spread > 3);
+        CHECK(spread < 35);
+    }
     SECTION("no refine at a lower rating with no chance") {
         test::Harness h(test::Load(RemakeSources([](nlohmann::json&, nlohmann::json& economy) {
             economy["refine"]["reward_rating"] = "S";
