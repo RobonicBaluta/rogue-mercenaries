@@ -491,3 +491,13 @@ TEST_CASE("rarity remake: a build's own elements, the arena's element and cheap 
         CHECK(std::any_of(r.errors.begin(), r.errors.end(), [](const std::string& e) { return e.find("unknown element") != std::string::npos; }));
     }
 }
+
+TEST_CASE("a shop's refine chance goes by the run's length", "[weapons][rarity]") {
+    ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const EconomyConfig::Refine& refine = r.content->economy().refine;
+    CHECK(RefineShopChance(refine, "short", 4) == Catch::Approx(0.30));
+    CHECK(RefineShopChance(refine, "long", 8) == Catch::Approx(0.20));
+    CHECK(RefineShopChance(refine, "marathon", 12) == Catch::Approx(0.15));
+    CHECK(RefineShopChance(refine, "no such length", 8) == Catch::Approx(0.15));  // no entry: spread over its arenas
+}

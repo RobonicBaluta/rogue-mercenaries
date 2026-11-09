@@ -67,12 +67,16 @@
     }
   },
   "refine": {
-    "_comment": "Refining a gun one tier up (the rarity remake): a reward choice with reward_chance (always after an arena rated reward_rating), a shop offer with shop_chance, a chest's chest_chance on the gun in hand. Prices by the tier reached. Exotic opens once exotic_unlocked_by (a profile bosses_beaten key) is beaten. The chances are for a run of chances_for_arenas arenas: a longer run multiplies them by that over its own length (measured 2026-11-09 with rm_sim --refine, a focused buyer: legendary guns at the end, short about 0.9 and 2 in 12 percent of runs, long about 2.1 and 3 or 4 in 29 percent, marathon about 3). reward_rated_chance is the chance of the refine after an arena at reward_rating or better.",
+    "_comment": "Refining a gun one tier up (the rarity remake): a reward choice with reward_chance (always after an arena rated reward_rating), a shop offer with shop_chance, a chest's chest_chance on the gun in hand. Prices by the tier reached. Exotic opens once exotic_unlocked_by (a profile bosses_beaten key) is beaten. The chances are for a run of chances_for_arenas arenas: a longer run multiplies them by that over its own length, except a shop's where shop_chance_by_length names the length (the user, 2026-11-09: 30 percent short, 20 long, 15 marathon, so hunting a refine with NEW STOCK stays affordable). reward_rated_chance is the chance of the refine after an arena at reward_rating or better.",
     "reward_chance": 0.15,
     "reward_rating": "A",
     "shop_chance": 0.3,
     "reward_rated_chance": 1.0,
     "chances_for_arenas": 4,
+    "shop_chance_by_length": {
+      "long": 0.2,
+      "marathon": 0.15
+    },
     "chest_chance": 0.06,
     "price": {
       "common": 0,

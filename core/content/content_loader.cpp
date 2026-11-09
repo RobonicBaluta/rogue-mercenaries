@@ -1624,10 +1624,24 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     }
     if (const json* s = Get(doc, "refine")) {  // optional: without it no gun is refined
         const Diag sd = d.Sub(": refine");
-        CheckKeys(sd, *s, {"_comment", "reward_chance", "reward_rating", "reward_rated_chance", "chances_for_arenas", "shop_chance", "chest_chance", "price",
+        CheckKeys(sd, *s, {"_comment", "reward_chance", "reward_rating", "reward_rated_chance", "chances_for_arenas", "shop_chance_by_length", "shop_chance", "chest_chance", "price",
                            "exotic_unlocked_by"});
         eco.refine.enabled = true;
         GetIntRange(sd, *s, "chances_for_arenas", eco.refine.chances_for_arenas, false, 0, 99);
+        if (const auto by_length = s->find("shop_chance_by_length"); by_length != s->end()) {
+            if (!by_length->is_object()) {
+                sd.Error("shop_chance_by_length must be an object of chances by run length id");
+            } else {
+                for (const auto& [id, value] : by_length->items()) {
+                    if (!value.is_number()) {
+                        sd.Error("shop_chance_by_length." + id + " must be a number");
+                        continue;
+                    }
+                    CheckRange(sd, "shop_chance_by_length", value.get<double>(), 0.0, 1.0);
+                    eco.refine.shop_chance_by_length[id] = value.get<double>();
+                }
+            }
+        }
         if (GetNumber(sd, *s, "reward_rated_chance", eco.refine.reward_rated_chance, false)) {
             CheckRange(sd, "reward_rated_chance", eco.refine.reward_rated_chance, 0.0, 1.0);
         }

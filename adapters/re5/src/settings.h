@@ -87,6 +87,9 @@ struct Settings {
     // Sniper rifles aim over the shoulder like any gun in a run; the scope is one button away while
     // aiming: this key (DirectInput scancode, default Z) or the right stick's click.
     bool sniperNormalAim = true;
+    // The everything-unlocked package: everything open, on a profile file of its own; the normal
+    // progress is not read or written (rm::ProfileFileName, scripts/package_release.ps1 -Unlocked).
+    bool everythingUnlocked = false;
     int scopeKey = 0x2C;
 };
 

@@ -1,6 +1,7 @@
 param(
     [string]$Version = '',
-    [string]$Dll = 'build\win32\adapters\re5\Release\dinput8.dll'
+    [string]$Dll = 'build\win32\adapters\re5\Release\dinput8.dll',
+    [switch]$Unlocked   # the everything-unlocked package: its own progress file, the normal one untouched
 )
 
 # Builds dist\RogueMercenaries-<version>.zip for testers: Install.bat / Uninstall.bat (the
@@ -26,6 +27,7 @@ $player = Get-Content -LiteralPath (Join-Path $repoRoot 'configs\adapter.json') 
 if ($player.developer_mode) { throw 'configs\adapter.json has developer_mode on; testers get the player config' }
 
 $name = "RogueMercenaries-$Version"
+if ($Unlocked) { $name += '-unlocked' }
 $stage = Join-Path $repoRoot "build\package\$name"
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
 $files = Join-Path $stage 'files'
@@ -37,6 +39,13 @@ New-Item -ItemType Directory -Force -Path (Join-Path $stage 'licenses') | Out-Nu
 # What the installer copies into the game folder.
 Copy-Item -LiteralPath $dllPath -Destination (Join-Path $files 'dinput8.dll')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'configs\adapter.json') -Destination (Join-Path $modFiles 'adapter.json')
+if ($Unlocked) {
+    $adapterFile = Join-Path $modFiles 'adapter.json'
+    $adapterText = Get-Content -LiteralPath $adapterFile -Raw
+    $marker = '"developer_mode": false,'
+    if (-not $adapterText.Contains($marker)) { throw "adapter.json has no $marker line to flag the package after" }
+    [System.IO.File]::WriteAllText($adapterFile, $adapterText.Replace($marker, $marker + "`r`n  " + '"everything_unlocked": true,'), [System.Text.Encoding]::ASCII)
+}
 Get-ChildItem -LiteralPath (Join-Path $repoRoot 'configs') -Filter '*.json' -File |
     Where-Object { $_.Name -notlike 'adapter*.json' } |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $modFiles 'configs') }
@@ -57,6 +66,18 @@ Write-Crlf (Join-Path $installerSrc 'Install.bat') (Join-Path $stage 'Install.ba
 Write-Crlf (Join-Path $installerSrc 'Uninstall.bat') (Join-Path $stage 'Uninstall.bat') $Version
 Write-Crlf (Join-Path $installerSrc 'game-uninstall.bat') (Join-Path $stage 'installer\game-uninstall.bat') $Version
 Write-Crlf (Join-Path $installerSrc 'README.txt') (Join-Path $stage 'README.txt') $Version
+if ($Unlocked) {
+    $readme = Join-Path $stage 'README.txt'
+    $notice = @(
+        'THIS IS THE EVERYTHING-UNLOCKED PACKAGE, FOR TRYING THINGS OUT',
+        '  Every character, skin, perk, weapon, run length and hard boss is open from the start.',
+        '  (A skin that wears another author''s costume mod still needs that mod.)',
+        '  It plays on its own progress file, %LOCALAPPDATA%\RogueMercenaries\profile.unlocked.json.',
+        '  Your normal progress (profile.json) is not used or changed. To go back to it, close the',
+        '  game and run Install.bat from the normal package.',
+        '', '') -join "`r`n"
+    [System.IO.File]::WriteAllText($readme, $notice + [System.IO.File]::ReadAllText($readme), [System.Text.Encoding]::ASCII)
+}
 
 $licenses = @{
     'MinHook-LICENSE.txt' = 'third_party\minhook\LICENSE.txt'

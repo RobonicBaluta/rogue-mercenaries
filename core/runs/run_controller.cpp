@@ -366,6 +366,11 @@ double RefineChance(const EconomyConfig::Refine& refine, double chance, int aren
 
 }  // namespace
 
+double RefineShopChance(const EconomyConfig::Refine& refine, std::string_view length_id, int arena_count) {
+    const auto own = refine.shop_chance_by_length.find(std::string(length_id));
+    return own != refine.shop_chance_by_length.end() ? own->second : RefineChance(refine, refine.shop_chance, arena_count);
+}
+
 Rarity RunController::MaxRefineRarity() const {
     const EconomyConfig& eco = content_->economy();
     const auto& exotic = eco.weapon_rarity[RarityIndex(Rarity::Exotic)];
@@ -409,7 +414,7 @@ void RunController::AddRefineOffer() {
     const WeaponInstance* target = RefineTarget(std::nullopt);
     const SkinBuild& build = run_.character.build;
     if (target == nullptr) return;
-    const double chance = RefineChance(refine, refine.shop_chance, run_.arena_count);
+    const double chance = RefineShopChance(refine, run_.length_id, run_.arena_count);
     if (!build.refine_every_shop && !(chance > 0.0 && streams_->shop.NextDouble() < chance)) return;
     ShopOffer o;
     o.kind = ShopOfferKind::Refine;

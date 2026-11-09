@@ -189,7 +189,12 @@ Say ''
 Say 'How to play: start Resident Evil 5 from Steam. "Rogue Mercenaries" shows at the top right;'
 Say 'in the Play menu pick ROGUE MERCENARIES (the last row, press Up from the first row).'
 Say 'Read README.txt for controls and what to send when something breaks.'
-if (Test-Path -LiteralPath (Join-Path $dataDir 'profile.json')) {
+if ((Get-Content -LiteralPath (Join-Path $payload 'RogueMercenaries\adapter.json') -Raw) -match '"everything_unlocked":\s*true') {
+    Say ''
+    Say 'This is the EVERYTHING-UNLOCKED package. It plays on its own progress file'
+    Say "($dataDir\profile.unlocked.json); your normal progress is not used or changed."
+    Say 'To go back to your normal progress, close the game and run Install.bat from the normal package.'
+} elseif (Test-Path -LiteralPath (Join-Path $dataDir 'profile.json')) {
     Say ''
     Say "Your earlier Rogue Mercenaries progress is kept ($dataDir\profile.json)."
     Say 'Delete that file to start over with everything locked.'

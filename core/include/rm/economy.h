@@ -64,6 +64,7 @@ struct EconomyConfig {
         double reward_chance = 0.0;
         std::string reward_rating = "S";
         double reward_rated_chance = 1.0;  // the chance of it after an arena at reward_rating or better
+        StringMap<double> shop_chance_by_length;  // a run length's own shop chance, in place of the scaled one
         int chances_for_arenas = 0;  // the chances are for a run of this many arenas; a longer run's are scaled down to match (0: never)
         double shop_chance = 0.0;
         double chest_chance = 0.0;
@@ -274,6 +275,8 @@ Rating ComputeRating(const EconomyConfig::RatingRules& rules, double time_second
 /// An uncapped weapon (a skin build's) keeps levelling: past the cost table each level costs
 /// the table's last step plus half of it per level beyond.
 std::optional<std::int64_t> UpgradeCost(const EconomyConfig& economy, int current_level, bool uncapped = false);
+/// A shop's chance of offering a refine in a run of this length (each NEW STOCK rolls it again).
+double RefineShopChance(const EconomyConfig::Refine& refine, std::string_view length_id, int arena_count);
 
 /// Damage bonus (fraction) contributed by weapon level: (level-1) * damage_pct_per_level / 100.
 double LevelDamageBonus(const EconomyConfig& economy, int level);

@@ -60,6 +60,7 @@
 #include "rm/profile.h"
 #include "rm/rosters.h"
 #include "rm/run_controller.h"
+#include "rm/unlock_all.h"
 #include "rm/telemetry.h"
 #include "rm/common.h"
 
@@ -8278,7 +8279,7 @@ void DrawHud(const rm::RunSnapshot& s) {
         ImGui::TextDisabled(autopilot::Armed() ? "Starting: Solo, random stage, your character"
                                                : "Solo, any stage, your character - the run starts with the match");
     } else {
-        ImGui::TextDisabled("Rogue Mercenaries - Play menu or F7");
+        ImGui::TextDisabled(g->settings.everythingUnlocked ? "Rogue Mercenaries (everything unlocked) - Play menu or F7" : "Rogue Mercenaries - Play menu or F7");
     }
     for (const auto& toast : g->toasts.Active()) {
         ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.4f, 1.0f), "%s", toast.text.c_str());
@@ -8553,7 +8554,7 @@ void ModInit(const Paths& paths, const Settings& settings) {
         return;
     }
     g->content = loaded.content;
-    auto profilePath = paths.dataDir / L"profile.json";
+    auto profilePath = paths.dataDir / std::string(rm::ProfileFileName(settings.everythingUnlocked));
     if (settings.uiDemo) {
         // Fresh throwaway profile; the player's real profile is never touched.
         const auto sandbox = paths.dataDir / L"dev-sandbox";
@@ -8565,6 +8566,10 @@ void ModInit(const Paths& paths, const Settings& settings) {
     }
     g->store = std::make_unique<rm::ProfileStore>(profilePath, g->fanout.get());
     auto profile = g->store->Load();
+    if (settings.everythingUnlocked) {
+        rm::UnlockEverything(profile.profile, *g->content);
+        RM_LOGI("profile: everything unlocked, on its own file (%s); the normal progress is not used", rm::PathText(profilePath).c_str());
+    }
     RM_LOGI("profile loaded from %s (credits=%lld)", std::string(rm::ProfileSourceName(profile.source)).c_str(),
             static_cast<long long>(profile.profile.credits.balance()));
     rm::RunControllerOptions options;
