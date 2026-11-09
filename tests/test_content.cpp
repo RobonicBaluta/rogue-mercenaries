@@ -316,3 +316,14 @@ TEST_CASE("broken configs report human-readable errors", "[content]") {
         CHECK(HasError(r.errors, "perks.json: cannot read"));
     }
 }
+
+TEST_CASE("every perk with a price fits it on its menu row", "[content]") {
+    ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    constexpr std::size_t kMenuRowChars = 34;  // adapter native_menu.cpp kRowChars: a longer row is cut
+    for (const PerkDef& p : r.content->perks()) {
+        if (p.unlock_cost_credits <= 0) continue;
+        INFO(p.id);
+        CHECK(p.name.size() + 3 + std::to_string(p.unlock_cost_credits).size() + 8 <= kMenuRowChars);  // "NAME   150 CREDITS"
+    }
+}

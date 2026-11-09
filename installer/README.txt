@@ -55,8 +55,8 @@ PLAY
     START RUN    - starts a run with the selected character.
     CHARACTERS   - pick a character and a skin. Most skins change how the run plays
                    (the line under each skin explains it).
-    PERKS        - three slots: Style, Supply, Support. Locked perks are red; buy them
-                   with Credits.
+    PERKS        - three slots: Style, Supply, Support. Locked perks are red and show
+                   their price in Credits; press one to buy it.
     CREDITS      - your Credits, records, the last run and weapon unlocks.
   Arrow keys move, Enter confirms, Esc goes back (on a controller: the game's own menu
   buttons). F7 opens the mod's overlay at any time.

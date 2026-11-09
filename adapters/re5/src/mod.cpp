@@ -1464,6 +1464,9 @@ private:
                     const bool locked = perk->unlock_cost_credits > 0 && !profile.unlocked_perks.count(perk->id);
                     const bool selected = equipped != nullptr && equipped->id == perk->id;
                     if (selected) item.label += "   SELECTED";
+                    // The price on the row itself: the help holds two lines, and a long description
+                    // pushed it out (the user, 2026-11-09).
+                    if (locked) item.label += "   " + Upper(Plural(perk->unlock_cost_credits, "credit"));
                     item.locked = locked;
                     item.color = RarityColour(rm::RarityName(perk->rarity));
                     item.icon = perk->icon;

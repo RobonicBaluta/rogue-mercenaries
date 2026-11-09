@@ -825,21 +825,18 @@
     {
       "id": "supply_ammo",
       "name": "Ammo Belt",
-      "description": "Start every run with 30 extra handgun rounds.",
+      "description": "Every kind of ammo stacks 20 percent higher.",
       "category": "supply",
       "rarity": "common",
       "tags": [
         "items"
       ],
       "max_stacks": 1,
-      "effects": [
-        {
-          "kind": "item_on_start",
-          "game_item": 513,
-          "amount": 30
-        }
-      ],
+      "effects": [],
       "unlock_cost_credits": 40,
+      "build": {
+        "ammo_stack_mult": 1.2
+      },
       "icon": "ammo"
     },
     {

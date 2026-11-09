@@ -106,3 +106,20 @@ TEST_CASE("the unlocked profile is another file and leaves the normal one as it 
     CHECK(loaded.profile.credits.balance() == 7);
     CHECK(loaded.profile.unlocked_perks.empty());
 }
+
+TEST_CASE("Ammo Belt makes every ammo stack 20 percent larger", "[unlock-all][perks]") {
+    ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const PerkDef* belt = r.content->FindPerk("supply_ammo");
+    REQUIRE(belt != nullptr);
+    CHECK(belt->effects.empty());
+    REQUIRE(belt->build.has_value());
+    CHECK(belt->build->ammo_stack_mult == Catch::Approx(1.2));
+
+    Profile p;
+    UnlockEverything(p, *r.content);
+    test::Harness h(r.content, p);
+    REQUIRE(h.rc.EquipPerk("chris", "supply_ammo").ok());
+    REQUIRE(h.rc.StartRun("chris", 1).ok());
+    CHECK(h.rc.state().character.build.ammo_stack_mult == Catch::Approx(1.2));
+}

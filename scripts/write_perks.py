@@ -118,7 +118,7 @@ perks += [
     perk('supply_flash', 'Flash Pouch', 'Start every run with 2 flash grenades.', 'supply', [item_start(FLASH, 2)], cost=50, tags=['items']),
     perk('supply_incendiary', 'Fire Pouch', 'Start every run with 2 incendiary grenades.', 'supply', [item_start(INCENDIARY, 2)], cost=70, tags=['items']),
     perk('supply_spray', 'Medkit', 'Start every run with a first aid spray.', 'supply', [item_start(SPRAY, 1)], cost=80, tags=['items']),
-    perk('supply_ammo', 'Ammo Belt', 'Start every run with 30 extra handgun rounds.', 'supply', [item_start(HANDGUN_AMMO, 30)], cost=40, tags=['items']),
+    perk('supply_ammo', 'Ammo Belt', 'Every kind of ammo stacks 20 percent higher.', 'supply', [], cost=40, tags=['items'], build={'ammo_stack_mult': 1.2}),
     perk('chris_shotgun', 'Shotgun Licence', 'Chris starts with an Ithaca M37 and 12 shells.', 'supply', [item_start(ITHACA), item_start(SHELLS, 12)], ['chris'], cost=150, rarity='rare', tags=['weapon']),
     perk('sheva_smg', 'Close Support', 'Sheva starts with a VZ61 and 60 rounds.', 'supply', [item_start(VZ61), item_start(MG_AMMO, 60)], ['sheva'], cost=150, rarity='rare', tags=['weapon']),
     perk('jill_smg', 'Rapid Response', 'Jill starts with an MP5 and 60 rounds.', 'supply', [item_start(MP5), item_start(MG_AMMO, 60)], ['jill'], cost=150, rarity='rare', tags=['weapon']),
