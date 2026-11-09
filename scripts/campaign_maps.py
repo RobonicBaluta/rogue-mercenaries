@@ -48,6 +48,12 @@ STARTS = {
     304: (470.0, -10900.0, 524.0),
     # Boss areas (2026-11-08): where a match on the stage put the player, the same in two runs each.
     309: (-55.0, 1.0, 932.0), 108: (-1753.0, 366.0, -1727.0),
+    # Uroboros Aheri's lair (2026-11-09). A match puts the player at one of the area's entrances, behind
+    # the door the story opens when the area is finished, so there was no way in (the user: "you can't
+    # arrive to his lair in any capacity"; the boss test had warped there, which hid it). On the lair's
+    # floor, on the line the boss itself ran in build/runs/20261108-181644-bossarena-uEm41-s308, 17.4 m
+    # from its story spot: just outside its 15 m trigger.
+    308: (-9952.8, -10.0, -17960.7),
 }
 # Starts moved off the recorded spot. s204: the host puts the player on the boat the story arrives
 # on (33885 51 -87306), and the climb to the ledge is a story action that never appears here (user
@@ -55,6 +61,9 @@ STARTS = {
 # the ledge where that climb ends (its waypoints: boat 41-46, the climb 77, the ledge 113).
 # Points below a height are left out: nobody spawned there could leave either.
 BELOW = {204: 90.0}
+# Points above a height are left out. s308: the lair's floor only (its 78 points are one linked floor);
+# the corridors above it are past the doors the story keeps closed, so a chest there could not be reached.
+ABOVE = {308: 50.0}
 
 # Boss arenas (ROADMAP M6, scripts/test_boss_spawn.sh): the area the boss is fought in, the boss
 # (its class, a name for the menus, its health: the Uroboros's own 15000; 6000 fell in under a
@@ -187,6 +196,8 @@ for stage in args.stages:
         points.append([round(x, 1), round(y, 1), round(z, 1)])
     if stage in BELOW:
         points = [p for p in points if p[1] >= BELOW[stage]]
+    if stage in ABOVE:
+        points = [p for p in points if p[1] <= ABOVE[stage]]
     chest_points = points
     if stage in STARTS:
         sx, sy, sz = STARTS[stage]

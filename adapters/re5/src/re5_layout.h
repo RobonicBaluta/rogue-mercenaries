@@ -138,6 +138,13 @@ constexpr std::uintptr_t kDtiEffectList = 0x0124ABE0;  // rEffectList (build/dti
 // +0x2D9C) and sets the slot's bit in game work +0x478. The Port stage's own code (0x00741690)
 // adds Josh this way: (2, 4, 0, 0), then sets +0x2DAC |= 1 and his position (+0x30).
 constexpr std::uintptr_t kFnPlayerAdd = 0x007E9A50;
+// A player's execution (a chainsaw's, every enemy kill move, the die_* actions): thiscall (player
+// number, or -1 for the first one down). Starts the death camera that ends in the game over; only
+// the campaign's mode filters which player it is for (research/re5-engine-map.md).
+constexpr std::uintptr_t kFnPlayerDeathEvent = 0x0076D9F0;
+// uPlayer: the hands take the item of a cell, thiscall (cell, 1), what the game's weapon_change
+// action calls at its swap (research/re5-engine-map.md).
+constexpr std::uintptr_t kFnPlayerEquipCell = 0x00B73B50;
 // Twin guns (E16 spike): the boss Jill (uEm84) makes two uWp76 units with sItem's create of a uItem
 // class (thiscall on [kItemManager]: dti, 0; 0x007BD750, from 0x009398E0), sets their rotation
 // (thiscall: float euler[3], 0x00489CE0) and fires them with their +0x1C0 (0x00BB2B20 for uWp76:
@@ -489,6 +496,7 @@ constexpr int kEm10DmgHead = 0x6D;    // cEm10ActDmgHead: head stagger (the mele
 constexpr int kEm10DmgFlyoff = 0x73;  // cEm10ActDmgFlyoff: blown away
 constexpr int kEm10DmgYoroke = 0x7C;  // cEm10ActDmgYoroke: stagger
 // uPlayer
+constexpr std::size_t kPlayerWeaponCell = 0x2DD8;  // int32: the grid cell of what is in the hands
 constexpr std::size_t kPlayerNumber = 0x2D9C;   // uint8, copied into enemy+0x136C on hit
 constexpr std::size_t kPlayerControl = 0x2DA8;  // int32 from game work +0x480 + slot*4: 0 the local player, 1 a computer one
 constexpr std::size_t kPlayerAddFlags = 0x2DAC;  // the Port stage sets bit 0 on the Josh it adds
@@ -701,6 +709,8 @@ inline constexpr Signature kSignatures[] = {
     {"motion_list_set", addr::kFnMotionListSet, "53 8B 5C 24 0C 56 8B F1 57 8B BC 9E 88 0A 00 00 85 FF 74 15 A1 80 45 23 01 E8 32 A2"},
     // `push esi; mov esi, [esp+8]; cmp esi, -1; push edi; mov edi, ecx; jle; cmp esi, 4; jge;
     // cmp [edi+esi*4+0x24], 0; jz; pop edi; xor eax, eax`.
+    {"player_death_event", addr::kFnPlayerDeathEvent, "51 55 8B E9 89 6C 24 04 E8 A3 E2 FF FF 8B 0D DC 27 1B 01 E8 48 90 07 00"},
+    {"player_equip_cell", addr::kFnPlayerEquipCell, "56 57 8B 7C 24 0C 83 FF 0F 8B F1 75 13 57 8D 8E A0 21 00 00 E8 97 7F 0D 00"},
     {"player_add", addr::kFnPlayerAdd, "56 8B 74 24 08 83 FE FF 57 8B F9 7E 13 83 FE 04 7D 0E 83 7C B7 24 00 74 07 5F 33 C0"},
     {"item_unit_create", addr::kFnItemUnitCreate, "8B 54 24 04 56 8B 35 90 60 1F 01 39 72 04 74 19 8B 42 10 85"},
     {"unit_set_euler", addr::kFnUnitSetEuler, "55 8B EC 83 E4 F0 83 EC 74 0F 57 C0 F3 0F 10 25 34 34 0A 01"},

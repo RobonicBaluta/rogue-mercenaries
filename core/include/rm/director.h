@@ -163,10 +163,11 @@ public:
     /// One of our units cannot reach the player (behind a door, on a ledge): it gets another
     /// point, within reach of the player when one is known and one `accept` takes (when given),
     /// and its own point is not used again this arena. Empty: no such point (nothing changes),
-    /// or not our unit. The adapter moves it there.
+    /// or not our unit. The adapter moves it there. `nearest`: the point closest to the player that
+    /// is not too close, and the unit's own point stays usable (a pull, not a bad point).
     std::optional<std::array<double, 3>> Relocate(const std::string& unit_id,
                                                   const std::optional<std::array<double, 3>>& player,
-                                                  const PointFilter& accept = {});
+                                                  const PointFilter& accept = {}, bool nearest = false);
     [[nodiscard]] int relocations() const { return relocations_; }
     /// Picks `count` distinct chest positions of the map for this arena (all of them when the
     /// map has fewer); they stay available as chests().
@@ -193,7 +194,7 @@ private:
     [[nodiscard]] double Share(const MapEnemy& enemy) const;  // the part of an entry this arena may field
     [[nodiscard]] bool Fits(int threat) const { return pick_level_ <= 0 || threat <= pick_level_; }
     [[nodiscard]] int Active(const MapEnemy* enemy) const;  // alive + pending of that roster entry
-    int PickPoint(const std::optional<std::array<double, 3>>& player, const PointFilter& accept = {});
+    int PickPoint(const std::optional<std::array<double, 3>>& player, const PointFilter& accept = {}, bool nearest = false);
     [[nodiscard]] bool BossWaits(double now, const std::optional<std::array<double, 3>>& player) const;
 
     MapDef map_;

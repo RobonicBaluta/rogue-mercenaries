@@ -1900,9 +1900,9 @@ void RunController::DirectorClassUnavailable(const std::string& unit_class) {
 
 std::optional<std::array<double, 3>> RunController::DirectorRelocate(const std::string& unit_id,
                                                                      const std::optional<std::array<double, 3>>& player,
-                                                                     const Director::PointFilter& accept) {
+                                                                     const Director::PointFilter& accept, bool nearest) {
     if (!director_ || run_.phase != Phase::ArenaActive) return std::nullopt;
-    return director_->Relocate(unit_id, player, accept);
+    return director_->Relocate(unit_id, player, accept, nearest);
 }
 
 Result<ChestReward> RunController::OpenChest(double now, std::optional<std::string> held_weapon) {

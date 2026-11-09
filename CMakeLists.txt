@@ -60,6 +60,7 @@ add_library(rm_core STATIC
     core/director/director.cpp
     core/runs/combat.cpp
     core/runs/snapshot.cpp
+    core/runs/inventory_plan.cpp
     core/persistence/profile.cpp
     core/telemetry/events.cpp
     core/telemetry/jsonl_sink.cpp
@@ -95,6 +96,7 @@ if(RM_BUILD_TESTS)
         tests/test_skins.cpp
         tests/test_items.cpp
         tests/test_director.cpp
+        tests/test_inventory_plan.cpp
         tests/test_run_map.cpp
         tests/test_inflate.cpp
         tests/test_builds.cpp

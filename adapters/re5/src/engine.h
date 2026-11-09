@@ -32,6 +32,8 @@ struct Verified {
     bool turn = false;          // a character turned the game's way (M8: Wesker faces his lunge's target)
     bool motions = false;       // motion lists looked up, bound to a model and played (M8: boss moves)
     bool partner = false;       // a computer player added the game's way (E22: Josh's backup)
+    bool partnerDeath = false;  // a partner's execution does not end the run
+    bool equipCell = false;     // the game's own change of the item in the hands
     bool twinGuns = false;      // the boss Jill's SMG units on the player (E16 spike, developer commands)
     bool jointPosition = false; // a character's bone in the world (E16: the twin guns' shots leave her hands)
     bool hitAttacker = false;

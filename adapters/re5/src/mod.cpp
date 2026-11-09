@@ -55,6 +55,7 @@
 
 #include "rm/content.h"
 #include "rm/diagnostics.h"
+#include "rm/inventory_plan.h"
 #include "rm/profile.h"
 #include "rm/rosters.h"
 #include "rm/run_controller.h"
@@ -627,6 +628,25 @@ void ArmMap(int key, int costume) {
 int CurrentMapKey() { return host::StageOverride() >= 0 ? host::StageOverride() : g->currentStage; }
 const rm::MapDef* CurrentMap() { return g->content->FindMapByStage(CurrentMapKey()); }
 
+// The player's weapon cell (+0x2DD8) says which grid cell is in the hands: the game reads it to start
+// the hands' motions on that cell's gun. The grid was rearranged without it, so after ORGANIZE or a
+// stage change it could name a cell holding another gun. A special value (over 8) is left alone.
+void SyncHandCell() {
+    const auto player = engine::LocalPlayer();
+    if (!engine::Caps().inventory || !player) return;
+    const auto inv = player + re5::off::kPlayerInventory;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1 || ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) != 1) continue;
+        const int cell = ReadOr<std::int32_t>(slot + kSlotCell, -1);
+        const int known = ReadOr<std::int32_t>(player + re5::off::kPlayerWeaponCell, -1);
+        if (cell < 0 || cell >= kGridCells || known < 0 || known >= kGridCells || known == cell) return;
+        SafeStore<std::int32_t>(player + re5::off::kPlayerWeaponCell, cell);
+        RM_LOGI("inventory: the hands' cell %d -> %d (%04X)", known + 1, cell + 1, SlotItemId(slot));
+        return;
+    }
+}
+
 // Moves the item in cell `from` to cell `to`, swapping with whatever is there.
 bool SwapGridCells(int from, int to) {
     if (from < 0 || from >= kGridCells || to < 0 || to >= kGridCells || from == to) return false;
@@ -637,6 +657,7 @@ bool SwapGridCells(int from, int to) {
     SafeStore<std::int32_t>(a.record + kSlotCell, to);
     if (b.record) SafeStore<std::int32_t>(b.record + kSlotCell, from);
     RM_LOGI("organize: %04X cell %d -> %d%s", a.id, from + 1, to + 1, b.record ? " (swapped)" : "");
+    SyncHandCell();
     return true;
 }
 
@@ -2361,49 +2382,6 @@ std::vector<std::pair<std::uint32_t, int>> ReadInventory() {
     return out;
 }
 
-// Sets the total count of `id` across its slot records to `total` by lowering the last
-// records first (0 = used up). Returns the amount removed.
-int ShrinkItem(std::uint32_t id, int total) {
-    const auto player = engine::LocalPlayer();
-    if (!player) return 0;
-    const auto inv = player + re5::off::kPlayerInventory;
-    int current = 0;
-    std::vector<std::uintptr_t> records;
-    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
-        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
-        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
-        if (SlotItemId(slot) != RecordItemId(id)) continue;
-        records.push_back(slot);
-        current += ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0);
-    }
-    int excess = current - total;
-    const int removed = std::max(0, excess);
-    for (auto it = records.rbegin(); it != records.rend() && excess > 0; ++it) {
-        const int count = ReadOr<std::int32_t>(*it + re5::off::kSlotCount, 0);
-        const int take = std::min(count, excess);
-        SafeStore<std::int32_t>(*it + re5::off::kSlotCount, count - take);
-        excess -= take;
-    }
-    return removed;
-}
-
-// Invalidates every record of `id` (the game's grid slot is freed). Returns the records removed.
-int RemoveItemRecords(std::uint32_t id) {
-    const auto player = engine::LocalPlayer();
-    if (!player) return 0;
-    const auto inv = player + re5::off::kPlayerInventory;
-    int removed = 0;
-    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
-        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
-        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
-        if (SlotItemId(slot) != RecordItemId(id)) continue;
-        if (ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1) continue;  // never the gun in hand
-        ClearSlot(slot);
-        ++removed;
-    }
-    return removed;
-}
-
 bool IsWeaponItem(std::uint32_t id) { return IsWeaponRecord(ItemRecord(id), id); }
 
 // The flamethrower's fuel (its record's count, up to its magazine of 100) comes back by itself in
@@ -2561,102 +2539,152 @@ int KeepInRunStash(std::uint32_t id, int count, const char* why);
 std::string AdapterResumeState();
 bool RestoreAdapterResumeState(const std::string& text);
 
-// After the cells are in place: each stack as the layout had it. ORGANIZE splits and merges
-// stacks and moves some to the storage, so an item's cells take their counts and its records in
-// cells the layout left empty go, when its cells hold all of it (user playtest 2026-11-04: a mine
-// moved to the storage stayed in its cell and the count came off the other stack, so a full grid
-// stayed full). Guns keep their rounds (SetWeaponRounds).
-void ApplyCellCounts(const std::map<std::uint32_t, int>& wanted) {
-    const auto& cells = g->transition.cells;
-    const auto& counts = g->transition.counts;
-    std::map<std::uint32_t, int> inCells;
-    for (int c = 0; c < kGridCells; ++c) {
-        if (cells[static_cast<std::size_t>(c)] != 0) inCells[cells[static_cast<std::size_t>(c)]] += counts[static_cast<std::size_t>(c)];
-    }
-    for (const auto& [id, total] : inCells) {
-        const auto want = wanted.find(id);
-        if (want == wanted.end() || want->second != total || total <= 0 || IsWeaponItem(id)) continue;
-        const auto grid = ReadGrid();
-        bool placed = true;
-        for (int c = 0; c < kGridCells; ++c) {
-            const auto cell = static_cast<std::size_t>(c);
-            if (cells[cell] == id && (!grid[cell].record || grid[cell].id != id)) placed = false;
-        }
-        if (!placed) continue;  // a cell of it could not be filled: the totals stay as they are
-        for (int c = 0; c < kGridCells; ++c) {
-            const auto cell = static_cast<std::size_t>(c);
-            if (!grid[cell].record || grid[cell].id != id) continue;
-            if (cells[cell] == id) {
-                if (grid[cell].count == counts[cell]) continue;
-                SafeStore<std::int32_t>(grid[cell].record + re5::off::kSlotCount, counts[cell]);
-                RM_LOGI("organize: %04X cell %d x%d -> x%d", id, c + 1, grid[cell].count, counts[cell]);
-            } else {
-                ClearSlot(grid[cell].record);
-                RM_LOGI("organize: %04X x%d left cell %d (not there in the layout)", id, grid[cell].count, c + 1);
-            }
-        }
+static_assert(rm::kGridCellCount == kGridCells, "the layout planner's grid is the game's");
+constexpr int kCellKnife = 9, kCellOutside = 0xA, kCellUnarmed = 0xB;
+
+bool CallEquipCell(std::uintptr_t player, int cell) {
+    __try {
+        reinterpret_cast<void(__thiscall*)(std::uintptr_t, int, int)>(re5::addr::kFnPlayerEquipCell)(player, cell, 1);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
     }
 }
 
-// In the new match: make the inventory match the snapshot. The game recreates the
-// character's own loadout: its items the run no longer has go first and stacks are lowered,
-// so their cells are free before the run's items come back (with them still in the grid, a
-// full run lost its herbs and ammo, user playtest 2026-11-03); stacks are then topped up and
-// extra items re-created. What still does not fit is kept in the run's storage (ORGANIZE).
-// A gun's count is the ammo in it: a gun is there or not, and its rounds follow the snapshot
-// (an empty gun stays, empty; one held already is never copied into the storage).
+// The hands let go of `slot`, through the game's own change of weapon, to `cell`. True when they did.
+bool TakeOutOfHand(std::uintptr_t player, std::uintptr_t slot, int cell) {
+    if (!engine::Caps().equipCell) return false;
+    SafeStore<std::int32_t>(player + re5::off::kPlayerWeaponCell, cell);
+    if (!CallEquipCell(player, cell)) return false;
+    return ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) != 1;
+}
+
+// A new stack record of one (GiveItem would top up a stack that is there: a split wants its own).
+std::uintptr_t MakeStackRecord(std::uintptr_t player, std::uint32_t id) {
+    using CreateFn = std::uintptr_t(__thiscall*)(std::uintptr_t inventory, int item, int count, int a, int b, int c,
+                                                 int flags, int a1, int a2, int a3, int a4, int a5, int a6, int a7,
+                                                 int a8, int a9, std::uintptr_t player, int position, int zero);
+    return reinterpret_cast<CreateFn>(re5::addr::kFnInventoryCreate)(player + re5::off::kPlayerInventory, static_cast<int>(MakeItemId(id)), 1, -1, -1, -1,
+                                                                     0xD, 0, 0, 0, 0, 0, 0, 0, 0, 0, player, 0, 0);
+}
+
+std::uintptr_t FindRecord(std::uintptr_t player, std::uint32_t id) {
+    const auto inv = player + re5::off::kPlayerInventory;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) == 1 && SlotItemId(slot) == RecordItemId(id)) return slot;
+    }
+    return 0;
+}
+
+// The inventory becomes the snapshot's layout, cell by cell (rm::PlanGrid, tests/test_inventory_plan.cpp):
+// after the Organize screen, and in a new match, where the game has recreated the character's own
+// loadout. Item totals could not say which record a change was about: a sold or stored gun that was
+// in the hands stayed in its cell beside what took that cell (clearing a held record hangs the game),
+// and a split stack stayed one (the user, 2026-11-09: "weird stuff when you sell or even when you put
+// stuff back"). What is sold or stored leaves the hands first, through the game's own weapon change.
+// What cannot be made (a gun whose model is not loaded here) waits in the run's storage (ORGANIZE).
 void ApplyCarriedInventory() {
-    if (!engine::Caps().inventory || !engine::LocalPlayer()) return;
+    const auto player = engine::LocalPlayer();
+    if (!engine::Caps().inventory || !player) return;
     RefreshPlaceableWeapons();
-    std::map<std::uint32_t, int> wanted;
-    for (const auto& [id, count] : g->transition.carry) wanted[id] += count;
-    std::map<std::uint32_t, int> have;
-    for (const auto& [id, count] : ReadInventory()) have[id] += count;
-    for (const auto& [id, current] : have) {
-        if (wanted.count(id) == 0) {
-            RemoveItemRecords(id);
-            RM_LOGI("carried: item %04X was used up, removed", id);
+    rm::GridLayout layout{};
+    bool anyCell = false;
+    for (std::size_t c = 0; c < layout.size(); ++c) {
+        const std::uint32_t id = g->transition.cells[c];
+        if (id == 0) continue;
+        layout[c] = rm::WantedCell{id, g->transition.counts[c], IsWeaponItem(id)};
+        anyCell = true;
+    }
+    if (!anyCell) {
+        // A resume point from before the layouts were saved: the items in order, the rest to the storage.
+        std::size_t next = 0;
+        for (const auto& [id, count] : g->transition.carry) {
+            if (id == 0 || id == re5::addr::kItemUnarmed || IsKnifeItem(id)) continue;
+            if (next < layout.size()) layout[next++] = rm::WantedCell{id, count, IsWeaponItem(id)};
+            else KeepInRunStash(id, std::max(0, count), "did not fit after the stage change");
         }
     }
-    for (const auto& [id, total] : wanted) {
-        const int current = have.count(id) ? have[id] : 0;
-        if (IsWeaponItem(id) || total >= current) continue;
-        if (total <= 0) RemoveItemRecords(id); else ShrinkItem(id, total);
-        RM_LOGI("carried: item %04X shrunk %d -> %d", id, current, total);
+
+    std::vector<rm::GridRecord> records;
+    std::vector<std::uintptr_t> slots;
+    const auto inv = player + re5::off::kPlayerInventory;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        records.push_back(rm::GridRecord{static_cast<int>(slots.size()), SlotItemId(slot), ReadOr<std::int32_t>(slot + kSlotCell, -1),
+                                         ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0),
+                                         ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1});
+        slots.push_back(slot);
     }
-    for (const auto& [id, total] : wanted) {
-        if (id == 0) continue;
-        if (IsWeaponItem(id)) {
-            const bool held = have.count(id) != 0 || GiveItem("carried", id, 1) > 0;
-            if (!held) KeepInRunStash(id, std::max(0, total), "could not be created after the stage change");
-            if (held) SetWeaponRounds(id, std::max(0, total));
+    const rm::GridPlan plan = rm::PlanGrid(records, layout);
+    const auto goes = [&plan](int handle) {
+        return std::find(plan.clear.begin(), plan.clear.end(), handle) != plan.clear.end() ||
+               std::find(plan.out_of_hand.begin(), plan.out_of_hand.end(), handle) != plan.out_of_hand.end();
+    };
+    for (const int handle : plan.out_of_hand) {
+        // Another gun that stays, else the knife, else bare hands.
+        int hands = -1;
+        for (const rm::GridRecord& r : records) {
+            if (hands >= 0) break;
+            if (r.handle != handle && !goes(r.handle) && r.cell >= 0 && r.cell < kGridCells && IsWeaponItem(r.item) && !IsKnifeItem(r.item)) hands = r.cell;
+        }
+        if (hands < 0) {
+            hands = kCellUnarmed;
+            for (const rm::GridRecord& r : records) {
+                if (r.cell == kCellKnife) hands = kCellKnife;
+            }
+        }
+        const std::uintptr_t slot = slots[static_cast<std::size_t>(handle)];
+        const std::uint32_t id = SlotItemId(slot);
+        if (TakeOutOfHand(player, slot, hands)) {
+            ClearSlot(slot);
+            RM_LOGI("carried: %04X left the hands for cell %d and is gone", id, hands + 1);
+        } else {
+            // Never cleared while held. Out of the grid so the layout is exact; it goes with this match.
+            SafeStore<std::int32_t>(slot + kSlotCell, kCellOutside);
+            RM_LOGW("carried: %04X is still in the hands; out of the grid until they let go of it", id);
+        }
+    }
+    for (const int handle : plan.clear) {
+        const std::uintptr_t slot = slots[static_cast<std::size_t>(handle)];
+        RM_LOGI("carried: %04X x%d gone", SlotItemId(slot), ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0));
+        ClearSlot(slot);
+    }
+    for (const auto& [handle, cell] : plan.move) SafeStore<std::int32_t>(slots[static_cast<std::size_t>(handle)] + kSlotCell, cell);
+    for (const auto& [handle, count] : plan.set_count) SafeStore<std::int32_t>(slots[static_cast<std::size_t>(handle)] + re5::off::kSlotCount, count);
+    int made = 0;
+    for (const auto& [cell, what] : plan.create) {
+        std::uintptr_t record = 0;
+        if (what.weapon) {
+            if (GiveItem("carried", what.item, 1) > 0) record = FindRecord(player, what.item);
+        } else {
+            record = MakeStackRecord(player, what.item);
+        }
+        if (!record) {
+            KeepInRunStash(what.item, std::max(0, what.count), "could not be made in its cell");
             continue;
         }
-        const int current = have.count(id) ? have[id] : 0;
-        if (total > current) {
-            const int missing = (total - current) - GiveItem("carried", id, total - current);
-            if (missing > 0) KeepInRunStash(id, missing, "did not fit after the stage change");
-        }
+        SafeStore<std::int32_t>(record + kSlotCell, cell);
+        SafeStore<std::int32_t>(record + re5::off::kSlotCount, what.count);
+        ++made;
     }
+    for (const rm::WantedCell& extra : plan.surplus) KeepInRunStash(extra.item, std::max(0, extra.count), "is a second of a gun");
+    RM_LOGI("inventory: layout applied: %zu gone, %zu left the hands, %zu moved, %zu recounted, %d made of %zu, %zu to the storage", plan.clear.size(),
+            plan.out_of_hand.size(), plan.move.size(), plan.set_count.size(), made, plan.create.size(), plan.surplus.size());
     g->transition.carry.clear();
-    // Put every item back into the cell it had (the player's ORGANIZE layout).
-    for (int target = 0; target < kGridCells; ++target) {
-        const std::uint32_t id = g->transition.cells[static_cast<std::size_t>(target)];
-        if (id == 0) continue;
-        const auto grid = ReadGrid();
-        if (grid[static_cast<std::size_t>(target)].record && grid[static_cast<std::size_t>(target)].id == id) continue;
-        for (int from = 0; from < kGridCells; ++from) {
-            if (from == target || !grid[static_cast<std::size_t>(from)].record || grid[static_cast<std::size_t>(from)].id != id) continue;
-            // Cells before `target` that already hold their own item stay put.
-            if (from < target && g->transition.cells[static_cast<std::size_t>(from)] == id) continue;
-            SwapGridCells(from, target);
-            break;
-        }
-    }
-    ApplyCellCounts(wanted);
     g->transition.cells = {};
     g->transition.counts = {};
+    SyncHandCell();
     ApplyWeaponLevels();
+    // Two records in a cell are what this replaced: said if it ever comes back.
+    std::array<int, kGridCells> inCell{};
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        const int cell = ReadOr<std::int32_t>(slot + kSlotCell, -1);
+        if (cell >= 0 && cell < kGridCells && ++inCell[static_cast<std::size_t>(cell)] == 2) RM_LOGW("inventory: cell %d holds two records", cell + 1);
+    }
 }
 
 // Health carries over a stage change (a new match starts at full health).
@@ -3041,7 +3069,9 @@ bool BossHoldsGround(const std::string& cls) { return cls == "uEm43" || cls == "
 // door) are moved: one far from the player that has not moved 1.5 m in 12 s (8 s for a boss), and
 // the last few when nothing has died for a while and they are far. The director gives each one
 // another point within the player's reach and drops the point it was stuck at (user playtest
-// 2026-11-03: Spencer's mansion, the Uroboros at a door).
+// 2026-11-03: Spencer's mansion, the Uroboros at a door). The very last enemy comes to the player
+// sooner, to the nearest point, when nothing has hurt it for a while (the user, 2026-11-09: "sometime
+// is very hard to find him"). Bosses never by these two rules, only when they stand stuck.
 struct StuckTrack {
     float anchor[3] = {};
     double anchorAt = 0.0;
@@ -3050,6 +3080,8 @@ struct StuckTrack {
     bool warped = false;      // moved, and not yet seen leaving the point it was moved to
     float warpedFrom[3] = {};
     int failedWarps = 0;      // moves it came straight back from
+    int lastHp = -1;
+    double hurtAt = 0.0;      // the last time its health went down
 };
 
 bool PlayerFacing(std::uintptr_t player, float& fx, float& fz);
@@ -3125,6 +3157,10 @@ constexpr int kLastEnemies = 3;
 constexpr double kLastEnemiesQuiet = 25.0;     // no kill for this long ...
 constexpr float kLastEnemiesFar = 1500.0f;     // ... and this far: pulled in
 constexpr int kFailedWarpsToFinish = 2;        // one of the last back where it was after this many moves: finished
+constexpr double kLoneFarSeconds = 8.0;        // the very last enemy, unhurt this long and ...
+constexpr float kLoneFar = 1200.0f;            // ... this far away or on another floor, is pulled in
+constexpr double kLoneQuietSeconds = 20.0;     // ... or unhurt this long and not right here
+constexpr float kLoneNear = 500.0f;
 
 void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& player) {
     rm::RunController& run = *g->run;
@@ -3146,6 +3182,8 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
         for (int k = 0; k < 3; ++k) pos[k] = ReadOr<float>(unit + re5::off::kUnitPosition + k * 4, 0.0f);
         auto [it, fresh] = g_stuckTracks.try_emplace(unit);
         StuckTrack& t = it->second;
+        if (fresh || (t.lastHp >= 0 && hp->hp < t.lastHp)) t.hurtAt = now;
+        t.lastHp = hp->hp;
         const float moved = std::sqrt(std::pow(pos[0] - t.anchor[0], 2.0f) + std::pow(pos[1] - t.anchor[1], 2.0f) +
                                       std::pow(pos[2] - t.anchor[2], 2.0f));
         const float away = static_cast<float>(std::sqrt(std::pow(pos[0] - (*player)[0], 2.0) + std::pow(pos[2] - (*player)[2], 2.0)));
@@ -3197,15 +3235,19 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
                 continue;
             }
         }
+        const bool lone = remaining == 1 && !boss;
         if (fresh || moved > kStuckMove) {
             for (int k = 0; k < 3; ++k) t.anchor[k] = pos[k];
             t.anchorAt = now;
             t.seenNoted = false;
-            if (!lastFew) continue;
+            if (!lastFew && !lone) continue;
         }
         const bool stuck = away > kStuckFar && now - t.anchorAt > (boss ? kBossStuckSeconds : kStuckSeconds);
-        const bool straggler = lastFew && away > kLastEnemiesFar;
-        if ((!stuck && !straggler) || now - t.lastRescue < 15.0) continue;
+        const bool straggler = lastFew && !boss && away > kLastEnemiesFar;
+        const double unhurt = now - std::max(t.hurtAt, g_stuckRemainingSince);
+        const bool otherFloor = std::fabs(pos[1] - static_cast<float>((*player)[1])) > static_cast<float>(kSameFloor);
+        const bool lost = lone && ((unhurt > kLoneFarSeconds && (away > kLoneFar || otherFloor)) || (unhurt > kLoneQuietSeconds && away > kLoneNear));
+        if ((!stuck && !straggler && !lost) || now - t.lastRescue < 15.0) continue;
         // Never before the player's eyes: one he may be looking at stays where it is, and the
         // others go only to a point out of his sight (user playtest 2026-11-04: enemies vanished
         // in view and appeared elsewhere).
@@ -3230,9 +3272,9 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
                 return !sameFloor || std::fabs(p[1] - (*player)[1]) <= kSameFloor;
             };
         };
-        auto to = run.DirectorRelocate(id, player, accept(true, true));
-        if (!to) to = run.DirectorRelocate(id, player, accept(false, true));
-        if (!to) to = run.DirectorRelocate(id, player, accept(false, false));
+        auto to = run.DirectorRelocate(id, player, accept(true, true), lost);
+        if (!to) to = run.DirectorRelocate(id, player, accept(false, true), lost);
+        if (!to) to = run.DirectorRelocate(id, player, accept(false, false), lost);
         if (!to) {
             t.lastRescue = now - 10.0;  // no point out of sight now: again in 5 s
             continue;
@@ -3240,7 +3282,7 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
         const float dest[3] = {static_cast<float>((*to)[0]), static_cast<float>((*to)[1]), static_cast<float>((*to)[2])};
         const int copies = engine::WarpUnit(unit, dest);
         RM_LOGI("director: %s %s %.0f s at %.0f %.0f %.0f, %.0f m from the player; moved to %.0f %.0f %.0f (%d copies)",
-                engine::ClassName(unit).c_str(), straggler && !stuck ? "one of the last, quiet" : "stuck", now - t.anchorAt,
+                engine::ClassName(unit).c_str(), stuck ? "stuck" : lost ? "the last one, not being hurt" : "one of the last, quiet", now - t.anchorAt,
                 pos[0], pos[1], pos[2], away / 100.0f, dest[0], dest[1], dest[2], copies);
         for (int k = 0; k < 3; ++k) {
             t.warpedFrom[k] = pos[k];
@@ -5035,6 +5077,7 @@ std::uintptr_t AddPartner(int character, int costume, const char* why) {
     p.restoreSaveAt = Now() + 1.0;
     p.nextLogAt = Now() + kPartnerPlaceAfter;
     g_partner = std::move(p);
+    SetPartnerUnit(unit);
     RM_LOGI("partner: %s (character %d, costume %d) added in slot %d at %.0f %.0f %.0f (%s): control %d, hp %d", cls.c_str(), character,
             costume, slot, at[0], at[1], at[2], why, ReadOr<std::int32_t>(unit + re5::off::kPlayerControl, -1),
             engine::ReadHp(unit) ? engine::ReadHp(unit)->hp : -1);
@@ -5083,6 +5126,7 @@ void DrivePartner(double now) {
         RestorePartnerGameWork();
         RM_LOGI("partner: match over; game work's slot %d put back", g_partner.slot);
         g_partner = {};
+        SetPartnerUnit(0);
     }
 }
 

@@ -194,6 +194,29 @@ TEST_CASE("several special types share the map's special limit, which grows with
     CHECK(specialsAtStart(3) == 2);  // each type is still one at a time
 }
 
+TEST_CASE("the last enemy is pulled to the point nearest the player and its own stays usable", "[director]") {
+    MapDef map = TestMap(1);
+    map.min_player_distance = 500.0;
+    map.points = {{0, 0, 0}, {700, 0, 0}, {1500, 0, 0}, {9000, 0, 0}};
+    Director d(map, 10, 1, 3);
+    const auto first = d.Tick(0.0, std::nullopt);
+    REQUIRE(first.size() == 1);
+    d.Spawned(first[0].ticket, "a");
+    const std::optional<std::array<double, 3>> player = std::array<double, 3>{100.0, 0.0, 0.0};
+    std::vector<std::array<double, 3>> visited;
+    for (int i = 0; i < 6; ++i) {
+        const auto to = d.Relocate("a", player, {}, true);
+        REQUIRE(to.has_value());
+        CHECK((*to)[0] != 0.0);     // 1 m from the player: too close
+        CHECK((*to)[0] != 9000.0);  // never the far one while a nearer one is free
+        visited.push_back(*to);
+    }
+    // Back and forth between the two near points: neither was used up.
+    CHECK(visited[0] != visited[1]);
+    CHECK(visited[0] == visited[2]);
+    CHECK(visited[1] == visited[3]);
+}
+
 TEST_CASE("a stuck unit moves to another point and its point is not used again", "[director]") {
     MapDef map = TestMap(1);
     map.points = {{0, 0, 0}, {1000, 0, 0}, {0, 0, 1000}};

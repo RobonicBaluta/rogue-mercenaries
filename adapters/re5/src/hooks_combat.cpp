@@ -98,6 +98,29 @@ std::uint32_t __fastcall Em40CanDiveDetour(std::uintptr_t self, void* edx) {
     return answer;
 }
 
+// A player's execution (0x0076D9F0) starts the death camera that ends in the game over. In the campaign
+// it filters by player; in Mercenaries it runs for anyone, so a chainsaw on a computer partner ended
+// the run with the player unhurt (the user, 2026-11-09). Health at zero by itself never came this way:
+// she just lies there and the match goes on (E22). -1 is the game's own pick of the first one down.
+using DeathEventFn = void(__fastcall*)(std::uintptr_t self, void* edx, int player);
+DeathEventFn g_origDeathEvent = nullptr;
+std::atomic<std::uintptr_t> g_partnerUnit{0};
+std::atomic<int> g_partnerDeathLogged{0};
+
+void __fastcall DeathEventDetour(std::uintptr_t self, void* edx, int player) {
+    if (const std::uintptr_t partner = g_partnerUnit.load(std::memory_order_relaxed)) {
+        const int number = ReadOr<std::uint8_t>(partner + re5::off::kPlayerNumber, 0xFF);
+        const auto local = engine::LocalPlayer();
+        const auto localHp = local ? engine::ReadHp(local) : std::nullopt;
+        const auto partnerHp = engine::ReadHp(partner);
+        if (player == number || (player == -1 && localHp && localHp->hp > 0 && partnerHp && partnerHp->hp <= 0)) {
+            if (g_partnerDeathLogged.fetch_add(1) == 0) RM_LOGI("partner: executed; the match goes on (player %d)", player);
+            return;
+        }
+    }
+    g_origDeathEvent(self, edx, player);
+}
+
 void __fastcall Em41UpdateDetour(std::uintptr_t self, void* edx) {
     if (self == 0 || self != g_gunfireBoss.load(std::memory_order_relaxed)) {
         g_origEm41Update(self, edx);
@@ -281,6 +304,10 @@ bool InstallCombatHooks() {
         Hook(re5::addr::kFnEm41Update, reinterpret_cast<void*>(&Em41UpdateDetour), reinterpret_cast<void**>(&g_origEm41Update),
              "uEm41 update (a run's boss keeps the damage it takes)");
     }
+    if (ok && caps.partnerDeath) {
+        Hook(re5::addr::kFnPlayerDeathEvent, reinterpret_cast<void*>(&DeathEventDetour), reinterpret_cast<void**>(&g_origDeathEvent),
+             "player execution (a computer partner's does not end the run)");
+    }
     if (ok && caps.bossBrain) {
         Hook(re5::addr::kFnEm40CanDive, reinterpret_cast<void*>(&Em40CanDiveDetour), reinterpret_cast<void**>(&g_origEm40CanDive),
              "uEm40 may-dive (a run has one player)");
@@ -291,6 +318,11 @@ bool InstallCombatHooks() {
     }
     g_status.combat = ok;
     return ok;
+}
+
+void SetPartnerUnit(std::uintptr_t unit) {
+    g_partnerUnit = unit;
+    g_partnerDeathLogged = 0;
 }
 
 void SetBossTakesGunfire(std::uintptr_t unit) {

@@ -475,7 +475,7 @@ public:
     /// given (Director::Relocate).
     std::optional<std::array<double, 3>> DirectorRelocate(const std::string& unit_id,
                                                           const std::optional<std::array<double, 3>>& player,
-                                                          const Director::PointFilter& accept = {});
+                                                          const Director::PointFilter& accept = {}, bool nearest = false);
     [[nodiscard]] const Director* director() const { return director_ ? &*director_ : nullptr; }
 
     [[nodiscard]] RunSnapshot Snapshot(double now) const;

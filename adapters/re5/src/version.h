@@ -2,7 +2,7 @@
 
 namespace rmre5 {
 
-inline constexpr const char kModVersion[] = "0.2.0-alpha.4";
+inline constexpr const char kModVersion[] = "0.2.0-alpha.5";
 inline constexpr const char kAdapterVersion[] = "re5-11465250-a1";
 
 }  // namespace rmre5

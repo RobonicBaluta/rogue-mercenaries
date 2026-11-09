@@ -157,7 +157,7 @@ const std::vector<std::array<double, 3>>& Director::PickChests(int count) {
     return chests_;
 }
 
-int Director::PickPoint(const std::optional<std::array<double, 3>>& player, const PointFilter& accept) {
+int Director::PickPoint(const std::optional<std::array<double, 3>>& player, const PointFilter& accept, bool nearest) {
     std::vector<int> usable;
     std::vector<int> far;      // neither too close nor too far, not the last point used
     std::vector<int> inReach;  // neither too close nor too far
@@ -180,6 +180,11 @@ int Director::PickPoint(const std::optional<std::array<double, 3>>& player, cons
         // Every point failed often: forget the failures and keep trying (slowly, see SpawnFailed).
         std::fill(point_failures_.begin(), point_failures_.end(), 0);
         return PickPoint(player);
+    }
+    if (nearest && player && !apart.empty()) {
+        return *std::min_element(apart.begin(), apart.end(), [&](int a, int b) {
+            return DistanceSq(map_.points[static_cast<std::size_t>(a)], *player) < DistanceSq(map_.points[static_cast<std::size_t>(b)], *player);
+        });
     }
     // A boss comes from the player's own level (the same room on the boss maps: it got stuck
     // behind a door from a point a floor away, user playtest 2026-11-03).
@@ -291,7 +296,7 @@ void Director::Spawned(std::uint64_t ticket, const std::string& unit_id) {
 
 std::optional<std::array<double, 3>> Director::Relocate(const std::string& unit_id,
                                                         const std::optional<std::array<double, 3>>& player,
-                                                        const PointFilter& accept) {
+                                                        const PointFilter& accept, bool nearest) {
     const auto it = alive_.find(unit_id);
     if (it == alive_.end()) return std::nullopt;
     const auto at = ticket_point_.find(it->second);
@@ -301,13 +306,14 @@ std::optional<std::array<double, 3>> Director::Relocate(const std::string& unit_
     if (known) point_failures_[static_cast<std::size_t>(from)] = kMaxPointFailures;  // not this arena again
     const int last = last_point_;
     last_point_ = from;
-    const int to = PickPoint(player, accept);
+    const int to = PickPoint(player, accept, nearest);
     if (to < 0 || to == from) {
         // Not moved: its point stays as it was.
         if (known) point_failures_[static_cast<std::size_t>(from)] = failures;
         last_point_ = last;
         return std::nullopt;
     }
+    if (known && nearest) point_failures_[static_cast<std::size_t>(from)] = failures;
     ticket_point_[it->second] = to;
     ++relocations_;
     return map_.points[static_cast<std::size_t>(to)];

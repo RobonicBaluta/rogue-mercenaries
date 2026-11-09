@@ -133,6 +133,9 @@ void SetHitProbe(std::uintptr_t unit);
 /// The run's boss (0: none): when its class's own "may this hit hurt" says no (Uroboros Wesker:
 /// anything but his open core), the hit hurts anyway, the game's own damage then (2026-11-08).
 void SetBossTakesGunfire(std::uintptr_t unit);
+/// The computer partner of this arena (0: none): an execution of that player does not start the
+/// death camera that ends the match (2026-11-09: a chainsaw killed Josh's Sheva, game over).
+void SetPartnerUnit(std::uintptr_t unit);
 void MarkHooksInactive();
 bool InstallInputHooks(void* realDirectInput8Create);
 bool InstallD3d9Hooks();

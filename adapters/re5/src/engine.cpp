@@ -175,6 +175,8 @@ bool VerifySignatures(unsigned timeoutMs) {
                      SignatureOk("motion_list_set") && SignatureOk("char_set_motion") && motionListName &&
                      ReadCString(motionListName, 16) == "rMotionList";
     g_caps.partner = g_caps.players && g_caps.gameWork && SignatureOk("player_add") && SignatureOk("class_by_id");
+    g_caps.partnerDeath = g_caps.partner && SignatureOk("player_death_event");
+    g_caps.equipCell = g_caps.inventory && SignatureOk("player_equip_cell");
     g_caps.twinGuns = SignatureOk("item_unit_create") && SignatureOk("unit_set_euler") && SignatureOk("unit_attach") &&
                       SignatureOk("wp76_fire") && DtiName(re5::addr::kDtiWp76) == "uWp76";
     g_caps.jointPosition = SignatureOk("joint_position");
