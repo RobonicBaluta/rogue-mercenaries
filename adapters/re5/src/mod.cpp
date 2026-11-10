@@ -2817,14 +2817,40 @@ void ApplyItemGrants() {
 
 // Rewards and shop purchases place their item at once, in the grid or the run's storage; the
 // core fails the purchase (and refunds it) only when neither has room.
+bool RunStashHolds(std::uint32_t recordId);  // with the run's storage, below
+bool RunInItemBox();
+
 class InventoryBridge final : public rm::InventoryPort {
 public:
     int Give(std::int64_t gameItem, int count, std::string_view source) override {
         if (!g->match.inMatch) return 0;
         return GiveOrStash(std::string(source).c_str(), gameItem, count);
     }
+    // In the grid (any record) or the run's storage. Unknown while no player is in a match or the
+    // run sits in the Organize screen (the save data holds it then).
+    std::optional<bool> Holds(std::int64_t gameItem) override {
+        if (gameItem < 0 || !g->match.inMatch || !engine::Caps().inventory || !engine::LocalPlayer() || RunInItemBox()) return std::nullopt;
+        const std::uint32_t record = RecordItemId(static_cast<std::uint32_t>(gameItem));
+        for (const auto& [id, count] : ReadInventory()) {
+            if (id == record) return true;
+        }
+        return RunStashHolds(record);
+    }
 };
 InventoryBridge g_inventoryBridge;
+
+// A one-use gun the run owns (the rocket launcher: weapons.json "restocks") is back at the start of
+// every arena, in the grid or the run's storage (the user, 2026-11-10: "you get one per stage once
+// you buy it"). Selling it in ORGANIZE gives it up (TakeRunFromSave).
+void RestockWeapons() {
+    for (const std::int64_t item : g->run->RestockWeaponItems()) {
+        if (g_inventoryBridge.Holds(item).value_or(true)) continue;
+        const int placed = GiveOrStash("restock", item, 1);
+        const std::string name = GridItemName(static_cast<std::uint32_t>(item));
+        RM_LOGI("restock: %04X %s", static_cast<unsigned>(item), placed > 0 ? "back for this arena" : "no room in the grid or the storage");
+        g->toasts.Push(name + (placed > 0 ? " is back for this arena" : ": no room for it this arena"));
+    }
+}
 
 constexpr float kStartTolerance = 1000.0f;  // engine units (10 m) from the map's start
 constexpr float kStartLevel = 40.0f;        // or another level there (s204: the boat under the ledge)
@@ -3068,6 +3094,7 @@ void TryBeginArena(double now) {
             if (status.ok()) {
                 ArenaBegan(now);
                 ApplyCarriedInventory();
+                RestockWeapons();
                 RestoreCarriedHp();
                 g->transition.pending = false;
                 RM_LOGI("stage change: arena %d started on stage %d", run.state().arena_index, g->currentStage);
@@ -6457,8 +6484,18 @@ struct RunInBox {
     // player left there (bought, or moved out of the grid); back in the storage next visit.
     std::vector<std::array<std::uint8_t, 12>> stash;
     std::array<std::uint32_t, kGridCells> cells{};  // the grid written
+    std::vector<std::int64_t> restockBefore;  // restocking guns held when the screen opened
 };
 RunInBox g_runInBox;
+
+bool RunStashHolds(std::uint32_t recordId) {
+    if (g_runInBox.runId != g->run->state().run_id) return false;
+    for (const auto& r : g_runInBox.stash) {
+        if (RecordItemId(static_cast<std::uint32_t>(r[0] | (r[1] << 8))) == recordId) return true;
+    }
+    return false;
+}
+bool RunInItemBox() { return g_itemBox != 0 && g_runInBox.active; }
 
 // An item the match cannot take now (a full grid, a gun whose model is not loaded here) goes to
 // the run's storage, the one the ORGANIZE screen shows, instead of being lost: the player takes
@@ -6659,6 +6696,12 @@ void PutRunInSave(std::uintptr_t save) {
         SafeWrite(save + at, record.data(), record.size());
         at += 12;
     }
+    g_runInBox.restockBefore.clear();
+    for (const std::int64_t item : g->run->RestockWeaponItems()) {
+        const std::uint32_t record = RecordItemId(static_cast<std::uint32_t>(item));
+        const bool inGrid = std::any_of(grid.begin(), grid.end(), [record](const GridCell& c) { return c.record && c.id == record; });
+        if (inGrid || RunStashHolds(record)) g_runInBox.restockBefore.push_back(item);
+    }
     g_runInBox.gold = g->run->Snapshot(Now()).supplies * kGoldPerSupply + g_runInBox.remainder;
     SafeStore<std::uint32_t>(save + kSaveGold, static_cast<std::uint32_t>(g_runInBox.gold));
     g_runInBox.active = true;
@@ -6752,6 +6795,18 @@ void TakeRunFromSave(std::uintptr_t save) {
         stashed += buf;
     }
     RM_LOGI("itembox: stash (%zu):%s", g_runInBox.stash.size(), stashed.c_str());
+    // A restocking gun that went in the screen was sold: given up for good, or it would come back
+    // to be sold again every arena.
+    for (const std::int64_t item : g_runInBox.restockBefore) {
+        const std::uint32_t record = RecordItemId(static_cast<std::uint32_t>(item));
+        const auto& cells = g->transition.cells;
+        const bool kept = std::any_of(cells.begin(), cells.end(), [record](std::uint32_t id) { return id != 0 && RecordItemId(id) == record; }) ||
+                          RunStashHolds(record);
+        if (kept) continue;
+        Report(g->run->DropWeapon(item, "sold"), "restocking gun sold");
+        RM_LOGI("restock: %04X left in the screen (sold); it no longer comes back", static_cast<unsigned>(item));
+    }
+    g_runInBox.restockBefore.clear();
     // What the match cannot take (a gun whose model is not loaded here) goes to the stash.
     ApplyCarriedInventory();
     // Supplies follow the gold; what is short of a whole supply waits for the next visit.

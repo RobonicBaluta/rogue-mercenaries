@@ -1413,6 +1413,7 @@ Result<ArenaResult> RunController::CompleteArena(double now) {
     run_.reward_refine_sure = sure_rating && RatingIndex(rating) <= RatingIndex(*sure_rating) &&
                               (rated_chance >= 1.0 || streams_->reward.NextDouble() < rated_chance);
     // The last arena offers nothing: there is nothing left to use a reward on.
+    PruneLostWeapons();
     run_.reward_offer.clear();
     if (run_.arena_index < run_.arena_count) {
         run_.reward_offer = GenerateRewardOffer(streams_->reward, MakeOfferContext(run_.reward_rarity_shift),
@@ -1461,6 +1462,7 @@ Status RunController::RerollReward() {
     }
     if (run_.reroll_tokens <= 0) return Fail(op, ErrorCode::NoRerollTokens, "no reroll tokens");
     --run_.reroll_tokens;
+    PruneLostWeapons();
     run_.reward_offer = GenerateRewardOffer(streams_->reward, MakeOfferContext(run_.reward_rarity_shift),
                                             [this] { return NextInstanceId(); });
     AddRefineReward(run_.reward_refine_sure);
@@ -1546,6 +1548,7 @@ Status RunController::ChooseReward(std::size_t index) {
 }
 
 void RunController::EnterShop() {
+    PruneLostWeapons();
     const RouteDef* route = Route();
     run_.shop_offers = GenerateShopOffers(streams_->shop, MakeOfferContext(route != nullptr ? route->rarity_bonus : 0.0),
                                           run_.weapons, run_.reroll_tokens, [this] { return NextInstanceId(); });
@@ -1716,6 +1719,7 @@ Status RunController::RerollShop() {
     } else {
         --run_.free_shop_rerolls;
     }
+    PruneLostWeapons();
     const RouteDef* route = Route();
     run_.shop_offers = GenerateShopOffers(streams_->shop, MakeOfferContext(route != nullptr ? route->rarity_bonus : 0.0),
                                           run_.weapons, run_.reroll_tokens, [this] { return NextInstanceId(); });
@@ -2041,6 +2045,47 @@ Status RunController::SwapStartingWeapon(std::string_view base_id) {
     e.Add("starting_weapon", base->id).Add("replaced", previous);
     Emit(std::move(e));
     return Status::Success();
+}
+
+std::vector<std::int64_t> RunController::RestockWeaponItems() const {
+    std::vector<std::int64_t> out;
+    if (!run_.active) return out;
+    for (const WeaponInstance& w : run_.weapons) {
+        const WeaponBaseDef* base = content_->FindWeapon(w.base_id);
+        if (base != nullptr && base->restocks && base->game_item >= 0) out.push_back(base->game_item);
+    }
+    return out;
+}
+
+Status RunController::DropWeapon(std::int64_t game_item, std::string_view reason) {
+    if (!run_.active) return Fail("drop_weapon", ErrorCode::NoActiveRun, "no active run");
+    const auto it = std::find_if(run_.weapons.begin(), run_.weapons.end(), [this, game_item](const WeaponInstance& w) {
+        const WeaponBaseDef* base = content_->FindWeapon(w.base_id);
+        return base != nullptr && base->game_item == game_item;
+    });
+    if (it == run_.weapons.end()) return Fail("drop_weapon", ErrorCode::UnknownId, "the run holds no gun " + std::to_string(game_item));
+    Event e = MakeEvent(EventType::WeaponLost);
+    e.Add("weapon", it->base_id).Add("weapon_instance", it->instance_id).Add("level", it->level).Add("reason", reason);
+    Emit(std::move(e));
+    run_.weapons.erase(it);
+    return Status::Success();
+}
+
+void RunController::PruneLostWeapons() {
+    if (inventory_ == nullptr || !run_.active || !WeaponIdMode()) return;
+    for (auto it = run_.weapons.begin(); it != run_.weapons.end();) {
+        const WeaponBaseDef* base = content_->FindWeapon(it->base_id);
+        const bool lost = base != nullptr && base->game_item >= 0 && !base->restocks &&
+                          inventory_->Holds(base->game_item) == std::optional<bool>(false);
+        if (!lost) {
+            ++it;
+            continue;
+        }
+        Event e = MakeEvent(EventType::WeaponLost);
+        e.Add("weapon", it->base_id).Add("weapon_instance", it->instance_id).Add("level", it->level).Add("reason", "not_held");
+        Emit(std::move(e));
+        it = run_.weapons.erase(it);
+    }
 }
 
 Status RunController::DevGrantWeapon(WeaponInstance weapon) {

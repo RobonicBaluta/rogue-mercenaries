@@ -640,8 +640,9 @@ void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>&
             if (!ReadId(d, e, w.id)) continue;
             d = file.Sub(": weapon " + Q(w.id));
             CheckKeys(d, e, {"id", "name", "category", "base_damage_mult", "unlock_cost_credits", "enabled", "game_item",
-                             "build_only"});
+                             "build_only", "restocks"});
             GetBool(d, e, "build_only", w.build_only, false);
+            GetBool(d, e, "restocks", w.restocks, false);
             if (GetInt(d, e, "game_item", w.game_item, false) && w.game_item < 0) d.Error("field 'game_item' must be >= 0");
             GetString(d, e, "name", w.name, true);
             ReadEnum(d, e, "category", w.category, ParseWeaponCategory,

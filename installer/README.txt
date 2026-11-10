@@ -74,7 +74,10 @@ PLAY
     - Between arenas: ARENA CLEARED, then CHOOSE A REWARD, then SHOP (ORGANIZE INVENTORY
       opens the game's own inventory screen), then NEXT ROUTE.
     - A weapon upgrade adds damage, and more rounds and a faster reload as far as that gun
-      has levels left (a few guns, like the Px4 and the launchers, have none).
+      has levels left (a few guns, like the Px4 and the launchers, have none). Upgrades are
+      only offered for guns you still have.
+    - A rocket launcher, once bought, comes back at the start of every arena (into the
+      storage if your grid is full). Selling it gives it up for good.
     - What does not fit in your nine cells waits in the storage of ORGANIZE INVENTORY.
       A gun that went there stays named at the top of the SHOP until you open ORGANIZE,
       and a gun offered while your grid is full says TO STORAGE.

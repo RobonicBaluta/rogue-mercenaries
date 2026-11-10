@@ -184,7 +184,8 @@
       "category": "launcher",
       "base_damage_mult": 1.0,
       "unlock_cost_credits": 400,
-      "game_item": 269
+      "game_item": 269,
+      "restocks": true
     },
     {
       "id": "flamethrower",

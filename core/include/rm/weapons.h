@@ -32,6 +32,9 @@ struct WeaponBaseDef {
     std::int64_t game_item = -1;
     /// Offered only to a skin build that lists it in extra_weapons (the Gatling, the longbow).
     bool build_only = false;
+    /// A one-use gun (the rocket launcher, discarded once fired): once the run owns it, one comes
+    /// back at the start of every arena (the user, 2026-11-10). Selling it gives it up.
+    bool restocks = false;
 };
 
 /// The kinds are stored by number in a run's resume point: new kinds go at the end.

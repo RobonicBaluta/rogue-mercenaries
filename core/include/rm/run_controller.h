@@ -249,6 +249,9 @@ struct InventoryPort {
     virtual ~InventoryPort() = default;
     /// Returns the units placed (0 = nothing fit).
     virtual int Give(std::int64_t game_item, int count, std::string_view source) = 0;
+    /// Whether the player has this item now, in the inventory or the run's storage; nullopt when it
+    /// cannot tell (no player, the Organize screen open). A gun it says is gone leaves the run.
+    virtual std::optional<bool> Holds(std::int64_t game_item) { (void)game_item; return std::nullopt; }
 };
 
 /// What a chest held (all already applied: supplies credited, items in the inventory).
@@ -446,6 +449,11 @@ public:
     /// The adapter found another gun in the player's hands at match start: it becomes the
     /// run's starting weapon (replacing the rolled one), so upgrades and the shop follow it.
     Status SwapStartingWeapon(std::string_view base_id);
+    /// The run's guns that come back every arena (WeaponBaseDef::restocks), as game items: the
+    /// adapter hands out one of each the player does not hold.
+    [[nodiscard]] std::vector<std::int64_t> RestockWeaponItems() const;
+    /// A gun the player gave up (sold): it leaves the run, so it is not upgraded or restocked.
+    Status DropWeapon(std::int64_t game_item, std::string_view reason);
     /// A chest was opened in the arena (adapter: a time-bonus pickup). Only while an arena is
     /// active; rolls from the "loot" stream.
     /// `held_weapon`: the base id of the gun in the player's hands (a chest's refine goes to it).
@@ -524,6 +532,9 @@ private:
     ArenaMetrics* CurrentArena();
     const ArenaMetrics* CurrentArena() const;
     bool WeaponIdMode() const;
+    /// The guns the inventory says are gone (InventoryPort::Holds) leave the run, but restocking
+    /// ones; done before rewards and shop stock are drawn, so none is offered for them.
+    void PruneLostWeapons();
     // The rarity remake (combat.cpp): a hit's element and effect procs (`dealt`: the hit's damage
     // after the multiplier); a kill's (blasts, overkill, refill, Bloodthirst's heal).
     void AddHitProcs(const WeaponInstance& weapon, double dealt, bool execute, std::vector<WeaponProc>& procs);
