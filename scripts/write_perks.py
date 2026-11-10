@@ -266,6 +266,14 @@ BUILDS = {
         'summary': 'Every shop has a refine at half price and a free NEW STOCK. Better rarities. Supplies x0.8.',
         'refine_every_shop': True, 'refine_price_mult': 0.5, 'free_shop_rerolls': 1, 'rarity_shift': 0.3, 'supplies_mult': 0.8,
     },
+    # Rebecca in winter gear (Winter Outfit by Angeltitilxyz, 2026-11-10, the user: "give it the whole
+    # ordeal"): a medic out in the cold, her rounds freezing what they hit. Cryo freezes on a tenth
+    # of the hits and the next hit shatters (weapons.json elements).
+    'rebecca_winter': {
+        'name': 'Cold Snap', 'icon': 'snowflake',
+        'summary': 'Her guns are all Cryo, and rifles hit 25 percent harder. Heals 20 percent weaker.',
+        'gun_elements': ['cryo'], 'category_damage': {'rifle': 0.25}, 'heal_mult': 0.8,
+    },
     'sheva_fairy_tale': {
         'name': 'Enchanted Arms', 'icon': 'star',
         'summary': 'Starts with a legendary M3 that upgrades without limit.',
@@ -404,6 +412,7 @@ SKIN_UNLOCKS = {
     'jill_classic': _boss('boss:uEm43', 'Beat the Giant Uroboros'),
     'excella_experimenter': _runs_as('excella', 'Excella', 3),
     'leon_jacket': _runs_as('leon', 'Leon', 3),
+    'rebecca_winter': _runs_as('rebecca', 'Rebecca', 3),
 }
 UNLOCK_FIELDS = ('unlock_kind', 'unlock_count', 'unlock_character', 'unlock_boss', 'unlock_text')
 # Supported third-party mods (2026-11-08, the user's list: "not mandatory", "you need to go to the
@@ -450,6 +459,16 @@ MOD_SKINS += [
      'mod': dict(LEON_MOD, files=[{'name': 'uPl00ChrisCos2.arc', 'size': 90341329}],
                  portrait={'file': 'Leon jacket\\kreedpic.jpg', 'crop': [80, 0, 1200, 1200]})},
 ]
+# Rebecca's Winter (Winter Outfit by Angeltitilxyz, 2026-11-10): her one costume's file, so it stands in
+# for S.T.A.R.S. (slot 17), which keeps its own look. Its page was not found (Nexus refused the
+# listing that names it): the game's mod list until the user gives the link.
+MOD_SKINS.append(
+    {'character': 'rebecca', 'base': 'rebecca_stars', 'id': 'rebecca_winter', 'name': 'Winter',
+     'mod': {'name': 'Winter Outfit Rebecca', 'author': 'Angeltitilxyz',
+             'url': 'https://www.nexusmods.com/residentevil5goldedition/mods/',
+             'files': [{'name': 'uPl07RebeccaNormal.arc', 'size': 46621903}],
+             # Its preview: her bust on black.
+             'portrait': {'file': 'screenshot.jpg', 'crop': [490, 0, 940, 940]}}})
 MOD_BASE = {m['id']: m['base'] for m in MOD_SKINS}
 for m in MOD_SKINS:
     ch = next(x for x in c['characters'] if x['id'] == m['character'])

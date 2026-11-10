@@ -664,6 +664,25 @@ def boot():
     return s
 
 
+def snowflake():
+    """Cold Snap (Rebecca, winter): a snowflake."""
+    s = Shape()
+    for k in range(6):
+        a = math.radians(-90 + 60 * k)
+        ca, sa = math.cos(a), math.sin(a)
+
+        def at(r, side=0.0, ca=ca, sa=sa):  # r along the arm, side across it
+            return (50 + r * ca - side * sa, 50 + r * sa + side * ca)
+
+        s.line([at(8), at(45)], 5.5)
+        for r, length in ((21, 12), (33, 9)):
+            s.line([at(r), at(r + length * 0.8, length)], 4.2)
+            s.line([at(r), at(r + length * 0.8, -length)], 4.2)
+    s.ellipse(50, 50, 10, 10)
+    s.ellipse(50, 50, 4.5, 4.5, cut=True)
+    return s
+
+
 ICONS = {
     'chain': chain, 'skull': skull, 'shades': shades, 'herb': herb, 'parachute': parachute,
     'grenade': grenade, 'flash': flash, 'fire': fire, 'medkit': medkit, 'heal': heal, 'second_wind': second_wind,
@@ -673,6 +692,7 @@ ICONS = {
     'mine': mine, 'gatling': gatling, 'bow': bow, 'key': key, 'dash': dash, 'dual_smg': dual_smg, 'radio': radio,
     'fist': fist, 'crown': crown, 'star': big_star, 'lunge': lunge, 'shockwave': shockwave,
     'syringe': syringe, 'wolf': wolf, 'launcher': launcher, 'badge': badge, 'boot': boot,
+    'snowflake': snowflake,
 }
 
 

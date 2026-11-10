@@ -479,6 +479,47 @@
             "heal_damage_bonus": 0.3,
             "heal_damage_seconds": 12
           }
+        },
+        {
+          "id": "rebecca_winter",
+          "name": "Winter",
+          "costume_index": 17,
+          "mod": {
+            "name": "Winter Outfit Rebecca",
+            "author": "Angeltitilxyz",
+            "url": "https://www.nexusmods.com/residentevil5goldedition/mods/",
+            "files": [
+              {
+                "name": "uPl07RebeccaNormal.arc",
+                "size": 46621903
+              }
+            ],
+            "portrait": {
+              "file": "screenshot.jpg",
+              "crop": [
+                490,
+                0,
+                940,
+                940
+              ]
+            }
+          },
+          "build": {
+            "name": "Cold Snap",
+            "icon": "snowflake",
+            "summary": "Her guns are all Cryo, and rifles hit 25 percent harder. Heals 20 percent weaker.",
+            "gun_elements": [
+              "cryo"
+            ],
+            "category_damage": {
+              "rifle": 0.25
+            },
+            "heal_mult": 0.8
+          },
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "rebecca",
+          "unlock_count": 3,
+          "unlock_text": "Complete 3 runs as Rebecca"
         }
       ],
       "unlock_kind": "no_damage_arenas",

@@ -37,7 +37,8 @@ INSTALL
 
 OPTIONAL: COSTUME MODS
   A few skins wear a costume mod made by someone else (Excella Experimenter, Jill
-  Classic, Sheva Hound Wolf Squad), and Leon S. Kennedy is a character from a mod. None
+  Classic, Sheva Hound Wolf Squad, Rebecca Winter), and Leon S. Kennedy is a character
+  from a mod. None
   of them come with this package, and the mod plays fine without them: SKINS lists such
   a skin in red, and pressing it opens the mod's page on Nexus Mods. Download it there
   (and endorse its creator), then unzip it into
