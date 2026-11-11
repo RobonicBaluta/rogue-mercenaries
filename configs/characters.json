@@ -237,8 +237,10 @@
           "build": {
             "name": "Scorched Earth",
             "icon": "wolf",
-            "summary": "Starts with the flamethrower, fuel back 50 percent faster. Her guns are all Incendiary. Supplies x0.75.",
+            "summary": "A pistol and a rare flamethrower, fuel back 50 percent faster. Her guns are all Incendiary. Supplies x0.75.",
             "starting_weapon": "flamethrower",
+            "starting_weapon_rarity": "rare",
+            "pistol_in_hand": true,
             "fuel_regen_mult": 1.5,
             "gun_elements": [
               "incendiary"

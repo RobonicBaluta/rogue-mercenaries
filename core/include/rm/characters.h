@@ -117,6 +117,9 @@ struct SkinBuild {
     bool refine_every_shop = false;  // every shop offers a refine (economy refine)
     double refine_price_mult = 1.0;  // refines in the shop cost this much
     double fuel_regen_mult = 1.0;    // the flamethrower's fuel comes back this much faster
+    // The run starts with a handgun in the hands: a costume whose loadout holds another gun (Fairy
+    // Tale Sheva's M3, under Hound Wolf Sheva) takes its own handgun instead (the adapter).
+    bool pistol_in_hand = false;
     SkinSpecial special;
     SkinSpecial special_2;  // a second special on its own button (Wesker's burst)
     [[nodiscard]] const SkinSpecial& Special(int slot) const { return slot == 1 ? special_2 : special; }

@@ -796,6 +796,33 @@ TEST_CASE("Excella's stats fill by mid arena 3, the start of arena 7 and mid are
     CHECK(build.melee_kill_caps.at("crit") == Catch::Approx(0.27));
 }
 
+// Sheva in Hound Wolf Squad gear (Scorched Earth) starts with a rare flamethrower and a pistol in
+// hand (2026-11-11, the user: "get sheva's mod skin a better flamethrower, make it be rare from the
+// beggining", "she also starts with an M3, make her start with a pistol").
+TEST_CASE("Hound Wolf Sheva starts with a rare flamethrower and a pistol in hand", "[builds]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    Profile open;
+    UnlockEverything(open, *r.content);
+    test::Harness h(r.content, open);
+    h.rc.SetInstalledModSkins({"sheva_hound_wolf"});
+    REQUIRE(h.rc.StartRun("sheva", 3, "sheva_hound_wolf").ok());
+    const auto& weapons = h.rc.state().weapons;
+    const auto it = std::find_if(weapons.begin(), weapons.end(), [](const WeaponInstance& w) { return w.base_id == "flamethrower"; });
+    REQUIRE(it != weapons.end());
+    CHECK(it->rarity == Rarity::Rare);
+    CHECK(it->affixes.size() == 2);  // the rare tier's affix count
+    // The adapter turns her costume's M3 in hand into its handgun; the run's starting gun is a handgun.
+    CHECK(h.rc.state().character.build.pistol_in_hand);
+    const WeaponBaseDef* start = r.content->FindWeapon(h.rc.state().loadout.weapon_id);
+    REQUIRE(start != nullptr);
+    CHECK(start->category == WeaponCategory::Handgun);
+    // Fairy Tale Sheva, whose M3 it is, keeps hers.
+    test::Harness fairy(r.content, open);
+    REQUIRE(fairy.rc.StartRun("sheva", 3, "sheva_fairy_tale").ok());
+    CHECK_FALSE(fairy.rc.state().character.build.pistol_in_hand);
+}
+
 TEST_CASE("a run length's pace fills every stat on its last gain, never before", "[builds]") {
     const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
     REQUIRE(r.ok());

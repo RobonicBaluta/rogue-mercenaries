@@ -932,7 +932,7 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                      "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "extra_chests", "special",
                      "special_2", "stack_mult", "never_offered", "drops_as_held_ammo", "pickup_as", "break_grabs",
                      "shop_weapon", "shop_weapon_price", "gun_elements", "arena_element", "refine_every_shop",
-                     "refine_price_mult", "fuel_regen_mult"});
+                     "refine_price_mult", "fuel_regen_mult", "pistol_in_hand"});
     GetString(d, b, "shop_weapon", out.shop_weapon, false);
     if (GetStringList(d, b, "gun_elements", out.gun_elements, false)) {
         for (const std::string& e : out.gun_elements) {
@@ -941,6 +941,7 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
     }
     GetBool(d, b, "arena_element", out.arena_element, false);
     GetBool(d, b, "refine_every_shop", out.refine_every_shop, false);
+    GetBool(d, b, "pistol_in_hand", out.pistol_in_hand, false);
     if (GetNumber(d, b, "refine_price_mult", out.refine_price_mult, false)) {
         CheckRange(d, "refine_price_mult", out.refine_price_mult, 0.0, 5.0);
     }

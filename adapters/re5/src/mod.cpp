@@ -2462,6 +2462,8 @@ void ClearSlot(std::uintptr_t slot) {
     SafeStore<std::uint8_t>(slot + re5::off::kSlotValid, 0);
 }
 
+bool TakeOutOfHand(std::uintptr_t player, std::uintptr_t slot, int cell);
+
 // Every run starts with the pistol only: the character's own Mercenaries loadout is cut down
 // to the pistol, its ammo and the knife (records invalidated, which frees their grid slots).
 void StripToPistol() {
@@ -2475,6 +2477,13 @@ void StripToPistol() {
     // playtest 2026-11-07).
     std::uint32_t equipped = 0;  // the gun in hand, if one is
     std::uint32_t held = 0;      // whatever is in hand
+    std::uintptr_t equippedSlot = 0;
+    std::uint32_t handgun = 0;   // the loadout's handgun out of hand, if it has one
+    int handgunCell = -1;
+    const auto isHandgun = [](std::uint32_t id) {
+        const rm::WeaponBaseDef* w = WeaponForItem(id);
+        return w != nullptr && w->category == rm::WeaponCategory::Handgun;
+    };
     std::string loaded;
     for (int i = 0; i < re5::off::kInventorySlots; ++i) {
         const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
@@ -2482,7 +2491,13 @@ void StripToPistol() {
         const auto id = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
         if (ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1) {
             held = id;
-            if ((id >> 8) == 1 && id != re5::addr::kItemUnarmed && !IsKnifeItem(id)) equipped = id;
+            if ((id >> 8) == 1 && id != re5::addr::kItemUnarmed && !IsKnifeItem(id)) {
+                equipped = id;
+                equippedSlot = slot;
+            }
+        } else if (handgun == 0 && (id >> 8) == 1 && isHandgun(id)) {
+            handgun = id;
+            handgunCell = ReadOr<std::int32_t>(slot + kSlotCell, -1);
         }
         // Every weapon the game put here has its model loaded for this stage.
         if ((id >> 8) == 1 && id != re5::addr::kItemUnarmed && id != re5::addr::kItemKnife &&
@@ -2501,6 +2516,21 @@ void StripToPistol() {
         if (w->game_item >= 0) {
             pistol = w->game_item;
             ammo = AmmoItemFor(w->category);
+        }
+    }
+    // A build that starts with a handgun in the hands (Hound Wolf Sheva: her costume is Fairy Tale's,
+    // which holds its M3; the user, 2026-11-11: "she also starts with an M3, make her start with a
+    // pistol"): the hands take the loadout's own handgun, through the game's own change of weapon,
+    // and the other gun goes with the rest of the loadout.
+    if (equipped != 0 && !isHandgun(equipped) && g->run->state().character.build.pistol_in_hand) {
+        if (handgun != 0 && handgunCell >= 0 && handgunCell < kGridCells && TakeOutOfHand(player, equippedSlot, handgunCell)) {
+            RM_LOGI("inventory: the hands took the handgun %04X (cell %d), not %04X: the build starts with a pistol", handgun,
+                    handgunCell + 1, equipped);
+            equipped = handgun;
+            held = handgun;
+        } else {
+            RM_LOGW("inventory: the build starts with a pistol, but %04X stays in the hands (%s)", equipped,
+                    handgun == 0 ? "no handgun in this costume's loadout" : "the change of weapon did not take");
         }
     }
     if (equipped != 0) {
