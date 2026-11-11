@@ -110,12 +110,18 @@ struct Settings {
     std::map<std::string, std::string> flameStreams = {
         {"shock", "effect\\efl\\wp\\wp22\\wp2200"},
     };
-    // The effect gallery (developer mode, or this): in an arena, every few seconds the next effect
+    // The effect gallery (this, or Numpad * in an arena): every few seconds the next effect
     // list in memory plays on the nearest enemy, its name in the HUD line, to pick the elements' looks.
     bool effectGallery = false;
 };
 
 Paths ResolvePaths(void* module);
 Settings LoadSettings(const Paths& paths, std::string* error);
+/// The elements' looks picked in the effect gallery are kept in <data>\\element_looks.json
+/// ({"element_effects": {kind: path}, "flame_streams": {element: path}}), read over adapter.json's
+/// by LoadSettings. Saves `path` for those kinds (and for that element's flamethrower stream when
+/// `streamElement` is not empty); false when the file could not be written.
+bool SaveElementLook(const Paths& paths, const std::vector<std::string>& kinds, const std::string& streamElement,
+                     const std::string& path);
 
 }  // namespace rmre5

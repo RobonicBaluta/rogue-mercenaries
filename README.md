@@ -241,7 +241,17 @@ The **flamethrower** carries its elements in the flame: Shock arcs from the near
 evolved), Cryo freezes an enemy after 2 s in the flame (1.2 s evolved), Toxic poisons and Incendiary burns everything
 in it. A Shock flamethrower fires sparks (the stun rod's) instead of a flame: everything within 5 m ahead takes 300
 damage a second, scaled like the flamethrower's hits, and is stunned. The other elements still fire the flame until
-an effect is picked for them (`flame_streams` in `adapter.json`, by element, as `element_effects`).
+an effect is picked for them.
+
+**Picking the elements' looks (the effect gallery).** In an arena, press **Numpad \*** to turn the gallery on or
+off. Every 3 seconds the next effect in memory plays on the nearest enemy, its name at the top of the screen.
+**Numpad +** and **Numpad -** step to the next or the previous one at once, **Numpad 0** holds the one shown (it plays
+again every 3 seconds). **Numpad 1** to **5** make the one shown the look of an element: **1** Incendiary, **2**
+Shock, **3** Cryo, **4** Toxic, **5** Explosive (for Shock, Cryo and Toxic also what the flamethrower fires in place of
+its flame). It takes effect at once and is kept in `%LOCALAPPDATA%\RogueMercenaries\element_looks.json` for every
+later game; delete that file to go back to the defaults. The game's effects carry their own colours, so a colour is
+picked by picking an effect of that colour (an icy one for Cryo, a green one for Toxic). `"effect_gallery": true` in
+`adapter.json` starts it on.
 
 Town, village and soldier Majini play the game's own reactions to these (on fire, frozen, acid, the flash stun,
 blown away, the head burst); other enemies take the damage alone, and a boss takes 15 to 20 percent more damage from

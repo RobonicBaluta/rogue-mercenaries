@@ -5564,47 +5564,134 @@ void DriveFlameStream(double now) {
     }
 }
 
-// The effect gallery (settings effect_gallery): in an arena, every kGalleryStep the next effect list
-// in memory of a list of candidates plays on the nearest enemy, its name in the HUD's top line and
-// the log, so the elements' looks can be picked by eye (settings element_effects). Lists not in
-// memory are skipped (looked up, never loaded).
+// The effect gallery (settings effect_gallery, or Numpad * in an arena; 2026-11-11, the user: "how to
+// turn on that ... do whatever you can to make them be color coded"): every kGalleryStep the next
+// effect list in memory (the resource manager's table: engine::LoadedEffectLists) plays on the
+// nearest enemy (else on the player), its name in the HUD's top line and the log. Numpad + and -
+// step at once, Numpad 0 holds the one shown (it plays again), and Numpad 1 to 5 make it the look
+// of an element: Incendiary, Shock, Cryo, Toxic, Explosive (its procs' looks; for Shock, Cryo and
+// Toxic also the flamethrower's stream in place of its flame), at once and kept in
+// <data>\\element_looks.json for every later game. The effects carry their own colours (an effect
+// unit has none to set: uEffectVFR's properties are its coordinates and time rates, and the two
+// words a start passes are masks of its parts), so a colour is picked by picking an effect.
 constexpr double kGalleryStep = 3.0;
+constexpr int kKeyNumpadMultiply = 0x37, kKeyNumpadMinus = 0x4A, kKeyNumpadPlus = 0x4E, kKeyNumpad0 = 0x52;
+struct GalleryPick {
+    int key;
+    const char* element;  // rm::ElementName
+    const char* label;
+    std::vector<std::string> kinds;
+    bool stream;  // also the flamethrower's stream
+};
+const std::vector<GalleryPick>& GalleryPicks() {
+    static const std::vector<GalleryPick> picks = {
+        {0x4F, "incendiary", "FIRE", {"burn", "ignite_around"}, false},
+        {0x50, "shock", "SHOCK", {"shock", "arc"}, true},
+        {0x51, "cryo", "CRYO", {"freeze", "shatter"}, true},
+        {0x4B, "toxic", "TOXIC", {"poison", "poison_cloud"}, true},
+        {0x4C, "explosive", "EXPLOSIVE", {"explode"}, false},
+    };
+    return picks;
+}
+
+// An effect's name for the HUD line (the game font has no underscore).
+std::string GalleryName(const std::string& path) {
+    std::string name = Upper(path.substr(path.rfind('\\') + 1));
+    std::replace(name.begin(), name.end(), '_', '-');
+    return name;
+}
+
+// A key's press (down now, not at the last call).
+bool KeyPressed(int scancode) {
+    static std::map<int, bool> was;
+    const bool down = RawKeyDown(scancode);
+    bool& before = was[scancode];
+    const bool pressed = down && !before;
+    before = down;
+    return pressed;
+}
 
 void DriveEffectGallery(double now) {
-    static std::vector<std::string> candidates;
-    static std::size_t next = 0;
-    static double at = 0.0;
-    if (!g->settings.effectGallery || !engine::Caps().effects || !g->match.inMatch || g->run->phase() != rm::Phase::ArenaActive) return;
-    if (now < at) return;
-    at = now + kGalleryStep;
-    if (candidates.empty()) {
-        char buf[64];
-        for (int i = 0; i <= 0x6D; ++i) {
-            std::snprintf(buf, sizeof(buf), "effect\\efl\\core\\cr00%02x", i);
-            candidates.emplace_back(buf);
-        }
-        for (const char* wp : {"wp0805", "wp0c00", "wp0c01", "wp0c02", "wp0d00", "wp2100", "wp2101", "wp2103", "wp2104", "wp2200", "wp2201"}) {
-            candidates.push_back(std::string("effect\\efl\\wp\\") + std::string(wp, 4) + "\\" + wp);
+    static std::vector<std::string> lists;
+    static std::size_t index = 0;
+    static double at = 0.0, listedAt = -100.0;
+    static std::string shown;
+    static bool on = false, started = false, held = false;
+    if (!started) {
+        started = true;
+        on = g->settings.effectGallery;
+    }
+    const bool inArena = engine::Caps().effects && g->match.inMatch && g->run->phase() == rm::Phase::ArenaActive;
+    if (KeyPressed(kKeyNumpadMultiply) && inArena) {
+        on = !on;
+        g->notice = on ? "EFFECT GALLERY ON" : "EFFECT GALLERY OFF";
+        g->noticeUntil = now + 2.0;
+        RM_LOGI("effect gallery: %s (Numpad *)", on ? "on" : "off");
+        at = now + 1.0;
+    }
+    const bool step = KeyPressed(kKeyNumpadPlus), back = KeyPressed(kKeyNumpadMinus), hold = KeyPressed(kKeyNumpad0);
+    std::vector<const GalleryPick*> picked;
+    for (const GalleryPick& p : GalleryPicks()) {
+        if (KeyPressed(p.key)) picked.push_back(&p);
+    }
+    if (!on || !inArena) return;
+    if (hold) {
+        held = !held;
+        g->notice = held ? "EFFECT HELD" : "EFFECT GALLERY GOES ON";
+        g->noticeUntil = now + 1.5;
+    }
+    for (const GalleryPick* p : picked) {
+        if (shown.empty()) break;
+        for (const std::string& kind : p->kinds) g->settings.elementEffects[kind] = shown;
+        if (p->stream) g->settings.flameStreams[p->element] = shown;
+        const bool saved = SaveElementLook(g->paths, p->kinds, p->stream ? std::string(p->element) : std::string(), shown);
+        g->notice = std::string(p->label) + " LOOK   " + GalleryName(shown) + (saved ? "   SAVED" : "   NOT SAVED");
+        g->noticeUntil = now + 3.0;
+        RM_LOGI("effect gallery: %s is the %s look%s (%s)", shown.c_str(), p->element, p->stream ? " and its flamethrower stream" : "",
+                saved ? "kept in element_looks.json" : "element_looks.json could not be written; this game only");
+        at = now + 3.0;
+    }
+    if (now - listedAt > 30.0) {
+        listedAt = now;
+        std::vector<std::string> fresh = engine::LoadedEffectLists();
+        if (fresh != lists) {
+            const auto it = std::find(fresh.begin(), fresh.end(), shown);
+            index = it != fresh.end() ? static_cast<std::size_t>(it - fresh.begin()) + 1 : 0;
+            lists = std::move(fresh);
+            std::string names;
+            for (const std::string& l : lists) names += " " + l.substr(l.rfind('\\') + 1);
+            RM_LOGI("effect gallery: %zu effect lists in memory:%s", lists.size(), names.c_str());
         }
     }
+    if (lists.empty()) return;
+    if (back) {
+        index = (index + lists.size() - (shown.empty() ? 1 : 2)) % lists.size();
+        at = 0.0;
+    }
+    if (step) at = 0.0;
+    if (now < at) return;
+    at = now + kGalleryStep;
     const auto player = engine::LocalPlayer();
     if (!player) return;
     float p[3];
     UnitPosition(player, p);
     const auto nearby = EnemiesNear(p, 2000.0f, 0);
-    if (nearby.empty()) return;
-    for (std::size_t tries = 0; tries < candidates.size(); ++tries) {
-        const std::size_t index = next++ % candidates.size();
-        const std::string& path = candidates[index];
-        if (!engine::PlayEffect(path.c_str(), nearby.front().first)) continue;
-        const std::string name = path.substr(path.rfind('\\') + 1);
-        g->notice = "EFFECT " + Upper(name) + "   " + std::to_string(index + 1) + " OF " + std::to_string(candidates.size());
-        g->noticeUntil = now + kGalleryStep;
-        RM_LOGI("effect gallery: %s on %s (%zu of %zu)", path.c_str(), engine::ClassName(nearby.front().first).c_str(), index + 1,
-                candidates.size());
+    const std::uintptr_t target = nearby.empty() ? player : nearby.front().first;
+    if (held && !shown.empty()) {
+        engine::PlayEffect(shown.c_str(), target);
         return;
     }
-    RM_LOGI("effect gallery: none of the %zu candidates is in memory here", candidates.size());
+    for (std::size_t tries = 0; tries < lists.size(); ++tries) {
+        const std::size_t i = index++ % lists.size();
+        const std::string& path = lists[i];
+        if (!engine::PlayEffect(path.c_str(), target)) continue;
+        shown = path;
+        g->notice = "EFFECT " + GalleryName(path) + "   " + std::to_string(i + 1) + " OF " + std::to_string(lists.size());
+        g->noticeUntil = now + kGalleryStep;
+        RM_LOGI("effect gallery: %s on %s (%zu of %zu)", path.c_str(), engine::ClassName(target).c_str(), i + 1, lists.size());
+        return;
+    }
+    RM_LOGI("effect gallery: none of the %zu lists would start", lists.size());
 }
 
 // Each tick: the queued procs, then the burns and poisons (every kElementTick).

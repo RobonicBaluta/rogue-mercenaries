@@ -10,6 +10,65 @@
 
 namespace rmre5 {
 
+namespace {
+
+// "kind or element" -> path entries of `json[key]` into `into` ("" removes one).
+void MergeLooks(const nlohmann::json& json, const char* key, std::map<std::string, std::string>& into) {
+    if (!json.contains(key) || !json[key].is_object()) return;
+    for (const auto& [name, path] : json[key].items()) {
+        if (!path.is_string()) continue;
+        if (path.get<std::string>().empty()) {
+            into.erase(name);
+        } else {
+            into[name] = path.get<std::string>();
+        }
+    }
+}
+
+Settings LoadAdapterSettings(const Paths& paths, std::string* error);
+
+}  // namespace
+
+Settings LoadSettings(const Paths& paths, std::string* error) {
+    Settings settings = LoadAdapterSettings(paths, error);
+    std::ifstream in(paths.dataDir / L"element_looks.json");
+    if (in) {
+        try {
+            const auto json = nlohmann::json::parse(in);
+            MergeLooks(json, "element_effects", settings.elementEffects);
+            MergeLooks(json, "flame_streams", settings.flameStreams);
+        } catch (const std::exception&) {
+            // A broken file: the defaults and adapter.json's looks.
+        }
+    }
+    return settings;
+}
+
+bool SaveElementLook(const Paths& paths, const std::vector<std::string>& kinds, const std::string& streamElement,
+                     const std::string& path) {
+    const auto file = paths.dataDir / L"element_looks.json";
+    nlohmann::json json = nlohmann::json::object();
+    {
+        std::ifstream in(file);
+        if (in) {
+            try {
+                json = nlohmann::json::parse(in);
+            } catch (const std::exception&) {
+                json = nlohmann::json::object();
+            }
+        }
+    }
+    if (!json.is_object()) json = nlohmann::json::object();
+    for (const std::string& kind : kinds) json["element_effects"][kind] = path;
+    if (!streamElement.empty()) json["flame_streams"][streamElement] = path;
+    std::error_code ec;
+    std::filesystem::create_directories(paths.dataDir, ec);
+    std::ofstream out(file, std::ios::trunc);
+    if (!out) return false;
+    out << json.dump(2) << "\n";
+    return static_cast<bool>(out);
+}
+
 Paths ResolvePaths(void* module) {
     Paths paths;
     wchar_t buffer[MAX_PATH];
@@ -29,7 +88,9 @@ Paths ResolvePaths(void* module) {
     return paths;
 }
 
-Settings LoadSettings(const Paths& paths, std::string* error) {
+namespace {
+
+Settings LoadAdapterSettings(const Paths& paths, std::string* error) {
     Settings settings;
     const auto file = paths.modDir / L"adapter.json";
     std::ifstream in(file);
@@ -68,26 +129,8 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
         settings.everythingUnlocked = json.value("everything_unlocked", settings.everythingUnlocked);
         settings.scopeKey = json.value("scope_key_scancode", settings.scopeKey);
         settings.effectGallery = json.value("effect_gallery", settings.effectGallery);
-        if (json.contains("element_effects") && json["element_effects"].is_object()) {
-            for (const auto& [kind, path] : json["element_effects"].items()) {
-                if (!path.is_string()) continue;
-                if (path.get<std::string>().empty()) {
-                    settings.elementEffects.erase(kind);  // "": no look for that kind
-                } else {
-                    settings.elementEffects[kind] = path.get<std::string>();
-                }
-            }
-        }
-        if (json.contains("flame_streams") && json["flame_streams"].is_object()) {
-            for (const auto& [element, path] : json["flame_streams"].items()) {
-                if (!path.is_string()) continue;
-                if (path.get<std::string>().empty()) {
-                    settings.flameStreams.erase(element);  // "": the flame for that element
-                } else {
-                    settings.flameStreams[element] = path.get<std::string>();
-                }
-            }
-        }
+        MergeLooks(json, "element_effects", settings.elementEffects);  // "": no look for that kind
+        MergeLooks(json, "flame_streams", settings.flameStreams);      // "": the flame for that element
         if (json.contains("special2_pad") && json["special2_pad"].is_array()) {
             settings.special2Pad.clear();
             for (const auto& b : json["special2_pad"]) {
@@ -120,5 +163,7 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
     }
     return settings;
 }
+
+}  // namespace
 
 }  // namespace rmre5

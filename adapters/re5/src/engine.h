@@ -150,6 +150,8 @@ std::uint32_t StartEffect(const char* path, std::uintptr_t unit, int joint);
 bool StopEffect(std::uint32_t id);
 /// True when the effect list at `path` is in memory (looked up, never loaded).
 bool EffectInMemory(const char* path);
+/// Every effect list in memory now (the resource manager's table), sorted.
+std::vector<std::string> LoadedEffectLists();
 /// True when nativePC_MT\<path>.efl exists next to the game.
 bool EffectFileExists(const std::string& path);
 /// Puts `list` into one of the unit's motion list slots through the game's own (reference

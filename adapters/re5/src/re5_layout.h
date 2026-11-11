@@ -124,6 +124,15 @@ constexpr std::uintptr_t kFnCharTurnTo = 0x00B55D40;
 // (thiscall: layer, id, blend frames, start frame, speed, flags; ret 0x18; flag 4: play once) is
 // the one enemies use at vtable +0x16C and the player's own calls for its upper layers.
 constexpr std::uintptr_t kResourceManager = 0x01234580;
+// Its table of the resources in memory (static analysis 2026-11-11: the get 0x00448B70 hashes the
+// path, 0x00449400, and looks it up, 0x00448D30): 0x800 buckets of 4 resource pointers at +0x1038;
+// a resource holds its path at +4 (inline, lower case), the path's hash at +0x58 and its type's
+// (its DTI's +0x20) at +0x5C.
+constexpr std::size_t kResourceTable = 0x1038;
+constexpr int kResourceTableSlots = 0x800 * 4;
+constexpr std::size_t kResourcePath = 0x4;
+constexpr std::size_t kResourceTypeHash = 0x5C;
+constexpr std::size_t kDtiTypeHash = 0x20;
 constexpr std::uintptr_t kFnResourceGet = 0x00448B70;
 constexpr std::uintptr_t kFnResourceRelease = 0x00447020;
 constexpr std::uintptr_t kFnMotionListSet = 0x005CCDD0;

@@ -2,6 +2,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <map>
@@ -715,6 +716,23 @@ bool EffectInMemory(const char* path) {
     if (!list) return false;
     ReleaseResource(list);
     return true;
+}
+
+std::vector<std::string> LoadedEffectLists() {
+    std::vector<std::string> out;
+    if (!g_caps.effects) return out;
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kResourceManager, 0);
+    const auto type = ReadOr<std::uint32_t>(re5::addr::kDtiEffectList + re5::addr::kDtiTypeHash, 0);
+    if (!manager || !type) return out;
+    for (int i = 0; i < re5::addr::kResourceTableSlots; ++i) {
+        const auto resource = ReadOr<std::uintptr_t>(manager + re5::addr::kResourceTable + static_cast<std::size_t>(i) * 4, 0);
+        if (!resource || ReadOr<std::uint32_t>(resource + re5::addr::kResourceTypeHash, 0) != type) continue;
+        std::string path = ReadCString(resource + re5::addr::kResourcePath, 64);
+        if (path.rfind("effect\\efl\\", 0) == 0) out.push_back(std::move(path));
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
 }
 
 bool EffectFileExists(const std::string& path) {
