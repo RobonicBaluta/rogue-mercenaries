@@ -119,6 +119,7 @@ void SetMercHudCounter(int value);      // hidden HUD: 0..99 in the clock's big 
 void RequestMercMatchEnd();
 void ClearMercMatchEnd();  // drop a pending request (a new match must not inherit it)
 void SuppressMercAddTime(bool suppress);  // countdown bonuses ignored (a run holds the countdown)
+void SkipMercIntro(bool skip);  // the match's intro (the announcer, controls locked) ends at once
 int TakeTimeBonusPickups();               // time-bonus pickups collected since the last call
 bool TakeTimeBonusPosition(float pos[3]);  // where an opened statue stood, oldest first (false: none left)
 void SimulateTimeBonusPickup();           // developer: count one pickup

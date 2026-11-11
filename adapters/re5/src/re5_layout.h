@@ -197,6 +197,13 @@ constexpr std::uintptr_t kFnMercAddTime = 0x00718050;     // void ?::MercAddTime
 // time-up state [this+0x4D4] = 1 at zero (or at the 150/400 kill cap) and
 // mirrors the value into game work +0x680. Called once per frame in a match.
 constexpr std::uintptr_t kFnMercUpdateCountdown = 0x00717850;
+// The Mercenaries match's update (static analysis 2026-11-11; called by the match's state machine
+// 0x00724A20, `this` the match object in ECX): while game work's phase (+0x67C) is 0, the intro, it
+// locks every player's controls (0x007E63C0(1)) and counts the intro's timer (+0x4BC, set at the
+// match's setup 0x007173B0) down; at zero it sets phase 1, unlocks them and the countdown begins
+// (kFnMercUpdateCountdown runs from then on). The intro's HUD (uIdMerce00, vtable 0x00FA6C84, its
+// move 0x00A1E650) follows the phase. A run skips the intro (hooks_merc.cpp).
+constexpr std::uintptr_t kFnMercMatchUpdate = 0x007245D0;
 // cMercs::AddTime(this, int seconds) (Ghidra FUN_0071CBF0): every countdown bonus (combo
 // +5 s, time-bonus pickups) goes through it.
 constexpr std::uintptr_t kFnMercAddCountdown = 0x0071CBF0;
@@ -635,6 +642,7 @@ constexpr std::size_t kGameFlowItemBox = 0x1840;  // [kGameFlow]: the open Organ
 // Mercenaries match object (`this` of kFnMercUpdateCountdown)
 constexpr std::size_t kMercCountdown = 0x4DC;  // float seconds remaining (authoritative)
 constexpr std::size_t kMercState = 0x4D4;      // int32: 0 running, 1 time up / finished
+constexpr std::size_t kMercIntroTimer = 0x4BC;  // float seconds of the intro left (game work phase 0)
 // Play menu (uIdStartUp01: CONTINUAR ... CONTENIDO EXTRA)
 constexpr std::size_t kMenuState = 0x14;       // uint8 state machine; 2 = waiting for input
 // uIdMerceEd00: set once its option list has run (state 10 the second time); its option
@@ -653,7 +661,7 @@ constexpr std::int32_t kLoaderRequestDone = 4;
 constexpr std::size_t kGameoverCursor = 0x190;   // int32: 0 yes (retry), 1 no (quit)
 constexpr std::size_t kGameoverDecided = 0x196;  // uint8
 constexpr std::size_t kGameoverDelay = 0x198;    // float: frames until the exit states
-constexpr std::size_t kGameWorkMercPhase = 0x67C;  // int32 Mercenaries phase (2, 3 at the match's end)
+constexpr std::size_t kGameWorkMercPhase = 0x67C;  // int32 Mercenaries phase (0 the intro, 1 the match; 2, 3 at its end)
 constexpr std::size_t kMenuCursor = 0x48;      // int32 selected item
 constexpr std::size_t kMenuItemCount = 0x190;  // int32: 7, or 8 with "Contenido extra"
 constexpr std::size_t kMenuExtraContentRow = 0x198;  // uint8: the init gave it that eighth row
@@ -763,6 +771,11 @@ inline constexpr Signature kSignatures[] = {
     {"hit_get_attacker", addr::kFnHitGetAttacker, "56 57 8B F9 8B 77 20"},
     // MercAddTime reads [kGameRoot]+kGameWork and adds to +kMercTimer.
     {"merc_add_time", addr::kFnMercAddTime, "A1 A4 40 23 01 56 8B 74 24 08 57 8B F9 8B 88 2C 04 01 00"},
+    // `push ecx; mov eax, [dt]; movss xmm0, [eax+0x28]; mov eax, [kGameRoot]; push edi; mov edi, ecx;
+    // mov ecx, [eax+0x1042C]; cmp [ecx+0x67C], 0; ...; jnz; mov ecx, [sPlayer]; push 1; call lock;
+    // movss xmm0, [edi+0x4BC]`.
+    {"merc_match_update", addr::kFnMercMatchUpdate,
+     "51 A1 9C 20 1B 01 F3 0F 10 40 28 A1 A4 40 23 01 57 8B F9 8B 88 2C 04 01 00 83 B9 7C 06 00 00 00 F3 0F 11 44 24 04 75 55 8B 0D DC 27 1B 01 6A 01 E8 BB 1D 0C 00 F3 0F 10 87 BC 04 00 00"},
     {"merc_timer_store", 0x007180E6, "F3 0F 11 89 80 06 00 00"},
     {"merc_update_countdown", addr::kFnMercUpdateCountdown,
      "A1 A4 40 23 01 8B 80 2C 04 01 00 57 8B F9 8B 88 74 05 00 00 3B 88 78 05 00 00"},

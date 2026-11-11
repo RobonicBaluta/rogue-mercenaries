@@ -8704,6 +8704,7 @@ private:
             TryBeginArena(now);
         }
         UpdateInventoryHold(now);
+        SkipMercIntro(g->run->HasActiveRun());  // a run's match starts without the announcer's intro
         DriveDirector(now);
         DriveBossFall(now);
         TameBossKills();
