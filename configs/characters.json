@@ -551,7 +551,7 @@
           "build": {
             "name": "Ambition",
             "icon": "crown",
-            "summary": "Every melee kill raises one of seven stats for the run, each to a cap: damage, speed, healing and more.",
+            "summary": "Every melee kill raises one of seven stats for the run, each to a cap. Shorter runs fill them faster.",
             "melee_kill_stats": {
               "damage": 0.06,
               "defense": 0.045,
@@ -562,13 +562,42 @@
               "supplies": 0.06
             },
             "melee_kill_caps": {
-              "damage": 1.0,
-              "defense": 0.7,
-              "max_health": 1.0,
-              "crit": 0.3,
-              "move_speed": 0.6,
-              "heal": 0.5,
-              "supplies": 0.5
+              "damage": 0.9,
+              "defense": 0.63,
+              "max_health": 0.9,
+              "crit": 0.27,
+              "move_speed": 0.54,
+              "heal": 0.45,
+              "supplies": 0.45
+            },
+            "melee_kill_gains_by_length": {
+              "short": {
+                "damage": 11,
+                "defense": 10,
+                "max_health": 9,
+                "crit": 6,
+                "move_speed": 9,
+                "heal": 4,
+                "supplies": 5
+              },
+              "long": {
+                "damage": 28,
+                "defense": 26,
+                "max_health": 23,
+                "crit": 17,
+                "move_speed": 23,
+                "heal": 11,
+                "supplies": 14
+              },
+              "marathon": {
+                "damage": 49,
+                "defense": 46,
+                "max_health": 40,
+                "crit": 30,
+                "move_speed": 39,
+                "heal": 20,
+                "supplies": 25
+              }
             }
           }
         },

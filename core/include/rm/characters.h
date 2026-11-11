@@ -86,6 +86,9 @@ struct SkinBuild {
     /// "defense", "max_health", "crit" -> the amount it adds (fractions).
     StringMap<double> melee_kill_stats;
     StringMap<double> melee_kill_caps;  // a stat at its cap is not rolled again (none: no cap)
+    /// A run length's own pace (run length id -> stat -> gains): in a run of that length a stat
+    /// reaches its cap in that many gains (each adds cap / gains), in place of melee_kill_stats.
+    StringMap<StringMap<int>> melee_kill_gains_by_length;
     double heal_mult = 1.0;          // healing items heal this much
     /// A heal of at least this fraction of max health (spray, mixed herbs; 0 = never) also makes
     /// the player invulnerable and stronger for a while.

@@ -1586,10 +1586,19 @@ void RunController::ApplyBuildKill(const KillEvent& kill, KillOutcome& out) {
     // steps that add up just short of the cap (0.05 ten times) left a stat open for a gain of nothing.
     constexpr double kCapTolerance = 1e-9;
     if (kill.was_melee.value_or(false) && !build.melee_kill_stats.empty()) {
+        // The run length's pace, when the build names one: a stat fills its cap in that many gains
+        // (Excella, the user 2026-11-11: full by mid arena 3 of a short run, arena 7 of a long one).
+        const auto pace = build.melee_kill_gains_by_length.find(run_.length_id);
+        const auto step = [&](const std::string& stat, double amount) {
+            if (pace == build.melee_kill_gains_by_length.end()) return amount;
+            const auto gains = pace->second.find(stat);
+            const auto cap = build.melee_kill_caps.find(stat);
+            return gains != pace->second.end() && cap != build.melee_kill_caps.end() && gains->second > 0 ? cap->second / gains->second : amount;
+        };
         std::vector<std::pair<std::string, double>> open;
         for (const auto& [stat, amount] : build.melee_kill_stats) {
             const auto cap = build.melee_kill_caps.find(stat);
-            if (cap == build.melee_kill_caps.end() || run_.stats.Get(stat) < cap->second - kCapTolerance) open.emplace_back(stat, amount);
+            if (cap == build.melee_kill_caps.end() || run_.stats.Get(stat) < cap->second - kCapTolerance) open.emplace_back(stat, step(stat, amount));
         }
         std::sort(open.begin(), open.end());
         if (!open.empty()) {

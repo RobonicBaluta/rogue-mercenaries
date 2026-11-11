@@ -3114,6 +3114,49 @@ void TryBeginArena(double now) {
     if (status.ok() && waitingFirst) ApplyLoadoutToInventory();
 }
 
+// The arena start's hold (the user, 2026-11-11: "when you start a stage and change weapon fast, it
+// maintains that in the inventory ... so people can't do that or see how the inventory changes"):
+// from a run's match start until its inventory is laid out (ApplyLoadoutToInventory at the first
+// arena, ApplyCarriedInventory after a stage change or CONTINUE RUN, both in TryBeginArena), the game
+// sees no key or button (hooks_input; the sticks and the mouse's movement still reach it), so no gun
+// of the game's own loadout is switched to and the inventory is not opened before the run's is in.
+// At most kInventoryHoldSeconds a match, should the layout never come (a run for another character,
+// a stage change that failed).
+constexpr double kInventoryHoldSeconds = 10.0;
+std::atomic<bool> g_holdButtons{false};
+
+// TryBeginArena's wait: a run's match whose inventory is not laid out yet.
+bool InventoryPending() {
+    rm::RunController& run = *g->run;
+    if (!run.HasActiveRun() || !g->match.inMatch) return false;
+    const rm::Phase phase = run.phase();
+    if (phase == rm::Phase::Idle && run.state().arena_index == 0) return true;
+    return phase == rm::Phase::RouteSelection && run.state().route_chosen && g->transition.pending &&
+           g->matchGeneration != g->transition.generation;
+}
+
+void UpdateInventoryHold(double now) {
+    static int generation = -1;
+    static double since = 0.0;
+    static bool expired = false;
+    bool hold = InventoryPending();
+    if (hold && generation != g->matchGeneration) {
+        generation = g->matchGeneration;
+        since = now;
+        expired = false;
+    }
+    if (hold && !expired && now - since > kInventoryHoldSeconds) {
+        RM_LOGW("inventory: no layout %.0f s into the match; keys and buttons go back to the game", kInventoryHoldSeconds);
+        expired = true;
+    }
+    hold = hold && !expired;
+    if (hold != g_holdButtons.load()) {
+        g_holdButtons = hold;
+        RM_LOGI("inventory: keys and buttons %s (match %d, %.1f s in)", hold ? "held until the layout" : "back to the game",
+                g->matchGeneration, now - since);
+    }
+}
+
 // Every 2 s of a director arena: live enemies the director did not spawn are logged once each
 // (a stage's own special enemies may come by another path than the blocked set spawn), and
 // in developer mode the director units' mean distance to the player (do they come?).
@@ -8001,6 +8044,7 @@ public:
         Guarded("GameTick", 0, [&] { Tick(); return 0; });
     }
     bool BlockGameInput() override { return overlay::IsFocused(); }
+    bool HoldGameButtons() override { return g_holdButtons.load(std::memory_order_relaxed); }
 
 private:
     float Outgoing(const OutgoingHit& hit) {
@@ -8187,6 +8231,7 @@ private:
             WatchArenaMatch(now);
             TryBeginArena(now);
         }
+        UpdateInventoryHold(now);
         DriveDirector(now);
         DriveBossFall(now);
         TameBossKills();

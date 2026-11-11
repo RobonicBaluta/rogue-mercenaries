@@ -155,6 +155,36 @@ skin_traits = {
                             {'kind': 'item_on_arena_clear', 'game_item': 0x020B, 'amount': 10},
                             {'kind': 'heal_on_kill', 'amount_fraction_of_max': 0.015}]),
 }
+# Excella's Ambition (the user, 2026-11-11: "excella is too powerful"): the caps of 2026-11-07 less 10
+# percent, and a pace by run length. Killing every enemy by melee on the smallest arenas a run can
+# draw (the safer route of every layer: 20, 20, 28 enemies, a boss, then tier 3's 34 plus 2 an arena
+# from arena 5: 36, 38, 40, a boss, 44, 46), every stat is full by mid arena 3 of a short run
+# (20 + 20 + 14), the start of arena 7 of a long one (20 + 20 + 28 + 36 + 38) and mid arena 10 of a
+# marathon (that, 40 + 44, and 23). tests/test_builds.cpp works these out from routes.json and the
+# ladder. Each stat takes its share of the kills as its gains, shared as the old steps did (cap over step).
+EXCELLA_STEPS = {'damage': 0.06, 'defense': 0.045, 'max_health': 0.075, 'crit': 0.03, 'move_speed': 0.045,
+                 'heal': 0.075, 'supplies': 0.06}
+EXCELLA_CAPS = {'damage': 0.9, 'defense': 0.63, 'max_health': 0.9, 'crit': 0.27, 'move_speed': 0.54, 'heal': 0.45,
+                'supplies': 0.45}
+EXCELLA_FULL_AFTER = {'short': 54, 'long': 142, 'marathon': 249}
+
+
+def excella_pace():
+    """Per run length, the gains that fill each stat: the kills shared by cap / step (largest remainders)."""
+    weight = {s: round(EXCELLA_CAPS[s] / EXCELLA_STEPS[s], 6) for s in EXCELLA_STEPS}
+    total = sum(weight.values())
+    pace = {}
+    for length, kills in EXCELLA_FULL_AFTER.items():
+        share = {s: kills * w / total for s, w in weight.items()}
+        gains = {s: int(share[s]) for s in share}
+        order = sorted(share, key=lambda s: (gains[s] - share[s], list(share).index(s)))
+        for s in order[:kills - sum(gains.values())]:
+            gains[s] += 1
+        assert sum(gains.values()) == kills, (length, gains)
+        pace[length] = gains
+    return pace
+
+
 # ---- Skin builds (characters.json skin "build", core/include/rm/characters.h SkinBuild). ----
 BUILDS = {
     'chris_safari': {
@@ -209,13 +239,12 @@ BUILDS = {
     },
     'excella_dress': {
         'name': 'Ambition', 'icon': 'crown',
-        'summary': 'Every melee kill raises one of seven stats for the run, each to a cap: damage, speed, healing and more.',
-        # x1.5 (the user, 2026-11-07: 49 melee kills gave +20 percent damage, +60 percent health and
-        # felt weak; with these about +30 and +90).
-        'melee_kill_stats': {'damage': 0.06, 'defense': 0.045, 'max_health': 0.075, 'crit': 0.03, 'move_speed': 0.045,
-                             'heal': 0.075, 'supplies': 0.06},
-        'melee_kill_caps': {'damage': 1.0, 'defense': 0.7, 'max_health': 1.0, 'crit': 0.3, 'move_speed': 0.6,
-                            'heal': 0.5, 'supplies': 0.5},
+        'summary': 'Every melee kill raises one of seven stats for the run, each to a cap. Shorter runs fill them faster.',
+        # The steps: x1.5 (the user, 2026-11-07: 49 melee kills gave +20 percent damage, +60 percent
+        # health and felt weak), now only for a run without a length; the lengths' pace above.
+        'melee_kill_stats': EXCELLA_STEPS,
+        'melee_kill_caps': EXCELLA_CAPS,
+        'melee_kill_gains_by_length': excella_pace(),
     },
     'chris_warrior': {
         'name': 'Brute Force', 'icon': 'shotgun',

@@ -889,7 +889,7 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
     CheckKeys(d, b, {"name", "icon", "summary", "offered_weapons", "usable_weapons", "category_damage", "supplies_mult",
                      "free_shop_rerolls", "rarity_shift", "uncapped_upgrades", "starting_weapon",
                      "starting_weapon_rarity", "max_health_mult", "stack_max", "ammo_stack_mult", "extra_weapons",
-                     "melee_damage", "melee_kill_stats", "melee_kill_caps", "heal_mult", "heal_buff_fraction", "heal_invulnerable_seconds",
+                     "melee_damage", "melee_kill_stats", "melee_kill_caps", "melee_kill_gains_by_length", "heal_mult", "heal_buff_fraction", "heal_invulnerable_seconds",
                      "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "extra_chests", "special",
                      "special_2", "stack_mult", "never_offered", "drops_as_held_ammo", "pickup_as", "break_grabs",
                      "shop_weapon", "shop_weapon_price", "gun_elements", "arena_element", "refine_every_shop",
@@ -950,6 +950,33 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                 } else {
                     CheckRange(d, "melee_kill_caps " + stat, v.get<double>(), 0.0, 5.0, true);
                     out.melee_kill_caps[stat] = v.get<double>();
+                }
+            }
+        }
+    }
+    // A run length's pace: the gains that bring each stat to its cap (so every stat it names needs one).
+    if (const json* pace = Get(b, "melee_kill_gains_by_length")) {
+        if (!pace->is_object()) {
+            d.Error("field 'melee_kill_gains_by_length' must be an object of run length ids");
+        } else {
+            for (const auto& [length, gains] : pace->items()) {
+                const std::string where = "melee_kill_gains_by_length." + length;
+                if (!gains.is_object()) {
+                    d.Error(where + " must be an object of stats");
+                    continue;
+                }
+                StringMap<int>& mine = out.melee_kill_gains_by_length[length];
+                for (const auto& [stat, v] : gains.items()) {
+                    if (!knownStat(stat)) {
+                        d.Error(where + ": unknown stat " + Q(stat) + " (" + kStatNames + ")");
+                    } else if (!v.is_number_integer()) {
+                        d.Error(where + " " + Q(stat) + " must be a whole number");
+                    } else if (out.melee_kill_caps.find(stat) == out.melee_kill_caps.end()) {
+                        d.Error(where + " " + Q(stat) + " needs a cap in melee_kill_caps");
+                    } else {
+                        CheckRange(d, where + " " + stat, static_cast<double>(v.get<std::int64_t>()), 1.0, 1000.0);
+                        mine[stat] = static_cast<int>(v.get<std::int64_t>());
+                    }
                 }
             }
         }

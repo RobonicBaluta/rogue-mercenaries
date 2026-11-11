@@ -3,11 +3,13 @@
 
 #include <algorithm>
 #include <functional>
+#include <set>
 #include <string_view>
 
 #include <catch_amalgamated.hpp>
 
 #include "rm/rewards.h"
+#include "rm/unlock_all.h"
 #include "test_support.h"
 
 using namespace rm;
@@ -718,4 +720,122 @@ TEST_CASE("a build's shop weapon is in every shop, with no unlock, until the run
         for (const ShopOffer& o : h.rc.ShopOffers()) CHECK_FALSE((o.kind == ShopOfferKind::Weapon && o.weapon.base_id == "rifle"));
     }
     CHECK(Content::LoadFromStrings(BuildSources(json{{"shop_weapon", "bazooka"}})).errors.size() > 0);
+}
+
+namespace {
+
+// The fewest enemies arena `arena` (1-based) of a run of `length` can field: none on a boss arena (a
+// ladder length's last, its own or a shorter one's), the starting route on the first, else the
+// smallest budget of the lower tier the run map offers there (routes.cpp: layer d's tiers are the
+// d-th and (d+1)-th lowest), with the ladder's growth.
+int FewestEnemies(const Content& c, const EconomyConfig::Ladder::Length& length, int arena) {
+    const EconomyConfig& eco = c.economy();
+    for (const auto* tier : eco.ladder.BossTiers(length.id)) {
+        if (tier->arenas == arena) return 0;
+    }
+    const auto playable = [](const RouteDef& r) { return r.enabled && r.enemy_budget > 0; };
+    int budget = 0;
+    if (arena == 1) {
+        budget = c.FindRoute(eco.run.starting_route)->enemy_budget;
+    } else {
+        std::set<int> tierSet;
+        for (const RouteDef& r : c.routes()) {
+            if (playable(r)) tierSet.insert(r.difficulty_tier);
+        }
+        const std::vector<int> tiers(tierSet.begin(), tierSet.end());
+        const int low = tiers[static_cast<std::size_t>(std::min<int>(arena - 2, static_cast<int>(tiers.size()) - 1))];
+        budget = 1 << 30;
+        for (const RouteDef& r : c.routes()) {
+            if (playable(r) && r.difficulty_tier == low) budget = std::min(budget, r.enemy_budget);
+        }
+    }
+    return budget + eco.ladder.budget_per_arena * eco.ladder.Steps(arena);
+}
+
+const SkinBuild* ExcellaAmbition(const Content& c) {
+    const CharacterDef* excella = c.FindCharacter("excella");
+    if (excella == nullptr) return nullptr;
+    for (const SkinDef& s : excella->skins) {
+        if (s.id == "excella_dress") return &s.build;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+// Excella's pace (the user, 2026-11-11: "excella is too powerful"): killing every enemy by melee on the
+// smallest arenas a run can draw, every stat is full by mid arena 3 of a short run, the start of arena
+// 7 of a long one and mid arena 10 of a marathon. Her gains for each length add up to those kills.
+TEST_CASE("Excella's stats fill by mid arena 3, the start of arena 7 and mid arena 10", "[builds]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const Content& c = *r.content;
+    const SkinBuild* ambition = ExcellaAmbition(c);
+    REQUIRE(ambition != nullptr);
+    const SkinBuild& build = *ambition;
+    const std::vector<std::pair<std::string, double>> fullAt = {{"short", 2.5}, {"long", 6.0}, {"marathon", 9.5}};
+    for (const auto& [id, arenas] : fullAt) {
+        INFO(id);
+        const auto* length = c.economy().ladder.Find(id);
+        REQUIRE(length != nullptr);
+        const int whole = static_cast<int>(arenas);
+        int kills = 0;
+        for (int a = 1; a <= whole; ++a) kills += FewestEnemies(c, *length, a);
+        if (arenas > whole) kills += FewestEnemies(c, *length, whole + 1) / 2;
+        const auto pace = build.melee_kill_gains_by_length.find(id);
+        REQUIRE(pace != build.melee_kill_gains_by_length.end());
+        int gains = 0;
+        for (const auto& [stat, n] : pace->second) gains += n;
+        CHECK(gains == kills);
+        // Every stat that rises has its gains here, so none fills later or never.
+        for (const auto& [stat, step] : build.melee_kill_stats) CHECK(pace->second.count(stat) == 1);
+    }
+    // The caps: 10 percent under those of 2026-11-07.
+    CHECK(build.melee_kill_caps.at("damage") == Catch::Approx(0.9));
+    CHECK(build.melee_kill_caps.at("max_health") == Catch::Approx(0.9));
+    CHECK(build.melee_kill_caps.at("crit") == Catch::Approx(0.27));
+}
+
+TEST_CASE("a run length's pace fills every stat on its last gain, never before", "[builds]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const Content& c = *r.content;
+    const SkinBuild* ambition = ExcellaAmbition(c);
+    REQUIRE(ambition != nullptr);
+    const SkinBuild& build = *ambition;
+    Profile open;
+    UnlockEverything(open, c);
+    for (const auto& [id, pace] : build.melee_kill_gains_by_length) {
+        INFO(id);
+        int total = 0;
+        for (const auto& [stat, n] : pace) total += n;
+        test::Harness h(r.content, open);
+        REQUIRE(h.rc.StartRun("excella", 11, "excella_dress", id).ok());
+        REQUIRE(h.rc.BeginArena(0.0).ok());
+        const auto allFull = [&h, &build] {
+            for (const auto& [stat, cap] : build.melee_kill_caps) {
+                if (h.rc.state().stats.Get(stat) < cap - 1e-9) return false;
+            }
+            return true;
+        };
+        for (int i = 0; i <= total; ++i) {
+            if (i == total - 1) CHECK_FALSE(allFull());
+            KillEvent k;
+            k.now = 1.0 + i * 0.01;
+            k.by_player = true;
+            k.was_melee = true;
+            k.enemy_id = "melee" + std::to_string(i);
+            h.rc.OnEnemyKilled(k);
+        }
+        CHECK(allFull());
+        CHECK(h.rc.state().stats.gains == total);  // the kill after the last gain raised nothing
+        for (const auto& [stat, cap] : build.melee_kill_caps) CHECK(h.rc.state().stats.Get(stat) == Catch::Approx(cap));
+    }
+    // A pace's stat needs a cap, and its gains are whole numbers.
+    CHECK(HasError(LoadErrors(json{{"melee_kill_stats", {{"heal", 0.1}}}, {"melee_kill_gains_by_length", {{"short", {{"heal", 4}}}}}}),
+                   "needs a cap"));
+    CHECK(HasError(LoadErrors(json{{"melee_kill_stats", {{"heal", 0.1}}},
+                                   {"melee_kill_caps", {{"heal", 0.4}}},
+                                   {"melee_kill_gains_by_length", {{"short", {{"heal", 2.5}}}}}}),
+                   "whole number"));
 }

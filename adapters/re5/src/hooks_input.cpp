@@ -47,6 +47,8 @@ unsigned short g_rawXButtons = 0;
 XInputGetStateFn g_origXInputGetState = nullptr;
 
 bool Blocking() { return g_sink && g_sink->BlockGameInput(); }
+// Keys and buttons only (HookSink::HoldGameButtons); under a full block that one rules.
+bool Holding() { return g_sink && !g_sink->BlockGameInput() && g_sink->HoldGameButtons(); }
 
 // The mod's own bindings (SetOwnedInputs) and, per binding, how its buttons are being held.
 constexpr ULONGLONG kComboWindowMs = 100;
@@ -223,16 +225,38 @@ HRESULT STDMETHODCALLTYPE GetDeviceStateDetour(void* self, DWORD size, LPVOID da
                 if (hide & (1u << i)) joy->rgbButtons[i] = 0;
             }
         }
+        if (Holding()) {
+            // Buttons and the d-pad (POV hats, centered 0xFFFFFFFF); the axes (sticks) stay.
+            if (size == sizeof(DIJOYSTATE2)) {
+                std::memset(reinterpret_cast<DIJOYSTATE2*>(data)->rgbButtons, 0, sizeof(DIJOYSTATE2::rgbButtons));
+            } else {
+                std::memset(joy->rgbButtons, 0, sizeof(joy->rgbButtons));
+            }
+            for (int i = 0; i < 4; ++i) joy->rgdwPOV[i] = 0xFFFFFFFF;
+        }
     }
     if (size == 256) {  // keyboard state array: the once-per-frame poll
         std::memcpy(g_rawKeys, data, sizeof(g_rawKeys));
         overlay::FeedKeyboard(static_cast<const unsigned char*>(data));
         Tick();
         FilterKeyboard(static_cast<unsigned char*>(data), Blocking());
+        if (Holding()) std::memset(data, 0, size);
     } else if (kind == Kind::Mouse && (size == sizeof(DIMOUSESTATE) || size == sizeof(DIMOUSESTATE2))) {
         const auto* mouse = static_cast<const DIMOUSESTATE*>(data);
         overlay::FeedMouse(mouse->lX, mouse->lY, mouse->lZ, mouse->rgbButtons);
         FilterMouse(data, size, blocking);
+        if (Holding()) {
+            // Its buttons and wheel; the movement (the camera) stays.
+            if (size == sizeof(DIMOUSESTATE2)) {
+                auto* held = static_cast<DIMOUSESTATE2*>(data);
+                held->lZ = 0;
+                std::memset(held->rgbButtons, 0, sizeof(held->rgbButtons));
+            } else {
+                auto* held = static_cast<DIMOUSESTATE*>(data);
+                held->lZ = 0;
+                std::memset(held->rgbButtons, 0, sizeof(held->rgbButtons));
+            }
+        }
     } else if (blocking) {
         std::memset(data, 0, size);
         if (size == sizeof(DIJOYSTATE) || size == sizeof(DIJOYSTATE2)) {
@@ -248,7 +272,7 @@ HRESULT STDMETHODCALLTYPE GetDeviceStateDetour(void* self, DWORD size, LPVOID da
 
 // Buffered mouse records feed the overlay cursor; records for keys or buttons
 // that must stay hidden are removed from the batch the game receives.
-void FilterBuffered(Kind kind, DWORD objectSize, LPDIDEVICEOBJECTDATA data, LPDWORD inOut, bool blocking) {
+void FilterBuffered(Kind kind, DWORD objectSize, LPDIDEVICEOBJECTDATA data, LPDWORD inOut, bool blocking, bool holding) {
     auto* base = reinterpret_cast<unsigned char*>(data);
     long dx = 0, dy = 0, wheel = 0;
     bool mouseEvents = false;
@@ -271,7 +295,9 @@ void FilterBuffered(Kind kind, DWORD objectSize, LPDIDEVICEOBJECTDATA data, LPDW
                     drop = true;
                     if (!pressed) g_heldButtons[button] = false;
                 }
+                drop = drop || holding;
             }
+            if (ofs == DIMOFS_Z) drop = drop || holding;  // the wheel
         } else if (kind == Kind::Keyboard && ofs < 256) {
             if (KeyOwned(static_cast<int>(ofs))) drop = true;
             if (blocking && pressed) g_heldKeys[ofs] = true;
@@ -279,6 +305,7 @@ void FilterBuffered(Kind kind, DWORD objectSize, LPDIDEVICEOBJECTDATA data, LPDW
                 drop = true;
                 if (!pressed) g_heldKeys[ofs] = false;
             }
+            drop = drop || holding;
         }
         if (!drop) {
             if (kept != i) std::memcpy(base + kept * objectSize, record, objectSize);
@@ -298,7 +325,7 @@ HRESULT STDMETHODCALLTYPE GetDeviceDataDetour(void* self, DWORD objectSize, LPDI
                                               DWORD flags) {
     const HRESULT hr = g_dataHooks[Index].originalData(self, objectSize, data, inOut, flags);
     if (SUCCEEDED(hr) && inOut && data && !(flags & DIGDD_PEEK) && objectSize >= sizeof(DIDEVICEOBJECTDATA)) {
-        FilterBuffered(KindOf(self, "GetDeviceData", objectSize), objectSize, data, inOut, Blocking());
+        FilterBuffered(KindOf(self, "GetDeviceData", objectSize), objectSize, data, inOut, Blocking(), Holding());
     } else if (SUCCEEDED(hr) && inOut && !data && Blocking() && !(flags & DIGDD_PEEK)) {
         *inOut = 0;  // flush-only call
     }
@@ -318,6 +345,10 @@ DWORD WINAPI XInputGetStateDetour(DWORD user, void* state) {
         auto* buttons = reinterpret_cast<unsigned short*>(static_cast<char*>(state) + sizeof(DWORD));
         const unsigned short hide = HideXInput(*buttons);
         if (hide) *buttons = static_cast<unsigned short>(*buttons & ~hide);
+    }
+    if (result == ERROR_SUCCESS && state && Holding()) {
+        // The gamepad block's buttons (a WORD) and its two triggers (a BYTE each); the sticks stay.
+        std::memset(static_cast<char*>(state) + sizeof(DWORD), 0, 4);
     }
     return result;
 }

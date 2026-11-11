@@ -65,6 +65,10 @@ public:
     virtual void GameTick() = 0;
     // True while the overlay owns input; the game sees neutral input.
     virtual bool BlockGameInput() = 0;
+    // True while the game must see no key or button, only the sticks and the mouse's movement (a
+    // run's arena start, until its inventory is laid out). Nothing is latched: what is still held
+    // when it ends reaches the game at once.
+    virtual bool HoldGameButtons() { return false; }
     // Game thread: the local player's health is about to rise by `amount` (a healing item);
     // returns the amount to apply.
     virtual int HealAmount(std::uintptr_t player, int amount) { (void)player; return amount; }
