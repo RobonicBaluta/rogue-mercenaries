@@ -2576,8 +2576,9 @@ bool IsWeaponItem(std::uint32_t id) { return IsWeaponRecord(ItemRecord(id), id);
 // been fired for kRefuelDelay, kRefuelPerSecond a second.
 constexpr std::uint32_t kItemFlamethrower = 0x0121;
 // Halved 2026-11-11 (the user: "flamethrower need to be nerfed (the tank regeneration)"): 1.5 s and
-// 5 a second (empty to full in 20 s) before.
-constexpr double kRefuelDelay = 3.0;
+// 5 a second (empty to full in 20 s) before. The wait back to 1.5 s the same day (the user: "make
+// flamethrower wait timer shorter, its too long"); the rate stays halved.
+constexpr double kRefuelDelay = 1.5;
 constexpr double kRefuelPerSecond = 2.5;  // empty to full in 40 s
 
 // The flamethrower (uWp21) binds its tank and hose to the player's back every frame, whatever is
@@ -3271,10 +3272,12 @@ void TryBeginArena(double now) {
 // sees no key or button (hooks_input; the sticks and the mouse's movement still reach it), so no gun
 // of the game's own loadout is switched to and the inventory is not opened before the run's is in.
 // At most kInventoryHoldSeconds a match, should the layout never come (a run for another character,
-// a stage change that failed). Not while the match's intro plays (MercIntroPlaying; the game locks
-// the controls then): a press skips it, the game's own way, should the run's skip not have ended it
-// (2026-11-11, the user: "announcer sitll plays and you can't skip it yet"); the seconds count from
-// its end.
+// a stage change that failed), counted from the end of the match's start (the game's main state 6,
+// MercStartRunning: its intro took the whole 10 s in alpha.17, the layout came 1.5..3 s after the
+// hold, and the user, 2026-11-11: "inventory is still accesible before the change happens...").
+// Not while the intro's shots play (MercIntroShotsPlaying: the run's skip did not end them; the game
+// locks the controls then): a press skips them, the game's own way (2026-11-11, the user: "announcer
+// sitll plays and you can't skip it yet").
 constexpr double kInventoryHoldSeconds = 10.0;
 std::atomic<bool> g_holdButtons{false};
 
@@ -3293,13 +3296,13 @@ void UpdateInventoryHold(double now) {
     static double since = 0.0;
     static bool expired = false;
     bool hold = InventoryPending();
-    const bool intro = MercIntroPlaying();
+    const bool intro = MercIntroShotsPlaying();
     if (hold && generation != g->matchGeneration) {
         generation = g->matchGeneration;
         since = now;
         expired = false;
     }
-    if (intro) since = now;
+    if (MercStartRunning()) since = now;
     if (hold && !expired && now - since > kInventoryHoldSeconds) {
         RM_LOGW("inventory: no layout %.0f s into the match; keys and buttons go back to the game", kInventoryHoldSeconds);
         expired = true;
@@ -3308,7 +3311,8 @@ void UpdateInventoryHold(double now) {
     if (hold != g_holdButtons.load()) {
         g_holdButtons = hold;
         RM_LOGI("inventory: keys and buttons %s (match %d, %.1f s in)",
-                hold ? "held until the layout" : intro ? "with the game (the intro plays)" : "back to the game",
+                hold ? "held until the layout" : intro ? "with the game (the intro's shots play; a press skips them)"
+                                                       : "back to the game",
                 g->matchGeneration, now - since);
     }
 }

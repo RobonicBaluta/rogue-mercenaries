@@ -120,7 +120,8 @@ void RequestMercMatchEnd();
 void ClearMercMatchEnd();  // drop a pending request (a new match must not inherit it)
 void SuppressMercAddTime(bool suppress);  // countdown bonuses ignored (a run holds the countdown)
 void SkipMercIntro(bool skip);  // the match's intro (its camera shots, controls locked) ends at once
-bool MercIntroPlaying();        // the Mercenaries start (main state 6, the intro) ran in the last 300 ms
+bool MercStartRunning();        // the Mercenaries start (main state 6) ran in the last 300 ms
+bool MercIntroShotsPlaying();   // ... at one of its intro's shots (the run's skip did not end it)
 int TakeTimeBonusPickups();               // time-bonus pickups collected since the last call
 bool TakeTimeBonusPosition(float pos[3]);  // where an opened statue stood, oldest first (false: none left)
 void SimulateTimeBonusPickup();           // developer: count one pickup

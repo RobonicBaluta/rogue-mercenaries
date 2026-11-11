@@ -652,6 +652,7 @@ constexpr std::size_t kMercState = 0x4D4;      // int32: 0 running, 1 time up / 
 constexpr std::size_t kGameStateStep = 0x05;      // uint8, the main state's step
 constexpr std::uint8_t kMercStartShot = 0x0C;     // kFnMercStartState: the intro's next camera shot
 constexpr std::uint8_t kMercStartShotWait = 0x0D; // ... its shot playing (a pad's press skips)
+constexpr std::uint8_t kMercStartShotPause = 0x0E; // ... 0.1 s between two shots
 constexpr std::uint8_t kMercStartEnd = 0x14;      // ... the intro over: fade out, then the match
 // Play menu (uIdStartUp01: CONTINUAR ... CONTENIDO EXTRA)
 constexpr std::size_t kMenuState = 0x14;       // uint8 state machine; 2 = waiting for input

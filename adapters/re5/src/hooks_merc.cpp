@@ -37,7 +37,8 @@ std::atomic<bool> g_hideHud{false};
 using StartStateFn = void(__fastcall*)(std::uintptr_t self, void* edx);
 StartStateFn g_origStartState = nullptr;
 std::atomic<bool> g_skipIntro{false};
-std::atomic<DWORD> g_introSeen{0};
+std::atomic<DWORD> g_startSeen{0};
+std::atomic<DWORD> g_shotsSeen{0};
 
 // The match's intro (its camera shots, every player's controls locked) is the game's main state 6,
 // re5::addr::kFnMercStartState. A run's match does not play it (the user, 2026-11-11: "announcer at
@@ -47,12 +48,16 @@ std::atomic<DWORD> g_introSeen{0};
 // its shot table ends, before the game's own handler runs. Fade out, the match's resources and the
 // match follow, the game's own steps.
 void __fastcall StartStateDetour(std::uintptr_t self, void* edx) {
-    g_introSeen = GetTickCount();
+    const DWORD tick = GetTickCount();
+    g_startSeen = tick;
     std::uint8_t step = 0;
-    if (g_skipIntro.load() && self && SafeRead(self + re5::off::kGameStateStep, step) &&
-        (step == re5::off::kMercStartShot || step == re5::off::kMercStartShotWait) &&
-        SafeStore<std::uint8_t>(self + re5::off::kGameStateStep, re5::off::kMercStartEnd)) {
-        RM_LOGI("mercenaries: the intro skipped (step %02X to %02X)", step, re5::off::kMercStartEnd);
+    if (self && SafeRead(self + re5::off::kGameStateStep, step)) {
+        if (g_skipIntro.load() && (step == re5::off::kMercStartShot || step == re5::off::kMercStartShotWait) &&
+            SafeStore<std::uint8_t>(self + re5::off::kGameStateStep, re5::off::kMercStartEnd)) {
+            RM_LOGI("mercenaries: the intro skipped (step %02X to %02X)", step, re5::off::kMercStartEnd);
+            step = re5::off::kMercStartEnd;
+        }
+        if (step >= re5::off::kMercStartShot && step <= re5::off::kMercStartShotPause) g_shotsSeen = tick;
     }
     g_origStartState(self, edx);
 }
@@ -225,8 +230,12 @@ void RequestMercMatchEnd() { g_endRequested = true; }
 void ClearMercMatchEnd() { g_endRequested = false; }
 
 void SkipMercIntro(bool skip) { g_skipIntro = skip; }
-bool MercIntroPlaying() {
-    const DWORD seen = g_introSeen.load();
+bool MercStartRunning() {
+    const DWORD seen = g_startSeen.load();
+    return seen != 0 && GetTickCount() - seen < 300;
+}
+bool MercIntroShotsPlaying() {
+    const DWORD seen = g_shotsSeen.load();
     return seen != 0 && GetTickCount() - seen < 300;
 }
 
