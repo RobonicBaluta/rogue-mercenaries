@@ -163,6 +163,14 @@ constexpr std::uintptr_t kFnEffectStop = 0x007712C0;
 // +0x1C, 0x00BBC8C0) turns up to 16 points of +0x1C8C's particles into hits (0x004E4120 reads them)
 // and plays the flame's sounds while +0x1C8C is set: the flame's look and its hits are that effect.
 constexpr std::uintptr_t kFnWp21Fire = 0x00BA4E00;
+// The camera system, sCamera (sBioCamera, DTI 0x011B1950; static analysis 2026-11-11): its instance
+// here (set by its constructor 0x0043FB20, cleared by its destructor), its 8 viewports (property
+// mViewport, sCamera::Viewport 0x5E0 bytes each, from +0x30), each with its camera (mpCamera +4)
+// and mActive (+0x10). A camera (uCamera, properties 0x004D4010) keeps the far plane +0x18, the near
+// +0x1C, the aspect +0x20, the vertical field of view in degrees +0x24, the eye +0x30, the up +0x40
+// and the target +0x50; its view (0x00835C20 -> 0x006D1030) and projection (0x00835C50 ->
+// 0x006D1650) are right handed with row vectors (rm/screen_fx.h does the same).
+constexpr std::uintptr_t kSCameraInstance = 0x0123457C;
 // sPlayer's add-player (thiscall on [kSPlayerInstance]: slot, character, costume, a game work value
 // for +0x4C0; ret 0x10): refuses a slot in use; fills the save's player entry of that slot from
 // the character table (0x00C92D60 on save + slot data + 0x23300: the entry at +0x10 + slot*0x50,
@@ -604,6 +612,20 @@ constexpr std::size_t kUnitRotation = 0x40;       // quaternion x, y, z, w of an
 // flamethrower (scripts/test_flame_hide.sh): 0.001 there hides its tank and hose; the game sets
 // 1 again when it is equipped. The mod writes it only where it reads (1, 1, 1) or its own value.
 constexpr std::size_t kUnitScale = 0x50;
+// sCamera and its cameras (addr::kSCameraInstance)
+constexpr std::size_t kSCameraViewports = 0x30;
+constexpr int kSCameraViewportCount = 8;
+constexpr std::size_t kViewportSize = 0x5E0;
+constexpr std::size_t kViewportCamera = 0x04;
+constexpr std::size_t kViewportActive = 0x10;
+constexpr std::size_t kViewportRegion = 0x14;
+constexpr std::size_t kCameraFar = 0x18;
+constexpr std::size_t kCameraNear = 0x1C;
+constexpr std::size_t kCameraAspect = 0x20;
+constexpr std::size_t kCameraFov = 0x24;
+constexpr std::size_t kCameraEye = 0x30;
+constexpr std::size_t kCameraUp = 0x40;
+constexpr std::size_t kCameraTarget = 0x50;
 // uWp21, the flamethrower (addr::kFnWp21Fire)
 constexpr std::size_t kWp21Firing = 0x1C10;        // uint8, set by its fire
 constexpr std::size_t kWp21AttackData = 0x1C80;

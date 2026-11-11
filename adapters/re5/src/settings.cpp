@@ -130,6 +130,7 @@ Settings LoadAdapterSettings(const Paths& paths, std::string* error) {
         settings.scopeKey = json.value("scope_key_scancode", settings.scopeKey);
         settings.effectGallery = json.value("effect_gallery", settings.effectGallery);
         settings.customEffects = json.value("custom_effects", settings.customEffects);
+        settings.elementArcs = json.value("element_arcs", settings.elementArcs);
         MergeLooks(json, "element_effects", settings.elementEffects);  // "": no look for that kind
         MergeLooks(json, "flame_streams", settings.flameStreams);      // "": the flame for that element
         if (json.contains("special2_pad") && json["special2_pad"].is_array()) {

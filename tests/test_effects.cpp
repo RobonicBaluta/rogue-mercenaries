@@ -2,6 +2,7 @@
 // archive they go into. Synthetic files in the formats the game's own have (the colour fields at
 // the places every part of the game's 117 core and weapon lists has them, 2026-11-11).
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -247,4 +248,51 @@ TEST_CASE("the flamethrower's looks are built for every element from the game's 
     CHECK_FALSE(BuildFlameEffects(WriteArchive(partial), WriteArchive(core), &log).has_value());
     REQUIRE_FALSE(log.empty());
     CHECK(log.back().find("wp2104") != std::string::npos);
+}
+
+// The game's camera maths (rm/screen_fx.h), checked against what a right-handed camera must do.
+#include "rm/screen_fx.h"
+
+TEST_CASE("a point ahead of the game's camera shows where it should", "[fx]") {
+    using namespace rm::screenfx;
+    const float eye[3] = {0.0f, 150.0f, 0.0f}, target[3] = {0.0f, 150.0f, -100.0f}, up[3] = {0.0f, 1.0f, 0.0f};
+    const Mat4 vp = Multiply(LookAtRH(eye, target, up), PerspectiveFovRH(60.0f, 16.0f / 9.0f, 10.0f, 10000.0f));
+    const float ahead[3] = {0.0f, 150.0f, -500.0f};
+    const auto c = Project(vp, ahead, 1280.0f, 720.0f);
+    REQUIRE(c.has_value());
+    CHECK(c->x == Catch::Approx(640.0f).margin(0.01));
+    CHECK(c->y == Catch::Approx(360.0f).margin(0.01));
+    CHECK(c->depth == Catch::Approx(500.0f).margin(0.01));
+    // Looking down -z with y up, +x is to the right and +y up on the screen.
+    const float right[3] = {100.0f, 150.0f, -500.0f}, above[3] = {0.0f, 250.0f, -500.0f};
+    const auto r = Project(vp, right, 1280.0f, 720.0f), a = Project(vp, above, 1280.0f, 720.0f);
+    REQUIRE((r.has_value() && a.has_value()));
+    CHECK(r->x > 640.0f);
+    CHECK(a->y < 360.0f);
+    // At the edge of a 60 degree field of view: the top of the screen.
+    const float edge[3] = {0.0f, 150.0f + 500.0f * std::tan(30.0f * 0.017453292f), -500.0f};
+    const auto e = Project(vp, edge, 1280.0f, 720.0f);
+    REQUIRE(e.has_value());
+    CHECK(e->y == Catch::Approx(0.0f).margin(0.05));
+    const float behind[3] = {0.0f, 150.0f, 500.0f};
+    CHECK_FALSE(Project(vp, behind, 1280.0f, 720.0f).has_value());
+}
+
+TEST_CASE("a bolt runs from end to end within its jitter, the same for the same seed", "[fx]") {
+    using namespace rm::screenfx;
+    const auto bolt = BoltPath(100.0f, 100.0f, 500.0f, 100.0f, 10, 0.15f, 42);
+    REQUIRE(bolt.size() == 11);
+    CHECK(bolt.front().first == 100.0f);
+    CHECK(bolt.front().second == 100.0f);
+    CHECK(bolt.back().first == 500.0f);
+    CHECK(bolt.back().second == 100.0f);
+    bool bent = false;
+    for (std::size_t i = 0; i < bolt.size(); ++i) {
+        CHECK(std::fabs(bolt[i].second - 100.0f) <= 0.15f * 400.0f + 0.01f);
+        CHECK(bolt[i].first == Catch::Approx(100.0f + 40.0f * static_cast<float>(i)).margin(0.01));
+        bent = bent || std::fabs(bolt[i].second - 100.0f) > 1.0f;
+    }
+    CHECK(bent);
+    CHECK(BoltPath(100.0f, 100.0f, 500.0f, 100.0f, 10, 0.15f, 42) == bolt);
+    CHECK(BoltPath(100.0f, 100.0f, 500.0f, 100.0f, 10, 0.15f, 43) != bolt);
 }

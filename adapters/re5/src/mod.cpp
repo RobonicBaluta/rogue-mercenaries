@@ -57,6 +57,7 @@
 #include "rm/content.h"
 #include "rm/diagnostics.h"
 #include "rm/effects.h"
+#include "rm/screen_fx.h"
 #include "rm/gun_levels.h"
 #include "rm/inventory_plan.h"
 #include "rm/profile.h"
@@ -5219,6 +5220,35 @@ void QueueProcs(std::uintptr_t enemy, const std::vector<rm::WeaponProc>& procs) 
     }
 }
 
+// Shock's lightning (settings element_arcs; 2026-11-11, the user: "couldn't we make our own ray's
+// arc"): an arc between two units (their chests, followed as they move; where they were once gone)
+// or from the player's gun, drawn over the picture each frame through the game's camera
+// (DrawElementArcs), flickering, gone after its time.
+struct ElementArc {
+    std::uintptr_t from = 0, to = 0;  // 0: the player's gun (from) / the point (to)
+    float a[3] = {}, b[3] = {};
+    double born = 0.0, until = 0.0;
+    std::uint32_t seed = 0;
+};
+std::vector<ElementArc> g_arcs;
+constexpr float kArcHeight = 120.0f;  // an arc's ends: chest high
+constexpr std::size_t kMaxArcs = 48;
+
+void AddArc(std::uintptr_t from, std::uintptr_t to, double now, double seconds) {
+    if (!g->settings.elementArcs || g_arcs.size() >= kMaxArcs || to == 0) return;
+    ElementArc arc;
+    arc.from = from;
+    arc.to = to;
+    if (from) UnitPosition(from, arc.a);
+    UnitPosition(to, arc.b);
+    arc.born = now;
+    arc.until = now + seconds;
+    static std::uint32_t seeds = 0x2545F491u;
+    seeds = seeds * 1664525u + 1013904223u;
+    arc.seed = seeds;
+    g_arcs.push_back(arc);
+}
+
 void ApplyProc(const QueuedProc& q, double now) {
     const rm::WeaponProc& p = q.proc;
     const std::string kind(rm::ProcKindName(p.kind));
@@ -5267,10 +5297,13 @@ void ApplyProc(const QueuedProc& q, double now) {
                 PlayLook(p, q.enemy, now);
             }
             int left = p.targets > 0 ? p.targets : 99;
+            std::uintptr_t jumpFrom = q.enemy;
             for (const auto& [enemy, d] : EnemiesNear(q.at, static_cast<float>(p.radius), q.enemy)) {
                 (void)d;
                 if (left-- <= 0) break;
                 PlayLook(p, enemy, now);  // the jump to it
+                AddArc(jumpFrom, enemy, now, 0.35);
+                if (p.kind == rm::ProcKind::Arc) jumpFrom = enemy;  // a chain: each jump from the last
                 if (ElementDamage(enemy, p.damage, now, Reaction::Flyoff)) {
                     ++reached;
                     if (alive(enemy)) React(enemy, Reaction::Flash, now);
@@ -5533,6 +5566,12 @@ void DriveFlameStream(double now) {
         it = now - it->second.second > 1.0 ? chill.erase(it) : std::next(it);
     }
     if (inFlame.empty()) return;
+    // A Shock flamethrower: lightning from the gun to the nearest one in its flame, again and again.
+    static double nextGunArc = 0.0;
+    if (lookInPlace && g_flameStreamElement == rm::Element::Shock && now >= nextGunArc) {
+        nextGunArc = now + 0.12;
+        AddArc(0, inFlame.front().first, now, 0.16);
+    }
     if (lookInPlace && now >= nextStreamHit) {
         nextStreamHit = now + kStreamHitEvery;
         for (const auto& [enemy, dist] : inFlame) {
@@ -9588,6 +9627,95 @@ void ModDraw() {
     }
 }
 
+// Each arc over the picture: its two ends where the game's camera shows them (rm::screenfx, the
+// game's own maths), a jagged path between them that changes every 50 ms, a wide faint glow and a
+// thin bright core, fading out at its end. Once a match the camera is logged as read.
+void DrawElementArcs() {
+    if (g_arcs.empty()) return;
+    const double now = Now();
+    std::erase_if(g_arcs, [now](const ElementArc& a) { return now >= a.until; });
+    if (g_arcs.empty() || !g->match.inMatch) {
+        g_arcs.clear();
+        return;
+    }
+    engine::CameraView cam;
+    static int loggedGeneration = -1;
+    if (!engine::ReadCameraView(cam)) {
+        if (loggedGeneration != g->matchGeneration) {
+            loggedGeneration = g->matchGeneration;
+            RM_LOGW("arcs: no camera to draw them with (sCamera's viewports); not drawn");
+        }
+        return;
+    }
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    if (loggedGeneration != g->matchGeneration) {
+        loggedGeneration = g->matchGeneration;
+        RM_LOGI("arcs: camera %s %08X (viewport %d, region %d %d %d %d): eye %.0f %.0f %.0f, target %.0f %.0f %.0f, up %.2f %.2f %.2f, "
+                "fov %.1f, aspect %.3f, near %.1f, far %.0f; screen %.0f x %.0f",
+                engine::ClassName(cam.camera).c_str(), static_cast<unsigned>(cam.camera), cam.viewport, cam.region[0], cam.region[1],
+                cam.region[2], cam.region[3], cam.eye[0], cam.eye[1], cam.eye[2], cam.target[0], cam.target[1], cam.target[2], cam.up[0],
+                cam.up[1], cam.up[2], cam.fov, cam.aspect, cam.nearPlane, cam.farPlane, display.x, display.y);
+    }
+    const rm::screenfx::Mat4 viewProj =
+        rm::screenfx::Multiply(rm::screenfx::LookAtRH(cam.eye, cam.target, cam.up),
+                               rm::screenfx::PerspectiveFovRH(cam.fov, cam.aspect, cam.nearPlane, cam.farPlane));
+    const auto player = engine::LocalPlayer();
+    ImDrawList* list = ImGui::GetBackgroundDrawList();
+    static int drawnLogs = 0;
+    for (const ElementArc& arc : g_arcs) {
+        float a[3], b[3];
+        if (arc.from) {
+            if (engine::ReadHp(arc.from)) UnitPosition(arc.from, a);
+            else std::copy(std::begin(arc.a), std::end(arc.a), a);
+            a[1] += kArcHeight;
+        } else {
+            // The player's gun: chest high, half a metre ahead.
+            if (!player) continue;
+            UnitPosition(player, a);
+            float fx = 0.0f, fz = 1.0f;
+            PlayerFacing(player, fx, fz);
+            a[0] += fx * 50.0f;
+            a[2] += fz * 50.0f;
+            a[1] += kArcHeight + 10.0f;
+        }
+        if (engine::ReadHp(arc.to)) UnitPosition(arc.to, b);
+        else std::copy(std::begin(arc.b), std::end(arc.b), b);
+        b[1] += kArcHeight;
+        const auto pa = rm::screenfx::Project(viewProj, a, display.x, display.y);
+        const auto pb = rm::screenfx::Project(viewProj, b, display.x, display.y);
+        if (!pa || !pb) continue;
+        if (drawnLogs < 3) {
+            ++drawnLogs;
+            RM_LOGI("arcs: %s -> %s at %.0f %.0f -> %.0f %.0f on the screen", arc.from ? engine::ClassName(arc.from).c_str() : "the gun",
+                    engine::ClassName(arc.to).c_str(), pa->x, pa->y, pb->x, pb->y);
+        }
+        const float life = static_cast<float>((arc.until - now) / std::max(0.01, arc.until - arc.born));
+        const auto alpha = [life](float a0) { return static_cast<int>(std::clamp(a0 * std::min(1.0f, life * 2.0f), 0.0f, 255.0f)); };
+        const std::uint32_t flicker = static_cast<std::uint32_t>(now * 20.0);  // a new shape every 50 ms
+        const float length = std::hypot(pb->x - pa->x, pb->y - pa->y);
+        const int segments = std::clamp(static_cast<int>(length / 18.0f), 4, 24);
+        const float closest = std::min(pa->depth, pb->depth), thick = std::clamp(900.0f / std::max(closest, 1.0f), 1.5f, 6.0f);
+        const auto path = rm::screenfx::BoltPath(pa->x, pa->y, pb->x, pb->y, segments, 0.12f, arc.seed ^ (flicker * 2654435761u));
+        std::vector<ImVec2> points;
+        points.reserve(path.size());
+        for (const auto& [x, y] : path) points.emplace_back(x, y);
+        list->AddPolyline(points.data(), static_cast<int>(points.size()), IM_COL32(120, 90, 255, alpha(70.0f)), 0, thick * 4.0f);
+        list->AddPolyline(points.data(), static_cast<int>(points.size()), IM_COL32(170, 150, 255, alpha(140.0f)), 0, thick * 1.8f);
+        list->AddPolyline(points.data(), static_cast<int>(points.size()), IM_COL32(235, 235, 255, alpha(255.0f)), 0, thick * 0.6f);
+        // A short fork from a third of the way along.
+        const std::size_t at = points.size() / 3;
+        if (at > 0 && at + 1 < points.size()) {
+            const ImVec2 o = points[at];
+            const float dx = points[at + 1].x - o.x, dy = points[at + 1].y - o.y;
+            const auto fork = rm::screenfx::BoltPath(o.x, o.y, o.x + dx * 2.5f - dy * 1.2f, o.y + dy * 2.5f + dx * 1.2f, 4, 0.2f,
+                                                     arc.seed ^ flicker ^ 0x5bd1e995u);
+            std::vector<ImVec2> branch;
+            for (const auto& [x, y] : fork) branch.emplace_back(x, y);
+            list->AddPolyline(branch.data(), static_cast<int>(branch.size()), IM_COL32(170, 150, 255, alpha(110.0f)), 0, thick * 0.9f);
+        }
+    }
+}
+
 void DrawUnguarded() {
     if (!g->run) {
         ImGui::Begin("Rogue Mercenaries - disabled");
@@ -9599,6 +9727,7 @@ void DrawUnguarded() {
     DrawMenuPortrait();
     DrawMenuIcons();
     std::lock_guard lock(g->mutex);
+    DrawElementArcs();
     DrawSpecialWidgets();
     DrawWeaponCard();
     const rm::RunSnapshot snapshot = g->run->Snapshot(Now());

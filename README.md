@@ -252,6 +252,11 @@ builds them at start from your own game files (`uWp21.arc`, `coreEff.arc`, read 
 `%LOCALAPPDATA%\RogueMercenaries\generated\rmEffects.arc` (about 17 MB), and a run's loads bring it. Nothing of the
 game's is changed. `"custom_effects": false` in `adapter.json` turns them off (the game's own looks only).
 
+**Lightning.** Shock's jumps are drawn as lightning between the enemies it reaches (a chain for the evolved
+Storm), and a Shock flamethrower throws bolts from the gun to the nearest enemy in its flame. They are drawn over the
+picture where the game's camera shows those enemies, so a wall between does not hide them. `"element_arcs": false` in
+`adapter.json` turns them off.
+
 **Picking the elements' looks (the effect gallery).** In an arena, press **Numpad \*** to turn the gallery on or
 off. Every 3 seconds the next effect in memory plays on the nearest enemy, its name at the top of the screen.
 **Numpad +** and **Numpad -** step to the next or the previous one at once, **Numpad 0** holds the one shown (it plays

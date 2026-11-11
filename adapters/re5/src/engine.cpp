@@ -718,6 +718,33 @@ bool EffectInMemory(const char* path) {
     return true;
 }
 
+bool ReadCameraView(CameraView& out) {
+    const auto system = ReadOr<std::uintptr_t>(re5::addr::kSCameraInstance, 0);
+    if (!system) return false;
+    for (int i = 0; i < re5::off::kSCameraViewportCount; ++i) {
+        const std::uintptr_t viewport = system + re5::off::kSCameraViewports + static_cast<std::size_t>(i) * re5::off::kViewportSize;
+        const auto camera = ReadOr<std::uintptr_t>(viewport + re5::off::kViewportCamera, 0);
+        if (ReadOr<std::uint8_t>(viewport + re5::off::kViewportActive, 0) == 0 || camera < 0x10000) continue;
+        CameraView v;
+        v.viewport = i;
+        v.camera = camera;
+        for (int k = 0; k < 3; ++k) {
+            v.eye[k] = ReadOr<float>(camera + re5::off::kCameraEye + static_cast<std::size_t>(k) * 4, 0.0f);
+            v.target[k] = ReadOr<float>(camera + re5::off::kCameraTarget + static_cast<std::size_t>(k) * 4, 0.0f);
+            v.up[k] = ReadOr<float>(camera + re5::off::kCameraUp + static_cast<std::size_t>(k) * 4, 0.0f);
+        }
+        v.fov = ReadOr<float>(camera + re5::off::kCameraFov, 0.0f);
+        v.aspect = ReadOr<float>(camera + re5::off::kCameraAspect, 0.0f);
+        v.nearPlane = ReadOr<float>(camera + re5::off::kCameraNear, 0.0f);
+        v.farPlane = ReadOr<float>(camera + re5::off::kCameraFar, 0.0f);
+        for (int k = 0; k < 4; ++k) v.region[k] = ReadOr<std::int32_t>(viewport + re5::off::kViewportRegion + static_cast<std::size_t>(k) * 4, 0);
+        if (!(v.fov > 1.0f && v.fov < 179.0f && v.aspect > 0.1f && v.aspect < 10.0f && v.nearPlane > 0.0f && v.farPlane > v.nearPlane)) continue;
+        out = v;
+        return true;
+    }
+    return false;
+}
+
 std::vector<std::string> LoadedEffectLists() {
     std::vector<std::string> out;
     if (!g_caps.effects) return out;

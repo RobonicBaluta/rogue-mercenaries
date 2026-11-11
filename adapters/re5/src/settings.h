@@ -109,6 +109,9 @@ struct Settings {
         {"poison", "effect\\efl\\wp\\wp21\\wp21d3"},
         {"poison_cloud", "effect\\efl\\wp\\wp21\\wp21d3"},
     };
+    // Shock's arcs drawn as lightning between the enemies it jumps to, and from a Shock flamethrower
+    // to the enemy in its flame (over the picture, where the game's camera shows them).
+    bool elementArcs = true;
     // The mod's own effects (rm/effects.h, effects_pack.h): <data>\\generated\\rmEffects.arc built from
     // the game's archives at start and loaded with a run's. Off: the game's own looks only.
     bool customEffects = true;

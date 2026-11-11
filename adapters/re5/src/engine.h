@@ -152,6 +152,16 @@ bool StopEffect(std::uint32_t id);
 bool EffectInMemory(const char* path);
 /// Every effect list in memory now (the resource manager's table), sorted.
 std::vector<std::string> LoadedEffectLists();
+/// The camera the game draws the world with: the first active viewport's (sCamera).
+struct CameraView {
+    int viewport = -1;
+    std::uintptr_t camera = 0;
+    float eye[3] = {}, target[3] = {}, up[3] = {};
+    float fov = 0.0f, aspect = 0.0f, nearPlane = 0.0f, farPlane = 0.0f;
+    std::int32_t region[4] = {};  // the viewport's mRegion as it reads (diagnostics)
+};
+/// False when there is none, or its numbers do not look like a camera's.
+bool ReadCameraView(CameraView& out);
 /// True when nativePC_MT\<path>.efl exists next to the game.
 bool EffectFileExists(const std::string& path);
 /// Puts `list` into one of the unit's motion list slots through the game's own (reference

@@ -46,6 +46,7 @@ add_library(rm_core STATIC
     core/common/status.cpp
     core/common/inflate.cpp
     core/common/effects.cpp
+    core/common/screen_fx.cpp
     core/rng/rng.cpp
     core/content/content_loader.cpp
     core/characters/characters.cpp
