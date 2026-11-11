@@ -29,6 +29,7 @@
 #include <nlohmann/json.hpp>
 
 #include "engine.h"
+#include "effects_pack.h"
 #include "file_redirect.h"
 #include "area_cameras.h"
 #include "stage_fixes.h"
@@ -55,6 +56,7 @@
 
 #include "rm/content.h"
 #include "rm/diagnostics.h"
+#include "rm/effects.h"
 #include "rm/gun_levels.h"
 #include "rm/inventory_plan.h"
 #include "rm/profile.h"
@@ -911,11 +913,17 @@ void UpdateModRedirects() {
     rm::RunController& run = *g->run;
     const std::string skin = run.HasActiveRun() ? run.state().skin_id : g->selectedSkin;
     const auto it = g_modSkinFiles.find(skin);
-    const std::string key = it == g_modSkinFiles.end() ? std::string() : skin;
+    const std::filesystem::path effects = effectspack::Ready();  // the mod's own effects (effects_pack.h)
+    const std::string key = (it == g_modSkinFiles.end() ? std::string() : skin) + (effects.empty() ? "" : "|effects");
     if (key == g_modRedirectSkin) return;
     g_modRedirectSkin = key;
-    fileredirect::SetRedirects(it == g_modSkinFiles.end() ? std::vector<fileredirect::Redirect>{} : it->second);
-    if (!key.empty()) RM_LOGI("mods: %s wears its mod (%zu files read from the mods folder)", key.c_str(), it->second.size());
+    std::vector<fileredirect::Redirect> redirects = it == g_modSkinFiles.end() ? std::vector<fileredirect::Redirect>{} : it->second;
+    if (!effects.empty()) {
+        const std::string tail = std::string("Image\\Archive\\") + rm::fx::kEffectsArchive + ".arc";
+        redirects.push_back({fileredirect::NormaliseTail(std::wstring(tail.begin(), tail.end())), effects.wstring()});
+    }
+    fileredirect::SetRedirects(redirects);
+    if (it != g_modSkinFiles.end()) RM_LOGI("mods: %s wears its mod (%zu files read from the mods folder)", skin.c_str(), it->second.size());
 }
 
 // A mod's page in the browser (only a Nexus Mods page, as the content allows).
@@ -4181,10 +4189,14 @@ void UpdatePreloads() {
     static std::vector<std::string> lastGuests;
     static const char* lastBoss = nullptr;
     static const char* lastPartner = nullptr;
+    static bool lastEffects = false;
+    // The mod's own effects with a run's loads, once built and redirected (UpdateModRedirects).
+    const bool effects = runLoads && !effectspack::Ready().empty();
     if (runLoads == lastRun && CurrentMapKey() == lastStage && guests == lastGuests && bossArchive == lastBoss &&
-        partnerClass == lastPartner) {
+        partnerClass == lastPartner && effects == lastEffects) {
         return;
     }
+    lastEffects = effects;
     lastRun = runLoads;
     lastStage = CurrentMapKey();
     lastGuests = guests;
@@ -4270,6 +4282,7 @@ void UpdatePreloads() {
         for (const std::string& guest : guests) guestLine += " " + guest;
         if (!guestLine.empty()) RM_LOGI("resources: stage %d brings the run's guests:%s", CurrentMapKey(), guestLine.c_str());
     }
+    if (effects) extras.enemyArchives.push_back(rm::fx::kEffectsArchive);
     RM_LOGI("resources: %s, stage %d: %zu player items, %zu enemy classes, %zu enemy weapons and %zu archives go with every load",
             runLoads ? "run" : "no run", CurrentMapKey(), extras.playerItems.size(), extras.enemyClasses.size(),
             extras.enemyWeapons.size(), extras.enemyArchives.size());
@@ -5138,6 +5151,20 @@ std::uintptr_t EquippedGunSlot() {
     return 0;
 }
 
+// A setting's effect lists, "a|b": each in turn.
+std::vector<std::string> Alternatives(const std::string& value) {
+    std::vector<std::string> out;
+    std::size_t from = 0;
+    while (from <= value.size()) {
+        const std::size_t bar = value.find('|', from);
+        const std::string one = value.substr(from, bar == std::string::npos ? std::string::npos : bar - from);
+        if (!one.empty()) out.push_back(one);
+        if (bar == std::string::npos) break;
+        from = bar + 1;
+    }
+    return out;
+}
+
 // An element's look on `unit` (settings element_effects, by proc kind; an evolved element's own
 // "<kind>_evolved" first): at most once a second for the same enemy and kind.
 void PlayLook(const rm::WeaponProc& p, std::uintptr_t unit, double now) {
@@ -5152,8 +5179,16 @@ void PlayLook(const rm::WeaponProc& p, std::uintptr_t unit, double now) {
     if (now - at < 1.0 && at > 0.0) return;
     at = now;
     static std::map<std::string, int> logged;
-    const bool played = engine::PlayEffect(it->second.c_str(), unit);
-    if (logged[it->second]++ < 3) RM_LOGI("elements: look %s for %s: %s", it->second.c_str(), kind.c_str(), played ? "played" : "not in memory");
+    std::string played;
+    for (const std::string& path : Alternatives(it->second)) {
+        if (engine::PlayEffect(path.c_str(), unit)) {
+            played = path;
+            break;
+        }
+    }
+    if (logged[it->second]++ < 3) {
+        RM_LOGI("elements: look for %s: %s", kind.c_str(), played.empty() ? ("none in memory of " + it->second).c_str() : played.c_str());
+    }
 }
 
 // Poisons it (a new poison keeps the higher rate and the later end); with Plague's numbers its
@@ -5362,6 +5397,7 @@ void PlagueOnDeath(std::uintptr_t enemy, int maxHp, double now) {
 constexpr double kStreamDps = 300.0;
 constexpr double kStreamHitEvery = 0.2;
 std::string g_flameStreamPath;           // the look in place of the flame now ("" the flame)
+std::string g_flameStreamCompanion;      // with it in place of the flame's second list (the mod's own effects)
 rm::Element g_flameStreamElement = rm::Element::Incendiary;
 
 // The run's flamethrower's own element with a look in settings flame_streams that is in memory
@@ -5370,7 +5406,7 @@ void UpdateFlameStreamLook(double now) {
     static double next = 0.0;
     if (now < next || g_flameUnit == 0 || !g->match.inMatch) {
         // The unit as it is now, every tick (a new match's flamethrower is another unit).
-        SetFlameStream(g_flameStreamPath.empty() || !g->match.inMatch ? 0 : g_flameUnit, g_flameStreamPath);
+        SetFlameStream(g_flameStreamPath.empty() || !g->match.inMatch ? 0 : g_flameUnit, g_flameStreamPath, g_flameStreamCompanion);
         if (now < next) return;
     }
     next = now + 1.0;
@@ -5383,12 +5419,25 @@ void UpdateFlameStreamLook(double now) {
                 const std::string key(rm::ElementName(e));
                 auto it = w.element_evolved ? g->settings.flameStreams.find(key + "_evolved") : g->settings.flameStreams.end();
                 if (it == g->settings.flameStreams.end()) it = g->settings.flameStreams.find(key);
-                if (it == g->settings.flameStreams.end() || !engine::EffectInMemory(it->second.c_str())) continue;
-                path = it->second;
+                if (it == g->settings.flameStreams.end()) continue;
+                for (const std::string& one : Alternatives(it->second)) {
+                    if (!engine::EffectInMemory(one.c_str())) continue;
+                    path = one;
+                    break;
+                }
+                if (path.empty()) continue;
                 element = e;
                 break;
             }
+            if (!path.empty()) break;
         }
+    }
+    // The mod's recoloured stream comes with its recoloured second list, as the game's flame with wp2104.
+    std::string companion;
+    for (const rm::fx::FlameLook& look : rm::fx::kFlameLooks) {
+        if (!look.stream || path != rm::fx::FlameEffectPath(look.code, 0)) continue;
+        const std::string second = rm::fx::FlameEffectPath(look.code, 4);
+        if (engine::EffectInMemory(second.c_str())) companion = second;
     }
     if (path != g_flameStreamPath) {
         if (path.empty()) {
@@ -5398,8 +5447,9 @@ void UpdateFlameStreamLook(double now) {
         }
     }
     g_flameStreamPath = path;
+    g_flameStreamCompanion = companion;
     g_flameStreamElement = element;
-    SetFlameStream(path.empty() ? 0 : g_flameUnit, path);
+    SetFlameStream(path.empty() ? 0 : g_flameUnit, path, companion);
 }
 
 // A flamethrower hit's multiplier on `enemy` (the core's, as for the game's own flame hits).
@@ -9370,6 +9420,7 @@ void ModInit(const Paths& paths, const Settings& settings) {
     g = new ModState();
     g->paths = paths;
     g->settings = settings;
+    if (settings.customEffects) effectspack::Start(paths);
 
     auto loaded = rm::Content::LoadFromDirectory(paths.configDir);
     icons::SetDirectory(paths.configDir / L"icons");

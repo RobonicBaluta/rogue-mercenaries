@@ -243,6 +243,15 @@ in it. A Shock flamethrower fires sparks (the stun rod's) instead of a flame: ev
 damage a second, scaled like the flamethrower's hits, and is stunned. The other elements still fire the flame until
 an effect is picked for them.
 
+**The mod's own effects.** The elements are colour coded with effects the mod makes from the game's own: the
+flamethrower's flame recoloured cyan for Cryo, green for Toxic and violet for Shock, and its small flame in those
+colours (orange for fire) on the enemies an element reaches; Shock's hits keep the stun rod's sparks. A Cryo, Toxic or
+Shock flamethrower fires its coloured flame instead of the fire one, and what it reaches takes that element (frozen,
+poisoned, stunned) instead of catching fire, 300 damage a second within 5 m ahead, scaled like its hits. The mod
+builds them at start from your own game files (`uWp21.arc`, `coreEff.arc`, read only) into
+`%LOCALAPPDATA%\RogueMercenaries\generated\rmEffects.arc` (about 17 MB), and a run's loads bring it. Nothing of the
+game's is changed. `"custom_effects": false` in `adapter.json` turns them off (the game's own looks only).
+
 **Picking the elements' looks (the effect gallery).** In an arena, press **Numpad \*** to turn the gallery on or
 off. Every 3 seconds the next effect in memory plays on the nearest enemy, its name at the top of the screen.
 **Numpad +** and **Numpad -** step to the next or the previous one at once, **Numpad 0** holds the one shown (it plays

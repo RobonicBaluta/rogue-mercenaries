@@ -63,7 +63,7 @@ set(RM_RE5_SOURCES
     dinput8.def)
 
 if(TARGET rm_core AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/src/mod.cpp)
-    list(APPEND RM_RE5_SOURCES src/mod.cpp)
+    list(APPEND RM_RE5_SOURCES src/mod.cpp src/effects_pack.cpp)
     set(RM_RE5_WITH_CORE ON)
 else()
     list(APPEND RM_RE5_SOURCES src/mod_diag.cpp)

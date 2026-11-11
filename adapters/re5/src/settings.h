@@ -95,20 +95,33 @@ struct Settings {
     // The elements' looks (2026-11-11): an effect list started on each enemy an element's proc
     // reaches, by proc kind ("burn", "ignite_around", "poison", "poison_cloud", "freeze", "shock",
     // "arc", "explode", "shatter"; "<kind>_evolved" for an evolved element's own), played only when
-    // the list is in memory (engine::PlayEffect). The defaults are the stun rod's and the
-    // flamethrower's own lists, so they play only when those guns are in the match.
+    // the list is in memory (engine::PlayEffect); "a|b": the first of them in memory. The defaults
+    // are colour coded (the mod's own effects, rm/effects.h: the flamethrower's small flame orange
+    // for fire, cyan for Cryo, green for Toxic; the stun rod's sparks for Shock), each with the
+    // game's own list after it.
     std::map<std::string, std::string> elementEffects = {
-        {"shock", "effect\\efl\\wp\\wp22\\wp2200"},
-        {"arc", "effect\\efl\\wp\\wp22\\wp2200"},
-        {"burn", "effect\\efl\\wp\\wp21\\wp2103"},
-        {"ignite_around", "effect\\efl\\wp\\wp21\\wp2103"},
+        {"shock", "effect\\efl\\wp\\wp22\\wp2200|effect\\efl\\wp\\wp21\\wp21e3"},
+        {"arc", "effect\\efl\\wp\\wp22\\wp2200|effect\\efl\\wp\\wp21\\wp21e3"},
+        {"burn", "effect\\efl\\wp\\wp21\\wp21f3|effect\\efl\\wp\\wp21\\wp2103"},
+        {"ignite_around", "effect\\efl\\wp\\wp21\\wp21f3|effect\\efl\\wp\\wp21\\wp2103"},
+        {"freeze", "effect\\efl\\wp\\wp21\\wp21c3"},
+        {"shatter", "effect\\efl\\wp\\wp21\\wp21c3"},
+        {"poison", "effect\\efl\\wp\\wp21\\wp21d3"},
+        {"poison_cloud", "effect\\efl\\wp\\wp21\\wp21d3"},
     };
+    // The mod's own effects (rm/effects.h, effects_pack.h): <data>\\generated\\rmEffects.arc built from
+    // the game's archives at start and loaded with a run's. Off: the game's own looks only.
+    bool customEffects = true;
     // The flamethrower's stream by its own element (2026-11-11, the user: "flamethrower electric doesn't
     // do what I said, it still does flame"): the effect list it fires at its nozzle in place of its
     // flame ("shock", "cryo", "toxic", "explosive", "incendiary"; "<element>_evolved" for the evolved
-    // one's own), only when in memory. Without one, its flame. The default is the stun rod's sparks.
+    // one's own), only when in memory; "a|b": the first in memory. Without one, its flame. The
+    // defaults: its own flame recoloured (the mod's own effects: violet for Shock, cyan for Cryo,
+    // green for Toxic), Shock's falling back to the stun rod's sparks.
     std::map<std::string, std::string> flameStreams = {
-        {"shock", "effect\\efl\\wp\\wp22\\wp2200"},
+        {"shock", "effect\\efl\\wp\\wp21\\wp21e0|effect\\efl\\wp\\wp22\\wp2200"},
+        {"cryo", "effect\\efl\\wp\\wp21\\wp21c0"},
+        {"toxic", "effect\\efl\\wp\\wp21\\wp21d0"},
     };
     // The effect gallery (this, or Numpad * in an arena): every few seconds the next effect
     // list in memory plays on the nearest enemy, its name in the HUD line, to pick the elements' looks.

@@ -45,6 +45,7 @@ add_library(rm_core STATIC
     core/common/rarity.cpp
     core/common/status.cpp
     core/common/inflate.cpp
+    core/common/effects.cpp
     core/rng/rng.cpp
     core/content/content_loader.cpp
     core/characters/characters.cpp
@@ -104,6 +105,7 @@ if(RM_BUILD_TESTS)
         tests/test_supplies.cpp
         tests/test_run_map.cpp
         tests/test_inflate.cpp
+        tests/test_effects.cpp
         tests/test_builds.cpp
         tests/test_threat.cpp
         tests/test_rosters.cpp
@@ -115,24 +117,31 @@ if(RM_BUILD_TESTS)
     rm_project_warnings(rm_tests)
 
     set(RM_TEST_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/test_output)
-    foreach(tag rng content perks weapons economy shop rewards routes run persistence telemetry characters items director builds threat rosters ladder rarity)
+    foreach(tag rng content perks weapons economy shop rewards routes run persistence telemetry characters items director builds threat rosters ladder rarity fx)
         add_test(NAME rm_tests.${tag} COMMAND rm_tests "[${tag}]" --reporter compact)
     endforeach()
     # Safety net: any test without one of the tags above still runs.
     add_test(NAME rm_tests.untagged
-        COMMAND rm_tests "~[rng]~[content]~[perks]~[weapons]~[economy]~[shop]~[rewards]~[routes]~[run]~[persistence]~[telemetry]~[zip]"
+        COMMAND rm_tests "~[rng]~[content]~[perks]~[weapons]~[economy]~[shop]~[rewards]~[routes]~[run]~[persistence]~[telemetry]~[zip]~[fx]"
                 --allow-running-no-tests --reporter compact)
     # The ZIP tests also leave archives behind for an independent reader (Python zipfile).
     add_test(NAME rm_tests.zip COMMAND rm_tests "[zip]" --reporter compact)
     set_tests_properties(rm_tests.zip PROPERTIES
         ENVIRONMENT "RM_TEST_OUTPUT_DIR=${RM_TEST_OUTPUT_DIR}"
         FIXTURES_SETUP rm_zip_files)
+    set_tests_properties(rm_tests.fx PROPERTIES
+        ENVIRONMENT "RM_TEST_OUTPUT_DIR=${RM_TEST_OUTPUT_DIR}"
+        FIXTURES_SETUP rm_arc_files)
     find_package(Python3 COMPONENTS Interpreter QUIET)
     if(Python3_Interpreter_FOUND)
         add_test(NAME rm_zip_python_reader
             COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_zip.py
                     ${RM_TEST_OUTPUT_DIR}/stored.zip ${RM_TEST_OUTPUT_DIR}/diagnostics.zip)
         set_tests_properties(rm_zip_python_reader PROPERTIES FIXTURES_REQUIRED rm_zip_files)
+        # The effects archive the same way (tests/test_effects.cpp leaves it).
+        add_test(NAME rm_arc_python_reader
+            COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_arc.py ${RM_TEST_OUTPUT_DIR}/effects.arc)
+        set_tests_properties(rm_arc_python_reader PROPERTIES FIXTURES_REQUIRED rm_arc_files)
         # The shipped economy against the user's targets (guns built all the way a run pays for).
         add_test(NAME rm_economy_math COMMAND ${Python3_EXECUTABLE} -I scripts/economy_math.py --check
                  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
@@ -146,6 +155,10 @@ if(RM_BUILD_SIM)
     add_executable(rm_sim simulation/rm_sim.cpp)
     target_link_libraries(rm_sim PRIVATE rm_core rm_json)
     rm_project_warnings(rm_sim)
+    # The mod's effects archive from a game's archives, as the adapter builds it (to check by hand).
+    add_executable(rm_fxgen tools/fxgen.cpp)
+    target_link_libraries(rm_fxgen PRIVATE rm_core)
+    rm_project_warnings(rm_fxgen)
 endif()
 
 # --- RE5 adapter (x86 only; maintained separately) -------------------------------------------

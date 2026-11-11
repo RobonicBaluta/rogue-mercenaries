@@ -145,10 +145,11 @@ void SetBossTakesGunfire(std::uintptr_t unit);
 /// death camera that ends the match (2026-11-09: a chainsaw killed Josh's Sheva, game over).
 void SetPartnerUnit(std::uintptr_t unit);
 /// The local player's flamethrower (its uWp21 `unit`) fires `path`'s effect list at its nozzle in
-/// place of its flame, whose hits go with it (the flame's hits are its particles'); unit 0 or an
-/// empty path: the game's own flame (2026-11-11, the user: "flamethrower electric doesn't do what I
-/// said, it still does flame").
-void SetFlameStream(std::uintptr_t unit, const std::string& path);
+/// place of its flame (and `companion`'s, when not empty, in place of the flame's second list),
+/// whose hits go with it (the flame's hits are its particles'); unit 0 or an empty path: the game's
+/// own flame (2026-11-11, the user: "flamethrower electric doesn't do what I said, it still does
+/// flame").
+void SetFlameStream(std::uintptr_t unit, const std::string& path, const std::string& companion = {});
 /// GetTickCount of that flamethrower's last fire with the look in place of its flame (0: none).
 unsigned long FlameStreamFiredAt();
 /// While `firing`, keeps the look going at the nozzle (started again every so often); else stops it.
