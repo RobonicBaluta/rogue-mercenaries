@@ -107,7 +107,7 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.hitAttacker = SignatureOk("hit_get_attacker");
     g_caps.gameWork = SignatureOk("merc_add_time") && SignatureOk("merc_timer_store");
     g_caps.mercCountdown = g_caps.gameWork && SignatureOk("merc_update_countdown");
-    g_caps.mercIntro = g_caps.gameWork && SignatureOk("merc_match_update");
+    g_caps.mercIntro = SignatureOk("merc_start_state");
     g_caps.playMenu = SignatureOk("playmenu_move") && SignatureOk("playmenu_extra_content") && SignatureOk("smessage_load") && SignatureOk("playmenu_decide_mask") &&
                       SignatureOk("playmenu_cursor_count") && SignatureOk("playmenu_label_table") &&
                       SignatureOk("menu_input") && SignatureOk("smessage_get_dti") &&

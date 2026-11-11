@@ -197,13 +197,19 @@ constexpr std::uintptr_t kFnMercAddTime = 0x00718050;     // void ?::MercAddTime
 // time-up state [this+0x4D4] = 1 at zero (or at the 150/400 kill cap) and
 // mirrors the value into game work +0x680. Called once per frame in a match.
 constexpr std::uintptr_t kFnMercUpdateCountdown = 0x00717850;
-// The Mercenaries match's update (static analysis 2026-11-11; called by the match's state machine
-// 0x00724A20, `this` the match object in ECX): while game work's phase (+0x67C) is 0, the intro, it
-// locks every player's controls (0x007E63C0(1)) and counts the intro's timer (+0x4BC, set at the
-// match's setup 0x007173B0) down; at zero it sets phase 1, unlocks them and the countdown begins
-// (kFnMercUpdateCountdown runs from then on). The intro's HUD (uIdMerce00, vtable 0x00FA6C84, its
-// move 0x00A1E650) follows the phase. A run skips the intro (hooks_merc.cpp).
-constexpr std::uintptr_t kFnMercMatchUpdate = 0x007245D0;
+// The Mercenaries start, the game's main state 6 (static analysis 2026-11-11): aGame's dispatcher
+// 0x00725E80 calls it while aGame's state byte (+4) is 6, aGame in ECX. State 1's step 1 sends a
+// Mercenaries match (game work mode 1, 2 or 5) here. It locks every player's controls each frame
+// (0x007E63C0(1)); its step (aGame +5) 0x0A sets the match up and fades in, 0x0C starts the intro's
+// next camera shot (0x00717640, an event from the table 0x010CA908: four variants of three shots,
+// 40..47, each ended by -1), 0x0D waits for it, a pad's press (the skip mask [0x01249C1C]+0x186C,
+// 0x00785E40) going to 0x14, and 0x0E waits 0.1 s and goes back to 0x0C. A -1 in the table goes to
+// 0x14 too: fade out (0.25 s), the event's state cleared (0x007D8350), the match's resources (steps
+// 0x1E, 0x1F), then 0x20 sets main state 2, the match. A run's match goes from 0x0C to 0x14, the
+// table's end, so no shot plays (hooks_merc.cpp). The match update's own intro (0x007245D0: game
+// work phase 0 counts its +0x4BC down) is not it: alpha.16 set that timer to 0 whenever it read
+// more, never logged it (adapter.log 2026-11-11 13:31), and the intro played its 10 s all the same.
+constexpr std::uintptr_t kFnMercStartState = 0x0071F840;
 // cMercs::AddTime(this, int seconds) (Ghidra FUN_0071CBF0): every countdown bonus (combo
 // +5 s, time-bonus pickups) goes through it.
 constexpr std::uintptr_t kFnMercAddCountdown = 0x0071CBF0;
@@ -642,7 +648,11 @@ constexpr std::size_t kGameFlowItemBox = 0x1840;  // [kGameFlow]: the open Organ
 // Mercenaries match object (`this` of kFnMercUpdateCountdown)
 constexpr std::size_t kMercCountdown = 0x4DC;  // float seconds remaining (authoritative)
 constexpr std::size_t kMercState = 0x4D4;      // int32: 0 running, 1 time up / finished
-constexpr std::size_t kMercIntroTimer = 0x4BC;  // float seconds of the intro left (game work phase 0)
+// aGame (the game's main state machine, addr::kFnMercStartState)
+constexpr std::size_t kGameStateStep = 0x05;      // uint8, the main state's step
+constexpr std::uint8_t kMercStartShot = 0x0C;     // kFnMercStartState: the intro's next camera shot
+constexpr std::uint8_t kMercStartShotWait = 0x0D; // ... its shot playing (a pad's press skips)
+constexpr std::uint8_t kMercStartEnd = 0x14;      // ... the intro over: fade out, then the match
 // Play menu (uIdStartUp01: CONTINUAR ... CONTENIDO EXTRA)
 constexpr std::size_t kMenuState = 0x14;       // uint8 state machine; 2 = waiting for input
 // uIdMerceEd00: set once its option list has run (state 10 the second time); its option
@@ -771,11 +781,10 @@ inline constexpr Signature kSignatures[] = {
     {"hit_get_attacker", addr::kFnHitGetAttacker, "56 57 8B F9 8B 77 20"},
     // MercAddTime reads [kGameRoot]+kGameWork and adds to +kMercTimer.
     {"merc_add_time", addr::kFnMercAddTime, "A1 A4 40 23 01 56 8B 74 24 08 57 8B F9 8B 88 2C 04 01 00"},
-    // `push ecx; mov eax, [dt]; movss xmm0, [eax+0x28]; mov eax, [kGameRoot]; push edi; mov edi, ecx;
-    // mov ecx, [eax+0x1042C]; cmp [ecx+0x67C], 0; ...; jnz; mov ecx, [sPlayer]; push 1; call lock;
-    // movss xmm0, [edi+0x4BC]`.
-    {"merc_match_update", addr::kFnMercMatchUpdate,
-     "51 A1 9C 20 1B 01 F3 0F 10 40 28 A1 A4 40 23 01 57 8B F9 8B 88 2C 04 01 00 83 B9 7C 06 00 00 00 F3 0F 11 44 24 04 75 55 8B 0D DC 27 1B 01 6A 01 E8 BB 1D 0C 00 F3 0F 10 87 BC 04 00 00"},
+    // `push ecx; push esi; mov esi, ecx; mov ecx, [sPlayer]; push 1; call lock; mov al, [esi+5];
+    // movzx ecx, al; cmp ecx, 0x20; ja`: the step's switch.
+    {"merc_start_state", addr::kFnMercStartState,
+     "51 56 8B F1 8B 0D DC 27 1B 01 6A 01 E8 6F 6B 0C 00 8A 46 05 0F B6 C8 83 F9 20 0F 87 A7 04 00 00"},
     {"merc_timer_store", 0x007180E6, "F3 0F 11 89 80 06 00 00"},
     {"merc_update_countdown", addr::kFnMercUpdateCountdown,
      "A1 A4 40 23 01 8B 80 2C 04 01 00 57 8B F9 8B 88 74 05 00 00 3B 88 78 05 00 00"},

@@ -2584,8 +2584,13 @@ constexpr double kRefuelPerSecond = 2.5;  // empty to full in 40 s
 // in hand (its update, 0x00BA4FF0; user playtest 2026-11-08: "it shows the model on the character at
 // all times, even when it has some other weapon on"). Out of hand its model is scaled down to
 // nothing, in hand back to its own size: uCoord's scale (re5::off::kUnitScale), written only where
-// it reads as the unit's own (1, 1, 1) or as the mod left it, and again if the game sets it back.
+// it reads as the unit's own (the same on all three axes, kOwnScaleMin..kOwnScaleMax) or as the mod
+// left it, and again if the game sets it back. Its own size is the character's: 1 on Chris, 0.85 on
+// Sheva (adapter.log 2026-11-11, every unit on Sheva; the mod took only 1 then and left hers in
+// sight, the user: "flamethrower still has it on hand when not having it equpied").
 constexpr float kHiddenScale = 0.001f;
+constexpr float kOwnScaleMin = 0.25f;
+constexpr float kOwnScaleMax = 4.0f;
 
 std::uintptr_t EquippedGunSlot();
 
@@ -2593,12 +2598,14 @@ void HideHolsteredFlamethrower(double now) {
     static std::uintptr_t unit = 0;
     static double lastScan = -10.0;
     static bool refused = false;
+    static float own = 0.0f;    // its scale in hand, as the game set it (0: not seen yet)
     static int lastState = -1;  // logged: 0 shown, 1 hidden
     static int rewrites = 0;
     const auto player = engine::LocalPlayer();
     if (!player || !g->match.inMatch) {
         unit = 0;
         refused = false;
+        own = 0.0f;
         lastState = -1;
         rewrites = 0;
         return;
@@ -2610,7 +2617,13 @@ void HideHolsteredFlamethrower(double now) {
             const auto p = ReadOr<std::uintptr_t>(player + off, 0);
             if (p < 0x00400000 || p > 0x7FFF0000 || (p & 3)) continue;
             if (ReadOr<std::uintptr_t>(p, 0) == re5::addr::kVtableWp21) {
-                if (p != unit) RM_LOGI("flamethrower: its unit %08X (player +%zX)", static_cast<unsigned>(p), off);
+                if (p != unit) {
+                    RM_LOGI("flamethrower: its unit %08X (player +%zX)", static_cast<unsigned>(p), off);
+                    refused = false;
+                    own = 0.0f;
+                    lastState = -1;
+                    rewrites = 0;
+                }
                 unit = p;
                 break;
             }
@@ -2624,23 +2637,31 @@ void HideHolsteredFlamethrower(double now) {
     }
     const std::uintptr_t slot = EquippedGunSlot();
     const bool hide = !(slot && ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) == kItemFlamethrower);
-    const float want = hide ? kHiddenScale : 1.0f;
-    const float other = hide ? 1.0f : kHiddenScale;
     float scale[3];
     for (int k = 0; k < 3; ++k) scale[k] = ReadOr<float>(unit + re5::off::kUnitScale + k * 4, -1.0f);
-    const auto reads = [](const float v[3], float x) {
-        return std::fabs(v[0] - x) < 0.0005f && std::fabs(v[1] - x) < 0.0005f && std::fabs(v[2] - x) < 0.0005f;
-    };
-    if (reads(scale, want)) {
-        lastState = hide ? 1 : 0;  // as wanted (the game sets 1 again itself when it is equipped)
-        return;
-    }
-    if (!reads(scale, other)) {
+    const bool uniform = std::fabs(scale[0] - scale[1]) < 0.0005f && std::fabs(scale[0] - scale[2]) < 0.0005f;
+    const bool hidden = uniform && std::fabs(scale[0] - kHiddenScale) < 0.0005f;
+    if (!uniform || (!hidden && (scale[0] < kOwnScaleMin || scale[0] > kOwnScaleMax))) {
         refused = true;  // not a scale this layout expects: left as it is
         RM_LOGW("flamethrower: its unit %08X reads %.4f %.4f %.4f at +0x50, not its scale; its model is left as it is",
                 static_cast<unsigned>(unit), scale[0], scale[1], scale[2]);
         return;
     }
+    if (!hidden && std::fabs(scale[0] - own) >= 0.0005f) {
+        RM_LOGI("flamethrower: its own scale %.3f", scale[0]);
+        own = scale[0];  // the game's (the character's), first seen or set again
+    }
+    if (hidden == hide) {
+        lastState = hide ? 1 : 0;  // as wanted (the game sets its own scale again itself when it is equipped)
+        return;
+    }
+    if (!hide && own <= 0.0f) {
+        refused = true;  // hidden, not by the mod: left as it is
+        RM_LOGW("flamethrower: its unit %08X was hidden before its own scale was seen; its model is left as it is",
+                static_cast<unsigned>(unit));
+        return;
+    }
+    const float want = hide ? kHiddenScale : own;
     for (int k = 0; k < 3; ++k) SafeStore<float>(unit + re5::off::kUnitScale + k * 4, want);
     if (lastState == (hide ? 1 : 0)) {
         if (++rewrites == 30) RM_LOGW("flamethrower: the game keeps setting its scale back; written again each frame");
@@ -3250,7 +3271,10 @@ void TryBeginArena(double now) {
 // sees no key or button (hooks_input; the sticks and the mouse's movement still reach it), so no gun
 // of the game's own loadout is switched to and the inventory is not opened before the run's is in.
 // At most kInventoryHoldSeconds a match, should the layout never come (a run for another character,
-// a stage change that failed).
+// a stage change that failed). Not while the match's intro plays (MercIntroPlaying; the game locks
+// the controls then): a press skips it, the game's own way, should the run's skip not have ended it
+// (2026-11-11, the user: "announcer sitll plays and you can't skip it yet"); the seconds count from
+// its end.
 constexpr double kInventoryHoldSeconds = 10.0;
 std::atomic<bool> g_holdButtons{false};
 
@@ -3269,19 +3293,22 @@ void UpdateInventoryHold(double now) {
     static double since = 0.0;
     static bool expired = false;
     bool hold = InventoryPending();
+    const bool intro = MercIntroPlaying();
     if (hold && generation != g->matchGeneration) {
         generation = g->matchGeneration;
         since = now;
         expired = false;
     }
+    if (intro) since = now;
     if (hold && !expired && now - since > kInventoryHoldSeconds) {
         RM_LOGW("inventory: no layout %.0f s into the match; keys and buttons go back to the game", kInventoryHoldSeconds);
         expired = true;
     }
-    hold = hold && !expired;
+    hold = hold && !expired && !intro;
     if (hold != g_holdButtons.load()) {
         g_holdButtons = hold;
-        RM_LOGI("inventory: keys and buttons %s (match %d, %.1f s in)", hold ? "held until the layout" : "back to the game",
+        RM_LOGI("inventory: keys and buttons %s (match %d, %.1f s in)",
+                hold ? "held until the layout" : intro ? "with the game (the intro plays)" : "back to the game",
                 g->matchGeneration, now - since);
     }
 }

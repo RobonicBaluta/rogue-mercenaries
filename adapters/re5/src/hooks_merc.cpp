@@ -34,27 +34,27 @@ std::atomic<float> g_floor{-1.0f};
 std::atomic<bool> g_endRequested{false};
 std::atomic<bool> g_hideHud{false};
 
-using MatchUpdateFn = void(__fastcall*)(std::uintptr_t self, void* edx);
-MatchUpdateFn g_origMatchUpdate = nullptr;
+using StartStateFn = void(__fastcall*)(std::uintptr_t self, void* edx);
+StartStateFn g_origStartState = nullptr;
 std::atomic<bool> g_skipIntro{false};
+std::atomic<DWORD> g_introSeen{0};
 
-// The match's intro (the announcer, every player's controls locked) is game work's phase 0, as long
-// as the match object's intro timer. A run ends it at once (the user, 2026-11-11: "announcer at the
-// start of the arena, you can't do much ... remove it completely"; the run's keys-and-buttons hold
-// had made it unskippable): the timer goes to 0 before the game's own update, which then starts the
-// match its own way (phase 1, controls back, the countdown).
-void __fastcall MatchUpdateDetour(std::uintptr_t self, void* edx) {
-    if (g_skipIntro.load() && self) {
-        const auto work = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
-        std::int32_t phase = -1;
-        float left = 0.0f;
-        if (work && SafeRead(work + re5::off::kGameWorkMercPhase, phase) && phase == 0 &&
-            SafeRead(self + re5::off::kMercIntroTimer, left) && left > 0.0f) {
-            SafeStore(self + re5::off::kMercIntroTimer, 0.0f);
-            RM_LOGI("mercenaries: the intro skipped (%.1f s of it left)", left);
-        }
+// The match's intro (its camera shots, every player's controls locked) is the game's main state 6,
+// re5::addr::kFnMercStartState. A run's match does not play it (the user, 2026-11-11: "announcer at
+// the start of the arena, you can't do much ... remove it completely"; the run's keys-and-buttons
+// hold had made it unskippable): at the step that starts the next shot (or waits for one, where a
+// pad's press would skip) the step becomes the intro's end, the way the game goes there itself when
+// its shot table ends, before the game's own handler runs. Fade out, the match's resources and the
+// match follow, the game's own steps.
+void __fastcall StartStateDetour(std::uintptr_t self, void* edx) {
+    g_introSeen = GetTickCount();
+    std::uint8_t step = 0;
+    if (g_skipIntro.load() && self && SafeRead(self + re5::off::kGameStateStep, step) &&
+        (step == re5::off::kMercStartShot || step == re5::off::kMercStartShotWait) &&
+        SafeStore<std::uint8_t>(self + re5::off::kGameStateStep, re5::off::kMercStartEnd)) {
+        RM_LOGI("mercenaries: the intro skipped (step %02X to %02X)", step, re5::off::kMercStartEnd);
     }
-    g_origMatchUpdate(self, edx);
+    g_origStartState(self, edx);
 }
 
 void __fastcall UpdateCountdownDetour(std::uintptr_t self, void*, float dt) {
@@ -225,6 +225,10 @@ void RequestMercMatchEnd() { g_endRequested = true; }
 void ClearMercMatchEnd() { g_endRequested = false; }
 
 void SkipMercIntro(bool skip) { g_skipIntro = skip; }
+bool MercIntroPlaying() {
+    const DWORD seen = g_introSeen.load();
+    return seen != 0 && GetTickCount() - seen < 300;
+}
 
 MercTimerView ReadMercTimer() {
     MercTimerView view;
@@ -254,16 +258,16 @@ bool InstallMercHooks() {
     }
     RM_LOGI("hook cMercs::UpdateCountdown at 0x%08X queued", static_cast<unsigned>(re5::addr::kFnMercUpdateCountdown));
     if (engine::Caps().mercIntro) {
-        auto* update = reinterpret_cast<void*>(re5::addr::kFnMercMatchUpdate);
-        MH_STATUS s = MH_CreateHook(update, reinterpret_cast<void*>(&MatchUpdateDetour), reinterpret_cast<void**>(&g_origMatchUpdate));
-        if (s == MH_OK) s = MH_QueueEnableHook(update);
+        auto* start = reinterpret_cast<void*>(re5::addr::kFnMercStartState);
+        MH_STATUS s = MH_CreateHook(start, reinterpret_cast<void*>(&StartStateDetour), reinterpret_cast<void**>(&g_origStartState));
+        if (s == MH_OK) s = MH_QueueEnableHook(start);
         if (s == MH_OK) {
-            RM_LOGI("hook the Mercenaries match update at 0x%08X queued (a run skips the intro)", static_cast<unsigned>(re5::addr::kFnMercMatchUpdate));
+            RM_LOGI("hook the Mercenaries start at 0x%08X queued (a run skips the intro)", static_cast<unsigned>(re5::addr::kFnMercStartState));
         } else {
-            RM_LOGE("hook the Mercenaries match update failed: %s; the intro plays", MH_StatusToString(s));
+            RM_LOGE("hook the Mercenaries start failed: %s; the intro plays", MH_StatusToString(s));
         }
     } else {
-        RM_LOGW("the Mercenaries match update's signature is missing; the intro plays");
+        RM_LOGW("the Mercenaries start's signature is missing; the intro plays");
     }
     if (engine::Caps().timeBonus) {
         auto* addTime = reinterpret_cast<void*>(re5::addr::kFnMercAddCountdown);

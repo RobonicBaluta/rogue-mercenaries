@@ -42,7 +42,7 @@ struct Verified {
     bool hitAttacker = false;
     bool gameWork = false;   // mode/stage/merc timer layout
     bool mercCountdown = false;
-    bool mercIntro = false;      // the match's intro can be skipped (its update, kFnMercMatchUpdate)
+    bool mercIntro = false;      // the match's intro can be skipped (main state 6, kFnMercStartState)
     bool playMenu = false;  // native "Rogue Mercenaries" entry in the Play menu
     bool setupScreens = false;  // Mercenaries setup screens (direct start)
     bool fader = false;         // the game's screen fader (black-out while the autopilot runs)
