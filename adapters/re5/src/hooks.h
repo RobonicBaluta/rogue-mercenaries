@@ -149,7 +149,10 @@ void SetPartnerUnit(std::uintptr_t unit);
 /// whose hits go with it (the flame's hits are its particles'); unit 0 or an empty path: the game's
 /// own flame (2026-11-11, the user: "flamethrower electric doesn't do what I said, it still does
 /// flame").
-void SetFlameStream(std::uintptr_t unit, const std::string& path, const std::string& companion = {});
+/// `loops`: the look keeps going by itself as the game's flame does (it is started once a pull,
+/// never again while firing); else it is started again every 0.3 s. `scale`: its size.
+void SetFlameStream(std::uintptr_t unit, const std::string& path, const std::string& companion = {}, bool loops = false,
+                    float scale = 1.0f);
 /// GetTickCount of that flamethrower's last fire with the look in place of its flame (0: none).
 unsigned long FlameStreamFiredAt();
 /// While `firing`, keeps the look going at the nozzle (started again every so often); else stops it.

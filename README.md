@@ -250,7 +250,9 @@ Shock flamethrower fires its coloured flame instead of the fire one, and what it
 poisoned, stunned) instead of catching fire, 300 damage a second within 5 m ahead, scaled like its hits. The mod
 builds them at start from your own game files (`uWp21.arc`, `coreEff.arc`, read only) into
 `%LOCALAPPDATA%\RogueMercenaries\generated\rmEffects.arc` (about 17 MB), and a run's loads bring it. Nothing of the
-game's is changed. `"custom_effects": false` in `adapter.json` turns them off (the game's own looks only).
+game's is changed. `"custom_effects": false` in `adapter.json` turns them off (the game's own looks only). The
+coloured flame is drawn at 60 percent of the fire one's size (`"flame_stream_scale"`), without the fire's second
+effect (`"flame_stream_companion": true` brings it).
 
 **Lightning.** Shock's jumps are drawn as lightning between the enemies it reaches (a chain for the evolved
 Storm), and a Shock flamethrower throws bolts from the gun to the nearest enemy in its flame. They are drawn over the

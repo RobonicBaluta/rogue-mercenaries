@@ -143,9 +143,9 @@ std::uintptr_t EffectList(const char* path, bool load);
 /// it), the game's way (re5::addr::kFnEffectCreate). Only a list already in memory plays (looked up,
 /// never loaded): false when it is not, or when effects are off.
 bool PlayEffect(const char* path, std::uintptr_t unit);
-/// As PlayEffect, at the unit's `joint` (-1 its root), and returns the effect's id for StopEffect
-/// (0: not started).
-std::uint32_t StartEffect(const char* path, std::uintptr_t unit, int joint);
+/// As PlayEffect, at the unit's `joint` (-1 its root), `scale` times its own size (the start's
+/// settings +0x10..+0x18, the effect's mScale), and returns the effect's id for StopEffect (0: not started).
+std::uint32_t StartEffect(const char* path, std::uintptr_t unit, int joint, float scale = 1.0f);
 /// Stops an effect StartEffect (or the game) started; false when it could not.
 bool StopEffect(std::uint32_t id);
 /// True when the effect list at `path` is in memory (looked up, never loaded).

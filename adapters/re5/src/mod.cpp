@@ -5431,6 +5431,7 @@ constexpr double kStreamDps = 300.0;
 constexpr double kStreamHitEvery = 0.2;
 std::string g_flameStreamPath;           // the look in place of the flame now ("" the flame)
 std::string g_flameStreamCompanion;      // with it in place of the flame's second list (the mod's own effects)
+bool g_flameStreamLoops = false;         // a recoloured flame: it keeps going by itself
 rm::Element g_flameStreamElement = rm::Element::Incendiary;
 
 // The run's flamethrower's own element with a look in settings flame_streams that is in memory
@@ -5439,7 +5440,8 @@ void UpdateFlameStreamLook(double now) {
     static double next = 0.0;
     if (now < next || g_flameUnit == 0 || !g->match.inMatch) {
         // The unit as it is now, every tick (a new match's flamethrower is another unit).
-        SetFlameStream(g_flameStreamPath.empty() || !g->match.inMatch ? 0 : g_flameUnit, g_flameStreamPath, g_flameStreamCompanion);
+        SetFlameStream(g_flameStreamPath.empty() || !g->match.inMatch ? 0 : g_flameUnit, g_flameStreamPath, g_flameStreamCompanion,
+                       g_flameStreamLoops, g_flameStreamLoops ? g->settings.flameStreamScale : 1.0f);
         if (now < next) return;
     }
     next = now + 1.0;
@@ -5465,12 +5467,15 @@ void UpdateFlameStreamLook(double now) {
             if (!path.empty()) break;
         }
     }
-    // The mod's recoloured stream comes with its recoloured second list, as the game's flame with wp2104.
+    // The mod's recoloured stream keeps going as the game's flame does; its recoloured second list
+    // (as the game's flame with wp2104) only with settings flame_stream_companion.
     std::string companion;
+    bool loops = false;
     for (const rm::fx::FlameLook& look : rm::fx::kFlameLooks) {
         if (!look.stream || path != rm::fx::FlameEffectPath(look.code, 0)) continue;
+        loops = true;
         const std::string second = rm::fx::FlameEffectPath(look.code, 4);
-        if (engine::EffectInMemory(second.c_str())) companion = second;
+        if (g->settings.flameStreamCompanion && engine::EffectInMemory(second.c_str())) companion = second;
     }
     if (path != g_flameStreamPath) {
         if (path.empty()) {
@@ -5481,8 +5486,9 @@ void UpdateFlameStreamLook(double now) {
     }
     g_flameStreamPath = path;
     g_flameStreamCompanion = companion;
+    g_flameStreamLoops = loops;
     g_flameStreamElement = element;
-    SetFlameStream(path.empty() ? 0 : g_flameUnit, path, companion);
+    SetFlameStream(path.empty() ? 0 : g_flameUnit, path, companion, loops, loops ? g->settings.flameStreamScale : 1.0f);
 }
 
 // A flamethrower hit's multiplier on `enemy` (the core's, as for the game's own flame hits).

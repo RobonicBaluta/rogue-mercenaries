@@ -121,6 +121,11 @@ struct Settings {
     // one's own), only when in memory; "a|b": the first in memory. Without one, its flame. The
     // defaults: its own flame recoloured (the mod's own effects: violet for Shock, cyan for Cryo,
     // green for Toxic), Shock's falling back to the stun rod's sparks.
+    // The recoloured stream's size (its effect's scale) and whether the flame's second list (wp2104's
+    // copy: a light or a glow) comes with it (2026-11-11, the user: "can you make the particles way
+    // lesser?").
+    float flameStreamScale = 0.6f;
+    bool flameStreamCompanion = false;
     std::map<std::string, std::string> flameStreams = {
         {"shock", "effect\\efl\\wp\\wp21\\wp21e0|effect\\efl\\wp\\wp22\\wp2200"},
         {"cryo", "effect\\efl\\wp\\wp21\\wp21c0"},

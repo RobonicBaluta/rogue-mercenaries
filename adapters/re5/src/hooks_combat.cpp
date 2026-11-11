@@ -272,6 +272,8 @@ Wp21FireFn g_origWp21Fire = nullptr;
 std::mutex g_streamMutex;
 std::uintptr_t g_streamUnit = 0;
 std::string g_streamPath, g_streamCompanion;
+bool g_streamLoops = false;
+float g_streamScale = 1.0f;
 std::uint32_t g_streamEffect = 0;     // the look the mod started at the nozzle (0: none)
 std::uint32_t g_companionEffect = 0;  // and its companion's
 DWORD g_streamEffectAt = 0;
@@ -294,8 +296,8 @@ void RefreshStreamLookLocked(std::uintptr_t unit, bool force) {
     const DWORD now = GetTickCount();
     if (!force && g_streamEffect != 0 && now - g_streamEffectAt < kStreamLookRestartMs) return;
     StopStreamLookLocked();
-    g_streamEffect = engine::StartEffect(g_streamPath.c_str(), unit, 0);
-    if (!g_streamCompanion.empty()) g_companionEffect = engine::StartEffect(g_streamCompanion.c_str(), unit, 0);
+    g_streamEffect = engine::StartEffect(g_streamPath.c_str(), unit, 0, g_streamScale);
+    if (!g_streamCompanion.empty()) g_companionEffect = engine::StartEffect(g_streamCompanion.c_str(), unit, 0, g_streamScale);
     g_streamEffectAt = now;
 }
 
@@ -384,13 +386,18 @@ bool InstallCombatHooks() {
     return ok;
 }
 
-void SetFlameStream(std::uintptr_t unit, const std::string& path, const std::string& companion) {
+void SetFlameStream(std::uintptr_t unit, const std::string& path, const std::string& companion, bool loops, float scale) {
     std::lock_guard lock(g_streamMutex);
-    if (unit == g_streamUnit && path == g_streamPath && companion == g_streamCompanion) return;
+    if (unit == g_streamUnit && path == g_streamPath && companion == g_streamCompanion && loops == g_streamLoops &&
+        scale == g_streamScale) {
+        return;
+    }
     StopStreamLookLocked();
     g_streamUnit = path.empty() ? 0 : unit;
     g_streamPath = g_streamUnit != 0 ? path : std::string();
     g_streamCompanion = g_streamUnit != 0 ? companion : std::string();
+    g_streamLoops = loops;
+    g_streamScale = scale;
     g_streamFiredAt = 0;
     g_streamFireLogs = 0;
 }
@@ -401,6 +408,14 @@ void KeepFlameStreamLook(bool firing) {
     std::lock_guard lock(g_streamMutex);
     if (!firing || g_streamUnit == 0 || g_streamPath.empty()) {
         StopStreamLookLocked();
+        return;
+    }
+    // A look that keeps going (a recoloured flame) is started by the pull's fire and left alone while
+    // firing (2026-11-11: started again every 0.3 s, its opening burst flashed the whole screen; the
+    // user: "can you make the particles way lesser? the whole screen flashes"). Only when there was
+    // no fire (the look set while firing) is one started.
+    if (g_streamLoops) {
+        if (g_streamEffect == 0) RefreshStreamLookLocked(g_streamUnit, true);
         return;
     }
     if (GetTickCount() - g_streamFiredAt.load() < kStreamLookRestartMs) return;  // its fires start it again

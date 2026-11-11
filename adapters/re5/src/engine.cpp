@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <map>
 #include <mutex>
@@ -656,10 +657,11 @@ namespace {
 using EffectCreateFn = std::uint32_t(__thiscall*)(std::uintptr_t manager, std::uintptr_t list, std::uintptr_t unit, int joint,
                                                   std::uintptr_t offset, int mode, std::uintptr_t settings, int group);
 
-bool CallEffectCreate(std::uintptr_t manager, std::uintptr_t list, std::uintptr_t unit, int joint, int group, std::uint32_t& id) {
+bool CallEffectCreate(std::uintptr_t manager, std::uintptr_t list, std::uintptr_t unit, int joint, int group, std::uintptr_t settings,
+                      std::uint32_t& id) {
     __try {
         id = reinterpret_cast<EffectCreateFn>(re5::addr::kFnEffectCreate)(manager, list, unit, joint, re5::addr::kEffectOffsetZero, 4,
-                                                                         re5::addr::kEffectSettingsDefault, group);
+                                                                         settings, group);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
@@ -677,7 +679,7 @@ bool CallEffectStop(std::uintptr_t manager, std::uint32_t id) {
 
 }  // namespace
 
-std::uint32_t StartEffect(const char* path, std::uintptr_t unit, int joint) {
+std::uint32_t StartEffect(const char* path, std::uintptr_t unit, int joint, float scale) {
     if (!g_caps.effects || !path || !*path || !unit) return 0;
     const auto manager = ReadOr<std::uintptr_t>(re5::addr::kEffectManager, 0);
     if (!manager) return 0;
@@ -686,8 +688,14 @@ std::uint32_t StartEffect(const char* path, std::uintptr_t unit, int joint) {
     // The group the game's own starters give it (0x00770650): core lists 0x12, stage ones 0x14, others 0x13.
     const std::string_view p(path);
     const int group = p.rfind("effect\\efl\\core", 0) == 0 ? 0x12 : p.rfind("effect\\efl\\stage", 0) == 0 ? 0x14 : 0x13;
+    // The game's own settings (two masks, a scale, a time rate), the scale ours when asked.
+    alignas(16) std::uint32_t settings[12] = {};
+    for (std::size_t i = 0; i < 12; ++i) settings[i] = ReadOr<std::uint32_t>(re5::addr::kEffectSettingsDefault + i * 4, 0);
+    if (scale != 1.0f && scale > 0.0f) {
+        for (std::size_t i = 4; i < 7; ++i) std::memcpy(&settings[i], &scale, 4);
+    }
     std::uint32_t id = 0;
-    const bool ok = CallEffectCreate(manager, list, unit, joint, group, id);
+    const bool ok = CallEffectCreate(manager, list, unit, joint, group, reinterpret_cast<std::uintptr_t>(settings), id);
     ReleaseResource(list);
     if (!ok) {
         RM_LOGW("effects: starting %s faulted; the elements' looks are off", path);
