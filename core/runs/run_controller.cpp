@@ -402,13 +402,26 @@ const WeaponInstance* RunController::RefineTarget(const std::optional<std::strin
     return best;
 }
 
+// A reward's and the shop's refines go to any gun that can go up, as likely (2026-11-11, the user: "in
+// my run the flamethrower never got a chance to get refinement, only upgrades": they went to the best
+// gun, so one gun took every refine); a chest's to the gun in hand (RefineTarget).
+const WeaponInstance* RunController::RandomRefineTarget(Rng& rng) const {
+    const Rarity top = MaxRefineRarity();
+    std::vector<const WeaponInstance*> open;
+    for (const WeaponInstance& w : run_.weapons) {
+        if (RarityIndex(w.rarity) < RarityIndex(top)) open.push_back(&w);
+    }
+    return open.empty() ? nullptr : open[rng.Index(open.size())];
+}
+
 void RunController::AddRefineReward(bool sure) {
     const EconomyConfig::Refine& refine = content_->economy().refine;
     if (!refine.enabled || run_.reward_offer.empty()) return;
-    const WeaponInstance* target = RefineTarget(std::nullopt);
-    if (target == nullptr) return;
+    if (RefineTarget(std::nullopt) == nullptr) return;  // no gun can go up
     const double chance = RefineChance(refine, refine.reward_chance, run_.arena_count);
     if (!sure && !(chance > 0.0 && streams_->reward.NextDouble() < chance)) return;
+    const WeaponInstance* target = RandomRefineTarget(streams_->reward);
+    if (target == nullptr) return;
     RewardChoice choice;
     choice.kind = RewardKind::Refine;
     choice.weapon = RefineWeapon(streams_->reward, *content_, caps_, *target, BuildElements());
@@ -420,11 +433,12 @@ void RunController::AddRefineReward(bool sure) {
 void RunController::AddRefineOffer() {
     const EconomyConfig::Refine& refine = content_->economy().refine;
     if (!refine.enabled) return;
-    const WeaponInstance* target = RefineTarget(std::nullopt);
     const SkinBuild& build = run_.character.build;
-    if (target == nullptr) return;
+    if (RefineTarget(std::nullopt) == nullptr) return;  // no gun can go up
     const double chance = RefineShopChance(refine, run_.length_id, run_.arena_count);
     if (!build.refine_every_shop && !(chance > 0.0 && streams_->shop.NextDouble() < chance)) return;
+    const WeaponInstance* target = RandomRefineTarget(streams_->shop);
+    if (target == nullptr) return;
     ShopOffer o;
     o.kind = ShopOfferKind::Refine;
     o.weapon = RefineWeapon(streams_->shop, *content_, caps_, *target, BuildElements());

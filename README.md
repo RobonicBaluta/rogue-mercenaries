@@ -250,8 +250,9 @@ round of a magazine kills any enemy; a boss takes triple damage), **Bloodthirst*
 health). Dragons Breath and Chain Lightning are Inferno and Storm now.
 
 **Refining** raises a gun one rarity: it keeps everything it has, its bonuses grow to the new rarity's size, and it
-gains what that rarity adds (its help line lists it). A refine is one of the reward choices now and then (about one
-arena in seven), and always after an arena rated A or S; the shop sells one now and then (40 supplies to reach
+gains what that rarity adds (its help line lists it). A reward's or the shop's refine is for any of your guns that can
+still go up, each as likely (NEW STOCK can bring another), so every gun gets its chances. A refine is one of the reward
+choices now and then (about one arena in seven), and always after an arena rated A or S; the shop sells one now and then (40 supplies to reach
 Uncommon, up to 240 for Exotic); and one chest in about sixteen refines the gun in your hands. Legendary is the top
 until you beat the Giant Uroboros: from then on a Legendary refines to Exotic (the run results say so).
 

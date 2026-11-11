@@ -496,6 +496,9 @@ public:
     /// The gun a refine goes to: `preferred` (a base id) if it can go up, else the highest tier,
     /// then level, then the newest; nullptr when none can.
     [[nodiscard]] const WeaponInstance* RefineTarget(const std::optional<std::string>& preferred) const;
+    /// The gun a reward's or the shop's refine offers to raise: any of the run's guns that can go
+    /// up a tier, each as likely (as the shop's upgrades); nullptr when none can.
+    [[nodiscard]] const WeaponInstance* RandomRefineTarget(Rng& rng) const;
 
     // ---- Director (ROADMAP M1): the adapter tells the map, the core decides the spawns.
     /// The map (engine stage) the next and current arenas are played on.

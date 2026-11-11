@@ -318,7 +318,7 @@ TEST_CASE("rarity remake: kill effects (blast, shatter, overkill, refill, heal)"
 }
 
 TEST_CASE("rarity remake: refines from the rewards, the shop and chests", "[weapons][rarity]") {
-    SECTION("an arena at the sure rating always offers a refine of the best gun") {
+    SECTION("an arena at the sure rating always offers a refine (seed 1 draws the shotgun)") {
         test::Harness h(test::Load(RemakeSources([](nlohmann::json&, nlohmann::json& economy) {
             economy["refine"]["reward_rating"] = "C";  // any rating
         })));
@@ -346,6 +346,25 @@ TEST_CASE("rarity remake: refines from the rewards, the shop and chests", "[weap
         CHECK(view.detail.find("Choose its element: ") != std::string::npos);
         // A reroll keeps the sure refine.
         REQUIRE(h.rc.state().phase == Phase::Shop);
+    }
+    SECTION("a refine is offered for any gun that can go up, not only the best") {
+        // 2026-11-11, the user: "the flamethrower never got a chance to get refinement, only
+        // upgrades": every reward refine went to the best gun.
+        std::set<std::string> offered;
+        for (std::uint64_t seed = 1; seed <= 40; ++seed) {
+            test::Harness h(test::Load(RemakeSources([](nlohmann::json&, nlohmann::json& economy) {
+                economy["refine"]["reward_rating"] = "C";  // any rating: a sure refine every arena
+            })));
+            REQUIRE(h.rc.StartRun("alpha", seed).ok());  // the common pistol
+            REQUIRE(h.rc.DevGrantWeapon(Gun("shotgun", "w_sg", Rarity::Rare)).ok());
+            REQUIRE(h.rc.DevGrantWeapon(Gun("rifle", "w_top", Rarity::Legendary)).ok());  // the top: never
+            test::ClearArena(h.rc, 0.0);
+            const RewardChoice& refine = h.rc.state().reward_offer.back();
+            REQUIRE(refine.kind == RewardKind::Refine);
+            CHECK(refine.target_instance_id != "w_top");
+            offered.insert(refine.target_instance_id);
+        }
+        CHECK(offered.size() == 2);  // the common pistol too, not only the rare shotgun
     }
     SECTION("a top-rated arena's refine can be a chance") {
         test::Harness h(test::Load(RemakeSources([](nlohmann::json&, nlohmann::json& economy) {
