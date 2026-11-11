@@ -357,6 +357,15 @@ std::vector<LadderUnlock> RunController::LadderUnlocksFor(const std::vector<std:
 
 namespace {
 
+// A per-kill amount that need not be whole: the k-th counted kill of an arena pays what takes the
+// arena's total from (k - 1) to k kills' worth, so the arena pays kills x amount (its whole part)
+// with no rounding per kill (2 x 1.75 paid 4 a kill; the user, 2026-11-11: the economy by the numbers).
+std::int64_t KillShare(double per_kill, int k) {
+    if (per_kill <= 0.0 || k <= 0) return 0;
+    constexpr double kEps = 1e-9;
+    return static_cast<std::int64_t>(std::floor(k * per_kill + kEps)) - static_cast<std::int64_t>(std::floor((k - 1) * per_kill + kEps));
+}
+
 // A refine's chance for this run: longer than the runs the odds are set for, the same odds are spread
 // over its arenas (a long run ended with three or four legendary guns, 2026-11-09).
 double RefineChance(const EconomyConfig::Refine& refine, double chance, int arena_count) {
@@ -1102,8 +1111,10 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
         }
         if (within_budget) {  // counted kills pay out (non-player ones only when the economy says so)
             const std::string kill_tx = "kill" + std::to_string(a.budget_kills);
-            const std::int64_t base = RoundAmount(static_cast<double>(eco.supplies.per_kill) * reward_mult);
-            if (CreditSupplies(ArenaTx(a.arena, kill_tx + ":base"), base, "kill")) out.supplies_awarded += base;
+            // Every per-kill amount is exact (KillShare), the build's multiplier in it.
+            const double build_mult = run_.character.build.supplies_mult * (1.0 + run_.stats.supplies);
+            const std::int64_t base = KillShare(eco.supplies.per_kill * reward_mult * build_mult, a.budget_kills);
+            if (CreditSupplies(ArenaTx(a.arena, kill_tx + ":base"), base, "kill", false)) out.supplies_awarded += base;
 
             for (const auto& [id, stacks] : run_.perks) {
                 const PerkDef* def = content_->FindPerk(id);
@@ -1118,8 +1129,8 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
                         if (ef.melee_only && !kill.was_melee.value_or(false)) continue;
                         const bool hit = p.chance >= 1.0 || streams_->loot.NextDouble() < p.chance;
                         if (!hit) continue;
-                        const std::int64_t amount = RoundAmount(p.amount);
-                        if (CreditSupplies(ArenaTx(a.arena, kill_tx + ":perk:" + id), amount, id)) {
+                        const std::int64_t amount = KillShare(p.amount * build_mult, a.budget_kills);
+                        if (CreditSupplies(ArenaTx(a.arena, kill_tx + ":perk:" + id), amount, id, false)) {
                             out.supplies_awarded += amount;
                             out.triggered.push_back(id);
                         }
@@ -1137,11 +1148,12 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
                 }
             }
             if (weapon != nullptr) {
-                std::int64_t amount = 0;
+                double per_kill = 0.0;
                 for (const Affix& af : weapon->affixes) {
-                    if (af.kind == AffixKind::SuppliesOnKill) amount += RoundAmount(af.value);
+                    if (af.kind == AffixKind::SuppliesOnKill) per_kill += af.value;
                 }
-                if (amount > 0 && CreditSupplies(ArenaTx(a.arena, kill_tx + ":weapon"), amount, weapon->instance_id)) {
+                const std::int64_t amount = KillShare(per_kill * build_mult, a.budget_kills);
+                if (amount > 0 && CreditSupplies(ArenaTx(a.arena, kill_tx + ":weapon"), amount, weapon->instance_id, false)) {
                     out.supplies_awarded += amount;
                 }
             }
@@ -1493,8 +1505,8 @@ Status RunController::ChooseReward(std::size_t index) {
         case RewardKind::Weapon: {
             const Status placed = PlaceWeaponItem(choice.weapon, "reward");
             if (!placed.ok()) {
-                // No room for the gun: its shop value in supplies instead.
-                converted_supplies = content_->economy().shop.weapon_price[RarityIndex(choice.rarity)];
+                // No room for the gun: what selling it pays (half its shop price) instead.
+                converted_supplies = content_->economy().shop.weapon_price[RarityIndex(choice.rarity)] / 2;
                 if (!CreditSupplies(ArenaTx(run_.arena_index, "reward"), converted_supplies, "reward", false)) {
                     return Fail(op, ErrorCode::GrantFailed, placed.message);
                 }
@@ -2021,7 +2033,9 @@ Result<ChestReward> RunController::OpenChest(double now, std::optional<std::stri
                 out.item_count = e->bundle;
                 placed = true;
             } else {
-                supplies += e->price * e->bundle;  // inventory full: its value instead
+                // No room: what selling it pays (half its shop price; the price is the bundle's,
+                // and paying it times the bundle made a chest of 30 rounds worth 360 supplies).
+                supplies += e->price / 2;
             }
         }
     }
@@ -2064,6 +2078,24 @@ std::vector<std::int64_t> RunController::RestockWeaponItems() const {
         if (base != nullptr && base->restocks && base->game_item >= 0) out.push_back(base->game_item);
     }
     return out;
+}
+
+std::int64_t RunController::SaleValue(std::int64_t game_item, std::int64_t count) const {
+    if (game_item < 0 || count <= 0) return 0;
+    const EconomyConfig& eco = content_->economy();
+    for (const WeaponBaseDef& base : content_->weapons()) {
+        if (base.game_item != game_item) continue;
+        Rarity rarity = Rarity::Common;
+        for (const WeaponInstance& w : run_.weapons) {
+            if (w.base_id == base.id) rarity = w.rarity;
+        }
+        return eco.shop.weapon_price[RarityIndex(rarity)] / 2;  // a gun is one, whatever its rounds
+    }
+    for (const EquipmentDef& e : content_->loadouts().equipment) {
+        if (e.game_item != game_item || e.price <= 0) continue;
+        return e.price * count / (2 * std::max<std::int64_t>(1, e.bundle));
+    }
+    return 0;
 }
 
 Status RunController::DropWeapon(std::int64_t game_item, std::string_view reason) {

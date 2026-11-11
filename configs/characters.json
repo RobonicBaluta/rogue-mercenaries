@@ -137,8 +137,8 @@
           "build": {
             "name": "Night Shopper",
             "icon": "supplies",
-            "summary": "Half again as many supplies, and one free shop reroll at every shop.",
-            "supplies_mult": 1.5,
+            "summary": "20 percent more supplies, and one free shop reroll at every shop.",
+            "supplies_mult": 1.2,
             "free_shop_rerolls": 1
           },
           "unlock_kind": "runs_completed_as",
@@ -568,7 +568,7 @@
               "crit": 0.27,
               "move_speed": 0.54,
               "heal": 0.45,
-              "supplies": 0.45
+              "supplies": 0.2
             },
             "melee_kill_gains_by_length": {
               "short": {

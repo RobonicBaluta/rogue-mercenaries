@@ -41,16 +41,19 @@ perks += [
          [{'kind': 'crit', 'chance': 0.15, 'multiplier': 2.0}], ['jill'], tags=['crit']),
     perk('wesker_firestarter', 'Firestarter', 'Wesker. Every 5 kills hand you an incendiary grenade.', 'style',
          [{'kind': 'item_on_kill', 'game_item': INCENDIARY, 'amount': 1, 'every_kills': 5}], ['wesker'], tags=['items']),
-    perk('josh_squad_tactics', 'Squad Tactics', 'Josh. Every kill gives 2 extra supplies.', 'style',
-         [{'kind': 'supplies_on_kill', 'amount': 2, 'chance': 1.0}], ['josh'], tags=['supplies']),
+    # The supply perks, 2026-11-11 (the user: a marathon should pay for 4 or 5 guns built all the way;
+    # scripts/economy_math.py): Squad Tactics 2 -> 1 a kill, Executive Bonus 25 -> 8 a clear, Hostile
+    # Takeover 15 -> 1 and Suplex 10 -> 1 a melee kill, Clean Sweep 40 -> 15 a clean clear.
+    perk('josh_squad_tactics', 'Squad Tactics', 'Josh. Every kill gives 1 extra supply.', 'style',
+         [{'kind': 'supplies_on_kill', 'amount': 1, 'chance': 1.0}], ['josh'], tags=['supplies']),
     perk('barry_demolition_man', 'Demolition Man', 'Barry. Every 5 kills hand you a grenade, and an arena clear two more.', 'style',
          [{'kind': 'item_on_kill', 'game_item': HAND, 'amount': 1, 'every_kills': 5},
           {'kind': 'item_on_arena_clear', 'game_item': HAND, 'amount': 2}], ['barry'], tags=['items']),
     perk('rebecca_combat_medic', 'Combat Medic', 'Rebecca. Each kill heals 2 percent of max health, an arena clear restocks a spray.', 'style',
          [{'kind': 'heal_on_kill', 'amount_fraction_of_max': 0.02},
           {'kind': 'item_on_arena_clear', 'game_item': SPRAY, 'amount': 1}], ['rebecca'], tags=['heal', 'items']),
-    perk('excella_executive_bonus', 'Executive Bonus', 'Excella. 25 extra supplies for every arena cleared.', 'style',
-         [{'kind': 'supplies_on_arena_clear', 'amount': 25, 'require_no_damage': False}], ['excella'], tags=['supplies']),
+    perk('excella_executive_bonus', 'Executive Bonus', 'Excella. 8 extra supplies for every arena cleared.', 'style',
+         [{'kind': 'supplies_on_arena_clear', 'amount': 8, 'require_no_damage': False}], ['excella'], tags=['supplies']),
     # Leon S. Kennedy (a mod character, 2026-11-08: Leon Definitive Edition): RE4's shoot, kick, shoot.
     perk('leon_roundhouse', 'Roundhouse', 'Leon. For 4 seconds after a melee hit his shots deal 40 percent more.', 'style',
          [{'kind': 'outgoing_damage_mult', 'value': 0.4, 'condition': {'type': 'after_melee', 'window_seconds': 4}}], ['leon'],
@@ -100,11 +103,11 @@ perks += [
          build={'pickup_as': {hex(GREEN_HERB_GROUND): hex(MIXED_HERB), hex(GREEN_HERB): hex(MIXED_HERB)}, 'heal_mult': 0.8}),
     perk('rebecca_steady_nerves', 'Steady Nerves', 'Rebecca. Rifles hit 30 percent harder, shotguns 20 percent less.', 'style',
          [], ['rebecca'], cost=120, rarity='uncommon', tags=['weapon'], build={'category_damage': {'rifle': 0.3, 'shotgun': -0.2}}),
-    perk('excella_hostile_takeover', 'Hostile Takeover', 'Excella. Every melee kill pays 15 supplies, but guns deal 15 percent less.', 'style',
-         [{'kind': 'supplies_on_kill', 'amount': 15, 'melee_only': True}], ['excella'], cost=150, rarity='rare', tags=['supplies'],
+    perk('excella_hostile_takeover', 'Hostile Takeover', 'Excella. Every melee kill pays 1 supply, but guns deal 15 percent less.', 'style',
+         [{'kind': 'supplies_on_kill', 'amount': 1, 'melee_only': True}], ['excella'], cost=150, rarity='rare', tags=['supplies'],
          build={'category_damage': {g: -0.15 for g in GUNS}}),
-    perk('leon_suplex', 'Suplex', 'Leon. Melee hits deal twice the damage, every melee kill pays 10 supplies. Rifles 25 percent less.', 'style',
-         [{'kind': 'supplies_on_kill', 'amount': 10, 'melee_only': True}], ['leon'], cost=150, rarity='rare', tags=['melee'],
+    perk('leon_suplex', 'Suplex', 'Leon. Melee hits deal twice the damage, every melee kill pays 1 supply. Rifles 25 percent less.', 'style',
+         [{'kind': 'supplies_on_kill', 'amount': 1, 'melee_only': True}], ['leon'], cost=150, rarity='rare', tags=['melee'],
          build={'melee_damage': 1.0, 'category_damage': {'rifle': -0.25}}),
     perk('leon_agent_training', 'Agent Training', 'Leon. 20 percent of his hits are critical and deal double damage. Heals 25 percent smaller.', 'style',
          [{'kind': 'crit', 'chance': 0.2, 'multiplier': 2.0}], ['leon'], cost=200, rarity='epic', tags=['crit'], build={'heal_mult': 0.75}),
@@ -140,8 +143,8 @@ perks += [
          [{'kind': 'incoming_damage_mult', 'value': -0.30, 'condition': {'type': 'player_hp_below', 'fraction': 0.35}}], cost=120, rarity='rare', tags=['defense']),
     perk('field_medic', 'Field Medic', 'Each kill heals 2 percent of max health.', 'support',
          [{'kind': 'heal_on_kill', 'amount_fraction_of_max': 0.02}], cost=100, rarity='uncommon', tags=['heal']),
-    perk('clean_sweep', 'Clean Sweep', '40 extra supplies for clearing an arena without taking damage.', 'support',
-         [{'kind': 'supplies_on_arena_clear', 'amount': 40, 'require_no_damage': True}], cost=90, rarity='uncommon', tags=['supplies']),
+    perk('clean_sweep', 'Clean Sweep', '15 extra supplies for clearing an arena without taking damage.', 'support',
+         [{'kind': 'supplies_on_arena_clear', 'amount': 15, 'require_no_damage': True}], cost=90, rarity='uncommon', tags=['supplies']),
 ]
 # ---- Skin traits: a skin's perk (granted by the skin, never listed). Skins with a build (BUILDS below,
 # ROADMAP M8) lose their old small trait; the remaining ones go as their builds land. ----
@@ -166,6 +169,10 @@ EXCELLA_STEPS = {'damage': 0.06, 'defense': 0.045, 'max_health': 0.075, 'crit': 
                  'heal': 0.075, 'supplies': 0.06}
 EXCELLA_CAPS = {'damage': 0.9, 'defense': 0.63, 'max_health': 0.9, 'crit': 0.27, 'move_speed': 0.54, 'heal': 0.45,
                 'supplies': 0.45}
+# The pace's shares come from those caps; supplies then caps at +20 percent, not +45 (2026-11-11,
+# the supply generators: an all-melee marathon of hers with her supply perks came to over 6 guns
+# built all the way, scripts/economy_math.py), so only its gains are smaller.
+EXCELLA_SUPPLIES_CAP = 0.2
 EXCELLA_FULL_AFTER = {'short': 54, 'long': 142, 'marathon': 249}
 
 
@@ -243,7 +250,7 @@ BUILDS = {
         # The steps: x1.5 (the user, 2026-11-07: 49 melee kills gave +20 percent damage, +60 percent
         # health and felt weak), now only for a run without a length; the lengths' pace above.
         'melee_kill_stats': EXCELLA_STEPS,
-        'melee_kill_caps': EXCELLA_CAPS,
+        'melee_kill_caps': {**EXCELLA_CAPS, 'supplies': EXCELLA_SUPPLIES_CAP},
         'melee_kill_gains_by_length': excella_pace(),
     },
     'chris_warrior': {
@@ -254,8 +261,8 @@ BUILDS = {
     },
     'sheva_clubbin': {
         'name': 'Night Shopper', 'icon': 'supplies',
-        'summary': 'Half again as many supplies, and one free shop reroll at every shop.',
-        'supplies_mult': 1.5, 'free_shop_rerolls': 1,
+        'summary': '20 percent more supplies, and one free shop reroll at every shop.',
+        'supplies_mult': 1.2, 'free_shop_rerolls': 1,  # 1.5 until 2026-11-11 (the economy by the numbers)
     },
     'sheva_business': {
         'name': 'Expense Account', 'icon': 'credits',

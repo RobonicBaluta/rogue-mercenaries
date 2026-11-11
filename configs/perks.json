@@ -141,7 +141,7 @@
     {
       "id": "josh_squad_tactics",
       "name": "Squad Tactics",
-      "description": "Josh. Every kill gives 2 extra supplies.",
+      "description": "Josh. Every kill gives 1 extra supply.",
       "category": "style",
       "rarity": "common",
       "tags": [
@@ -151,7 +151,7 @@
       "effects": [
         {
           "kind": "supplies_on_kill",
-          "amount": 2,
+          "amount": 1,
           "chance": 1.0
         }
       ],
@@ -218,7 +218,7 @@
     {
       "id": "excella_executive_bonus",
       "name": "Executive Bonus",
-      "description": "Excella. 25 extra supplies for every arena cleared.",
+      "description": "Excella. 8 extra supplies for every arena cleared.",
       "category": "style",
       "rarity": "common",
       "tags": [
@@ -228,7 +228,7 @@
       "effects": [
         {
           "kind": "supplies_on_arena_clear",
-          "amount": 25,
+          "amount": 8,
           "require_no_damage": false
         }
       ],
@@ -628,7 +628,7 @@
     {
       "id": "excella_hostile_takeover",
       "name": "Hostile Takeover",
-      "description": "Excella. Every melee kill pays 15 supplies, but guns deal 15 percent less.",
+      "description": "Excella. Every melee kill pays 1 supply, but guns deal 15 percent less.",
       "category": "style",
       "rarity": "rare",
       "tags": [
@@ -638,7 +638,7 @@
       "effects": [
         {
           "kind": "supplies_on_kill",
-          "amount": 15,
+          "amount": 1,
           "melee_only": true
         }
       ],
@@ -664,7 +664,7 @@
     {
       "id": "leon_suplex",
       "name": "Suplex",
-      "description": "Leon. Melee hits deal twice the damage, every melee kill pays 10 supplies. Rifles 25 percent less.",
+      "description": "Leon. Melee hits deal twice the damage, every melee kill pays 1 supply. Rifles 25 percent less.",
       "category": "style",
       "rarity": "rare",
       "tags": [
@@ -674,7 +674,7 @@
       "effects": [
         {
           "kind": "supplies_on_kill",
-          "amount": 10,
+          "amount": 1,
           "melee_only": true
         }
       ],
@@ -1179,7 +1179,7 @@
     {
       "id": "clean_sweep",
       "name": "Clean Sweep",
-      "description": "40 extra supplies for clearing an arena without taking damage.",
+      "description": "15 extra supplies for clearing an arena without taking damage.",
       "category": "support",
       "rarity": "uncommon",
       "tags": [
@@ -1189,7 +1189,7 @@
       "effects": [
         {
           "kind": "supplies_on_arena_clear",
-          "amount": 40,
+          "amount": 15,
           "require_no_damage": true
         }
       ],

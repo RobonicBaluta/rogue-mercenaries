@@ -101,6 +101,7 @@ if(RM_BUILD_TESTS)
         tests/test_gun_levels.cpp
         tests/test_unlock_all.cpp
         tests/test_held_weapons.cpp
+        tests/test_supplies.cpp
         tests/test_run_map.cpp
         tests/test_inflate.cpp
         tests/test_builds.cpp
@@ -132,6 +133,9 @@ if(RM_BUILD_TESTS)
             COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/tests/check_zip.py
                     ${RM_TEST_OUTPUT_DIR}/stored.zip ${RM_TEST_OUTPUT_DIR}/diagnostics.zip)
         set_tests_properties(rm_zip_python_reader PROPERTIES FIXTURES_REQUIRED rm_zip_files)
+        # The shipped economy against the user's targets (guns built all the way a run pays for).
+        add_test(NAME rm_economy_math COMMAND ${Python3_EXECUTABLE} -I scripts/economy_math.py --check
+                 WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     else()
         message(STATUS "Python3 not found: rm_zip_python_reader test skipped")
     endif()

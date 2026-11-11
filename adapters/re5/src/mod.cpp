@@ -1560,7 +1560,7 @@ private:
                 }
                 Item organize;
                 organize.label = "ORGANIZE INVENTORY";
-                organize.help = NativeItemBoxReady() ? "Arrange, combine and sell items in the game screen.\nBuying and upgrades stay in this SHOP."
+                organize.help = NativeItemBoxReady() ? "Arrange, combine and sell items in the game screen.\nA sale pays half the SHOP price. Buy and upgrade here."
                                                      : "Rearrange the nine cells of your item grid.";
                 if (const auto& guns = StashGuns(); !guns.empty() && NativeItemBoxReady()) {
                     organize.label += "   " + guns.back() + (guns.size() > 1 ? " +" + std::to_string(guns.size() - 1) : std::string()) +
@@ -6528,8 +6528,21 @@ struct RunInBox {
     std::vector<std::array<std::uint8_t, 12>> stash;
     std::array<std::uint32_t, kGridCells> cells{};  // the grid written
     std::vector<std::int64_t> restockBefore;  // restocking guns held when the screen opened
+    std::int64_t worth = 0;  // what the grid and the stash sold for when the screen opened (SaleWorth)
 };
 RunInBox g_runInBox;
+
+// What the records (item, count) sell for in supplies (RunController::SaleValue: half the shop price;
+// a gun once, whatever its rounds).
+std::int64_t SaleWorth(const std::vector<std::pair<std::uint32_t, int>>& records) {
+    std::int64_t total = 0;
+    for (const auto& [id, count] : records) total += g->run->SaleValue(MakeItemId(RecordItemId(id)), std::max(0, count));
+    return total;
+}
+
+void AppendStash(std::vector<std::pair<std::uint32_t, int>>& records) {
+    for (const auto& r : g_runInBox.stash) records.emplace_back(static_cast<std::uint32_t>(r[0] | (r[1] << 8)), r[2] | (r[3] << 8));
+}
 
 bool RunStashHolds(std::uint32_t recordId) {
     if (g_runInBox.runId != g->run->state().run_id) return false;
@@ -6745,8 +6758,17 @@ void PutRunInSave(std::uintptr_t save) {
         const bool inGrid = std::any_of(grid.begin(), grid.end(), [record](const GridCell& c) { return c.record && c.id == record; });
         if (inGrid || RunStashHolds(record)) g_runInBox.restockBefore.push_back(item);
     }
-    g_runInBox.gold = g->run->Snapshot(Now()).supplies * kGoldPerSupply + g_runInBox.remainder;
+    g_runInBox.remainder = 0;  // a sale pays the run's own worth (TakeRunFromSave), never part of the gold
+    g_runInBox.gold = g->run->Snapshot(Now()).supplies * kGoldPerSupply;
     SafeStore<std::uint32_t>(save + kSaveGold, static_cast<std::uint32_t>(g_runInBox.gold));
+    {
+        std::vector<std::pair<std::uint32_t, int>> records;
+        for (const GridCell& c : grid) {
+            if (c.record) records.emplace_back(c.id, c.count);
+        }
+        AppendStash(records);
+        g_runInBox.worth = SaleWorth(records);
+    }
     g_runInBox.active = true;
     std::string text;
     for (int c = 0; c < kGridCells; ++c) {
@@ -6850,16 +6872,31 @@ void TakeRunFromSave(std::uintptr_t save) {
         RM_LOGI("restock: %04X left in the screen (sold); it no longer comes back", static_cast<unsigned>(item));
     }
     g_runInBox.restockBefore.clear();
+    // A sale pays what the run's shop says the item is worth (RunController::SaleValue, half its price),
+    // never the game's gold: the game paid 11200 gold (112 supplies) for the run's free M92F, and more
+    // for a gun than the shop had asked (the user, 2026-11-11: a friend's marathon bought every gun and
+    // upgrade with supplies to spare). The pay is what the grid and the storage lost in worth, at most
+    // what the game paid, so moving or combining items pays nothing. (Before the layout clears the cells.)
+    std::vector<std::pair<std::uint32_t, int>> after;
+    for (std::size_t c = 0; c < g->transition.cells.size(); ++c) {
+        if (g->transition.cells[c] != 0) after.emplace_back(g->transition.cells[c], g->transition.counts[c]);
+    }
+    AppendStash(after);
+    const std::int64_t worth = SaleWorth(after);
     // What the match cannot take (a gun whose model is not loaded here) goes to the stash.
     ApplyCarriedInventory();
-    // Supplies follow the gold; what is short of a whole supply waits for the next visit.
     const auto gold = static_cast<std::int64_t>(ReadOr<std::uint32_t>(save + kSaveGold, 0));
-    const std::int64_t supplies = g->run->Snapshot(Now()).supplies;
-    const std::int64_t delta = gold / kGoldPerSupply - supplies;
+    std::int64_t delta = 0;
+    if (gold > g_runInBox.gold) {
+        delta = std::clamp<std::int64_t>(g_runInBox.worth - worth, 0, (gold - g_runInBox.gold) / kGoldPerSupply);
+    } else if (gold < g_runInBox.gold) {
+        delta = gold / kGoldPerSupply - g->run->Snapshot(Now()).supplies;  // spent there (its Buy and Upgrade are off)
+    }
     if (delta != 0) Report(g->run->AdjustSupplies(delta, "native_shop"), "native shop supplies");
-    g_runInBox.remainder = gold % kGoldPerSupply;
-    RM_LOGI("itembox: gold %lld -> %lld: supplies %+lld (%lld gold kept)", static_cast<long long>(g_runInBox.gold),
-            static_cast<long long>(gold), static_cast<long long>(delta), static_cast<long long>(g_runInBox.remainder));
+    RM_LOGI("itembox: gold %lld -> %lld, worth %lld -> %lld: supplies %+lld", static_cast<long long>(g_runInBox.gold),
+            static_cast<long long>(gold), static_cast<long long>(g_runInBox.worth), static_cast<long long>(worth),
+            static_cast<long long>(delta));
+    if (delta > 0) g->toasts.Push("Sold for " + std::to_string(delta) + (delta == 1 ? " supply" : " supplies") + " (half the shop's price)");
 }
 
 void OpenItemBox(const std::vector<std::pair<std::size_t, std::uint32_t>>& pokes = {}, bool withRun = false) {

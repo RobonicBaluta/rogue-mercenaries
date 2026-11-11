@@ -81,7 +81,8 @@ struct EconomyConfig {
     } upgrades;
 
     struct Supplies {
-        std::int64_t per_kill = 2;
+        /// Need not be whole: kills pay it exactly, adding up (run_controller.cpp KillShare).
+        double per_kill = 2.0;
         std::int64_t per_arena_clear = 25;
     } supplies;
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "Base weapons are the game's own weapons; ids are what the adapter reports as weapon_id. Affix roll ranges are scaled by economy.json weapon_rarity.magnitude_mult. Units: *_pct percent, crit_chance fraction, supplies_on_kill whole supplies. The rarity remake (2026-11-08): an Epic gun has one of the elements, a Legendary one and a legendary effect (unique_affixes), an Exotic two of each. Radii are engine units (centimetres); dps_fraction and an arc's damage_fraction are fractions of the hit's damage, a blast's damage_fraction of the victim's maximum health. Against a boss an element only adds boss_bonus damage.",
+  "_comment": "Base weapons are the game's own weapons; ids are what the adapter reports as weapon_id. Affix roll ranges are scaled by economy.json weapon_rarity.magnitude_mult. Units: *_pct percent, crit_chance fraction, supplies_on_kill supplies per kill (fractions add up kill by kill). The rarity remake (2026-11-08): an Epic gun has one of the elements, a Legendary one and a legendary effect (unique_affixes), an Exotic two of each. Radii are engine units (centimetres); dps_fraction and an arc's damage_fraction are fractions of the hit's damage, a blast's damage_fraction of the victim's maximum health. Against a boss an element only adds boss_bonus damage.",
   "schema_version": 1,
   "weapons": [
     {
@@ -220,8 +220,8 @@
     },
     {
       "kind": "supplies_on_kill",
-      "min": 1,
-      "max": 2
+      "min": 0.25,
+      "max": 0.5
     }
   ],
   "unique_affixes": [

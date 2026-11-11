@@ -308,12 +308,13 @@ TEST_CASE("a bought weapon is placed in the inventory or the purchase is refunde
     const auto& offers = h.rc.state().reward_offer;
     REQUIRE_FALSE(offers.empty());
     REQUIRE(offers[0].kind == RewardKind::Weapon);
-    // No room: the weapon reward pays its shop value instead.
+    // No room: the weapon reward pays what selling it would, half its shop price.
     const std::int64_t before = h.rc.state().supplies.balance();
     const std::size_t held = h.rc.state().weapons.size();
+    const Rarity rarity = offers[0].rarity;
     REQUIRE(h.rc.ChooseReward(0).ok());
     CHECK(inv.placed.empty());
-    CHECK(h.rc.state().supplies.balance() > before);
+    CHECK(h.rc.state().supplies.balance() == before + content->economy().shop.weapon_price[RarityIndex(rarity)] / 2);
     CHECK(h.rc.state().weapons.size() == held);  // nothing added
 
     REQUIRE(h.rc.phase() == Phase::Shop);
@@ -370,12 +371,13 @@ TEST_CASE("chests pay supplies scaled by arena and place items", "[items]") {
     CHECK(h.rc.state().supplies.balance() == before + 10);
     CHECK(h.sink.Count(EventType::ChestOpened) == 1);
 
-    // Full inventory: the item's value is added to the supplies instead.
+    // Full inventory: what selling the item would pay (half its price, which is the bundle's) is
+    // added instead: the grenades' 10 or the spray's 20, halved; not the price times the bundle.
     inv.room = 0;
     const auto full = h.rc.OpenChest(2.0);
     REQUIRE(full.ok());
     CHECK(full->item_id.empty());
-    CHECK(full->supplies > 10);
+    CHECK((full->supplies == 10 + 5 || full->supplies == 10 + 10));
     CHECK(full->number == 2);
 }
 

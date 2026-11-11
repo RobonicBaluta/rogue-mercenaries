@@ -1,5 +1,5 @@
 {
-  "_comment": "Run economy and balance knobs. Supplies are run-only; credits persist in the profile and are banked at EndRun (failed runs bank credits.death_rate of what they earned).",
+  "_comment": "Run economy and balance knobs. Supplies are run-only; credits persist in the profile and are banked at EndRun (failed runs bank credits.death_rate of what they earned). Supplies (the user, 2026-11-11: a marathon should pay for 4 or 5 guns built all the way, not every gun): scripts/economy_math.py works out what each run length earns, best and worst case, with and without the supply perks and builds; per-kill amounts are exact (supplies.per_kill 1.25 at a route's reward_mult pays 1.25 x 1.75 a kill, adding up). Selling, a reward gun or a chest item with no room pay half the shop price.",
   "schema_version": 1,
   "run": {
     "arena_count": 4,
@@ -29,7 +29,7 @@
       "supplies": 20,
       "item": 50
     },
-    "supplies_bundle": 30
+    "supplies_bundle": 25
   },
   "weapon_rarity": {
     "common": {
@@ -99,8 +99,8 @@
     "damage_pct_per_level": 8
   },
   "supplies": {
-    "per_kill": 2,
-    "per_arena_clear": 25
+    "per_kill": 1.25,
+    "per_arena_clear": 20
   },
   "credits": {
     "per_kill": 1,
@@ -154,8 +154,8 @@
     "width": 3
   },
   "chests": {
-    "supplies_base": 10,
-    "supplies_per_arena": 5,
+    "supplies_base": 8,
+    "supplies_per_arena": 2,
     "item_chance": 0.6,
     "weapon_chance": 0.12
   },

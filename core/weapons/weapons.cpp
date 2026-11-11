@@ -128,7 +128,7 @@ namespace {
 
 double RoundAffix(AffixKind kind, double v) {
     switch (kind) {
-        case AffixKind::SuppliesOnKill: return std::max(1.0, std::round(v));
+        case AffixKind::SuppliesOnKill: return std::max(0.05, RoundTo(v, 20.0));  // kills pay it exactly (KillShare)
         case AffixKind::CritChance: return RoundTo(v, 1000.0);
         default: return RoundTo(v, 100.0);
     }
@@ -232,7 +232,7 @@ std::string DescribeAffix(const Affix& affix, const Content* content) {
         case AffixKind::LowHpTargetDamagePct:
             return "+" + Num(affix.value) + "% damage vs targets below " +
                    Num(affix.threshold * 100.0) + "% HP";
-        case AffixKind::SuppliesOnKill: return "+" + Num(affix.value, 0) + " supplies per kill";
+        case AffixKind::SuppliesOnKill: return "+" + Num(affix.value, 2) + (affix.value == 1.0 ? " supply per kill" : " supplies per kill");
         case AffixKind::UniqueLowHpTargetBonus:
             return unique_name + ": +" + Num(affix.value * 100.0) + "% damage vs targets below " +
                    Num(affix.threshold * 100.0) + "% HP";

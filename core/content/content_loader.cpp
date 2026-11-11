@@ -337,8 +337,8 @@ std::vector<ParamRule> EffectRules(EffectKind kind, ConditionKind cond) {
         case EffectKind::HealOnKill:
             rules.push_back({"amount_fraction_of_max", true, 0.0, 1.0, true});
             break;
-        case EffectKind::SuppliesOnKill:
-            rules.push_back({"amount", true, 1.0, 1000.0, false});
+        case EffectKind::SuppliesOnKill:  // a fraction adds up kill by kill (run_controller.cpp KillShare)
+            rules.push_back({"amount", true, 0.0, 1000.0, true});
             rules.push_back({"chance", false, 0.0, 1.0, true});
             break;
         case EffectKind::SuppliesOnArenaClear: rules.push_back({"amount", true, 0.0, 10000.0, false}); break;
@@ -1714,7 +1714,7 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     if (const json* s = Section(d, doc, "supplies")) {
         const Diag sd = d.Sub(": supplies");
         CheckKeys(sd, *s, {"per_kill", "per_arena_clear"});
-        if (GetInt(sd, *s, "per_kill", eco.supplies.per_kill, true) && eco.supplies.per_kill < 0) sd.Error("per_kill must be >= 0");
+        if (GetNumber(sd, *s, "per_kill", eco.supplies.per_kill, true) && eco.supplies.per_kill < 0.0) sd.Error("per_kill must be >= 0");
         if (GetInt(sd, *s, "per_arena_clear", eco.supplies.per_arena_clear, true) && eco.supplies.per_arena_clear < 0) {
             sd.Error("per_arena_clear must be >= 0");
         }

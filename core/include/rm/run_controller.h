@@ -454,6 +454,10 @@ public:
     [[nodiscard]] std::vector<std::int64_t> RestockWeaponItems() const;
     /// A gun the player gave up (sold): it leaves the run, so it is not upgraded or restocked.
     Status DropWeapon(std::int64_t game_item, std::string_view reason);
+    /// What selling `count` of `game_item` is worth in supplies: half its shop price (a gun of the
+    /// run by its rarity, any other gun as a common one; an item by its catalog price per unit),
+    /// 0 for anything the shop does not price. The game's Organize screen pays this, never its gold.
+    [[nodiscard]] std::int64_t SaleValue(std::int64_t game_item, std::int64_t count) const;
     /// A chest was opened in the arena (adapter: a time-bonus pickup). Only while an arena is
     /// active; rolls from the "loot" stream.
     /// `held_weapon`: the base id of the gun in the player's hands (a chest's refine goes to it).
