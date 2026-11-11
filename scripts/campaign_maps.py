@@ -54,6 +54,12 @@ STARTS = {
     # floor, on the line the boss itself ran in build/runs/20261108-181644-bossarena-uEm41-s308, 17.4 m
     # from its story spot: just outside its 15 m trigger.
     308: (-9952.8, -10.0, -17960.7),
+    # Desperate Escape's last platform (s804, 2026-11-11, the user: "can you add the last platform from
+    # desperate escape to the pool of maps?"): a battle area of its own (no story scenario, wave scripts
+    # act_A..act_H, its own sets town Majini, uEm20 and uEm21), 54 by 69 m on several levels. Not vetted
+    # in game: the start is the waypoint nearest the middle of its main level (853 of its 2012 waypoints
+    # at y 50..150), so the adapter's start warp brings the player there wherever the host puts them.
+    804: (920.2, 54.1, 110.9),
 }
 # Starts moved off the recorded spot. s204: the host puts the player on the boat the story arrives
 # on (33885 51 -87306), and the climb to the ledge is a story action that never appears here (user
@@ -131,7 +137,7 @@ NAMES = {
     202: 'Marsh Village', 204: 'Port', 300: 'Cave Shrine', 302: 'Ruin Passages', 310: 'Underground Facility',
     314: 'Mine Scaffolds', 500: 'Cargo Hold', 503: 'Freighter Deck', 505: 'Factory Floor', 506: 'Steel Docks',
     508: 'Volcano', 700: 'Spencer Mansion', 103: 'Pump Rooms', 304: 'Capsule Dome', 309: 'Temple Hall',
-    108: 'Field Office', 308: 'Tiled Labs', 511: 'Upper Deck',
+    108: 'Field Office', 308: 'Tiled Labs', 511: 'Upper Deck', 804: 'Last Platform',
 }
 
 
