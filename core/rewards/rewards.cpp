@@ -184,7 +184,9 @@ std::vector<RewardChoice> GenerateRewardOffer(Rng& rng, const OfferContext& ctx,
             const WeaponBaseDef* base = weapons[rng.Index(weapons.size())];
             choice.kind = RewardKind::Weapon;
             choice.weapon = GenerateWeapon(rng, *ctx.content, caps, base->id, rarity,
-                                           next_instance_id ? next_instance_id() : std::string("w"));
+                                           next_instance_id ? next_instance_id() : std::string("w"),
+                                           ctx.character != nullptr ? ParseElements(ctx.character->build.gun_elements)
+                                                                    : std::vector<Element>{});
             has_weapon = true;
         } else if (kind == 2) {
             choice.kind = RewardKind::Supplies;

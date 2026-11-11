@@ -59,6 +59,7 @@ enum class ProcKind {
     Shatter,       // a frozen victim shatters: `damage` to every enemy within `radius`
     Overkill,      // `damage` to the nearest other enemy within `radius`
     Refill,        // the gun's magazine is full again
+    PoisonCloud,   // the adapter's: a Plague-poisoned enemy died, every enemy within `radius` is poisoned (dps, seconds)
 };
 std::string_view ProcKindName(ProcKind k);
 
@@ -70,6 +71,23 @@ struct WeaponProc {
     double seconds = 0.0;    // Burn, Poison, Freeze, IgniteAround
     double radius = 0.0;     // engine units around the target or the victim
     int targets = 0;         // Shock, Arc: enemies reached (0: every one in the radius)
+    std::string element;     // the element ("incendiary"; empty: a legendary effect's), for its look
+    bool evolved = false;    // its evolved form (a Legendary gun's)
+    int chain = 0;           // Explode: the blast's kills blow up too, this many times over
+    double freeze_seconds = 0.0;  // Shatter: those it hits freeze this long
+    /// Poison from Plague (evolved Toxic): when the poisoned enemy dies, however, a cloud of
+    /// this fraction of its maximum health a second poisons those within cloud_radius.
+    double cloud_dps_fraction = 0.0;
+    double cloud_radius = 0.0;
+};
+
+/// A gun refined to Epic waiting for its element (RunController::ChooseElement).
+struct ElementChoice {
+    std::string instance_id;
+    std::string base_id;
+    Rarity rarity = Rarity::Epic;
+    bool evolved = false;          // already Legendary: the element comes evolved
+    std::vector<Element> offer;    // the two offered (option 0 and 1); option -1 is a random one
 };
 
 struct KillEvent {
@@ -454,6 +472,16 @@ public:
     [[nodiscard]] std::vector<std::int64_t> RestockWeaponItems() const;
     /// A gun the player gave up (sold): it leaves the run, so it is not upgraded or restocked.
     Status DropWeapon(std::int64_t game_item, std::string_view reason);
+    /// Guns refined to Epic waiting for their element (the user, 2026-11-11: two offered and a
+    /// random one); the adapter asks between arenas, a chest's refine at the next screen.
+    [[nodiscard]] std::vector<ElementChoice> PendingElementChoices() const;
+    /// Gives the gun its element: `option` 0 or 1 the offered one, -1 a random one (any element but
+    /// the build's, each as likely, so the rare ones too).
+    Status ChooseElement(std::string_view instance_id, int option);
+    /// The elements of the run's gun `base_id` (as its hits carry them, the build's too), each with
+    /// whether it plays evolved; empty when the run holds no such gun. The adapter's flamethrower
+    /// stream plays them on the enemies in its flame.
+    [[nodiscard]] std::vector<std::pair<Element, bool>> ElementsOf(std::string_view base_id) const;
     /// What selling `count` of `game_item` is worth in supplies: half its shop price (a gun of the
     /// run by its rarity, any other gun as a common one; an item by its catalog price per unit),
     /// 0 for anything the shop does not price. The game's Organize screen pays this, never its gold.
@@ -544,7 +572,11 @@ private:
     void AddHitProcs(const WeaponInstance& weapon, double dealt, bool execute, std::vector<WeaponProc>& procs);
     void AddKillProcs(const KillEvent& kill, const WeaponInstance* weapon, KillOutcome& out);
     /// A gun's elements with the build's (gun_elements, the arena's element), each once.
-    [[nodiscard]] std::vector<Element> GunElements(const WeaponInstance& weapon) const;
+    /// The gun's elements, each with whether it plays evolved: its own (evolved on a Legendary
+    /// gun), then the build's (gun_elements, the arena's element), each once.
+    [[nodiscard]] std::vector<std::pair<Element, bool>> GunElements(const WeaponInstance& weapon) const;
+    /// The build's own elements (gun_elements): never a gun's own.
+    [[nodiscard]] std::vector<Element> BuildElements() const;
     const WeaponInstance* ApplicableWeapon(const std::optional<std::string>& weapon_id,
                                            const std::optional<bool>& melee) const;
     std::string NextInstanceId();

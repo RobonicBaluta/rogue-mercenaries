@@ -718,6 +718,26 @@ bool SwapGridCells(int from, int to) {
     return true;
 }
 
+// The element choice (MatchElement): where it goes once every waiting gun has its element (the
+// screen it was opened over: nullopt goes back to it).
+std::optional<nativemenu::ScreenId> g_elementNext;
+
+std::string Capitalised(std::string s) {
+    if (!s.empty() && s[0] >= 'a' && s[0] <= 'z') s[0] = static_cast<char>(s[0] - 'a' + 'A');
+    return s;
+}
+
+std::uint32_t ElementColour(rm::Element e) {
+    switch (e) {
+        case rm::Element::Incendiary: return 0xFFFF8C3Cu;
+        case rm::Element::Shock: return 0xFFFFE65Au;
+        case rm::Element::Cryo: return 0xFF8CD7FFu;
+        case rm::Element::Explosive: return 0xFFFF5A50u;
+        case rm::Element::Toxic: return 0xFF8CF064u;
+    }
+    return 0;
+}
+
 // Rarity colours (0 = common: the game's own colour).
 std::uint32_t RarityColour(std::string_view rarity) {
     if (rarity == "uncommon") return 0xFF7CDC7Cu;
@@ -1495,6 +1515,39 @@ private:
                 screen.items.push_back(std::move(item));
                 break;
             }
+            case ScreenId::MatchElement: {
+                // A gun refined to Epic: two elements and a random one (the user, 2026-11-11).
+                const auto pending = run.PendingElementChoices();
+                screen.empty_help = "Nothing to choose. Press to continue.";
+                if (pending.empty()) {
+                    screen.header = "ELEMENT";
+                    break;
+                }
+                const rm::ElementChoice& c = pending.front();
+                const rm::WeaponBaseDef* gun = g->content->FindWeapon(c.base_id);
+                screen.header = "CHOOSE AN ELEMENT   " + Upper(Plain(gun != nullptr ? gun->name : c.base_id));
+                for (const rm::Element e : c.offer) {
+                    const rm::ElementDef* d = g->content->FindElement(e);
+                    const rm::ElementDef* ev = g->content->FindElement(e, true);
+                    if (d == nullptr) continue;
+                    Item item;
+                    const bool evolves = ev != nullptr && ev != d;
+                    if (c.evolved && evolves) {
+                        item.label = Upper(Plain(ev->name));
+                        item.help = Upper(Plain(d->name)) + " evolved. " + Plain(ev->description) + ".";
+                    } else {
+                        item.label = Upper(Plain(d->name)) + (evolves ? "   " + Upper(Plain(ev->name)) + " AT LEGENDARY" : std::string());
+                        item.help = Capitalised(Plain(d->description)) + ".";
+                    }
+                    item.color = ElementColour(e);
+                    screen.items.push_back(std::move(item));
+                }
+                Item random;
+                random.label = "RANDOM ELEMENT";
+                random.help = "Any of the five, each as likely: the rare ones too.\nWhat it draws is final.";
+                screen.items.push_back(std::move(random));
+                break;
+            }
             case ScreenId::MatchRewards: {
                 const rm::RunSnapshot s = run.Snapshot(Now());
                 screen.header = "CHOOSE A REWARD" + StashNote();
@@ -1837,6 +1890,48 @@ private:
                 if (!s.ok()) { d.outcome = Outcome::Denied; break; }
                 d.outcome = Outcome::Push;
                 d.next = run.phase() == rm::Phase::RewardSelection ? ScreenId::MatchRewards : ScreenId::MatchRunOver;
+                if (!run.PendingElementChoices().empty()) {  // a chest refined a gun to Epic in the arena
+                    g_elementNext = d.next;
+                    d.next = ScreenId::MatchElement;
+                }
+                break;
+            }
+            case ScreenId::MatchElement: {
+                const auto pending = run.PendingElementChoices();
+                if (!pending.empty()) {
+                    if (index < 0) {  // it has to be chosen
+                        d.outcome = Outcome::Denied;
+                        break;
+                    }
+                    const rm::ElementChoice& c = pending.front();
+                    const int option = index < static_cast<int>(c.offer.size()) ? index : -1;
+                    const rm::Status st = run.ChooseElement(c.instance_id, option);
+                    Report(st, "choose element");
+                    if (!st.ok()) {
+                        d.outcome = Outcome::Denied;
+                        break;
+                    }
+                    std::string chosen;
+                    for (const auto& w : run.state().weapons) {
+                        if (w.instance_id == c.instance_id && !w.elements.empty()) chosen = std::string(rm::ElementName(w.elements.front()));
+                    }
+                    RM_LOGI("element: %s gets %s (%s%s)", c.base_id.c_str(), chosen.c_str(), option < 0 ? "random" : "chosen",
+                            c.evolved ? ", evolved" : "");
+                    if (const rm::ElementDef* el = rm::ParseElement(chosen) ? g->content->FindElement(*rm::ParseElement(chosen), c.evolved) : nullptr) {
+                        g->toasts.Push(el->name + (option < 0 ? " (random)" : ""));
+                    }
+                    if (!run.PendingElementChoices().empty()) {
+                        d.outcome = Outcome::Refresh;
+                        break;
+                    }
+                }
+                if (g_elementNext) {
+                    d.outcome = Outcome::Push;
+                    d.next = *g_elementNext;
+                } else {
+                    d.outcome = Outcome::Back;
+                }
+                g_elementNext.reset();
                 break;
             }
             case ScreenId::MatchRewards: {
@@ -1851,6 +1946,10 @@ private:
                     RM_LOGI("reward chosen: %s %s (%s): %s", o.kind.c_str(), o.title.c_str(), o.rarity.c_str(), o.detail.c_str());
                     d.outcome = Outcome::Push;
                     d.next = run.phase() == rm::Phase::Shop ? ScreenId::MatchShop : ScreenId::MatchRunOver;
+                    if (!run.PendingElementChoices().empty()) {  // refined to Epic: its element first
+                        g_elementNext = d.next;
+                        d.next = ScreenId::MatchElement;
+                    }
                 } else if (index == offers && s.reroll_tokens > 0) {
                     const rm::Status st = run.RerollReward();
                     Report(st, "reroll");
@@ -1873,6 +1972,11 @@ private:
                                 static_cast<long long>(o.price));
                     }
                     d.outcome = st.ok() ? Outcome::Refresh : Outcome::Denied;
+                    if (st.ok() && !run.PendingElementChoices().empty()) {  // refined to Epic: its element, then back here
+                        g_elementNext.reset();
+                        d.outcome = Outcome::Push;
+                        d.next = ScreenId::MatchElement;
+                    }
                     break;
                 }
                 const int rerollRow = s.restock_price >= 0 ? 1 : 0;
@@ -2122,6 +2226,7 @@ std::map<std::uintptr_t, double> g_specialVictims;
 // The rarity remake's element statuses (defined with DriveElements).
 bool FrozenNow(std::uintptr_t enemy, double now);
 void QueueProcs(std::uintptr_t enemy, const std::vector<rm::WeaponProc>& procs);
+void PlagueOnDeath(std::uintptr_t enemy, int maxHp, double now);
 constexpr double kSpecialKillCredit = 6.0;
 void BuildKillNotice(const rm::KillOutcome& outcome, double now);
 
@@ -2138,6 +2243,7 @@ void ReportEnemyDeath(std::uintptr_t enemy, int maxHp, double now, const char* h
     }
     kill.target_is_boss = enemy == g->boss.unit;
     kill.enemy_id = EnemyKillId(enemy, maxHp);
+    PlagueOnDeath(enemy, maxHp, now);
     const rm::KillOutcome out = g->run->OnEnemyKilled(kill);
     if (!out.procs.empty()) QueueProcs(enemy, out.procs);
     if (out.counted) {
@@ -2449,8 +2555,10 @@ bool IsWeaponItem(std::uint32_t id) { return IsWeaponRecord(ItemRecord(id), id);
 // a run: Mercenaries has no gas pumps to refill it at (the user, 2026-11-07). After it has not
 // been fired for kRefuelDelay, kRefuelPerSecond a second.
 constexpr std::uint32_t kItemFlamethrower = 0x0121;
-constexpr double kRefuelDelay = 1.5;
-constexpr double kRefuelPerSecond = 5.0;  // empty to full in 20 s
+// Halved 2026-11-11 (the user: "flamethrower need to be nerfed (the tank regeneration)"): 1.5 s and
+// 5 a second (empty to full in 20 s) before.
+constexpr double kRefuelDelay = 3.0;
+constexpr double kRefuelPerSecond = 2.5;  // empty to full in 40 s
 
 // The flamethrower (uWp21) binds its tank and hose to the player's back every frame, whatever is
 // in hand (its update, 0x00BA4FF0; user playtest 2026-11-08: "it shows the model on the character at
@@ -4807,6 +4915,9 @@ struct ElementStatus {
     double nextTick = 0.0;
     double owed = 0.0;          // damage below one point, carried to the next tick
     double reactedAt = -100.0;  // the last reaction the mod started on it
+    // Plague (evolved Toxic): while poisoned by it, its death lets out a cloud (PlagueOnDeath).
+    double cloudFraction = 0.0, cloudRadius = 0.0, cloudSeconds = 0.0;
+    bool clouded = false;       // its cloud is out already
 };
 std::map<std::uintptr_t, ElementStatus> g_elementStatus;
 
@@ -4943,6 +5054,42 @@ std::uintptr_t EquippedGunSlot() {
     return 0;
 }
 
+// An element's look on `unit` (settings element_effects, by proc kind; an evolved element's own
+// "<kind>_evolved" first): at most once a second for the same enemy and kind.
+void PlayLook(const rm::WeaponProc& p, std::uintptr_t unit, double now) {
+    if (!unit || !engine::Caps().effects || g->settings.elementEffects.empty()) return;
+    const std::string kind(rm::ProcKindName(p.kind));
+    auto it = p.evolved ? g->settings.elementEffects.find(kind + "_evolved") : g->settings.elementEffects.end();
+    if (it == g->settings.elementEffects.end()) it = g->settings.elementEffects.find(kind);
+    if (it == g->settings.elementEffects.end()) return;
+    static std::map<std::pair<std::uintptr_t, std::string>, double> last;
+    if (last.size() > 512) last.clear();
+    double& at = last[{unit, kind}];
+    if (now - at < 1.0 && at > 0.0) return;
+    at = now;
+    static std::map<std::string, int> logged;
+    const bool played = engine::PlayEffect(it->second.c_str(), unit);
+    if (logged[it->second]++ < 3) RM_LOGI("elements: look %s for %s: %s", it->second.c_str(), kind.c_str(), played ? "played" : "not in memory");
+}
+
+// Poisons it (a new poison keeps the higher rate and the later end); with Plague's numbers its
+// death lets out a cloud. True when it took its acid reaction.
+bool PoisonEnemy(std::uintptr_t enemy, double dps, double seconds, double now, double cloudFraction = 0.0, double cloudRadius = 0.0) {
+    if (enemy == g->boss.unit || dps <= 0.0) return false;
+    ElementStatus& st = g_elementStatus[enemy];
+    const bool fresh = now >= st.poisonUntil;
+    st.poisonDps = fresh ? dps : std::max(st.poisonDps, dps);
+    st.poisonUntil = std::max(st.poisonUntil, now + seconds);
+    if (cloudFraction > 0.0) {
+        st.cloudFraction = std::max(st.cloudFraction, cloudFraction);
+        st.cloudRadius = std::max(st.cloudRadius, cloudRadius);
+        st.cloudSeconds = std::max(st.cloudSeconds, seconds);
+    }
+    if (!fresh) return false;
+    st.nextTick = std::max(st.nextTick, now + kElementTick);
+    return React(enemy, Reaction::Acid, now);
+}
+
 void QueueProcs(std::uintptr_t enemy, const std::vector<rm::WeaponProc>& procs) {
     for (const rm::WeaponProc& p : procs) {
         QueuedProc q;
@@ -4970,6 +5117,7 @@ void ApplyProc(const QueuedProc& q, double now) {
                 break;
             }
             reacted = Ignite(q.enemy, p.dps, p.seconds, now);
+            PlayLook(p, q.enemy, now);
             reached = 1;
             break;
         case rm::ProcKind::Poison: {
@@ -4977,14 +5125,8 @@ void ApplyProc(const QueuedProc& q, double now) {
                 note = ", the target already dead";
                 break;
             }
-            ElementStatus& st = g_elementStatus[q.enemy];
-            const bool fresh = now >= st.poisonUntil;
-            st.poisonDps = fresh ? p.dps : std::max(st.poisonDps, p.dps);
-            st.poisonUntil = std::max(st.poisonUntil, now + p.seconds);
-            if (fresh) {
-                st.nextTick = std::max(st.nextTick, now + kElementTick);
-                reacted = React(q.enemy, Reaction::Acid, now);
-            }
+            reacted = PoisonEnemy(q.enemy, p.dps, p.seconds, now, p.cloud_dps_fraction, p.cloud_radius);
+            PlayLook(p, q.enemy, now);
             reached = 1;
             break;
         }
@@ -4995,16 +5137,21 @@ void ApplyProc(const QueuedProc& q, double now) {
             }
             g_elementStatus[q.enemy].frozenUntil = now + p.seconds;
             reacted = React(q.enemy, Reaction::Ice, now, true);
+            PlayLook(p, q.enemy, now);
             reached = 1;
             break;
         }
         case rm::ProcKind::Shock:
         case rm::ProcKind::Arc: {
-            if (p.kind == rm::ProcKind::Shock && alive(q.enemy)) reacted = React(q.enemy, Reaction::Flash, now);
+            if (p.kind == rm::ProcKind::Shock && alive(q.enemy)) {
+                reacted = React(q.enemy, Reaction::Flash, now);
+                PlayLook(p, q.enemy, now);
+            }
             int left = p.targets > 0 ? p.targets : 99;
             for (const auto& [enemy, d] : EnemiesNear(q.at, static_cast<float>(p.radius), q.enemy)) {
                 (void)d;
                 if (left-- <= 0) break;
+                PlayLook(p, enemy, now);  // the jump to it
                 if (ElementDamage(enemy, p.damage, now, Reaction::Flyoff)) {
                     ++reached;
                     if (alive(enemy)) React(enemy, Reaction::Flash, now);
@@ -5013,10 +5160,23 @@ void ApplyProc(const QueuedProc& q, double now) {
             break;
         }
         case rm::ProcKind::IgniteAround:
-            if (alive(q.enemy)) reacted = Ignite(q.enemy, p.dps, p.seconds, now);
+            if (alive(q.enemy)) {
+                reacted = Ignite(q.enemy, p.dps, p.seconds, now);
+                PlayLook(p, q.enemy, now);
+            }
             for (const auto& [enemy, d] : EnemiesNear(q.at, static_cast<float>(p.radius), q.enemy)) {
                 (void)d;
                 Ignite(enemy, p.dps, p.seconds, now);
+                PlayLook(p, enemy, now);
+                ++reached;
+            }
+            break;
+        case rm::ProcKind::PoisonCloud:
+            // Plague: the cloud of a poisoned enemy that died poisons those around it (no cloud of theirs).
+            for (const auto& [enemy, d] : EnemiesNear(q.at, static_cast<float>(p.radius), q.enemy)) {
+                (void)d;
+                PoisonEnemy(enemy, p.dps, p.seconds, now);
+                PlayLook(p, enemy, now);
                 ++reached;
             }
             break;
@@ -5036,12 +5196,30 @@ void ApplyProc(const QueuedProc& q, double now) {
         case rm::ProcKind::Shatter: {
             // The victim's head bursts (an explosion); everyone around takes the blast and is thrown.
             if (p.kind == rm::ProcKind::Explode) reacted = React(q.enemy, Reaction::HeadBurst, now, true, true);
+            PlayLook(p, q.enemy, now);
             for (const auto& [enemy, d] : EnemiesNear(q.at, static_cast<float>(p.radius), q.enemy)) {
                 (void)d;
                 const Reaction thrown = p.kind == rm::ProcKind::Explode ? Reaction::Flyoff : Reaction::Yoroke;
                 if (ElementDamage(enemy, p.damage, now, Reaction::Flyoff)) {
                     ++reached;
-                    if (alive(enemy)) React(enemy, thrown, now, true);
+                    if (alive(enemy)) {
+                        // Absolute Zero (an evolved Cryo's shatter): those it hits freeze.
+                        if (p.freeze_seconds > 0.0) {
+                            g_elementStatus[enemy].frozenUntil = now + p.freeze_seconds;
+                            React(enemy, Reaction::Ice, now, true);
+                        } else {
+                            React(enemy, thrown, now, true);
+                        }
+                    } else if (p.kind == rm::ProcKind::Explode && p.chain > 0) {
+                        // Chain Reaction (evolved Explosive): one the blast killed blows up too, next tick.
+                        QueuedProc next;
+                        next.enemy = enemy;
+                        UnitPosition(enemy, next.at);
+                        next.proc = p;
+                        next.proc.chain = p.chain - 1;
+                        next.proc.source = p.source + " (chain)";
+                        g_queuedProcs.push_back(std::move(next));
+                    }
                 }
             }
             break;
@@ -5063,6 +5241,193 @@ void ApplyProc(const QueuedProc& q, double now) {
                 p.source.c_str(), engine::ClassName(q.enemy).c_str(), static_cast<unsigned>(q.enemy), p.damage, p.dps, p.seconds,
                 p.radius, reached, reacted ? ", its own reaction" : "", note);
     }
+}
+
+// A Plague-poisoned enemy died (however): its cloud poisons those around it, once.
+void PlagueOnDeath(std::uintptr_t enemy, int maxHp, double now) {
+    const auto it = g_elementStatus.find(enemy);
+    if (it == g_elementStatus.end()) return;
+    ElementStatus& st = it->second;
+    if (st.clouded || st.cloudFraction <= 0.0 || st.cloudRadius <= 0.0 || now >= st.poisonUntil + 0.5) return;
+    st.clouded = true;
+    QueuedProc q;
+    q.enemy = enemy;
+    UnitPosition(enemy, q.at);
+    q.proc.kind = rm::ProcKind::PoisonCloud;
+    q.proc.source = "plague";
+    q.proc.element = "toxic";
+    q.proc.evolved = true;
+    q.proc.dps = st.cloudFraction * std::max(1, maxHp);
+    q.proc.seconds = std::max(1.0, st.cloudSeconds);
+    q.proc.radius = st.cloudRadius;
+    g_queuedProcs.push_back(std::move(q));
+}
+
+// The flamethrower's elements (the user, 2026-11-11: "electricity has to look more like a ray that
+// jumps from enemies, cryo ... after hitting the same enemy for a while it should freeze"). Its
+// stream passes no hit to the mod (only its last point does: engine map "The flamethrower"), so
+// while it fires (its fuel going down) every enemy in its flame takes its elements here: Shock arcs
+// from the nearest one every stream_seconds to those around it, Cryo chills each one and freezes it
+// after stream_seconds in the flame, Toxic poisons them, Incendiary sets them burning (Inferno
+// spreads it). The flame: enemies within kFlameReach ahead of the player and kFlameHalfAngle of his
+// facing, at about his height. The amounts scale from kStreamHitDamage, a hit's worth.
+constexpr float kFlameReach = 500.0f;             // 5 m
+constexpr float kFlameCosHalfAngle = 0.866f;      // 30 degrees either side
+constexpr float kFlameHeight = 250.0f;
+constexpr double kStreamHitDamage = 120.0;
+
+void DriveFlameStream(double now) {
+    static int lastFuel = -1;
+    static double firingUntil = 0.0, lastTick = 0.0, nextArc = 0.0;
+    static std::map<std::uintptr_t, std::pair<double, double>> chill;  // enemy -> seconds in the flame, last seen
+    const double dt = std::clamp(now - lastTick, 0.0, 0.25);
+    lastTick = now;
+    const auto player = engine::LocalPlayer();
+    const std::uintptr_t slot = player && g->match.inMatch && g->run->phase() == rm::Phase::ArenaActive ? EquippedGunSlot() : 0;
+    if (!slot || ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != kItemFlamethrower) {
+        lastFuel = -1;
+        chill.clear();
+        return;
+    }
+    const int fuel = ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0);
+    if (lastFuel >= 0 && fuel < lastFuel) firingUntil = now + 0.35;
+    lastFuel = fuel;
+    if (now >= firingUntil) return;
+    const auto elements = g->run->ElementsOf("flamethrower");
+    if (elements.empty()) return;
+    float fx = 0.0f, fz = 0.0f;
+    if (!PlayerFacing(player, fx, fz)) return;
+    float at[3];
+    UnitPosition(player, at);
+    std::vector<std::pair<std::uintptr_t, float>> inFlame;
+    for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
+        if (e.hp <= 0 || e.object == g->boss.unit) continue;
+        float p[3];
+        UnitPosition(e.object, p);
+        const float dx = p[0] - at[0], dz = p[2] - at[2];
+        const float d = std::sqrt(dx * dx + dz * dz);
+        if (d < 1.0f || d > kFlameReach || std::fabs(p[1] - at[1]) > kFlameHeight) continue;
+        if ((dx * fx + dz * fz) / d < kFlameCosHalfAngle) continue;
+        inFlame.emplace_back(e.object, d);
+    }
+    std::sort(inFlame.begin(), inFlame.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+    for (auto it = chill.begin(); it != chill.end();) {  // out of the flame a second: the chill is gone
+        it = now - it->second.second > 1.0 ? chill.erase(it) : std::next(it);
+    }
+    if (inFlame.empty()) return;
+    for (const auto& [el, evolved] : elements) {
+        const rm::ElementDef* d = g->content->FindElement(el, evolved);
+        if (d == nullptr) continue;
+        rm::WeaponProc look;
+        look.element = std::string(rm::ElementName(el));
+        look.evolved = evolved;
+        switch (el) {
+            case rm::Element::Incendiary:
+                look.kind = d->spread_radius > 0.0 ? rm::ProcKind::IgniteAround : rm::ProcKind::Burn;
+                for (const auto& [enemy, dist] : inFlame) {
+                    (void)dist;
+                    Ignite(enemy, kStreamHitDamage * d->dps_fraction, d->seconds, now);
+                    PlayLook(look, enemy, now);
+                    if (d->spread_radius <= 0.0) continue;
+                    float p[3];
+                    UnitPosition(enemy, p);
+                    for (const auto& [other, od] : EnemiesNear(p, static_cast<float>(d->spread_radius), enemy)) {
+                        (void)od;
+                        Ignite(other, kStreamHitDamage * d->dps_fraction, d->seconds, now);
+                    }
+                }
+                break;
+            case rm::Element::Toxic:
+                look.kind = rm::ProcKind::Poison;
+                for (const auto& [enemy, dist] : inFlame) {
+                    (void)dist;
+                    PoisonEnemy(enemy, kStreamHitDamage * d->dps_fraction, d->seconds, now, d->cloud_dps_fraction, d->radius);
+                    PlayLook(look, enemy, now);
+                }
+                break;
+            case rm::Element::Cryo:
+                for (const auto& [enemy, dist] : inFlame) {
+                    (void)dist;
+                    auto& [seconds, seen] = chill[enemy];
+                    seconds += dt;
+                    seen = now;
+                    if (d->stream_seconds <= 0.0 || seconds < d->stream_seconds || FrozenNow(enemy, now)) continue;
+                    seconds = 0.0;
+                    QueuedProc q;
+                    q.enemy = enemy;
+                    UnitPosition(enemy, q.at);
+                    q.proc.kind = rm::ProcKind::Freeze;
+                    q.proc.source = d->name + " (flamethrower)";
+                    q.proc.element = look.element;
+                    q.proc.evolved = evolved;
+                    q.proc.seconds = d->seconds;
+                    g_queuedProcs.push_back(std::move(q));
+                }
+                break;
+            case rm::Element::Shock:
+                if (d->stream_seconds <= 0.0 || now < nextArc) break;
+                nextArc = now + d->stream_seconds;
+                {
+                    QueuedProc q;
+                    q.enemy = inFlame.front().first;
+                    UnitPosition(q.enemy, q.at);
+                    q.proc.kind = rm::ProcKind::Shock;
+                    q.proc.source = d->name + " (flamethrower)";
+                    q.proc.element = look.element;
+                    q.proc.evolved = evolved;
+                    q.proc.damage = kStreamHitDamage * d->damage_fraction;
+                    q.proc.radius = d->radius;
+                    q.proc.targets = d->targets;
+                    g_queuedProcs.push_back(std::move(q));
+                }
+                break;
+            case rm::Element::Explosive:
+                break;  // its kills blow up as any gun's (the kill's procs)
+        }
+    }
+}
+
+// The effect gallery (settings effect_gallery): in an arena, every kGalleryStep the next effect list
+// in memory of a list of candidates plays on the nearest enemy, its name in the HUD's top line and
+// the log, so the elements' looks can be picked by eye (settings element_effects). Lists not in
+// memory are skipped (looked up, never loaded).
+constexpr double kGalleryStep = 3.0;
+
+void DriveEffectGallery(double now) {
+    static std::vector<std::string> candidates;
+    static std::size_t next = 0;
+    static double at = 0.0;
+    if (!g->settings.effectGallery || !engine::Caps().effects || !g->match.inMatch || g->run->phase() != rm::Phase::ArenaActive) return;
+    if (now < at) return;
+    at = now + kGalleryStep;
+    if (candidates.empty()) {
+        char buf[64];
+        for (int i = 0; i <= 0x6D; ++i) {
+            std::snprintf(buf, sizeof(buf), "effect\\efl\\core\\cr00%02x", i);
+            candidates.emplace_back(buf);
+        }
+        for (const char* wp : {"wp0805", "wp0c00", "wp0c01", "wp0c02", "wp0d00", "wp2100", "wp2101", "wp2103", "wp2104", "wp2200", "wp2201"}) {
+            candidates.push_back(std::string("effect\\efl\\wp\\") + std::string(wp, 4) + "\\" + wp);
+        }
+    }
+    const auto player = engine::LocalPlayer();
+    if (!player) return;
+    float p[3];
+    UnitPosition(player, p);
+    const auto nearby = EnemiesNear(p, 2000.0f, 0);
+    if (nearby.empty()) return;
+    for (std::size_t tries = 0; tries < candidates.size(); ++tries) {
+        const std::size_t index = next++ % candidates.size();
+        const std::string& path = candidates[index];
+        if (!engine::PlayEffect(path.c_str(), nearby.front().first)) continue;
+        const std::string name = path.substr(path.rfind('\\') + 1);
+        g->notice = "EFFECT " + Upper(name) + "   " + std::to_string(index + 1) + " OF " + std::to_string(candidates.size());
+        g->noticeUntil = now + kGalleryStep;
+        RM_LOGI("effect gallery: %s on %s (%zu of %zu)", path.c_str(), engine::ClassName(nearby.front().first).c_str(), index + 1,
+                candidates.size());
+        return;
+    }
+    RM_LOGI("effect gallery: none of the %zu candidates is in memory here", candidates.size());
 }
 
 // Each tick: the queued procs, then the burns and poisons (every kElementTick).
@@ -7724,6 +8089,21 @@ void PollDevCommand(double now) {
         const rm::Status s = run.DevGrantWeapon(w);
         RM_LOGW("dev gun %s %s: %zu elements, %zu effects: %s", base.c_str(), rm::RarityName(w.rarity).data(), w.elements.size(),
                 w.affixes.size(), s.ok() ? "held" : s.message.c_str());
+    } else if (command.rfind("fx ", 0) == 0 || command == "gallery") {
+        // "fx <path>": that effect list on the nearest enemy (if it is in memory); "gallery": the
+        // effect gallery on or off (settings effect_gallery).
+        if (command == "gallery") {
+            g->settings.effectGallery = !g->settings.effectGallery;
+            RM_LOGW("dev gallery: %s", g->settings.effectGallery ? "on" : "off");
+        } else {
+            const std::string path = command.substr(3);
+            const auto player = engine::LocalPlayer();
+            float p[3] = {};
+            if (player) UnitPosition(player, p);
+            const auto nearby = player ? EnemiesNear(p, 2000.0f, 0) : std::vector<std::pair<std::uintptr_t, float>>{};
+            const bool played = !nearby.empty() && engine::PlayEffect(path.c_str(), nearby.front().first);
+            RM_LOGW("dev fx %s: %s", path.c_str(), nearby.empty() ? "no enemy within 20 m" : played ? "played" : "not in memory");
+        }
     } else if (command.rfind("effect ", 0) == 0) {
         // "effect <path> [load]": is that effect list cached (and with `load`, load it from its
         // file now; the reference is kept for the session).
@@ -8164,6 +8544,7 @@ private:
         kill.target_hp_max = r.maxHp;
         kill.overkill = std::max(0, r.appliedDamage - r.hpBefore);
         kill.target_frozen = StatusActive(r.enemy, kill.now, &ElementStatus::frozenUntil);
+        PlagueOnDeath(r.enemy, r.maxHp, kill.now);
         kill.enemy_id = EnemyKillId(r.enemy, r.maxHp);
         kill.enemy_class = engine::ClassName(r.enemy);
         const auto outcome = g->run->OnEnemyKilled(kill);
@@ -8280,6 +8661,8 @@ private:
         ApplyHeals();
         DriveSpecial(now);
         DriveElements(now);
+        DriveFlameStream(now);
+        DriveEffectGallery(now);
         UpdateModRedirects();
         DriveGrabBreak(now);
         TraceTwinShots(now);

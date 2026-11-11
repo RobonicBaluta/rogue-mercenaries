@@ -57,9 +57,11 @@ json WeaponToJson(const WeaponInstance& w) {
     }
     json elements = json::array();
     for (Element e : w.elements) elements.push_back(std::string(ElementName(e)));
+    json offer = json::array();
+    for (Element e : w.element_offer) offer.push_back(std::string(ElementName(e)));
     return {{"instance_id", w.instance_id}, {"base_id", w.base_id}, {"level", w.level},
             {"rarity", std::string(RarityName(w.rarity))}, {"affixes", std::move(affixes)},
-            {"elements", std::move(elements)}};
+            {"elements", std::move(elements)}, {"element_evolved", w.element_evolved}, {"element_offer", std::move(offer)}};
 }
 
 WeaponInstance WeaponFromJson(const json& j) {
@@ -79,6 +81,11 @@ WeaponInstance WeaponFromJson(const json& j) {
     for (const json& e : Get(j, "elements", json::array())) {
         if (!e.is_string()) continue;
         if (const auto el = ParseElement(e.get<std::string>())) w.elements.push_back(*el);
+    }
+    w.element_evolved = Get(j, "element_evolved", false);
+    for (const json& e : Get(j, "element_offer", json::array())) {
+        if (!e.is_string()) continue;
+        if (const auto el = ParseElement(e.get<std::string>())) w.element_offer.push_back(*el);
     }
     return w;
 }

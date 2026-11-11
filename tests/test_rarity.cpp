@@ -4,6 +4,7 @@
 // for the element's status or blast (WeaponProc); a gun goes one tier up by a refine (a reward, the
 // shop, a chest).
 #include <algorithm>
+#include <set>
 #include <string>
 
 #include <catch_amalgamated.hpp>
@@ -45,8 +46,8 @@ ContentSources RemakeSources(const std::function<void(nlohmann::json& weapons, n
           "uncommon": {"affix_count": 1, "magnitude_mult": 1.25},
           "rare": {"affix_count": 2, "magnitude_mult": 1.5},
           "epic": {"affix_count": 3, "magnitude_mult": 1.75, "element_count": 1},
-          "legendary": {"affix_count": 3, "magnitude_mult": 2.0, "unique_count": 1, "element_count": 1},
-          "exotic": {"affix_count": 4, "magnitude_mult": 2.5, "unique_count": 2, "element_count": 2}})");
+          "legendary": {"affix_count": 3, "magnitude_mult": 2.0, "element_count": 1, "element_evolved": true},
+          "exotic": {"affix_count": 4, "magnitude_mult": 2.5, "unique_count": 1, "element_count": 1, "element_evolved": true}})");
         economy["refine"] = nlohmann::json::parse(R"({"reward_chance": 0.0, "reward_rating": "S", "shop_chance": 1.0,
           "chest_chance": 0.0, "exotic_unlocked_by": "boss:uEm43",
           "price": {"common": 0, "uncommon": 40, "rare": 65, "epic": 110, "legendary": 160, "exotic": 240}})");
@@ -88,7 +89,9 @@ TEST_CASE("rarity remake: content loads elements, effects, the exotic tier and r
     CHECK(chain->targets == 4);
     CHECK(chain->radius == Approx(800.0));
     const EconomyConfig& eco = content->economy();
-    CHECK(eco.weapon_rarity[RarityIndex(Rarity::Exotic)].element_count == 2);
+    CHECK(eco.weapon_rarity[RarityIndex(Rarity::Exotic)].element_count == 1);
+    CHECK(eco.weapon_rarity[RarityIndex(Rarity::Legendary)].element_evolved);
+    CHECK_FALSE(eco.weapon_rarity[RarityIndex(Rarity::Epic)].element_evolved);
     CHECK(eco.rewards.rarity_weights[RarityIndex(Rarity::Exotic)] == 0.0);  // nothing rolls Exotic
     CHECK(eco.refine.enabled);
     CHECK(eco.refine.price[RarityIndex(Rarity::Exotic)] == 240);
@@ -111,24 +114,36 @@ TEST_CASE("rarity remake: content loads elements, effects, the exotic tier and r
     CHECK(has("duplicate element"));
 }
 
-TEST_CASE("rarity remake: Epic, Legendary and Exotic guns carry elements and effects", "[weapons][rarity]") {
+TEST_CASE("rarity remake: Epic, Legendary and Exotic guns carry one element, evolved at Legendary", "[weapons][rarity]") {
+    // 2026-11-11 (the user: the best tiers carried too many): one element a gun, evolved from
+    // Legendary on; Legendary adds no legendary effect, Exotic one.
     auto content = test::Load(RemakeSources());
     const Capabilities caps = Capabilities::All();
+    const auto uniques = [](const WeaponInstance& w) {
+        return std::count_if(w.affixes.begin(), w.affixes.end(), [](const Affix& a) { return IsUniqueAffix(a.kind); });
+    };
     for (std::uint64_t seed = 1; seed <= 20; ++seed) {
         Rng rng(seed);
         const WeaponInstance rare = GenerateWeapon(rng, *content, caps, "pistol", Rarity::Rare, "w1");
         CHECK(rare.elements.empty());
         const WeaponInstance epic = GenerateWeapon(rng, *content, caps, "pistol", Rarity::Epic, "w2");
         CHECK(epic.elements.size() == 1);
-        CHECK(std::none_of(epic.affixes.begin(), epic.affixes.end(), [](const Affix& a) { return IsUniqueAffix(a.kind); }));
+        CHECK(epic.element_offer.empty());  // a found or bought gun rolls it: no choice
+        CHECK_FALSE(epic.element_evolved);
+        CHECK(uniques(epic) == 0);
         const WeaponInstance legendary = GenerateWeapon(rng, *content, caps, "pistol", Rarity::Legendary, "w3");
         CHECK(legendary.elements.size() == 1);
-        CHECK(std::count_if(legendary.affixes.begin(), legendary.affixes.end(), [](const Affix& a) { return IsUniqueAffix(a.kind); }) == 1);
+        CHECK(legendary.element_evolved);
+        CHECK(uniques(legendary) == 0);
         const WeaponInstance exotic = GenerateWeapon(rng, *content, caps, "pistol", Rarity::Exotic, "w4");
-        REQUIRE(exotic.elements.size() == 2);
-        CHECK(exotic.elements[0] != exotic.elements[1]);
-        CHECK(std::count_if(exotic.affixes.begin(), exotic.affixes.end(), [](const Affix& a) { return IsUniqueAffix(a.kind); }) == 2);
+        CHECK(exotic.elements.size() == 1);
+        CHECK(exotic.element_evolved);
+        CHECK(uniques(exotic) == 1);
         CHECK(std::count_if(exotic.affixes.begin(), exotic.affixes.end(), [](const Affix& a) { return !IsUniqueAffix(a.kind); }) == 4);
+        // Never one of the build's own.
+        const WeaponInstance other = GenerateWeapon(rng, *content, caps, "pistol", Rarity::Epic, "w5",
+                                                    {Element::Incendiary, Element::Shock, Element::Cryo, Element::Toxic});
+        CHECK(other.elements == std::vector<Element>{Element::Explosive});
     }
     // The fixture's damage_pct rolls 10 at x1; an Exotic's at x2.5.
     Rng rng(7);
@@ -147,24 +162,36 @@ TEST_CASE("rarity remake: a refine keeps the gun and adds the next tier", "[weap
     Rng rng(3);
     WeaponInstance w = GenerateWeapon(rng, *content, caps, "shotgun", Rarity::Rare, "w_sg");
     w.level = 4;
-    const WeaponInstance epic = RefineWeapon(rng, *content, caps, w);
+    WeaponInstance epic = RefineWeapon(rng, *content, caps, w);
     CHECK(epic.rarity == Rarity::Epic);
     CHECK(epic.instance_id == "w_sg");
     CHECK(epic.level == 4);
-    CHECK(epic.elements.size() == 1);
+    // Refined to Epic, the gun offers two elements to choose from instead of drawing one.
+    CHECK(epic.elements.empty());
+    REQUIRE(epic.element_offer.size() == 2);
+    CHECK(epic.element_offer[0] != epic.element_offer[1]);
+    CHECK_FALSE(epic.element_evolved);
     REQUIRE(epic.affixes.size() == 3);
     // The two it had stay, scaled from x1.5 to x1.75; damage_pct rolled 15 at Rare.
     for (std::size_t i = 0; i < w.affixes.size(); ++i) {
         CHECK(epic.affixes[i].kind == w.affixes[i].kind);
         if (w.affixes[i].kind == AffixKind::DamagePct) CHECK(epic.affixes[i].value == Approx(17.5));
     }
+    // Not chosen yet: a refine to Legendary keeps the offer, and the element comes evolved.
+    const WeaponInstance waiting = RefineWeapon(rng, *content, caps, epic);
+    CHECK(waiting.element_offer == epic.element_offer);
+    CHECK(waiting.element_evolved);
+    epic.elements = {epic.element_offer[1]};
+    epic.element_offer.clear();
     const WeaponInstance legendary = RefineWeapon(rng, *content, caps, epic);
     CHECK(legendary.elements == epic.elements);
-    CHECK(std::count_if(legendary.affixes.begin(), legendary.affixes.end(), [](const Affix& a) { return IsUniqueAffix(a.kind); }) == 1);
+    CHECK(legendary.element_evolved);
+    CHECK(legendary.element_offer.empty());
+    CHECK(std::count_if(legendary.affixes.begin(), legendary.affixes.end(), [](const Affix& a) { return IsUniqueAffix(a.kind); }) == 0);
     const WeaponInstance exotic = RefineWeapon(rng, *content, caps, legendary);
     CHECK(exotic.rarity == Rarity::Exotic);
-    CHECK(exotic.elements.size() == 2);
-    CHECK(exotic.elements[0] == epic.elements[0]);
+    CHECK(exotic.elements == epic.elements);
+    CHECK(std::count_if(exotic.affixes.begin(), exotic.affixes.end(), [](const Affix& a) { return IsUniqueAffix(a.kind); }) == 1);
     CHECK(RefineWeapon(rng, *content, caps, exotic).rarity == Rarity::Exotic);  // the top
 }
 
@@ -313,7 +340,10 @@ TEST_CASE("rarity remake: refines from the rewards, the shop and chests", "[weap
                                      [](const WeaponInstance& w) { return w.instance_id == "w_sg"; });
         REQUIRE(it != h.rc.state().weapons.end());
         CHECK(it->rarity == Rarity::Epic);
-        CHECK(it->elements.size() == 1);
+        CHECK(it->elements.empty());  // it waits for its element: two offered, or a random one
+        CHECK(it->element_offer.size() == 2);
+        CHECK(h.rc.PendingElementChoices().size() == 1);
+        CHECK(view.detail.find("Choose its element: ") != std::string::npos);
         // A reroll keeps the sure refine.
         REQUIRE(h.rc.state().phase == Phase::Shop);
     }
@@ -500,4 +530,210 @@ TEST_CASE("a shop's refine chance goes by the run's length", "[weapons][rarity]"
     CHECK(RefineShopChance(refine, "long", 8) == Catch::Approx(0.20));
     CHECK(RefineShopChance(refine, "marathon", 12) == Catch::Approx(0.15));
     CHECK(RefineShopChance(refine, "no such length", 8) == Catch::Approx(0.15));  // no entry: spread over its arenas
+}
+
+namespace {
+
+// The fixture's elements with an evolution each (weapons.json "evolved"), as the shipped ones.
+void AddEvolutions(nlohmann::json& weapons, nlohmann::json&) {
+    const nlohmann::json evolved = nlohmann::json::parse(R"({
+      "incendiary": {"name": "Inferno", "seconds": 5, "dps_fraction": 0.35, "spread_radius": 300},
+      "shock": {"name": "Storm", "chance": 1.0, "damage_fraction": 1.0, "radius": 800, "targets": 4},
+      "cryo": {"name": "Absolute Zero", "chance": 1.0, "seconds": 4, "damage_fraction": 0.5, "damage_cap": 1500,
+               "radius": 350, "shatter_freeze_seconds": 3},
+      "explosive": {"name": "Chain Reaction", "damage_fraction": 0.6, "damage_cap": 1800, "radius": 450, "chain": 2},
+      "toxic": {"name": "Plague", "seconds": 6, "dps_fraction": 0.15, "radius": 400, "cloud_dps_fraction": 0.03}})");
+    for (auto& e : weapons["elements"]) e["evolved"] = evolved[e["element"].get<std::string>()];
+}
+
+}  // namespace
+
+// 2026-11-11, the user: "when you reach second to last refinement you get a list of 2 random
+// elementals and an option to assign random ... when you upgrade it to the last the element you
+// choose gets an upgrade and it evolves".
+TEST_CASE("elements: a Legendary gun's element plays evolved", "[weapons][rarity]") {
+    test::Harness h(test::Load(RemakeSources(AddEvolutions)));
+    REQUIRE(h.rc.StartRun("alpha", 1).ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    WeaponInstance fire = Gun("shotgun", "w_fire", Rarity::Legendary, {Element::Incendiary});
+    fire.element_evolved = true;
+    REQUIRE(h.rc.DevGrantWeapon(fire).ok());
+    HitContext hit;
+    hit.now = 1.0;
+    hit.weapon_id = "shotgun";
+    hit.base_damage = 200.0;
+    const OutgoingResult r = h.rc.ComputeOutgoingMultiplier(hit);
+    const WeaponProc* inferno = FindProc(r.procs, ProcKind::IgniteAround);  // Inferno spreads
+    REQUIRE(inferno != nullptr);
+    CHECK(inferno->dps == Approx(70.0));
+    CHECK(inferno->seconds == Approx(5.0));
+    CHECK(inferno->radius == Approx(300.0));
+    CHECK(inferno->element == "incendiary");
+    CHECK(inferno->evolved);
+    CHECK(FindProc(r.procs, ProcKind::Burn) == nullptr);
+
+    // Storm: the evolved Shock's numbers.
+    WeaponInstance storm = Gun("pistol", "w_storm", Rarity::Legendary, {Element::Shock});
+    storm.element_evolved = true;
+    REQUIRE(h.rc.DevGrantWeapon(storm).ok());
+    hit.weapon_id = "pistol";
+    const WeaponProc* arc = FindProc(h.rc.ComputeOutgoingMultiplier(hit).procs, ProcKind::Shock);
+    REQUIRE(arc != nullptr);
+    CHECK(arc->damage == Approx(200.0));
+    CHECK(arc->targets == 4);
+    CHECK(arc->radius == Approx(800.0));
+
+    // Chain Reaction, Absolute Zero's shatter and Plague's cloud on a kill.
+    WeaponInstance boom = Gun("shotgun", "w_boom", Rarity::Legendary, {Element::Explosive});
+    boom.element_evolved = true;
+    REQUIRE(h.rc.DevGrantWeapon(boom).ok());
+    KillEvent k;
+    k.now = 2.0;
+    k.by_player = true;
+    k.weapon_id = "shotgun";
+    k.enemy_id = "e1";
+    k.target_hp_max = 1000.0;
+    KillOutcome out = h.rc.OnEnemyKilled(k);
+    const WeaponProc* blast = FindProc(out.procs, ProcKind::Explode);
+    REQUIRE(blast != nullptr);
+    CHECK(blast->damage == Approx(600.0));
+    CHECK(blast->radius == Approx(450.0));
+    CHECK(blast->chain == 2);
+
+    WeaponInstance ice = Gun("rifle", "w_ice", Rarity::Legendary, {Element::Cryo});
+    ice.element_evolved = true;
+    REQUIRE(h.rc.DevGrantWeapon(ice).ok());
+    k.weapon_id = "rifle";
+    k.enemy_id = "e2";
+    k.target_frozen = true;
+    out = h.rc.OnEnemyKilled(k);
+    const WeaponProc* shatter = FindProc(out.procs, ProcKind::Shatter);
+    REQUIRE(shatter != nullptr);
+    CHECK(shatter->freeze_seconds == Approx(3.0));
+    CHECK(shatter->damage == Approx(500.0));
+    // Another gun's kill of a frozen enemy: the plain shatter, no freeze.
+    k.weapon_id = "pistol";
+    k.enemy_id = "e3";
+    out = h.rc.OnEnemyKilled(k);
+    REQUIRE(FindProc(out.procs, ProcKind::Shatter) != nullptr);
+    CHECK(FindProc(out.procs, ProcKind::Shatter)->freeze_seconds == Approx(0.0));
+
+    // Plague: its poison carries the cloud the poisoned enemy's death lets out (the adapter's, as a
+    // poison tick's kill has no gun).
+    WeaponInstance plague = Gun("rifle", "w_plague", Rarity::Legendary, {Element::Toxic});
+    plague.element_evolved = true;
+    REQUIRE(h.rc.DevGrantWeapon(plague).ok());
+    hit.weapon_id = "rifle";
+    const WeaponProc* poison = FindProc(h.rc.ComputeOutgoingMultiplier(hit).procs, ProcKind::Poison);
+    REQUIRE(poison != nullptr);
+    CHECK(poison->dps == Approx(30.0));  // 0.15 of the 200 dealt
+    CHECK(poison->seconds == Approx(6.0));
+    CHECK(poison->cloud_dps_fraction == Approx(0.03));
+    CHECK(poison->cloud_radius == Approx(400.0));
+    k.weapon_id = "rifle";
+    k.enemy_id = "e4";
+    k.target_frozen = false;
+    CHECK(FindProc(h.rc.OnEnemyKilled(k).procs, ProcKind::PoisonCloud) == nullptr);
+    // The flamethrower's stream asks for a gun's elements.
+    CHECK(h.rc.ElementsOf("rifle") == std::vector<std::pair<Element, bool>>{{Element::Toxic, true}});
+    CHECK(h.rc.ElementsOf("nothing").empty());
+}
+
+TEST_CASE("elements: a gun refined to Epic waits for its element, chosen or random", "[weapons][rarity]") {
+    const auto content = test::Load(RemakeSources(AddEvolutions));
+    test::Harness h(content);
+    REQUIRE(h.rc.StartRun("alpha", 5).ok());
+    REQUIRE(h.rc.DevGrantWeapon(Gun("shotgun", "w_sg", Rarity::Rare)).ok());
+    CHECK(h.rc.PendingElementChoices().empty());
+    REQUIRE(h.rc.DevRefineWeapon(std::string("shotgun")).ok());
+    auto pending = h.rc.PendingElementChoices();
+    REQUIRE(pending.size() == 1);
+    CHECK(pending[0].instance_id == "w_sg");
+    CHECK_FALSE(pending[0].evolved);
+    REQUIRE(pending[0].offer.size() == 2);
+    const Element second = pending[0].offer[1];
+    CHECK(h.rc.ChooseElement("w_sg", 2).code == ErrorCode::InvalidIndex);
+    CHECK(h.rc.ChooseElement("nope", 0).code == ErrorCode::UnknownId);
+    REQUIRE(h.rc.ChooseElement("w_sg", 1).ok());
+    CHECK(h.rc.PendingElementChoices().empty());
+    const auto gun = [&h](const char* id) {
+        return *std::find_if(h.rc.state().weapons.begin(), h.rc.state().weapons.end(),
+                             [id](const WeaponInstance& w) { return w.instance_id == id; });
+    };
+    CHECK(gun("w_sg").elements == std::vector<Element>{second});
+    CHECK(h.rc.ChooseElement("w_sg", 0).code == ErrorCode::NotEligible);  // chosen already
+    // Then Legendary: it evolves.
+    REQUIRE(h.rc.DevRefineWeapon(std::string("shotgun")).ok());
+    CHECK(gun("w_sg").elements == std::vector<Element>{second});
+    CHECK(gun("w_sg").element_evolved);
+
+    // Random: any element, each as likely, never the build's own.
+    std::set<Element> drawn;
+    for (int i = 0; i < 40; ++i) {
+        const std::string id = "w_r" + std::to_string(i);
+        WeaponInstance w = Gun("pistol", id, Rarity::Epic);
+        w.element_offer = {Element::Incendiary, Element::Toxic};
+        REQUIRE(h.rc.DevGrantWeapon(w).ok());
+        REQUIRE(h.rc.ChooseElement(id, -1).ok());
+        drawn.insert(gun(id.c_str()).elements.at(0));
+    }
+    CHECK(drawn.size() == 5);  // the three not offered come up too
+}
+
+TEST_CASE("elements: the offer leans to the common ones and skips the build's", "[weapons][rarity]") {
+    const auto content = test::Load(RemakeSources([](nlohmann::json& weapons, nlohmann::json& economy) {
+        AddEvolutions(weapons, economy);
+        for (auto& e : weapons["elements"]) e["weight"] = e["element"] == "explosive" ? 1 : 30;
+    }));
+    const Capabilities caps = Capabilities::All();
+    Rng rng(11);
+    int explosive = 0;
+    for (int i = 0; i < 400; ++i) {
+        const std::vector<Element> offer = OfferElements(rng, *content, {Element::Cryo}, 2);
+        REQUIRE(offer.size() == 2);
+        CHECK(offer[0] != offer[1]);
+        CHECK(std::find(offer.begin(), offer.end(), Element::Cryo) == offer.end());
+        explosive += static_cast<int>(std::count(offer.begin(), offer.end(), Element::Explosive));
+    }
+    CHECK(explosive < 40);  // weight 1 of 91: in about 2 of 100 offers' first pick, a few more second
+    (void)caps;
+}
+
+TEST_CASE("elements: a resumed run keeps a gun's evolution and its waiting offer", "[weapons][rarity][persistence]") {
+    test::Harness h(test::Load(RemakeSources(AddEvolutions)));
+    REQUIRE(h.rc.StartRun("alpha", 1).ok());
+    WeaponInstance w = Gun("shotgun", "w_wait", Rarity::Legendary);
+    w.element_evolved = true;
+    w.element_offer = {Element::Shock, Element::Toxic};
+    REQUIRE(h.rc.DevGrantWeapon(w).ok());
+    RunState back;
+    REQUIRE(ParseRunResume(SerializeRunResume(h.rc.state()), back).ok());
+    const auto it = std::find_if(back.weapons.begin(), back.weapons.end(), [](const WeaponInstance& x) { return x.instance_id == "w_wait"; });
+    REQUIRE(it != back.weapons.end());
+    CHECK(it->element_evolved);
+    CHECK(it->element_offer == std::vector<Element>{Element::Shock, Element::Toxic});
+}
+
+TEST_CASE("elements: the shipped ones each evolve, the rarer ones weigh less", "[weapons][rarity][content]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const Content& c = *r.content;
+    for (Element e : kAllElements) {
+        INFO(ElementName(e));
+        const ElementDef* base = c.FindElement(e);
+        const ElementDef* evolved = c.FindElement(e, true);
+        REQUIRE(base != nullptr);
+        REQUIRE(evolved != nullptr);
+        CHECK(evolved != base);
+        CHECK(evolved->name != base->name);
+    }
+    CHECK(c.FindElement(Element::Explosive)->weight < c.FindElement(Element::Incendiary)->weight);
+    CHECK(c.FindElement(Element::Cryo)->weight < c.FindElement(Element::Toxic)->weight);
+    // Dragon's Breath and Chain Lightning are Inferno and Storm now.
+    CHECK(c.FindUnique("dragons_breath") == nullptr);
+    CHECK(c.FindUnique("chain_lightning") == nullptr);
+    const auto& rules = c.economy().weapon_rarity;
+    CHECK(rules[RarityIndex(Rarity::Legendary)].unique_count == 0);
+    CHECK(rules[RarityIndex(Rarity::Exotic)].unique_count == 1);
+    CHECK(rules[RarityIndex(Rarity::Exotic)].element_count == 1);
 }

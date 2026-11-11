@@ -174,6 +174,8 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.motions = g_caps.players && SignatureOk("resource_get") && SignatureOk("resource_release") &&
                      SignatureOk("motion_list_set") && SignatureOk("char_set_motion") && motionListName &&
                      ReadCString(motionListName, 16) == "rMotionList";
+    g_caps.effects = g_caps.motions && SignatureOk("effect_create") && SignatureOk("effect_call_site") &&
+                     ReadCString(ReadOr<std::uintptr_t>(re5::addr::kDtiEffectList + 4, 0), 16) == "rEffectList";
     g_caps.partner = g_caps.players && g_caps.gameWork && SignatureOk("player_add") && SignatureOk("class_by_id");
     g_caps.partnerDeath = g_caps.partner && SignatureOk("player_death_event");
     g_caps.equipCell = g_caps.inventory && SignatureOk("player_equip_cell");
@@ -643,6 +645,41 @@ std::uintptr_t EffectList(const char* path, bool load) {
         return 0;
     }
     return list;
+}
+
+namespace {
+
+using EffectCreateFn = std::uint32_t(__thiscall*)(std::uintptr_t manager, std::uintptr_t list, std::uintptr_t unit, int joint,
+                                                  std::uintptr_t offset, int mode, std::uintptr_t settings, int group);
+
+bool CallEffectCreate(std::uintptr_t manager, std::uintptr_t list, std::uintptr_t unit, int group) {
+    __try {
+        reinterpret_cast<EffectCreateFn>(re5::addr::kFnEffectCreate)(manager, list, unit, -1, re5::addr::kEffectOffsetZero, 4,
+                                                                    re5::addr::kEffectSettingsDefault, group);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+bool PlayEffect(const char* path, std::uintptr_t unit) {
+    if (!g_caps.effects || !path || !*path || !unit) return false;
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kEffectManager, 0);
+    if (!manager) return false;
+    const std::uintptr_t list = EffectList(path, false);  // lookup-only: a list not in memory is skipped
+    if (!list) return false;
+    // The group the game's own starters give it (0x00770650): core lists 0x12, stage ones 0x14, others 0x13.
+    const std::string_view p(path);
+    const int group = p.rfind("effect\\efl\\core", 0) == 0 ? 0x12 : p.rfind("effect\\efl\\stage", 0) == 0 ? 0x14 : 0x13;
+    const bool ok = CallEffectCreate(manager, list, unit, group);
+    ReleaseResource(list);
+    if (!ok) {
+        RM_LOGW("effects: starting %s faulted; the elements' looks are off", path);
+        g_caps.effects = false;
+    }
+    return ok;
 }
 
 bool EffectFileExists(const std::string& path) {

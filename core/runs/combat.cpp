@@ -20,6 +20,7 @@ std::string_view ProcKindName(ProcKind k) {
         case ProcKind::Shatter: return "shatter";
         case ProcKind::Overkill: return "overkill";
         case ProcKind::Refill: return "refill";
+        case ProcKind::PoisonCloud: return "poison_cloud";
     }
     return "burn";
 }
@@ -199,8 +200,8 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
         }
         // Against a boss an element is more damage instead of a status.
         if (hit.target_is_boss) {
-            for (Element el : GunElements(*weapon)) {
-                if (const ElementDef* d = content_->FindElement(el)) b.weapon_bonus += d->boss_bonus;
+            for (const auto& [el, evolved] : GunElements(*weapon)) {
+                if (const ElementDef* d = content_->FindElement(el, evolved)) b.weapon_bonus += d->boss_bonus;
             }
         }
     }
@@ -243,27 +244,37 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
     return out;
 }
 
-std::vector<Element> RunController::GunElements(const WeaponInstance& weapon) const {
-    std::vector<Element> out = weapon.elements;
-    const auto add = [&out](Element e) {
-        if (std::find(out.begin(), out.end(), e) == out.end()) out.push_back(e);
+std::vector<std::pair<Element, bool>> RunController::GunElements(const WeaponInstance& weapon) const {
+    std::vector<std::pair<Element, bool>> out;
+    const auto add = [&out](Element e, bool evolved) {
+        if (std::none_of(out.begin(), out.end(), [e](const auto& x) { return x.first == e; })) out.emplace_back(e, evolved);
     };
-    for (const std::string& name : run_.character.build.gun_elements) {
-        if (const auto e = ParseElement(name)) add(*e);
-    }
-    if (run_.arena_element >= 0) add(static_cast<Element>(run_.arena_element));
+    for (Element e : weapon.elements) add(e, weapon.element_evolved);
+    for (Element e : BuildElements()) add(e, false);
+    if (run_.arena_element >= 0) add(static_cast<Element>(run_.arena_element), false);
     return out;
+}
+
+std::vector<Element> RunController::BuildElements() const { return ParseElements(run_.character.build.gun_elements); }
+
+std::vector<std::pair<Element, bool>> RunController::ElementsOf(std::string_view base_id) const {
+    for (const WeaponInstance& w : run_.weapons) {
+        if (w.base_id == base_id) return GunElements(w);
+    }
+    return {};
 }
 
 void RunController::AddHitProcs(const WeaponInstance& weapon, double dealt, bool execute, std::vector<WeaponProc>& procs) {
     const auto roll = [this](double chance) {
         return chance >= 1.0 || (chance > 0.0 && streams_->combat.NextDouble() < chance);
     };
-    for (Element el : GunElements(weapon)) {
-        const ElementDef* d = content_->FindElement(el);
+    for (const auto& [el, evolved] : GunElements(weapon)) {
+        const ElementDef* d = content_->FindElement(el, evolved);
         if (d == nullptr) continue;
         WeaponProc p;
         p.source = d->name;
+        p.element = std::string(ElementName(el));
+        p.evolved = evolved;
         switch (el) {
             case Element::Incendiary:
             case Element::Toxic:
@@ -271,6 +282,16 @@ void RunController::AddHitProcs(const WeaponInstance& weapon, double dealt, bool
                 p.kind = el == Element::Incendiary ? ProcKind::Burn : ProcKind::Poison;
                 p.dps = dealt * d->dps_fraction;
                 p.seconds = d->seconds;
+                // Inferno (evolved): the burn spreads to those around the target.
+                if (el == Element::Incendiary && d->spread_radius > 0.0) {
+                    p.kind = ProcKind::IgniteAround;
+                    p.radius = d->spread_radius;
+                }
+                // Plague (evolved): the poisoned enemy's death, however it comes, poisons those around.
+                if (el == Element::Toxic && d->cloud_dps_fraction > 0.0) {
+                    p.cloud_dps_fraction = d->cloud_dps_fraction;
+                    p.cloud_radius = d->radius;
+                }
                 break;
             case Element::Shock:
                 if (!roll(d->chance)) continue;
@@ -321,23 +342,35 @@ void RunController::AddHitProcs(const WeaponInstance& weapon, double dealt, bool
 
 void RunController::AddKillProcs(const KillEvent& kill, const WeaponInstance* weapon, KillOutcome& out) {
     if (!kill.by_player || kill.target_is_boss) return;
-    const auto blast = [&](ProcKind kind, const ElementDef& d) {
+    const auto blast = [&](ProcKind kind, const ElementDef& d, bool evolved) {
         WeaponProc p;
         p.kind = kind;
         p.source = d.name;
+        p.element = std::string(ElementName(d.element));
+        p.evolved = evolved;
         p.damage = d.damage_fraction * kill.target_hp_max;
         if (d.damage_cap > 0.0) p.damage = std::min(p.damage, d.damage_cap);
         p.radius = d.radius;
+        p.chain = kind == ProcKind::Explode ? d.chain : 0;
+        p.freeze_seconds = kind == ProcKind::Shatter ? d.shatter_freeze_seconds : 0.0;
         if (p.damage > 0.0 && p.radius > 0.0) out.procs.push_back(std::move(p));
     };
-    // A frozen enemy shatters whatever killed it (the player's).
+    std::vector<std::pair<Element, bool>> elements;
+    if (weapon != nullptr) elements = GunElements(*weapon);
+    const auto evolved_of = [&elements](Element e) {
+        return std::any_of(elements.begin(), elements.end(), [e](const auto& x) { return x.first == e && x.second; });
+    };
+    // A frozen enemy shatters whatever killed it (the player's); Absolute Zero's (an evolved Cryo
+    // gun's kill) freezes those it hits.
     if (kill.target_frozen) {
-        if (const ElementDef* d = content_->FindElement(Element::Cryo)) blast(ProcKind::Shatter, *d);
+        const bool evolved = evolved_of(Element::Cryo);
+        if (const ElementDef* d = content_->FindElement(Element::Cryo, evolved)) blast(ProcKind::Shatter, *d, evolved);
     }
     if (weapon == nullptr) return;
-    for (Element el : GunElements(*weapon)) {
-        if (el != Element::Explosive) continue;
-        if (const ElementDef* d = content_->FindElement(el)) blast(ProcKind::Explode, *d);
+    for (const auto& [el, evolved] : elements) {
+        const ElementDef* d = content_->FindElement(el, evolved);
+        if (d == nullptr) continue;
+        if (el == Element::Explosive) blast(ProcKind::Explode, *d, evolved);
     }
     for (const Affix& af : weapon->affixes) {
         const UniqueAffixDef* u = af.unique_id.empty() ? nullptr : content_->FindUnique(af.unique_id);

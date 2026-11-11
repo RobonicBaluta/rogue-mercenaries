@@ -15,10 +15,24 @@ std::string Percent(double fraction) {
     return buf;
 }
 
-// A gun's lines: its elements first, then its legendary effects, then its bonuses.
+// "Incendiary or Toxic" (an element offer's names).
+std::string OfferNames(const std::vector<Element>& offer, const Content& content) {
+    std::string out;
+    for (std::size_t i = 0; i < offer.size(); ++i) {
+        const ElementDef* d = content.FindElement(offer[i]);
+        out += (i == 0 ? "" : i + 1 == offer.size() ? " or " : ", ") + (d != nullptr ? d->name : std::string(ElementName(offer[i])));
+    }
+    return out;
+}
+
+// A gun's lines: its element first (evolved on a Legendary gun, or the choice it waits for), then
+// its legendary effects, then its bonuses.
 std::vector<std::string> WeaponLines(const WeaponInstance& w, const Content& content) {
     std::vector<std::string> out;
-    for (Element e : w.elements) out.push_back(DescribeElement(e, &content));
+    for (Element e : w.elements) out.push_back(DescribeElement(e, &content, w.element_evolved));
+    if (w.elements.empty() && !w.element_offer.empty()) {
+        out.push_back("Element to choose: " + OfferNames(w.element_offer, content) + ", or a random one");
+    }
     for (const Affix& a : w.affixes) {
         if (IsUniqueAffix(a.kind)) out.push_back(DescribeAffix(a, &content));
     }
@@ -49,8 +63,15 @@ std::string RefineDetail(const WeaponInstance* now, const WeaponInstance& refine
     std::vector<std::string> gains;
     for (Element e : refined.elements) {
         if (now == nullptr || std::find(now->elements.begin(), now->elements.end(), e) == now->elements.end()) {
-            gains.push_back(DescribeElement(e, &content));
+            gains.push_back(DescribeElement(e, &content, refined.element_evolved));
+        } else if (refined.element_evolved && !now->element_evolved) {
+            const ElementDef* d = content.FindElement(e);
+            gains.push_back((d != nullptr ? d->name : std::string(ElementName(e))) + " evolves into " +
+                            DescribeElement(e, &content, true));
         }
+    }
+    if (refined.elements.empty() && !refined.element_offer.empty() && (now == nullptr || now->element_offer.empty())) {
+        gains.push_back("Choose its element: " + OfferNames(refined.element_offer, content) + ", or a random one");
     }
     for (const Affix& a : refined.affixes) {
         const bool had = now != nullptr && std::any_of(now->affixes.begin(), now->affixes.end(), [&a](const Affix& x) {

@@ -45,7 +45,7 @@ const json* Get(const json& obj, std::string_view key) {
     return it == obj.end() ? nullptr : &*it;
 }
 
-void CheckKeys(const Diag& d, const json& obj, std::initializer_list<std::string_view> allowed) {
+void CheckKeys(const Diag& d, const json& obj, const std::vector<std::string_view>& allowed) {
     if (!obj.is_object()) return;
     for (const auto& item : obj.items()) {
         const std::string& key = item.key();
@@ -54,6 +54,10 @@ void CheckKeys(const Diag& d, const json& obj, std::initializer_list<std::string
             d.Error("unknown field " + Q(key));
         }
     }
+}
+
+void CheckKeys(const Diag& d, const json& obj, std::initializer_list<std::string_view> allowed) {
+    CheckKeys(d, obj, std::vector<std::string_view>(allowed));
 }
 
 bool GetString(const Diag& d, const json& obj, std::string_view key, std::string& out,
@@ -624,9 +628,63 @@ std::vector<std::string> AffixImpliedCaps(AffixKind kind) {
     }
 }
 
+// An element's numbers (its own, or its "evolved" block's); the element itself is set already.
+void ParseElementNumbers(const Diag& d, const json& e, ElementDef& el, bool evolved) {
+    std::vector<std::string_view> keys = {"name", "description", "chance", "seconds", "dps_fraction", "damage_fraction",
+                                          "damage_cap", "radius", "targets", "taken_mult", "boss_bonus", "stream_seconds"};
+    if (evolved) {
+        for (std::string_view k : {"spread_radius", "shatter_freeze_seconds", "cloud_dps_fraction", "chain"}) keys.push_back(k);
+    } else {
+        for (std::string_view k : {"element", "weight", "evolved"}) keys.push_back(k);
+    }
+    CheckKeys(d, e, keys);
+    GetString(d, e, "name", el.name, true);
+    GetString(d, e, "description", el.description, false);
+    if (GetNumber(d, e, "chance", el.chance, false)) CheckRange(d, "chance", el.chance, 0.0, 1.0, true);
+    if (GetNumber(d, e, "seconds", el.seconds, false)) CheckRange(d, "seconds", el.seconds, 0.0, 30.0);
+    if (GetNumber(d, e, "dps_fraction", el.dps_fraction, false)) CheckRange(d, "dps_fraction", el.dps_fraction, 0.0, 5.0);
+    if (GetNumber(d, e, "damage_fraction", el.damage_fraction, false)) {
+        CheckRange(d, "damage_fraction", el.damage_fraction, 0.0, 5.0);
+    }
+    if (GetNumber(d, e, "damage_cap", el.damage_cap, false)) CheckRange(d, "damage_cap", el.damage_cap, 0.0, 30000.0);
+    if (GetNumber(d, e, "radius", el.radius, false)) CheckRange(d, "radius", el.radius, 0.0, 5000.0);
+    GetIntRange(d, e, "targets", el.targets, false, 0, 20);
+    if (GetNumber(d, e, "taken_mult", el.taken_mult, false)) CheckRange(d, "taken_mult", el.taken_mult, 0.1, 10.0);
+    if (GetNumber(d, e, "boss_bonus", el.boss_bonus, false)) CheckRange(d, "boss_bonus", el.boss_bonus, 0.0, 5.0);
+    if (GetNumber(d, e, "stream_seconds", el.stream_seconds, false)) CheckRange(d, "stream_seconds", el.stream_seconds, 0.0, 30.0);
+    if (GetNumber(d, e, "weight", el.weight, false)) CheckRange(d, "weight", el.weight, 0.0, 1000.0);
+    if (GetNumber(d, e, "spread_radius", el.spread_radius, false)) CheckRange(d, "spread_radius", el.spread_radius, 0.0, 5000.0);
+    if (GetNumber(d, e, "shatter_freeze_seconds", el.shatter_freeze_seconds, false)) {
+        CheckRange(d, "shatter_freeze_seconds", el.shatter_freeze_seconds, 0.0, 30.0);
+    }
+    if (GetNumber(d, e, "cloud_dps_fraction", el.cloud_dps_fraction, false)) {
+        CheckRange(d, "cloud_dps_fraction", el.cloud_dps_fraction, 0.0, 1.0);
+    }
+    GetIntRange(d, e, "chain", el.chain, false, 0, 5);
+    // What each element needs to do anything.
+    switch (el.element) {
+        case Element::Incendiary:
+        case Element::Toxic:
+            if (!(el.seconds > 0.0) || !(el.dps_fraction > 0.0)) d.Error("needs 'seconds' and 'dps_fraction' above 0");
+            break;
+        case Element::Shock:
+            if (el.targets <= 0 || !(el.radius > 0.0) || !(el.damage_fraction > 0.0)) {
+                d.Error("needs 'targets', 'radius' and 'damage_fraction' above 0");
+            }
+            break;
+        case Element::Cryo:
+            if (!(el.seconds > 0.0)) d.Error("needs 'seconds' above 0");
+            break;
+        case Element::Explosive:
+            if (!(el.radius > 0.0) || !(el.damage_fraction > 0.0)) d.Error("needs 'radius' and 'damage_fraction' above 0");
+            break;
+    }
+    if (el.cloud_dps_fraction > 0.0 && !(el.radius > 0.0)) d.Error("a cloud needs 'radius' above 0");
+}
+
 void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>& weapons,
                   std::vector<AffixDef>& affixes, std::vector<UniqueAffixDef>& uniques,
-                  std::vector<ElementDef>& elements) {
+                  std::vector<ElementDef>& elements, std::vector<ElementDef>& evolved_elements) {
     CheckKeys(file, doc, {"_comment", "schema_version", "weapons", "affixes", "unique_affixes", "elements"});
     if (const json* list = ListField(file, doc, "weapons")) {
         for (std::size_t i = 0; i < list->size(); ++i) {
@@ -767,38 +825,19 @@ void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>&
             if (!ReadEnum(d, e, "element", el.element, ParseElement, "incendiary, shock, cryo, explosive, toxic")) continue;
             d = file.Sub(": element " + Q(ElementName(el.element)));
             if (!seen.insert(el.element).second) d.Error("duplicate element");
-            CheckKeys(d, e, {"element", "name", "description", "chance", "seconds", "dps_fraction", "damage_fraction",
-                             "damage_cap", "radius", "targets", "taken_mult", "boss_bonus"});
-            GetString(d, e, "name", el.name, true);
-            GetString(d, e, "description", el.description, false);
-            if (GetNumber(d, e, "chance", el.chance, false)) CheckRange(d, "chance", el.chance, 0.0, 1.0, true);
-            if (GetNumber(d, e, "seconds", el.seconds, false)) CheckRange(d, "seconds", el.seconds, 0.0, 30.0);
-            if (GetNumber(d, e, "dps_fraction", el.dps_fraction, false)) CheckRange(d, "dps_fraction", el.dps_fraction, 0.0, 5.0);
-            if (GetNumber(d, e, "damage_fraction", el.damage_fraction, false)) {
-                CheckRange(d, "damage_fraction", el.damage_fraction, 0.0, 5.0);
-            }
-            if (GetNumber(d, e, "damage_cap", el.damage_cap, false)) CheckRange(d, "damage_cap", el.damage_cap, 0.0, 30000.0);
-            if (GetNumber(d, e, "radius", el.radius, false)) CheckRange(d, "radius", el.radius, 0.0, 5000.0);
-            GetIntRange(d, e, "targets", el.targets, false, 0, 20);
-            if (GetNumber(d, e, "taken_mult", el.taken_mult, false)) CheckRange(d, "taken_mult", el.taken_mult, 0.1, 10.0);
-            if (GetNumber(d, e, "boss_bonus", el.boss_bonus, false)) CheckRange(d, "boss_bonus", el.boss_bonus, 0.0, 5.0);
-            // What each element needs to do anything.
-            switch (el.element) {
-                case Element::Incendiary:
-                case Element::Toxic:
-                    if (!(el.seconds > 0.0) || !(el.dps_fraction > 0.0)) d.Error("needs 'seconds' and 'dps_fraction' above 0");
-                    break;
-                case Element::Shock:
-                    if (el.targets <= 0 || !(el.radius > 0.0) || !(el.damage_fraction > 0.0)) {
-                        d.Error("needs 'targets', 'radius' and 'damage_fraction' above 0");
-                    }
-                    break;
-                case Element::Cryo:
-                    if (!(el.seconds > 0.0)) d.Error("needs 'seconds' above 0");
-                    break;
-                case Element::Explosive:
-                    if (!(el.radius > 0.0) || !(el.damage_fraction > 0.0)) d.Error("needs 'radius' and 'damage_fraction' above 0");
-                    break;
+            ParseElementNumbers(d, e, el, false);
+            // Its evolution (a Legendary gun's): optional; without one it keeps its own numbers.
+            if (const json* ev = Get(e, "evolved")) {
+                const Diag ed = d.Sub(".evolved");
+                if (!ev->is_object()) {
+                    ed.Error("must be an object");
+                } else {
+                    ElementDef evolved;
+                    evolved.element = el.element;
+                    evolved.weight = el.weight;
+                    ParseElementNumbers(ed, *ev, evolved, true);
+                    evolved_elements.push_back(std::move(evolved));
+                }
             }
             elements.push_back(std::move(el));
         }
@@ -1640,7 +1679,7 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
             const json* t = r == Rarity::Exotic ? Get(*s, RarityName(r)) : Section(sd, *s, RarityName(r));
             if (t == nullptr) continue;
             const Diag td = sd.Sub("." + std::string(RarityName(r)));
-            CheckKeys(td, *t, {"affix_count", "magnitude_mult", "unique_count", "element_count"});
+            CheckKeys(td, *t, {"affix_count", "magnitude_mult", "unique_count", "element_count", "element_evolved"});
             EconomyConfig::WeaponRarityRule& rule = eco.weapon_rarity[RarityIndex(r)];
             GetIntRange(td, *t, "affix_count", rule.affix_count, true, 0, 5);
             if (GetNumber(td, *t, "magnitude_mult", rule.magnitude_mult, true)) {
@@ -1648,6 +1687,7 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
             }
             GetIntRange(td, *t, "unique_count", rule.unique_count, false, 0, 3);
             GetIntRange(td, *t, "element_count", rule.element_count, false, 0, 5);
+            GetBool(td, *t, "element_evolved", rule.element_evolved, false);
         }
     }
     if (const json* s = Get(doc, "refine")) {  // optional: without it no gun is refined
@@ -2026,7 +2066,7 @@ public:
         if (auto doc = ParseDocument(file("perks.json"), src.perks)) ParsePerks(file("perks.json"), *doc, content->perks_);
         if (auto doc = ParseDocument(file("weapons.json"), src.weapons)) {
             ParseWeapons(file("weapons.json"), *doc, content->weapons_, content->affixes_, content->uniques_,
-                         content->elements_);
+                         content->elements_, content->evolved_elements_);
         }
         if (auto doc = ParseDocument(file("characters.json"), src.characters)) {
             ParseCharacters(file("characters.json"), *doc, content->characters_);

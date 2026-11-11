@@ -67,7 +67,7 @@ empty: the mod's profile lives in `%LOCALAPPDATA%`, which the package never ship
    - **CHARACTERS**: pick who you play. You start with Chris and Sheva in their BSAA outfits; everyone and everything else is earned (see **Unlocks** below), whatever the game's own Mercenaries unlocks: the run starts the match with the costume directly. A locked row is red and says what opens it and how far along you are (`2 of 5 done`); RUN RESULTS names what a run unlocked. The character under the cursor is shown on the left, with the bust portrait the game's own character select uses (read from your game's files at runtime). Choosing a character opens its **SKINS**, each skin with its own portrait: most skins are a *build*, a strong rule with a cost (see **Skin builds** below), named in the row with its icon; the line below says what it does.
    - **PERKS**: three slots for the selected character, one per kind. *Style* defines how the character plays (Chris restocks a spray per arena, Sheva heals on kills); *Supply* is what a run starts with (grenade pouch, medkit, a shotgun for Chris); *Support* helps in bad situations (Second Wind, Last Stand below 30% health). Each slot opens its list, every perk with its icon: pick one (it shows SELECTED), press it again to clear the slot, and buy locked ones with Credits. The style slot falls back to the character's own trait. The fourth row, **SKIN**, names the selected skin's build and opens SKINS.
    - **CREDITS**: your balance, lifetime records, the last run's results and weapon unlocks. Every RE5 gun is in the pool; the M93R (150), stun rod (100), grenade launcher (350, its explosive rounds then turn up in the shop and rewards), rocket launcher (400, one rocket) and flamethrower (300) are bought here first (added 2026-11-04, not yet played). The flamethrower
-     holds 100 fuel, which comes back by itself (5 a second once you stop firing for 1.5 s; there are no pumps here); held on
+     holds 100 fuel, which comes back by itself (2.5 a second once you stop firing for 3 s; there are no pumps here); held on
      an enemy it sets Majini burning (they die within seconds), keeps the Chainsaw Majini staggered, and burns the bigger
      ones and the dogs down more slowly. Its tank is only on your back while it is in your hands.
    Every row of the main screen, CREDITS and the run's results has its icon next to it.
@@ -187,7 +187,7 @@ Use this folder, not a mod manager: one that installs the mod into the game repl
 |---|---|---|---|---|
 | Excella | Experimenter | [Excella the Experimenter](https://www.nexusmods.com/residentevil5goldedition/mods/387) (TheGrimrose) | Field Trials | Every arena all her guns carry one random element (the arena's name is followed by it). Every shop offers a refine, at half price. Health x0.8. |
 | Jill | Classic | [Jill HDR Casual](https://www.nexusmods.com/residentevil5goldedition/mods/135) | Last Escape | Starts with the grenade launcher. Every gun she holds carries Incendiary, Cryo and Toxic (its flame, freeze and acid rounds). Only handguns and launchers are hers. Health x0.85. The mod comes in four variants (gear or not, gloves or not): keep the one you like in the mods folder (with several, the first by folder name is worn). |
-| Sheva | Hound Wolf Squad | [Hound Wolf Squad Sheva](https://www.nexusmods.com/residentevil5goldedition/mods/1177) (Angeltitilxyz) | Scorched Earth | Starts with the flamethrower, whose fuel comes back twice as fast. Every gun she holds is Incendiary. Supplies x0.75. |
+| Sheva | Hound Wolf Squad | [Hound Wolf Squad Sheva](https://www.nexusmods.com/residentevil5goldedition/mods/1177) (Angeltitilxyz) | Scorched Earth | Starts with the flamethrower, whose fuel comes back 50 percent faster. Every gun she holds is Incendiary. Supplies x0.75. |
 
 Only the costume file of a mod is used: the Excella mod's other files (her weapons, items, menus and music) are not.
 
@@ -221,26 +221,33 @@ deals damage without shots on screen. Its kills count as yours.
 and level, its damage factor, what its level adds, and its traits.
 
 **Weapon rarity.** A gun's rarity sets how many bonuses it rolls and how big they are: Uncommon one, Rare two,
-Epic and Legendary three, each rarity's bigger than the one below (a Legendary's twice the base roll). An **Epic** gun
-also carries an **element**, a **Legendary** one an element and a **legendary effect**, and an **Exotic** one (cyan)
-four bonuses, two elements and two legendary effects:
+Epic and Legendary three, each rarity's bigger than the one below (a Legendary's twice the base roll). A gun carries
+one **element** from **Epic** on, evolved from **Legendary** on; an **Exotic** one (cyan) has four bonuses, its evolved
+element and one **legendary effect**. A gun found or bought at Epic or above comes with its element (the better ones
+turn up less often: Incendiary and Toxic 30 in 100, Shock 20, Cryo 13, Explosive 7). A gun you **refine to Epic** asks
+you to choose: two elements, drawn the same way, or **RANDOM ELEMENT**, any of the five, each as likely (the rare ones
+too), and final. The choice comes right after the reward or the purchase; a chest's refine asks after the arena. Refined
+to **Legendary**, its element evolves:
 
-| Element | What it does |
-|---|---|
-| Incendiary | Hits set the enemy on fire: a quarter of the hit's damage every second for 3 s. |
-| Shock | One hit in four stuns the enemy and arcs to two more within 5 m for 60 percent of the hit. |
-| Cryo | One hit in ten freezes the enemy for 3 s. A frozen Majini dies to the next hit (the game's own shatter); other enemies take 50 percent more while frozen. A frozen one that dies shatters: 40 percent of its health (up to 1200) to everyone within 3 m. |
-| Explosive | Kills blow up: half the victim's health (up to 1500) to everyone within 3.5 m, who are thrown. |
-| Toxic | Hits poison the enemy for 5 s, 12 percent of the hit every second; a poisoned one takes 25 percent more from everything. |
+| Element | What it does | Evolved (Legendary) |
+|---|---|---|
+| Incendiary | Hits set the enemy on fire: a quarter of the hit's damage every second for 3 s. | **Inferno**: 35 percent for 5 s, and the fire spreads to the enemies within 3 m. |
+| Shock | One hit in four stuns the enemy and arcs to two more within 5 m for 60 percent of the hit. | **Storm**: two hits in five, arcs to four within 8 m for the full hit. |
+| Cryo | One hit in ten freezes the enemy for 3 s. A frozen Majini dies to the next hit (the game's own shatter); other enemies take 50 percent more while frozen. A frozen one that dies shatters: 40 percent of its health (up to 1200) to everyone within 3 m. | **Absolute Zero**: one hit in five freezes for 4 s; the shatter (50 percent, up to 1500, 3.5 m) freezes those it hits for 3 s. |
+| Explosive | Kills blow up: half the victim's health (up to 1500) to everyone within 3.5 m, who are thrown. | **Chain Reaction**: 60 percent (up to 1800) within 4.5 m, and an enemy the blast kills blows up too (two links). |
+| Toxic | Hits poison the enemy for 5 s, 12 percent of the hit every second; a poisoned one takes 25 percent more from everything. | **Plague**: 15 percent for 6 s, and a poisoned enemy that dies, however, poisons everyone within 4 m (3 percent of its health a second). |
+
+The **flamethrower** carries its elements in the flame: Shock arcs from the nearest enemy in it every 0.6 s (0.35 s
+evolved), Cryo freezes an enemy after 2 s in the flame (1.2 s evolved), Toxic poisons and Incendiary burns everything
+in it.
 
 Town, village and soldier Majini play the game's own reactions to these (on fire, frozen, acid, the flash stun,
 blown away, the head burst); other enemies take the damage alone, and a boss takes 15 to 20 percent more damage from
-the gun instead of a status. Legendary effects: **Executioner Rounds** (finishes off any enemy below 20 percent
-health; a boss takes double damage there), **Dragons Breath** (every hit sets the enemies around the target on
-fire), **Chain Lightning** (every 8th hit arcs to 4 enemies within 8 m for its full damage), **Bottomless** (kills
+the gun instead of a status. Legendary effects (an Exotic gun's): **Executioner Rounds** (finishes off any enemy below 20 percent
+health; a boss takes double damage there), **Bottomless** (kills
 refill the magazine), **Overkill** (damage past a kill hits the nearest enemy within 6 m), **Last Word** (the last
 round of a magazine kills any enemy; a boss takes triple damage), **Bloodthirst** (kills heal 3 percent of your
-health).
+health). Dragons Breath and Chain Lightning are Inferno and Storm now.
 
 **Refining** raises a gun one rarity: it keeps everything it has, its bonuses grow to the new rarity's size, and it
 gains what that rarity adds (its help line lists it). A refine is one of the reward choices now and then (about one

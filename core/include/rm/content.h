@@ -91,7 +91,13 @@ public:
     [[nodiscard]] const std::vector<UniqueAffixDef>& unique_affixes() const { return uniques_; }
     /// weapons.json "elements" (every element, once each, when present).
     [[nodiscard]] const std::vector<ElementDef>& elements() const { return elements_; }
-    [[nodiscard]] const ElementDef* FindElement(Element e) const {
+    /// The element's numbers; `evolved`: its evolution's (weapons.json "evolved"), else its own.
+    [[nodiscard]] const ElementDef* FindElement(Element e, bool evolved = false) const {
+        if (evolved) {
+            for (const ElementDef& d : evolved_elements_) {
+                if (d.element == e) return &d;
+            }
+        }
         for (const ElementDef& d : elements_) {
             if (d.element == e) return &d;
         }
@@ -126,6 +132,7 @@ private:
     std::vector<AffixDef> affixes_;
     std::vector<UniqueAffixDef> uniques_;
     std::vector<ElementDef> elements_;
+    std::vector<ElementDef> evolved_elements_;
     std::vector<CharacterDef> characters_;
     std::vector<RouteDef> routes_;
     EconomyConfig economy_;

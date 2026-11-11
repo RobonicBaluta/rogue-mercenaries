@@ -4,6 +4,7 @@
 // Missing or invalid files fall back to these defaults and log why.
 
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -91,6 +92,20 @@ struct Settings {
     // progress is not read or written (rm::ProfileFileName, scripts/package_release.ps1 -Unlocked).
     bool everythingUnlocked = false;
     int scopeKey = 0x2C;
+    // The elements' looks (2026-11-11): an effect list started on each enemy an element's proc
+    // reaches, by proc kind ("burn", "ignite_around", "poison", "poison_cloud", "freeze", "shock",
+    // "arc", "explode", "shatter"; "<kind>_evolved" for an evolved element's own), played only when
+    // the list is in memory (engine::PlayEffect). The defaults are the stun rod's and the
+    // flamethrower's own lists, so they play only when those guns are in the match.
+    std::map<std::string, std::string> elementEffects = {
+        {"shock", "effect\\efl\\wp\\wp22\\wp2200"},
+        {"arc", "effect\\efl\\wp\\wp22\\wp2200"},
+        {"burn", "effect\\efl\\wp\\wp21\\wp2103"},
+        {"ignite_around", "effect\\efl\\wp\\wp21\\wp2103"},
+    };
+    // The effect gallery (developer mode, or this): in an arena, every few seconds the next effect
+    // list in memory plays on the nearest enemy, its name in the HUD line, to pick the elements' looks.
+    bool effectGallery = false;
 };
 
 Paths ResolvePaths(void* module);

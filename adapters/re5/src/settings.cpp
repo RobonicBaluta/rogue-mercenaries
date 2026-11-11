@@ -67,6 +67,17 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
         settings.sniperNormalAim = json.value("sniper_normal_aim", settings.sniperNormalAim);
         settings.everythingUnlocked = json.value("everything_unlocked", settings.everythingUnlocked);
         settings.scopeKey = json.value("scope_key_scancode", settings.scopeKey);
+        settings.effectGallery = json.value("effect_gallery", settings.effectGallery);
+        if (json.contains("element_effects") && json["element_effects"].is_object()) {
+            for (const auto& [kind, path] : json["element_effects"].items()) {
+                if (!path.is_string()) continue;
+                if (path.get<std::string>().empty()) {
+                    settings.elementEffects.erase(kind);  // "": no look for that kind
+                } else {
+                    settings.elementEffects[kind] = path.get<std::string>();
+                }
+            }
+        }
         if (json.contains("special2_pad") && json["special2_pad"].is_array()) {
             settings.special2Pad.clear();
             for (const auto& b : json["special2_pad"]) {

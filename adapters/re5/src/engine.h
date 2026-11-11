@@ -31,6 +31,7 @@ struct Verified {
     bool dodge = false;         // the player's dodge, started the game's way (M8: Wesker's moves)
     bool turn = false;          // a character turned the game's way (M8: Wesker faces his lunge's target)
     bool motions = false;       // motion lists looked up, bound to a model and played (M8: boss moves)
+    bool effects = false;       // effect lists started on a unit the game's way (the elements' looks)
     bool partner = false;       // a computer player added the game's way (E22: Josh's backup)
     bool partnerDeath = false;  // a partner's execution does not end the run
     bool equipCell = false;     // the game's own change of the item in the hands
@@ -135,6 +136,10 @@ void ReleaseResource(std::uintptr_t resource);
 /// when it is not cached. A missing file is the game's own fatal error: load only files that exist
 /// (EffectFileExists).
 std::uintptr_t EffectList(const char* path, bool load);
+/// Starts the effect list at `path` ("effect\efl\core\cr000c", no extension) on `unit` (it follows
+/// it), the game's way (re5::addr::kFnEffectCreate). Only a list already in memory plays (looked up,
+/// never loaded): false when it is not, or when effects are off.
+bool PlayEffect(const char* path, std::uintptr_t unit);
 /// True when nativePC_MT\<path>.efl exists next to the game.
 bool EffectFileExists(const std::string& path);
 /// Puts `list` into one of the unit's motion list slots through the game's own (reference

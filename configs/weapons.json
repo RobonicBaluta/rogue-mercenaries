@@ -1,5 +1,5 @@
 {
-  "_comment": "Base weapons are the game's own weapons; ids are what the adapter reports as weapon_id. Affix roll ranges are scaled by economy.json weapon_rarity.magnitude_mult. Units: *_pct percent, crit_chance fraction, supplies_on_kill supplies per kill (fractions add up kill by kill). The rarity remake (2026-11-08): an Epic gun has one of the elements, a Legendary one and a legendary effect (unique_affixes), an Exotic two of each. Radii are engine units (centimetres); dps_fraction and an arc's damage_fraction are fractions of the hit's damage, a blast's damage_fraction of the victim's maximum health. Against a boss an element only adds boss_bonus damage.",
+  "_comment": "Base weapons are the game's own weapons; ids are what the adapter reports as weapon_id. Affix roll ranges are scaled by economy.json weapon_rarity.magnitude_mult. Units: *_pct percent, crit_chance fraction, supplies_on_kill supplies per kill (fractions add up kill by kill). Elements (2026-11-11, the user: the best tiers carried too many): a gun has one. A gun found or bought at Epic or above rolls it by weight (the better ones less often); a gun refined to Epic offers two by weight and a random one, any as likely, to choose from; at Legendary it evolves (its 'evolved' numbers). An Exotic gun adds one legendary effect (unique_affixes). stream_seconds is the flamethrower's (an enemy in its flame): Shock arcs from it every that many seconds, Cryo freezes it after that many. Radii are engine units (centimetres); dps_fraction and an arc's damage_fraction are fractions of the hit's damage, a blast's damage_fraction and a cloud's cloud_dps_fraction of the victim's maximum health. Against a boss an element only adds boss_bonus damage.",
   "schema_version": 1,
   "weapons": [
     {
@@ -234,23 +234,6 @@
       "threshold": 0.2
     },
     {
-      "id": "dragons_breath",
-      "name": "Dragons Breath",
-      "description": "every hit sets the enemies around the target on fire",
-      "effect": "dragons_breath",
-      "radius": 300
-    },
-    {
-      "id": "chain_lightning",
-      "name": "Chain Lightning",
-      "description": "every 8th hit arcs to 4 enemies for its full damage",
-      "effect": "chain_lightning",
-      "value": 1.0,
-      "every": 8,
-      "targets": 4,
-      "radius": 800
-    },
-    {
       "id": "bottomless",
       "name": "Bottomless",
       "description": "kills refill the magazine",
@@ -286,7 +269,16 @@
       "description": "hits set enemies on fire",
       "seconds": 3,
       "dps_fraction": 0.25,
-      "boss_bonus": 0.15
+      "boss_bonus": 0.15,
+      "weight": 30,
+      "evolved": {
+        "name": "Inferno",
+        "description": "hits set enemies on fire, hotter and longer, and the fire spreads to those around",
+        "seconds": 5,
+        "dps_fraction": 0.35,
+        "spread_radius": 300,
+        "boss_bonus": 0.25
+      }
     },
     {
       "element": "shock",
@@ -296,7 +288,19 @@
       "damage_fraction": 0.6,
       "radius": 500,
       "targets": 2,
-      "boss_bonus": 0.15
+      "boss_bonus": 0.15,
+      "weight": 20,
+      "stream_seconds": 0.6,
+      "evolved": {
+        "name": "Storm",
+        "description": "a hit may stun the enemy and arc to four more for its full damage",
+        "chance": 0.4,
+        "damage_fraction": 1.0,
+        "radius": 800,
+        "targets": 4,
+        "boss_bonus": 0.25,
+        "stream_seconds": 0.35
+      }
     },
     {
       "element": "cryo",
@@ -308,7 +312,22 @@
       "damage_fraction": 0.4,
       "damage_cap": 1200,
       "radius": 300,
-      "boss_bonus": 0.15
+      "boss_bonus": 0.15,
+      "weight": 13,
+      "stream_seconds": 2.0,
+      "evolved": {
+        "name": "Absolute Zero",
+        "description": "a hit may freeze the enemy, and its shatter freezes the enemies around",
+        "chance": 0.2,
+        "seconds": 4,
+        "taken_mult": 1.5,
+        "damage_fraction": 0.5,
+        "damage_cap": 1500,
+        "radius": 350,
+        "shatter_freeze_seconds": 3,
+        "boss_bonus": 0.25,
+        "stream_seconds": 1.2
+      }
     },
     {
       "element": "explosive",
@@ -317,7 +336,17 @@
       "damage_fraction": 0.5,
       "damage_cap": 1500,
       "radius": 350,
-      "boss_bonus": 0.2
+      "boss_bonus": 0.2,
+      "weight": 7,
+      "evolved": {
+        "name": "Chain Reaction",
+        "description": "kills blow up bigger, and the enemies a blast kills blow up too",
+        "damage_fraction": 0.6,
+        "damage_cap": 1800,
+        "radius": 450,
+        "chain": 2,
+        "boss_bonus": 0.3
+      }
     },
     {
       "element": "toxic",
@@ -326,7 +355,18 @@
       "seconds": 5,
       "dps_fraction": 0.12,
       "taken_mult": 1.25,
-      "boss_bonus": 0.15
+      "boss_bonus": 0.15,
+      "weight": 30,
+      "evolved": {
+        "name": "Plague",
+        "description": "hits poison the enemy, and a poisoned enemy that dies poisons those around it",
+        "seconds": 6,
+        "dps_fraction": 0.15,
+        "taken_mult": 1.25,
+        "radius": 400,
+        "cloud_dps_fraction": 0.03,
+        "boss_bonus": 0.25
+      }
     }
   ]
 }

@@ -56,14 +56,16 @@
     "legendary": {
       "affix_count": 3,
       "magnitude_mult": 2.0,
-      "unique_count": 1,
-      "element_count": 1
+      "unique_count": 0,
+      "element_count": 1,
+      "element_evolved": true
     },
     "exotic": {
       "affix_count": 4,
       "magnitude_mult": 2.5,
-      "unique_count": 2,
-      "element_count": 2
+      "unique_count": 1,
+      "element_count": 1,
+      "element_evolved": true
     }
   },
   "refine": {

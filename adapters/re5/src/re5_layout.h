@@ -130,6 +130,19 @@ constexpr std::uintptr_t kFnMotionListSet = 0x005CCDD0;
 constexpr std::uintptr_t kFnCharSetMotion = 0x0084CFF0;
 constexpr std::uintptr_t kDtiMotionList = 0x0124B574;  // rMotionList
 constexpr std::uintptr_t kDtiEffectList = 0x0124ABE0;  // rEffectList (build/dti_all.txt)
+// Starting an effect list on a unit, the game's way (static analysis 2026-11-11): the starters
+// (0x007723E0 and its kin, called by every enemy and weapon) build the list's path, get it with a
+// get that loads a missing file (the game's fatal error), then call the creator on the effect
+// manager [kEffectManager]: thiscall (list, unit, joint -1, offset, 4, settings, group; ret 0x1C).
+// It makes the effect (the manager's vtable +0x40), binds it to the unit (it follows it), copies
+// the settings' scale and registers it with the unit manager under `group` (0x12 core lists, 0x14
+// stage ones, 0x13 the others: 0x00770650). The enemies' own call (0x00853DEF) passes the offset
+// kEffectOffsetZero and the settings kEffectSettingsDefault. The mod gets the list lookup-only
+// instead, so a list no archive in memory holds is skipped, never loaded.
+constexpr std::uintptr_t kFnEffectCreate = 0x00771E60;
+constexpr std::uintptr_t kEffectManager = 0x01249C5C;
+constexpr std::uintptr_t kEffectOffsetZero = 0x01249CF0;
+constexpr std::uintptr_t kEffectSettingsDefault = 0x010E3BB0;
 // sPlayer's add-player (thiscall on [kSPlayerInstance]: slot, character, costume, a game work value
 // for +0x4C0; ret 0x10): refuses a slot in use; fills the save's player entry of that slot from
 // the character table (0x00C92D60 on save + slot data + 0x23300: the entry at +0x10 + slot*0x50,
@@ -723,6 +736,11 @@ inline constexpr Signature kSignatures[] = {
     {"player_equip_cell", addr::kFnPlayerEquipCell, "56 57 8B 7C 24 0C 83 FF 0F 8B F1 75 13 57 8D 8E A0 21 00 00 E8 97 7F 0D 00"},
     {"weapon_record", 0x00770380, "8B 44 24 04 8B C8 81 E1 00 FF 00 00 81 F9 00 01 00 00 74 03 33 C0 C3 25 FF 00 00 00 8D 04 80 C1 E0 06 05 70 51 1B 01 C3"},
     {"weapon_scope_read", 0x00B699E2, "83 B8 98 00 00 00 00 75 24 A1 58 21 1B 01"},
+    // `push ebp; mov ebp, esp; and esp, -16; sub esp, 0x14; push ebx; mov ebx, [ebp+8]; test ebx, ebx;
+    // push esi; push edi; mov edi, ecx; jnz`: the effect creator (the list in EBX, the manager in EDI).
+    {"effect_create", addr::kFnEffectCreate, "55 8B EC 83 E4 F0 83 EC 14 53 8B 5D 08 85 DB 56 57 8B F9 75 0B"},
+    // An enemy's own start of an effect: `mov ecx, [kEffectManager]; push settings; push 4; push offset; push -1`.
+    {"effect_call_site", 0x00853DEF, "8B 0D 5C 9C 24 01 68 B0 3B 0E 01 6A 04 68 F0 9C 24 01 6A FF"},
     {"weapon_reload_levels", 0x00A34A70, "8B 44 24 04 3D 50 01 00 00 72 03 D9 EE C3 8B C8 81 E1 00 FF 00 00 81 F9 00 01 00 00 75 ED 25 FF 00 00 00 6B C0 7A 03 44 24 08 D9 04 85 64 06 1C 01 C3"},
     {"weapon_capacity_levels", 0x00C4C0AD, "0F B6 49 23 25 FF 00 00 00 6B C0 7A 03 C1 8B 04 85 A0 06 1C 01 C2 04 00"},
     {"player_add", addr::kFnPlayerAdd, "56 8B 74 24 08 83 FE FF 57 8B F9 7E 13 83 FE 04 7D 0E 83 7C B7 24 00 74 07 5F 33 C0"},

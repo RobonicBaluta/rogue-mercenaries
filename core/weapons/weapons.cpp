@@ -89,6 +89,14 @@ std::optional<Element> ParseElement(std::string_view name) {
     return std::nullopt;
 }
 
+std::vector<Element> ParseElements(const std::vector<std::string>& names) {
+    std::vector<Element> out;
+    for (const std::string& n : names) {
+        if (const auto e = ParseElement(n)) out.push_back(*e);
+    }
+    return out;
+}
+
 std::optional<AffixKind> ParseAffixKind(std::string_view name) {
     for (AffixKind k : {AffixKind::DamagePct, AffixKind::CritChance, AffixKind::CritMultPct,
                         AffixKind::LowHpTargetDamagePct, AffixKind::SuppliesOnKill}) {
@@ -134,10 +142,35 @@ double RoundAffix(AffixKind kind, double v) {
     }
 }
 
+// Elements a gun may get: the content's, none of `exclude`, with a weight above 0.
+std::vector<const ElementDef*> ElementPool(const Content& content, const std::vector<Element>& exclude) {
+    std::vector<const ElementDef*> pool;
+    for (const ElementDef& e : content.elements()) {
+        if (e.weight > 0.0 && std::find(exclude.begin(), exclude.end(), e.element) == exclude.end()) pool.push_back(&e);
+    }
+    return pool;
+}
+
+const ElementDef* PickWeighted(Rng& rng, const std::vector<const ElementDef*>& pool) {
+    double total = 0.0;
+    for (const ElementDef* e : pool) total += e->weight;
+    if (pool.empty() || !(total > 0.0)) return nullptr;
+    double roll = rng.NextDouble() * total;
+    for (const ElementDef* e : pool) {
+        if (roll < e->weight) return e;
+        roll -= e->weight;
+    }
+    return pool.back();
+}
+
+enum class ElementMode { Roll, Offer };
+
 // Adds what `rarity` has and `w` lacks: regular affixes up to its count (kinds not yet on the
-// gun), legendary effects (ids not yet on it), then elements. The elements are drawn last, so a
-// gun of a tier without any draws as it did before the rarity remake.
-void FillToRarity(Rng& rng, const Content& content, const Capabilities& caps, WeaponInstance& w, Rarity rarity) {
+// gun), legendary effects (ids not yet on it), then its element: rolled by weight (a new gun) or
+// two offered to choose from (a refine), never one of `exclude`. The element is drawn last, so a
+// gun of a tier without one draws as it did before the rarity remake.
+void FillToRarity(Rng& rng, const Content& content, const Capabilities& caps, WeaponInstance& w, Rarity rarity,
+                  ElementMode mode, const std::vector<Element>& exclude) {
     const EconomyConfig::WeaponRarityRule& rule = content.economy().weapon_rarity[RarityIndex(rarity)];
     int regular = 0;
     int uniques_on = 0;
@@ -182,30 +215,49 @@ void FillToRarity(Rng& rng, const Content& content, const Capabilities& caps, We
         w.affixes.push_back(std::move(affix));
     }
 
-    std::vector<Element> elements;
-    for (const ElementDef& e : content.elements()) {
-        if (std::find(w.elements.begin(), w.elements.end(), e.element) == w.elements.end()) elements.push_back(e.element);
+    // One element a gun (2026-11-11): only a gun without one, and without an offer waiting, gets it.
+    if (rule.element_count > 0 && w.elements.empty() && w.element_offer.empty()) {
+        if (mode == ElementMode::Offer) {
+            w.element_offer = OfferElements(rng, content, exclude, 2);
+        } else if (const auto e = RollElement(rng, content, exclude)) {
+            w.elements.push_back(*e);
+        }
     }
-    for (int i = static_cast<int>(w.elements.size()); i < rule.element_count && !elements.empty(); ++i) {
-        const std::size_t k = rng.Index(elements.size());
-        w.elements.push_back(elements[k]);
-        elements.erase(elements.begin() + static_cast<std::ptrdiff_t>(k));
-    }
+    w.element_evolved = w.element_evolved || rule.element_evolved;
 }
 
 }  // namespace
 
+std::optional<Element> RollElement(Rng& rng, const Content& content, const std::vector<Element>& exclude) {
+    const ElementDef* e = PickWeighted(rng, ElementPool(content, exclude));
+    return e != nullptr ? std::optional<Element>(e->element) : std::nullopt;
+}
+
+std::vector<Element> OfferElements(Rng& rng, const Content& content, const std::vector<Element>& exclude, int count) {
+    std::vector<const ElementDef*> pool = ElementPool(content, exclude);
+    std::vector<Element> out;
+    while (static_cast<int>(out.size()) < count) {
+        const ElementDef* e = PickWeighted(rng, pool);
+        if (e == nullptr) break;
+        out.push_back(e->element);
+        std::erase(pool, e);
+    }
+    return out;
+}
+
 WeaponInstance GenerateWeapon(Rng& rng, const Content& content, const Capabilities& caps,
-                              std::string_view base_id, Rarity rarity, std::string instance_id) {
+                              std::string_view base_id, Rarity rarity, std::string instance_id,
+                              const std::vector<Element>& exclude) {
     WeaponInstance w;
     w.instance_id = std::move(instance_id);
     w.base_id = std::string(base_id);
     w.rarity = rarity;
-    FillToRarity(rng, content, caps, w, rarity);
+    FillToRarity(rng, content, caps, w, rarity, ElementMode::Roll, exclude);
     return w;
 }
 
-WeaponInstance RefineWeapon(Rng& rng, const Content& content, const Capabilities& caps, const WeaponInstance& w) {
+WeaponInstance RefineWeapon(Rng& rng, const Content& content, const Capabilities& caps, const WeaponInstance& w,
+                            const std::vector<Element>& exclude) {
     if (w.rarity == Rarity::Exotic) return w;
     WeaponInstance out = w;
     const Rarity to = kAllRarities[RarityIndex(w.rarity) + 1];
@@ -216,7 +268,7 @@ WeaponInstance RefineWeapon(Rng& rng, const Content& content, const Capabilities
         if (!IsUniqueAffix(a.kind)) a.value = RoundAffix(a.kind, a.value * scale);
     }
     out.rarity = to;
-    FillToRarity(rng, content, caps, out, to);
+    FillToRarity(rng, content, caps, out, to, ElementMode::Offer, exclude);
     return out;
 }
 
@@ -252,8 +304,8 @@ std::string DescribeAffix(const Affix& affix, const Content* content) {
     return "?";
 }
 
-std::string DescribeElement(Element e, const Content* content) {
-    const ElementDef* d = content != nullptr ? content->FindElement(e) : nullptr;
+std::string DescribeElement(Element e, const Content* content, bool evolved) {
+    const ElementDef* d = content != nullptr ? content->FindElement(e, evolved) : nullptr;
     if (d == nullptr) return std::string(ElementName(e));
     return d->description.empty() ? d->name : d->name + ": " + d->description;
 }

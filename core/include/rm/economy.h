@@ -52,6 +52,7 @@ struct EconomyConfig {
         double magnitude_mult = 1.0;
         int unique_count = 0;
         int element_count = 0;
+        bool element_evolved = false;  // its element plays its evolution (weapons.json "evolved")
     };
     std::array<WeaponRarityRule, kRarityCount> weapon_rarity{};
 

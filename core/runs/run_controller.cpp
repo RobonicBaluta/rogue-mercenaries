@@ -411,7 +411,7 @@ void RunController::AddRefineReward(bool sure) {
     if (!sure && !(chance > 0.0 && streams_->reward.NextDouble() < chance)) return;
     RewardChoice choice;
     choice.kind = RewardKind::Refine;
-    choice.weapon = RefineWeapon(streams_->reward, *content_, caps_, *target);
+    choice.weapon = RefineWeapon(streams_->reward, *content_, caps_, *target, BuildElements());
     choice.rarity = choice.weapon.rarity;
     choice.target_instance_id = target->instance_id;
     run_.reward_offer.back() = std::move(choice);  // in place of the last choice: the offer keeps its size
@@ -427,7 +427,7 @@ void RunController::AddRefineOffer() {
     if (!build.refine_every_shop && !(chance > 0.0 && streams_->shop.NextDouble() < chance)) return;
     ShopOffer o;
     o.kind = ShopOfferKind::Refine;
-    o.weapon = RefineWeapon(streams_->shop, *content_, caps_, *target);
+    o.weapon = RefineWeapon(streams_->shop, *content_, caps_, *target, BuildElements());
     o.rarity = o.weapon.rarity;
     o.target_instance_id = target->instance_id;
     o.price = static_cast<std::int64_t>(std::llround(static_cast<double>(refine.price[RarityIndex(o.rarity)]) * build.refine_price_mult));
@@ -878,7 +878,8 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         const Rarity rarity = ParseRarity(build.starting_weapon_rarity).value_or(Rarity::Common);
         WeaponInstance w = rarity == Rarity::Common
                                ? MakeStartingWeapon(build.starting_weapon, NextInstanceId())
-                               : GenerateWeapon(streams_->loot, *content_, caps_, build.starting_weapon, rarity, NextInstanceId());
+                               : GenerateWeapon(streams_->loot, *content_, caps_, build.starting_weapon, rarity, NextInstanceId(),
+                                                BuildElements());
         // Queued, not placed at once: the adapter first cuts the game's loadout down to the gun in
         // hand (which may be this very gun) and then hands the queue over.
         const WeaponBaseDef* base = content_->FindWeapon(w.base_id);
@@ -1979,7 +1980,7 @@ Result<ChestReward> RunController::OpenChest(double now, std::optional<std::stri
     const double chest_refine = RefineChance(eco.refine, eco.refine.chest_chance, run_.arena_count);
     if (eco.refine.enabled && chest_refine > 0.0 && rng.NextDouble() < chest_refine) {
         if (const WeaponInstance* target = RefineTarget(held_weapon)) {
-            const WeaponInstance refined = RefineWeapon(rng, *content_, caps_, *target);
+            const WeaponInstance refined = RefineWeapon(rng, *content_, caps_, *target, BuildElements());
             const std::string id = target->instance_id;
             if (ApplyRefine(id, refined, "chest").ok()) {
                 out.refined_instance_id = id;
@@ -2014,7 +2015,7 @@ Result<ChestReward> RunController::OpenChest(double now, std::optional<std::stri
             const WeaponBaseDef* base = bases[rng.Index(bases.size())];
             WeaponInstance w = GenerateWeapon(rng, *content_, caps_, base->id,
                                               RollRarity(rng, ShiftRarityWeights(eco.rewards.rarity_weights, ctx.rarity_shift)),
-                                              NextInstanceId());
+                                              NextInstanceId(), BuildElements());
             if (PlaceWeaponItem(w, "chest").ok()) {
                 GrantWeapon(w, "chest");
                 out.weapon_id = base->id;
@@ -2080,6 +2081,52 @@ std::vector<std::int64_t> RunController::RestockWeaponItems() const {
     return out;
 }
 
+std::vector<ElementChoice> RunController::PendingElementChoices() const {
+    std::vector<ElementChoice> out;
+    if (!run_.active) return out;
+    for (const WeaponInstance& w : run_.weapons) {
+        if (w.element_offer.empty() || !w.elements.empty()) continue;
+        ElementChoice c;
+        c.instance_id = w.instance_id;
+        c.base_id = w.base_id;
+        c.rarity = w.rarity;
+        c.evolved = w.element_evolved;
+        c.offer = w.element_offer;
+        out.push_back(std::move(c));
+    }
+    return out;
+}
+
+Status RunController::ChooseElement(std::string_view instance_id, int option) {
+    constexpr const char* op = "choose_element";
+    if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    const auto it = std::find_if(run_.weapons.begin(), run_.weapons.end(),
+                                 [instance_id](const WeaponInstance& w) { return w.instance_id == instance_id; });
+    if (it == run_.weapons.end()) return Fail(op, ErrorCode::UnknownId, "no gun " + std::string(instance_id));
+    if (it->element_offer.empty() || !it->elements.empty()) return Fail(op, ErrorCode::NotEligible, "that gun has no element to choose");
+    std::optional<Element> chosen;
+    if (option >= 0) {
+        if (option >= static_cast<int>(it->element_offer.size())) return Fail(op, ErrorCode::InvalidIndex, "no such element offered");
+        chosen = it->element_offer[static_cast<std::size_t>(option)];
+    } else {
+        // Random: any element but the build's, each as likely (the rare ones too).
+        const std::vector<Element> exclude = BuildElements();
+        std::vector<Element> pool;
+        for (const ElementDef& e : content_->elements()) {
+            if (std::find(exclude.begin(), exclude.end(), e.element) == exclude.end()) pool.push_back(e.element);
+        }
+        if (pool.empty()) return Fail(op, ErrorCode::NotEligible, "no element to draw");
+        chosen = pool[streams_->reward.Index(pool.size())];
+    }
+    it->elements = {*chosen};
+    it->element_offer.clear();
+    Event e = MakeEvent(EventType::WeaponRefined);
+    e.Add("weapon", it->base_id).Add("weapon_instance", it->instance_id).Add("source", "element_choice")
+        .Add("element", ElementName(*chosen)).Add("random", option < 0).Add("evolved", it->element_evolved);
+    Emit(std::move(e));
+    return Status::Success();
+}
+
 std::int64_t RunController::SaleValue(std::int64_t game_item, std::int64_t count) const {
     if (game_item < 0 || count <= 0) return 0;
     const EconomyConfig& eco = content_->economy();
@@ -2143,7 +2190,7 @@ Status RunController::DevRefineWeapon(const std::optional<std::string>& base) {
     if (!run_.active) return Fail("dev_refine_weapon", ErrorCode::NoActiveRun, "no active run");
     const WeaponInstance* target = RefineTarget(base);
     if (target == nullptr) return Fail("dev_refine_weapon", ErrorCode::NotEligible, "no gun can go up a tier");
-    const WeaponInstance refined = RefineWeapon(streams_->loot, *content_, caps_, *target);
+    const WeaponInstance refined = RefineWeapon(streams_->loot, *content_, caps_, *target, BuildElements());
     const Status s = ApplyRefine(target->instance_id, refined, "dev");
     return s.ok() ? s : Fail("dev_refine_weapon", ErrorCode::GrantFailed, s.message);
 }

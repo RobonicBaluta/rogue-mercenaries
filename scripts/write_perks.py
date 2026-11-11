@@ -279,8 +279,9 @@ BUILDS = {
     },
     'sheva_hound_wolf': {
         'name': 'Scorched Earth', 'icon': 'wolf',
-        'summary': 'Starts with the flamethrower, fuel back twice as fast. Her guns are all Incendiary. Supplies x0.75.',
-        'starting_weapon': 'flamethrower', 'fuel_regen_mult': 2.0, 'gun_elements': ['incendiary'], 'supplies_mult': 0.75,
+        # Fuel x1.5, not x2, on the base refuel halved (2026-11-11, the user: "flamethrower need to be nerfed").
+        'summary': 'Starts with the flamethrower, fuel back 50 percent faster. Her guns are all Incendiary. Supplies x0.75.',
+        'starting_weapon': 'flamethrower', 'fuel_regen_mult': 1.5, 'gun_elements': ['incendiary'], 'supplies_mult': 0.75,
     },
     # Jill in her Raccoon City clothes (Jill HDR Casual): RE3's Last Escape, the grenade launcher
     # and its flame, freeze and acid rounds; RE3's two guns only.

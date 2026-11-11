@@ -61,14 +61,18 @@ std::optional<AffixKind> ParseAffixKind(std::string_view name);         // regul
 std::optional<AffixKind> ParseUniqueEffect(std::string_view name);      // legendary effects
 bool IsUniqueAffix(AffixKind k);
 
-/// Elements (weapons.json "elements"): an Epic gun has one, a Legendary one, an Exotic two.
-/// Their statuses and reactions are the adapter's to play (WeaponProc); a boss takes
-/// ElementDef::boss_bonus more damage from the gun instead.
+/// Elements (weapons.json "elements"). A gun has one (2026-11-11, the user: the best tiers carried
+/// too many): a gun found or bought at Epic or above rolls it by weight; a gun refined to Epic
+/// offers two (by weight) and a random one (any, as likely) to choose from (WeaponInstance::
+/// element_offer); at Legendary it evolves (its "evolved" numbers). Their statuses and reactions are
+/// the adapter's to play (WeaponProc); a boss takes ElementDef::boss_bonus more damage instead.
 enum class Element { Incendiary, Shock, Cryo, Explosive, Toxic };
 inline constexpr std::array<Element, 5> kAllElements = {Element::Incendiary, Element::Shock, Element::Cryo,
                                                         Element::Explosive, Element::Toxic};
 std::string_view ElementName(Element e);
 std::optional<Element> ParseElement(std::string_view name);
+/// The known ones of `names` (a build's gun_elements), in order.
+std::vector<Element> ParseElements(const std::vector<std::string>& names);
 
 struct ElementDef {
     Element element = Element::Incendiary;
@@ -83,6 +87,15 @@ struct ElementDef {
     int targets = 0;               // Shock: enemies an arc reaches
     double taken_mult = 1.0;       // Cryo: damage a frozen target takes; Toxic: a poisoned one
     double boss_bonus = 0.0;       // against a boss: this much more damage, no status
+    double weight = 1.0;           // how often it is offered or rolled (the better ones less often)
+    // The evolved ones' own (0: not this element's evolution).
+    double spread_radius = 0.0;          // Incendiary: every burn also sets those this near burning
+    double shatter_freeze_seconds = 0.0; // Cryo: a shatter freezes those it hits this long
+    double cloud_dps_fraction = 0.0;     // Toxic: a poisoned enemy's death poisons those within radius (of its max health a second)
+    int chain = 0;                       // Explosive: a blast's kills blow up too, this many times over
+    // The flamethrower's stream (an enemy in its flame, the adapter): Cryo freezes it after this many
+    // seconds in it, Shock arcs from it every this many seconds; Incendiary and Toxic hold their status.
+    double stream_seconds = 0.0;
 };
 
 /// Roll range for a regular affix (weapons.json "affixes"); scaled by rarity magnitude_mult.
@@ -133,7 +146,10 @@ struct WeaponInstance {
     int level = 1;  // 1..max_level (economy.json upgrades.max_level)
     Rarity rarity = Rarity::Common;
     std::vector<Affix> affixes;
-    std::vector<Element> elements;  // distinct
+    std::vector<Element> elements;  // distinct; one since 2026-11-11 (older guns may hold two)
+    bool element_evolved = false;   // its elements play their evolved numbers (Legendary and Exotic)
+    /// Refined to Epic without an element: the two it offers (RunController::ChooseElement).
+    std::vector<Element> element_offer;
 };
 
 inline constexpr std::string_view kSidearmSlot = "sidearm";
@@ -141,22 +157,30 @@ inline constexpr std::string_view kSidearmSlot = "sidearm";
 /// Level-1 common instance with no affixes (starting gear).
 WeaponInstance MakeStartingWeapon(std::string_view base_id, std::string instance_id);
 
-/// Rolls a new instance: affix_count distinct regular affixes, element_count distinct elements
-/// and unique_count legendary effects for the rarity (economy.json weapon_rarity), skipping
-/// affixes whose capabilities are missing. Values are rounded to 2 decimals so they print and
-/// persist stably.
+/// Rolls a new instance: affix_count distinct regular affixes, an element (rolled by weight, none
+/// of `exclude`: the build's own) when the tier has one, and unique_count legendary effects for the
+/// rarity (economy.json weapon_rarity), skipping affixes whose capabilities are missing. Values are
+/// rounded to 2 decimals so they print and persist stably.
 WeaponInstance GenerateWeapon(Rng& rng, const Content& content, const Capabilities& caps,
-                              std::string_view base_id, Rarity rarity, std::string instance_id);
+                              std::string_view base_id, Rarity rarity, std::string instance_id,
+                              const std::vector<Element>& exclude = {});
 
 /// The gun one tier up (a refine): its affixes scaled to the new tier's magnitude, then what
-/// the tier adds (affixes, elements, effects) drawn as GenerateWeapon would; its id, level,
-/// elements and effects stay. At Exotic it is returned as it is.
-WeaponInstance RefineWeapon(Rng& rng, const Content& content, const Capabilities& caps, const WeaponInstance& w);
+/// the tier adds (affixes, effects) drawn as GenerateWeapon would; its id, level, elements and
+/// effects stay. A first element is not drawn but offered: two by weight, none of `exclude`
+/// (element_offer). At Exotic it is returned as it is.
+WeaponInstance RefineWeapon(Rng& rng, const Content& content, const Capabilities& caps, const WeaponInstance& w,
+                            const std::vector<Element>& exclude = {});
+
+/// One element by weight (none of `exclude`; none left: nullopt), or `count` distinct ones.
+std::optional<Element> RollElement(Rng& rng, const Content& content, const std::vector<Element>& exclude);
+std::vector<Element> OfferElements(Rng& rng, const Content& content, const std::vector<Element>& exclude, int count);
 
 /// Human-readable affix line ("+12% damage", "Executioner Rounds: ...").
 std::string DescribeAffix(const Affix& affix, const Content* content = nullptr);
 
-/// "Incendiary: hits set enemies on fire" (the content's name and description).
-std::string DescribeElement(Element e, const Content* content = nullptr);
+/// "Incendiary: hits set enemies on fire" (the content's name and description; `evolved`: the
+/// evolved one's, "Inferno: ...").
+std::string DescribeElement(Element e, const Content* content = nullptr, bool evolved = false);
 
 }  // namespace rm
