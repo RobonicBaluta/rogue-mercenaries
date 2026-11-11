@@ -205,7 +205,7 @@ int __fastcall PickUpDetour(std::uintptr_t self, void*, std::uintptr_t player, i
         std::lock_guard<std::mutex> lock(g_dropMutex);
         rules = g_drops;
     }
-    const bool any = rules.all >= 0 || rules.heldAmmo != nullptr || !rules.swaps.empty();
+    const bool any = rules.all >= 0 || rules.heldAmmo != nullptr || !rules.swaps.empty() || rules.ownAmmo != nullptr;
     if (any && player && player == engine::LocalPlayer()) {
         if (const std::uintptr_t item = GroundItem(handle)) {
             const std::uint16_t id = ReadOr<std::uint16_t>(item + kGroundItemId, 0xFFFF);
@@ -230,6 +230,13 @@ int __fastcall PickUpDetour(std::uintptr_t self, void*, std::uintptr_t player, i
                 if (ammo != 0 && ammo != id) {
                     to = static_cast<int>(ammo);
                     why = "ammo for the gun in hand";
+                }
+            }
+            if (to < 0 && rules.ownAmmo != nullptr && id != 0xFFFF && category == 2) {
+                const std::uint32_t ammo = rules.ownAmmo(id);
+                if (ammo != 0 && ammo != id) {
+                    to = static_cast<int>(ammo);
+                    why = "the partner's ammo, as ammo for the player's guns";
                 }
             }
             if (to >= 0 && SafeStore<std::uint16_t>(item + kGroundItemId, static_cast<std::uint16_t>(to))) {
@@ -308,7 +315,8 @@ bool Available() { return g_available.load(); }
 
 void SetDropRules(const DropRules& rules) {
     std::lock_guard<std::mutex> lock(g_dropMutex);
-    const bool changed = rules.all != g_drops.all || rules.heldAmmo != g_drops.heldAmmo || rules.swaps != g_drops.swaps;
+    const bool changed = rules.all != g_drops.all || rules.heldAmmo != g_drops.heldAmmo || rules.swaps != g_drops.swaps ||
+                         rules.ownAmmo != g_drops.ownAmmo;
     g_drops = rules;
     if (!changed) return;
     std::string swaps;
@@ -317,9 +325,10 @@ void SetDropRules(const DropRules& rules) {
         std::snprintf(buf, sizeof(buf), " %04X->%04X", from, to);
         swaps += buf;
     }
-    RM_LOGI("world: drops: %s%s%s", rules.all >= 0 ? ("every one item " + std::to_string(rules.all)).c_str() : "the game's own",
+    RM_LOGI("world: drops: %s%s%s%s", rules.all >= 0 ? ("every one item " + std::to_string(rules.all)).c_str() : "the game's own",
             rules.heldAmmo != nullptr ? ", ammo and recovery items as ammo for the gun in hand" : "",
-            swaps.empty() ? "" : (", swaps" + swaps).c_str());
+            swaps.empty() ? "" : (", swaps" + swaps).c_str(),
+            rules.ownAmmo != nullptr ? ", while a partner is out ammo no gun of the player's takes as theirs" : "");
 }
 
 void SetSurvey(bool on) { g_survey = on; }

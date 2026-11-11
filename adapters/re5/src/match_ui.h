@@ -35,5 +35,8 @@ void SetHud(const Hud& hud);
 
 /// Developer: the world-pause request bit the pause menu uses.
 void SetWorldPause(bool paused);
+/// While a screen is up: the pause again if something cleared it (coming back to the game window).
+/// True when it had to be asked again.
+bool HoldWorldPause(const char* why);
 
 }  // namespace rmre5::matchui

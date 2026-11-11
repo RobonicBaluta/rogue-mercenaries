@@ -520,6 +520,22 @@ void RaiseForShopUpgrades(const GridCell& c, WeaponLevels& levels, int steps) {
             tables.reload[static_cast<std::size_t>(std::clamp(after.reload, 0, rm::kGunStatLevels - 1))]);
 }
 
+// A gun record's max (+0xC) is its full magazine at the capacity level it was made with (dev inv:
+// the SIG 556 at level 5 max 65, the M92F at 10 max 50). The game's reload reads the level live, the
+// inventory's reload stops at the max (the user, 2026-11-11: "when I reload normally it was 80, but
+// when I inventory reload it went to 65"), so the max follows the level the run gave it.
+void SyncGunMax(const GridCell& c) {
+    const std::uint32_t raw = ReadOr<std::uint32_t>(c.record + re5::off::kSlotItemId, 0);
+    if ((raw & 0xFF00) != 0x100 || raw >= 0x150 || ItemStackMax(c.id) != 0) return;
+    const int level = ReadOr<std::uint8_t>(c.record + re5::off::kSlotUpgrades + 3, 0);
+    if (level >= rm::kGunStatLevels) return;
+    const int capacity = GunTables(raw).capacity[static_cast<std::size_t>(level)];
+    const int max = ReadOr<std::int32_t>(c.record + re5::off::kSlotMax, 0);
+    if (capacity <= 0 || max <= 1 || capacity == max) return;  // no table entry, or no magazine (stun rod, rocket launcher)
+    SafeStore<std::int32_t>(c.record + re5::off::kSlotMax, capacity);
+    RM_LOGI("upgrades: %04X magazine %d -> %d (capacity level %d)", c.id, max, capacity, level);
+}
+
 void ApplyWeaponLevels() {
     if (!g->run->HasActiveRun()) return;
     auto& levels = RunLevels();
@@ -535,10 +551,12 @@ void ApplyWeaponLevels() {
             counted = due;
             it = levels.insert_or_assign(c.id, raised).first;
         }
-        if (it == levels.end() || SlotLevels(c.record) == it->second) continue;
-        SafeStore(c.record + re5::off::kSlotUpgrades, it->second[0]);
-        SafeStore(c.record + re5::off::kSlotUpgrades + 4, it->second[1]);
-        RM_LOGI("upgrades: %04X levels %08X %08X", c.id, it->second[0], it->second[1]);
+        if (it != levels.end() && SlotLevels(c.record) != it->second) {
+            SafeStore(c.record + re5::off::kSlotUpgrades, it->second[0]);
+            SafeStore(c.record + re5::off::kSlotUpgrades + 4, it->second[1]);
+            RM_LOGI("upgrades: %04X levels %08X %08X", c.id, it->second[0], it->second[1]);
+        }
+        if (gun && engine::Caps().weaponLevels) SyncGunMax(c);
     }
 }
 
@@ -2399,6 +2417,8 @@ std::uint32_t AmmoItemFor(rm::WeaponCategory category) {
     }
 }
 
+std::uint32_t PartnerAmmoSwap(std::uint32_t id);  // with the partner, below
+
 // The ammo for the gun in the player's hands (Sheva's Scavenger: drops become it); 0 for one
 // without (knife, stun rod, flamethrower, the rocket launcher's single rocket). The grenade
 // launcher is one item per round type loaded (0x0125.., the Organize table), its rounds 0x0206..
@@ -3072,6 +3092,7 @@ void ArenaBegan(double now) {
         world::DropRules drops;
         drops.all = static_cast<int>(build.drops_as);
         if (build.drops_as_held_ammo) drops.heldAmmo = &HeldAmmoItem;
+        drops.ownAmmo = &PartnerAmmoSwap;  // acts only while the mod's partner is out (Josh's backup)
         for (const auto& [from, to] : build.pickup_as) {
             drops.swaps.emplace_back(static_cast<std::uint16_t>(from), static_cast<std::uint16_t>(to));
         }
@@ -5552,6 +5573,36 @@ struct Partner {
     int logs = 0;
 };
 Partner g_partner;
+
+// Josh's backup (the user, 2026-11-11: "while the partner is out it should give you your ammo and not
+// your partners weapons ammo"): the game drops ammo for the partner's guns too. While the partner the
+// mod added is in this match, ammo none of the player's guns takes is picked up as ammo for the gun
+// in hand (else for the first gun in the grid that takes any). 0: kept as it is.
+std::uint32_t PartnerAmmoSwap(std::uint32_t id) {
+    if (!g_partner.unit || g_partner.generation != g->matchGeneration || !g->match.inMatch) return 0;
+    static constexpr std::uint32_t kLauncherRounds[] = {0x0206, 0x0207, 0x0208, 0x020E, 0x020F, 0x0210};
+    std::set<std::uint32_t> own;
+    std::uint32_t first = 0;
+    for (const GridCell& c : ReadGrid()) {
+        if (!c.record || ItemStackMax(c.id) != 0) continue;  // guns only
+        std::vector<std::uint32_t> takes;
+        if (c.id == kItemGrenadeLauncher) {
+            takes.assign(std::begin(kLauncherRounds), std::end(kLauncherRounds));  // any round it can load
+        } else if (c.id != 0x010D) {  // the rocket launcher takes none
+            if (const rm::WeaponBaseDef* w = WeaponForItem(c.id)) {
+                if (const std::uint32_t a = AmmoItemFor(w->category)) takes.push_back(a);
+            }
+        }
+        for (const std::uint32_t a : takes) {
+            own.insert(a);
+            if (first == 0) first = a;
+        }
+    }
+    if (own.empty() || own.count(id)) return 0;
+    const std::uint32_t held = HeldAmmoItem();
+    return held != 0 && own.count(held) ? held : first;
+}
+
 constexpr double kPartnerPlaceAfter = 0.5;  // seconds: his setup puts him at the slot's own start first
 constexpr float kPartnerBeside = 150.0f;    // he stands this far to the player's side
 constexpr double kPartnerLogEvery = 3.0;
@@ -7325,6 +7376,9 @@ void PollItemBox() {
     // playtest 2026-11-03); set before the screen's first frame, cleared the tick after it goes.
     itemboxguard::SetGuard(g_itemBox != 0 && g_runInBox.active);
     if (!g_itemBox) return;
+    // The world stays paused while it is up: coming back to the game window cleared the pause, and
+    // the player walked about under the screen (the user, 2026-11-11: "if I tab out ... I can move").
+    if (paused) matchui::HoldWorldPause("the Organize screen");
     // Never stuck in it: after 90 s the screen goes (the save data is restored all the same).
     if (paused && Now() - openedAt > 90.0 && ReadOr<std::uint8_t>(g_itemBox + 0x3C, 0) == 0) {
         RM_LOGE("itembox: no answer after 90 s; closing it");

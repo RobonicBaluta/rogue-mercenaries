@@ -54,12 +54,13 @@ STARTS = {
     # floor, on the line the boss itself ran in build/runs/20261108-181644-bossarena-uEm41-s308, 17.4 m
     # from its story spot: just outside its 15 m trigger.
     308: (-9952.8, -10.0, -17960.7),
-    # Desperate Escape's last platform (s804, 2026-11-11, the user: "can you add the last platform from
-    # desperate escape to the pool of maps?"): a battle area of its own (no story scenario, wave scripts
-    # act_A..act_H, its own sets town Majini, uEm20 and uEm21), 54 by 69 m on several levels. Not vetted
-    # in game: the start is the waypoint nearest the middle of its main level (853 of its 2012 waypoints
-    # at y 50..150), so the adapter's start warp brings the player there wherever the host puts them.
-    804: (920.2, 54.1, 110.9),
+    # Desperate Escape's last platform (2026-11-11, the user: "can you add the last platform from desperate
+    # escape to the pool of maps?"). s804 was not it ("It's public assembly after the metal fence is
+    # broken": s800..s804 are Public Assembly's); Desperate Escape is s702..s704 (Majini, soldiers, the
+    # chainsaw, the big man), and s704 its last area: every waypoint 22 to 39 m up, the main deck at 26 m
+    # (302 of its 565). Not vetted in game: the start is the waypoint nearest the middle of that deck, so
+    # the adapter's start warp brings the player there wherever the host puts them.
+    704: (-4.8, 2580.0, -184.6),
 }
 # Starts moved off the recorded spot. s204: the host puts the player on the boat the story arrives
 # on (33885 51 -87306), and the climb to the ledge is a story action that never appears here (user
@@ -137,7 +138,7 @@ NAMES = {
     202: 'Marsh Village', 204: 'Port', 300: 'Cave Shrine', 302: 'Ruin Passages', 310: 'Underground Facility',
     314: 'Mine Scaffolds', 500: 'Cargo Hold', 503: 'Freighter Deck', 505: 'Factory Floor', 506: 'Steel Docks',
     508: 'Volcano', 700: 'Spencer Mansion', 103: 'Pump Rooms', 304: 'Capsule Dome', 309: 'Temple Hall',
-    108: 'Field Office', 308: 'Tiled Labs', 511: 'Upper Deck', 804: 'Last Platform',
+    108: 'Field Office', 308: 'Tiled Labs', 511: 'Upper Deck', 704: 'Last Platform',
 }
 
 
@@ -187,13 +188,27 @@ def spread(points, count):
 
 parser = argparse.ArgumentParser()
 parser.add_argument('stages', nargs='+', type=int)
-parser.add_argument('--template', type=int, default=0, help='Mercenaries map (stage index) whose roster is copied')
+parser.add_argument('--template', default='0',
+                    help='Mercenaries map (stage index) whose roster is copied; several, comma separated, are merged '
+                         '(their classes, the first one\'s of a class shared, and every one\'s preloads)')
 args = parser.parse_args()
 
 doc = json.load(open('configs/maps.json', encoding='utf-8'))
-template = next(m for m in doc['maps'] if m['stage'] == args.template)
-preload = json.load(open('research/stage_preloads.json', encoding='utf-8'))['stages'][str(args.template)]
-preload = [name for name in preload if re.fullmatch(r'\w{1,48}', name)]
+template_ids = [int(t) for t in str(args.template).split(',')]
+templates = [next(m for m in doc['maps'] if m['stage'] == t) for t in template_ids]
+template = dict(templates[0])
+template['roster'] = []
+for t in templates:
+    for entry in t['roster']:
+        if all(entry['class'] != e['class'] for e in template['roster']):
+            template['roster'].append(entry)
+template['name'] = ' and '.join(t['name'] for t in templates)
+stage_preloads = json.load(open('research/stage_preloads.json', encoding='utf-8'))['stages']
+preload = []
+for t in template_ids:
+    for name in stage_preloads[str(t)]:
+        if re.fullmatch(r'\w{1,48}', name) and name not in preload:
+            preload.append(name)
 for stage in args.stages:
     points = []
     for x, y, z in waypoints(stage):

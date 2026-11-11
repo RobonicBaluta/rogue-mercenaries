@@ -118,6 +118,7 @@ void Draw(std::uintptr_t self, int slot, int x, int y, float scale, std::uint32_
 
 // One frame of the open screen: input, then text.
 void Frame(std::uintptr_t self) {
+    if (g_pausedByUs.load()) HoldWorldPause("the mod's screen");  // the world stays still under it
     Level* level = &g_stack.back();
     int n = static_cast<int>(g_screen.items.size());
     const std::uint32_t input = nativemenu::InputBits();
@@ -281,6 +282,16 @@ bool IsOpen() { return g_open.load(); }
 void SetHud(const Hud& hud) {
     std::lock_guard lock(g_mutex);
     g_hud = hud;
+}
+
+bool HoldWorldPause(const char* why) {
+    const auto app = App();
+    if (!app) return false;
+    if ((ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) & (re5::off::kAppPauseRequest | re5::off::kAppPaused)) != 0) return false;
+    WriteAppFlags(re5::off::kAppPauseRequest, 0);
+    static int logs = 0;
+    if (logs++ < 20) RM_LOGW("match ui: the world's pause was cleared under %s (the game window came back?); paused again", why);
+    return true;
 }
 
 void SetWorldPause(bool paused) {

@@ -32,11 +32,14 @@ void BlockNativeChests(bool blocked);
 /// `swaps` first (Rebecca's Chemist: a green herb is a mixed herb), then `all` (Safari Chris:
 /// ammo, recovery items and grenades are one mine each), else with `heldAmmo` set ammo and
 /// recovery items become `heldAmmo()`'s item (Sheva's Scavenger: ammo for the gun in hand; 0
-/// leaves the item as it is). A changed item comes in the new item's own pickup amount.
+/// leaves the item as it is). Last, with `ownAmmo` set, ammo becomes `ownAmmo(id)`'s item when that
+/// is not 0 (Josh's backup: ammo for the partner's guns becomes the player's). A changed item comes
+/// in the new item's own pickup amount.
 struct DropRules {
     int all = -1;
     std::uint32_t (*heldAmmo)() = nullptr;
     std::vector<std::pair<std::uint16_t, std::uint16_t>> swaps;
+    std::uint32_t (*ownAmmo)(std::uint32_t id) = nullptr;
 };
 void SetDropRules(const DropRules& rules);
 
