@@ -239,7 +239,9 @@ to **Legendary**, its element evolves:
 
 The **flamethrower** carries its elements in the flame: Shock arcs from the nearest enemy in it every 0.6 s (0.35 s
 evolved), Cryo freezes an enemy after 2 s in the flame (1.2 s evolved), Toxic poisons and Incendiary burns everything
-in it.
+in it. A Shock flamethrower fires sparks (the stun rod's) instead of a flame: everything within 5 m ahead takes 300
+damage a second, scaled like the flamethrower's hits, and is stunned. The other elements still fire the flame until
+an effect is picked for them (`flame_streams` in `adapter.json`, by element, as `element_effects`).
 
 Town, village and soldier Majini play the game's own reactions to these (on fire, frozen, acid, the flash stun,
 blown away, the head burst); other enemies take the damage alone, and a boss takes 15 to 20 percent more damage from

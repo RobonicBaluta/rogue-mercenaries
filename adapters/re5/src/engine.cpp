@@ -177,6 +177,8 @@ bool VerifySignatures(unsigned timeoutMs) {
                      ReadCString(motionListName, 16) == "rMotionList";
     g_caps.effects = g_caps.motions && SignatureOk("effect_create") && SignatureOk("effect_call_site") &&
                      ReadCString(ReadOr<std::uintptr_t>(re5::addr::kDtiEffectList + 4, 0), 16) == "rEffectList";
+    g_caps.effectStop = g_caps.effects && SignatureOk("effect_stop");
+    g_caps.flameStream = g_caps.effectStop && SignatureOk("wp21_fire");
     g_caps.partner = g_caps.players && g_caps.gameWork && SignatureOk("player_add") && SignatureOk("class_by_id");
     g_caps.partnerDeath = g_caps.partner && SignatureOk("player_death_event");
     g_caps.equipCell = g_caps.inventory && SignatureOk("player_equip_cell");
@@ -653,10 +655,19 @@ namespace {
 using EffectCreateFn = std::uint32_t(__thiscall*)(std::uintptr_t manager, std::uintptr_t list, std::uintptr_t unit, int joint,
                                                   std::uintptr_t offset, int mode, std::uintptr_t settings, int group);
 
-bool CallEffectCreate(std::uintptr_t manager, std::uintptr_t list, std::uintptr_t unit, int group) {
+bool CallEffectCreate(std::uintptr_t manager, std::uintptr_t list, std::uintptr_t unit, int joint, int group, std::uint32_t& id) {
     __try {
-        reinterpret_cast<EffectCreateFn>(re5::addr::kFnEffectCreate)(manager, list, unit, -1, re5::addr::kEffectOffsetZero, 4,
-                                                                    re5::addr::kEffectSettingsDefault, group);
+        id = reinterpret_cast<EffectCreateFn>(re5::addr::kFnEffectCreate)(manager, list, unit, joint, re5::addr::kEffectOffsetZero, 4,
+                                                                         re5::addr::kEffectSettingsDefault, group);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
+bool CallEffectStop(std::uintptr_t manager, std::uint32_t id) {
+    __try {
+        reinterpret_cast<void(__thiscall*)(std::uintptr_t, std::uint32_t)>(re5::addr::kFnEffectStop)(manager, id);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return false;
     }
@@ -665,22 +676,45 @@ bool CallEffectCreate(std::uintptr_t manager, std::uintptr_t list, std::uintptr_
 
 }  // namespace
 
-bool PlayEffect(const char* path, std::uintptr_t unit) {
-    if (!g_caps.effects || !path || !*path || !unit) return false;
+std::uint32_t StartEffect(const char* path, std::uintptr_t unit, int joint) {
+    if (!g_caps.effects || !path || !*path || !unit) return 0;
     const auto manager = ReadOr<std::uintptr_t>(re5::addr::kEffectManager, 0);
-    if (!manager) return false;
+    if (!manager) return 0;
     const std::uintptr_t list = EffectList(path, false);  // lookup-only: a list not in memory is skipped
-    if (!list) return false;
+    if (!list) return 0;
     // The group the game's own starters give it (0x00770650): core lists 0x12, stage ones 0x14, others 0x13.
     const std::string_view p(path);
     const int group = p.rfind("effect\\efl\\core", 0) == 0 ? 0x12 : p.rfind("effect\\efl\\stage", 0) == 0 ? 0x14 : 0x13;
-    const bool ok = CallEffectCreate(manager, list, unit, group);
+    std::uint32_t id = 0;
+    const bool ok = CallEffectCreate(manager, list, unit, joint, group, id);
     ReleaseResource(list);
     if (!ok) {
         RM_LOGW("effects: starting %s faulted; the elements' looks are off", path);
         g_caps.effects = false;
+        return 0;
     }
-    return ok;
+    return id != 0 ? id : 1;  // started (an id of 0 would read as "not started")
+}
+
+bool PlayEffect(const char* path, std::uintptr_t unit) { return StartEffect(path, unit, -1) != 0; }
+
+bool StopEffect(std::uint32_t id) {
+    if (!g_caps.effectStop || id == 0 || id == 1) return false;
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kEffectManager, 0);
+    if (!manager) return false;
+    if (!CallEffectStop(manager, id)) {
+        RM_LOGW("effects: stopping effect %u faulted; stopping is off", id);
+        g_caps.effectStop = false;
+        return false;
+    }
+    return true;
+}
+
+bool EffectInMemory(const char* path) {
+    const std::uintptr_t list = EffectList(path, false);
+    if (!list) return false;
+    ReleaseResource(list);
+    return true;
 }
 
 bool EffectFileExists(const std::string& path) {

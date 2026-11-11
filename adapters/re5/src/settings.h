@@ -103,6 +103,13 @@ struct Settings {
         {"burn", "effect\\efl\\wp\\wp21\\wp2103"},
         {"ignite_around", "effect\\efl\\wp\\wp21\\wp2103"},
     };
+    // The flamethrower's stream by its own element (2026-11-11, the user: "flamethrower electric doesn't
+    // do what I said, it still does flame"): the effect list it fires at its nozzle in place of its
+    // flame ("shock", "cryo", "toxic", "explosive", "incendiary"; "<element>_evolved" for the evolved
+    // one's own), only when in memory. Without one, its flame. The default is the stun rod's sparks.
+    std::map<std::string, std::string> flameStreams = {
+        {"shock", "effect\\efl\\wp\\wp22\\wp2200"},
+    };
     // The effect gallery (developer mode, or this): in an arena, every few seconds the next effect
     // list in memory plays on the nearest enemy, its name in the HUD line, to pick the elements' looks.
     bool effectGallery = false;

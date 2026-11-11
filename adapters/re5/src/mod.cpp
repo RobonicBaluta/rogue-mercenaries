@@ -2625,8 +2625,10 @@ constexpr float kOwnScaleMax = 4.0f;
 
 std::uintptr_t EquippedGunSlot();
 
+std::uintptr_t g_flameUnit = 0;  // the local player's flamethrower unit (uWp21), once found
+
 void HideHolsteredFlamethrower(double now) {
-    static std::uintptr_t unit = 0;
+    std::uintptr_t& unit = g_flameUnit;
     static double lastScan = -10.0;
     static bool refused = false;
     static float own = 0.0f;    // its scale in hand, as the game set it (0: not seen yet)
@@ -5353,6 +5355,73 @@ void PlagueOnDeath(std::uintptr_t enemy, int maxHp, double now) {
 // after stream_seconds in the flame, Toxic poisons them, Incendiary sets them burning (Inferno
 // spreads it). The flame: enemies within kFlameReach ahead of the player and kFlameHalfAngle of his
 // facing, at about his height. The amounts scale from kStreamHitDamage, a hit's worth.
+// With an element's look in place of the flame (settings flame_streams, SetFlameStream) the flame's
+// hits are gone with it: each one in the flame takes kStreamDps a second here, every kStreamHitEvery,
+// scaled as a flamethrower hit (its level, affixes, perks); Shock's stuns it (the flash grenade's
+// reaction) as the flame sets it flailing. The flame took a Majini (1000) in about 3.5 s.
+constexpr double kStreamDps = 300.0;
+constexpr double kStreamHitEvery = 0.2;
+std::string g_flameStreamPath;           // the look in place of the flame now ("" the flame)
+rm::Element g_flameStreamElement = rm::Element::Incendiary;
+
+// The run's flamethrower's own element with a look in settings flame_streams that is in memory
+// (its evolved one's first); looked at once a second, set for the local player's unit.
+void UpdateFlameStreamLook(double now) {
+    static double next = 0.0;
+    if (now < next || g_flameUnit == 0 || !g->match.inMatch) {
+        // The unit as it is now, every tick (a new match's flamethrower is another unit).
+        SetFlameStream(g_flameStreamPath.empty() || !g->match.inMatch ? 0 : g_flameUnit, g_flameStreamPath);
+        if (now < next) return;
+    }
+    next = now + 1.0;
+    std::string path;
+    rm::Element element = rm::Element::Incendiary;
+    if (engine::Caps().flameStream && g->run->HasActiveRun() && g->match.inMatch && g_flameUnit != 0) {
+        for (const rm::WeaponInstance& w : g->run->state().weapons) {
+            if (w.base_id != "flamethrower") continue;
+            for (const rm::Element e : w.elements) {
+                const std::string key(rm::ElementName(e));
+                auto it = w.element_evolved ? g->settings.flameStreams.find(key + "_evolved") : g->settings.flameStreams.end();
+                if (it == g->settings.flameStreams.end()) it = g->settings.flameStreams.find(key);
+                if (it == g->settings.flameStreams.end() || !engine::EffectInMemory(it->second.c_str())) continue;
+                path = it->second;
+                element = e;
+                break;
+            }
+        }
+    }
+    if (path != g_flameStreamPath) {
+        if (path.empty()) {
+            RM_LOGI("flamethrower: its flame again");
+        } else {
+            RM_LOGI("flamethrower: fires %s (%s) in place of its flame", path.c_str(), rm::ElementName(element).data());
+        }
+    }
+    g_flameStreamPath = path;
+    g_flameStreamElement = element;
+    SetFlameStream(path.empty() ? 0 : g_flameUnit, path);
+}
+
+// A flamethrower hit's multiplier on `enemy` (the core's, as for the game's own flame hits).
+double StreamMultiplier(std::uintptr_t enemy, double now) {
+    rm::HitContext ctx;
+    ctx.now = now;
+    ctx.weapon_id = std::string("flamethrower");
+    ctx.is_melee = false;
+    ctx.base_damage = kStreamDps * kStreamHitEvery;
+    if (const auto hp = engine::ReadHp(enemy)) {
+        ctx.target_hp = hp->hp;
+        ctx.target_hp_max = hp->max;
+    }
+    if (g->match.localMaxHp > 0) {
+        ctx.player_hp = g->match.localHp;
+        ctx.player_hp_max = g->match.localMaxHp;
+    }
+    ctx.target_frozen = StatusActive(enemy, now, &ElementStatus::frozenUntil);
+    ctx.target_poisoned = StatusActive(enemy, now, &ElementStatus::poisonUntil);
+    return g->run->ComputeOutgoingMultiplier(ctx).multiplier;  // its procs: the stream's elements below
+}
+
 constexpr float kFlameReach = 500.0f;             // 5 m
 constexpr float kFlameCosHalfAngle = 0.866f;      // 30 degrees either side
 constexpr float kFlameHeight = 250.0f;
@@ -5360,23 +5429,40 @@ constexpr double kStreamHitDamage = 120.0;
 
 void DriveFlameStream(double now) {
     static int lastFuel = -1;
-    static double firingUntil = 0.0, lastTick = 0.0, nextArc = 0.0;
+    static double firingUntil = 0.0, lastTick = 0.0, nextArc = 0.0, nextStreamHit = 0.0;
+    static bool wasFiring = false;
+    static int firingLogs = 0;
     static std::map<std::uintptr_t, std::pair<double, double>> chill;  // enemy -> seconds in the flame, last seen
     const double dt = std::clamp(now - lastTick, 0.0, 0.25);
     lastTick = now;
     const auto player = engine::LocalPlayer();
     const std::uintptr_t slot = player && g->match.inMatch && g->run->phase() == rm::Phase::ArenaActive ? EquippedGunSlot() : 0;
+    const bool lookInPlace = !g_flameStreamPath.empty();
     if (!slot || ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != kItemFlamethrower) {
         lastFuel = -1;
         chill.clear();
+        if (wasFiring) KeepFlameStreamLook(false);
+        wasFiring = false;
         return;
     }
     const int fuel = ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0);
     if (lastFuel >= 0 && fuel < lastFuel) firingUntil = now + 0.35;
     lastFuel = fuel;
-    if (now >= firingUntil) return;
+    // Its fire with the look in place of the flame (the fuel may not go down without the flame).
+    const unsigned long fired = lookInPlace ? FlameStreamFiredAt() : 0;
+    if (fired != 0 && GetTickCount() - fired < 350) firingUntil = std::max(firingUntil, now + 0.05);
+    const bool firing = now < firingUntil;
+    if (firing != wasFiring) {
+        if (firingLogs < 8) {
+            ++firingLogs;
+            RM_LOGI("flamethrower: %s (fuel %d%s)", firing ? "firing" : "stopped", fuel, lookInPlace ? ", the element's look" : "");
+        }
+        wasFiring = firing;
+    }
+    if (lookInPlace) KeepFlameStreamLook(firing);
+    if (!firing) return;
     const auto elements = g->run->ElementsOf("flamethrower");
-    if (elements.empty()) return;
+    if (elements.empty() && !lookInPlace) return;
     float fx = 0.0f, fz = 0.0f;
     if (!PlayerFacing(player, fx, fz)) return;
     float at[3];
@@ -5397,6 +5483,15 @@ void DriveFlameStream(double now) {
         it = now - it->second.second > 1.0 ? chill.erase(it) : std::next(it);
     }
     if (inFlame.empty()) return;
+    if (lookInPlace && now >= nextStreamHit) {
+        nextStreamHit = now + kStreamHitEvery;
+        for (const auto& [enemy, dist] : inFlame) {
+            (void)dist;
+            ElementDamage(enemy, kStreamDps * kStreamHitEvery * StreamMultiplier(enemy, now), now, Reaction::Flyoff);
+            const auto hp = engine::ReadHp(enemy);
+            if (g_flameStreamElement == rm::Element::Shock && hp && hp->hp > 0) React(enemy, Reaction::Flash, now);
+        }
+    }
     for (const auto& [el, evolved] : elements) {
         const rm::ElementDef* d = g->content->FindElement(el, evolved);
         if (d == nullptr) continue;
@@ -8602,6 +8697,22 @@ private:
         }
         const auto result = g->run->ComputeOutgoingMultiplier(ctx);
         if (!result.procs.empty()) QueueProcs(hit.enemy, result.procs);
+        // Which gun's hits carry which element, once a match each (2026-11-11, the user: "once the
+        // flamethrower got an element my pistol also got it").
+        {
+            static int generation = -1;
+            static std::set<std::string> told;
+            if (generation != g->matchGeneration) {
+                generation = g->matchGeneration;
+                told.clear();
+            }
+            for (const rm::WeaponProc& p : result.procs) {
+                const std::string gun = ctx.weapon_id ? *ctx.weapon_id : std::string("-");
+                if (!p.element.empty() && told.insert(gun + "/" + p.element).second) {
+                    RM_LOGI("elements: a %s hit carries %s (%s)", gun.c_str(), p.element.c_str(), p.source.c_str());
+                }
+            }
+        }
         static int magazineLogged = 0;
         if (g->settings.probeHits && ctx.magazine_left && magazineLogged++ < 40) {
             RM_LOGI("hit: %s, magazine %d left, x%.2f, %zu procs%s", ctx.weapon_id ? ctx.weapon_id->c_str() : "-", *ctx.magazine_left,
@@ -8777,6 +8888,7 @@ private:
         ApplyHeals();
         DriveSpecial(now);
         DriveElements(now);
+        UpdateFlameStreamLook(now);
         DriveFlameStream(now);
         DriveEffectGallery(now);
         UpdateModRedirects();

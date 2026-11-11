@@ -5,6 +5,8 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <mutex>
+#include <string>
 
 #include "engine.h"
 #include "hooks.h"
@@ -264,6 +266,59 @@ void __fastcall PlayerAddHpDetour(std::uintptr_t self, void*, std::int16_t amoun
     g_origPlayerAddHp(self, amount);
 }
 
+// The flamethrower with an element's look in place of its flame (SetFlameStream).
+using Wp21FireFn = void(__thiscall*)(std::uintptr_t self, std::uintptr_t attack);
+Wp21FireFn g_origWp21Fire = nullptr;
+std::mutex g_streamMutex;
+std::uintptr_t g_streamUnit = 0;
+std::string g_streamPath;
+std::uint32_t g_streamEffect = 0;  // the look the mod started at the nozzle (0: none)
+DWORD g_streamEffectAt = 0;
+std::atomic<DWORD> g_streamFiredAt{0};
+int g_streamFireLogs = 0;
+constexpr DWORD kStreamLookRestartMs = 300;
+
+// With g_streamMutex held: the look at the nozzle (joint 0, where the flame starts), started again
+// every kStreamLookRestartMs (one at a time: the last one is stopped first).
+void RefreshStreamLookLocked(std::uintptr_t unit) {
+    if (ReadOr<std::uintptr_t>(unit, 0) != re5::addr::kVtableWp21) return;  // not (or no longer) the flamethrower
+    const DWORD now = GetTickCount();
+    if (g_streamEffect != 0 && now - g_streamEffectAt < kStreamLookRestartMs) return;
+    if (g_streamEffect != 0) engine::StopEffect(g_streamEffect);
+    g_streamEffect = engine::StartEffect(g_streamPath.c_str(), unit, 0);
+    g_streamEffectAt = now;
+}
+
+void StopStreamLookLocked() {
+    if (g_streamEffect != 0) engine::StopEffect(g_streamEffect);
+    g_streamEffect = 0;
+}
+
+// The game's fire (re5::addr::kFnWp21Fire) without its flame: the firing flag, the old stream
+// stopped, no stream kept (so no flame, no flame hits, no flame sound), the attack data; the
+// element's look at the nozzle instead.
+void __fastcall Wp21FireDetour(std::uintptr_t self, void*, std::uintptr_t attack) {
+    std::unique_lock lock(g_streamMutex);
+    if (self == 0 || self != g_streamUnit || g_streamPath.empty()) {
+        lock.unlock();
+        g_origWp21Fire(self, attack);
+        return;
+    }
+    SafeStore<std::uint8_t>(self + re5::off::kWp21Firing, 1);
+    std::uint32_t old = 0;
+    if (SafeRead(self + re5::off::kWp21StreamEffect, old) && old != 0) engine::StopEffect(old);
+    SafeStore<std::uint32_t>(self + re5::off::kWp21StreamEffect, 0);
+    SafeStore<std::uintptr_t>(self + re5::off::kWp21AttackData, attack);
+    RefreshStreamLookLocked(self);
+    const DWORD now = GetTickCount();
+    const DWORD before = g_streamFiredAt.exchange(now);
+    if (g_streamFireLogs < 4) {
+        ++g_streamFireLogs;
+        RM_LOGI("flamethrower: fired with %s in place of its flame (look %u; %lu ms since its last fire)", g_streamPath.c_str(),
+                g_streamEffect, before != 0 ? static_cast<unsigned long>(now - before) : 0ul);
+    }
+}
+
 bool Hook(std::uintptr_t target, void* detour, void** original, const char* name) {
     auto* fn = reinterpret_cast<void*>(target);
     MH_STATUS status = MH_CreateHook(fn, detour, original);
@@ -312,12 +367,37 @@ bool InstallCombatHooks() {
         Hook(re5::addr::kFnEm40CanDive, reinterpret_cast<void*>(&Em40CanDiveDetour), reinterpret_cast<void**>(&g_origEm40CanDive),
              "uEm40 may-dive (a run has one player)");
     }
+    if (ok && caps.flameStream) {
+        Hook(re5::addr::kFnWp21Fire, reinterpret_cast<void*>(&Wp21FireDetour), reinterpret_cast<void**>(&g_origWp21Fire),
+             "uWp21 fire (an element's look in place of the flame)");
+    }
     if (ok && caps.hitCheckProbe) {
         Hook(re5::addr::kFnEnemyHitCheck, reinterpret_cast<void*>(&HitCheckDetour), reinterpret_cast<void**>(&g_origHitCheck),
              "enemy hit check (developer probe)");
     }
     g_status.combat = ok;
     return ok;
+}
+
+void SetFlameStream(std::uintptr_t unit, const std::string& path) {
+    std::lock_guard lock(g_streamMutex);
+    if (unit == g_streamUnit && path == g_streamPath) return;
+    StopStreamLookLocked();
+    g_streamUnit = path.empty() ? 0 : unit;
+    g_streamPath = g_streamUnit != 0 ? path : std::string();
+    g_streamFiredAt = 0;
+    g_streamFireLogs = 0;
+}
+
+unsigned long FlameStreamFiredAt() { return g_streamFiredAt.load(); }
+
+void KeepFlameStreamLook(bool firing) {
+    std::lock_guard lock(g_streamMutex);
+    if (!firing || g_streamUnit == 0 || g_streamPath.empty()) {
+        StopStreamLookLocked();
+        return;
+    }
+    RefreshStreamLookLocked(g_streamUnit);
 }
 
 void SetPartnerUnit(std::uintptr_t unit) {

@@ -32,6 +32,8 @@ struct Verified {
     bool turn = false;          // a character turned the game's way (M8: Wesker faces his lunge's target)
     bool motions = false;       // motion lists looked up, bound to a model and played (M8: boss moves)
     bool effects = false;       // effect lists started on a unit the game's way (the elements' looks)
+    bool effectStop = false;    // an effect the mod started stopped by its id
+    bool flameStream = false;   // the flamethrower's fire with an element's look in place of its flame
     bool partner = false;       // a computer player added the game's way (E22: Josh's backup)
     bool partnerDeath = false;  // a partner's execution does not end the run
     bool equipCell = false;     // the game's own change of the item in the hands
@@ -141,6 +143,13 @@ std::uintptr_t EffectList(const char* path, bool load);
 /// it), the game's way (re5::addr::kFnEffectCreate). Only a list already in memory plays (looked up,
 /// never loaded): false when it is not, or when effects are off.
 bool PlayEffect(const char* path, std::uintptr_t unit);
+/// As PlayEffect, at the unit's `joint` (-1 its root), and returns the effect's id for StopEffect
+/// (0: not started).
+std::uint32_t StartEffect(const char* path, std::uintptr_t unit, int joint);
+/// Stops an effect StartEffect (or the game) started; false when it could not.
+bool StopEffect(std::uint32_t id);
+/// True when the effect list at `path` is in memory (looked up, never loaded).
+bool EffectInMemory(const char* path);
 /// True when nativePC_MT\<path>.efl exists next to the game.
 bool EffectFileExists(const std::string& path);
 /// Puts `list` into one of the unit's motion list slots through the game's own (reference

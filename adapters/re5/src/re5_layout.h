@@ -143,6 +143,17 @@ constexpr std::uintptr_t kFnEffectCreate = 0x00771E60;
 constexpr std::uintptr_t kEffectManager = 0x01249C5C;
 constexpr std::uintptr_t kEffectOffsetZero = 0x01249CF0;
 constexpr std::uintptr_t kEffectSettingsDefault = 0x010E3BB0;
+// The effect manager's stop of an effect by the id its start returned (the creator returns it):
+// thiscall on [kEffectManager] (id), ret 4.
+constexpr std::uintptr_t kFnEffectStop = 0x007712C0;
+// uWp21 (the flamethrower)'s fire, its vtable +0x1C8 (static analysis 2026-11-11): thiscall
+// (attack data), ret 4. It sets the firing flag (0x00B95810: +0x1C10 = 1), stops the stream effect
+// it holds (+0x1C8C, kFnEffectStop), starts the stream wp2100 at joint 0 into +0x1C8C and wp2104
+// (not kept) through the descriptor starter 0x007723E0 (thiscall on the manager: descriptor, unit,
+// joint, offset, 4, settings; ret 0x18), and keeps the attack data at +0x1C80. Its update (vtable
+// +0x1C, 0x00BBC8C0) turns up to 16 points of +0x1C8C's particles into hits (0x004E4120 reads them)
+// and plays the flame's sounds while +0x1C8C is set: the flame's look and its hits are that effect.
+constexpr std::uintptr_t kFnWp21Fire = 0x00BA4E00;
 // sPlayer's add-player (thiscall on [kSPlayerInstance]: slot, character, costume, a game work value
 // for +0x4C0; ret 0x10): refuses a slot in use; fills the save's player entry of that slot from
 // the character table (0x00C92D60 on save + slot data + 0x23300: the entry at +0x10 + slot*0x50,
@@ -584,6 +595,10 @@ constexpr std::size_t kUnitRotation = 0x40;       // quaternion x, y, z, w of an
 // flamethrower (scripts/test_flame_hide.sh): 0.001 there hides its tank and hose; the game sets
 // 1 again when it is equipped. The mod writes it only where it reads (1, 1, 1) or its own value.
 constexpr std::size_t kUnitScale = 0x50;
+// uWp21, the flamethrower (addr::kFnWp21Fire)
+constexpr std::size_t kWp21Firing = 0x1C10;        // uint8, set by its fire
+constexpr std::size_t kWp21AttackData = 0x1C80;
+constexpr std::size_t kWp21StreamEffect = 0x1C8C;  // uint32, the stream effect's id (0: none)
 // The player camera (uCameraCtrl) and its zone camera (addr::kFnAreaCameraCheck): bit 0 of the
 // flags is a forced zone (a script's), the zone it stands in, the zone camera's index (-1 none)
 // and the one before.
@@ -760,6 +775,13 @@ inline constexpr Signature kSignatures[] = {
     {"effect_create", addr::kFnEffectCreate, "55 8B EC 83 E4 F0 83 EC 14 53 8B 5D 08 85 DB 56 57 8B F9 75 0B"},
     // An enemy's own start of an effect: `mov ecx, [kEffectManager]; push settings; push 4; push offset; push -1`.
     {"effect_call_site", 0x00853DEF, "8B 0D 5C 9C 24 01 68 B0 3B 0E 01 6A 04 68 F0 9C 24 01 6A FF"},
+    // `push esi; push edi; mov edi, ecx; cmp byte [edi+0x1C], 0; ...; mov esi, [edi+0x260]; xor eax, eax`.
+    {"effect_stop", addr::kFnEffectStop,
+     "56 57 8B F9 80 7F 1C 00 75 09 80 3D 2E 9C 24 01 00 74 0A 8D 47 04 50 FF 15 F8 A0 F4 00 8B B7 60 02 00 00 33"},
+    // `sub esp, 0x10; push esi; push edi; mov edi, [esp+0x1C]; push edi; mov esi, ecx; call 0x00B95810;
+    // mov eax, [esi+0x1C8C]; test eax, eax; je; mov ecx, [kEffectManager]; push eax; call kFnEffectStop`.
+    {"wp21_fire", addr::kFnWp21Fire,
+     "83 EC 10 56 57 8B 7C 24 1C 57 8B F1 E8 FF 09 FF FF 8B 86 8C 1C 00 00 85 C0 74 0C 8B 0D 5C 9C 24 01 50 E8 99 C4 BC FF"},
     {"weapon_reload_levels", 0x00A34A70, "8B 44 24 04 3D 50 01 00 00 72 03 D9 EE C3 8B C8 81 E1 00 FF 00 00 81 F9 00 01 00 00 75 ED 25 FF 00 00 00 6B C0 7A 03 44 24 08 D9 04 85 64 06 1C 01 C3"},
     {"weapon_capacity_levels", 0x00C4C0AD, "0F B6 49 23 25 FF 00 00 00 6B C0 7A 03 C1 8B 04 85 A0 06 1C 01 C2 04 00"},
     {"player_add", addr::kFnPlayerAdd, "56 8B 74 24 08 83 FE FF 57 8B F9 7E 13 83 FE 04 7D 0E 83 7C B7 24 00 74 07 5F 33 C0"},

@@ -78,6 +78,16 @@ Settings LoadSettings(const Paths& paths, std::string* error) {
                 }
             }
         }
+        if (json.contains("flame_streams") && json["flame_streams"].is_object()) {
+            for (const auto& [element, path] : json["flame_streams"].items()) {
+                if (!path.is_string()) continue;
+                if (path.get<std::string>().empty()) {
+                    settings.flameStreams.erase(element);  // "": the flame for that element
+                } else {
+                    settings.flameStreams[element] = path.get<std::string>();
+                }
+            }
+        }
         if (json.contains("special2_pad") && json["special2_pad"].is_array()) {
             settings.special2Pad.clear();
             for (const auto& b : json["special2_pad"]) {
