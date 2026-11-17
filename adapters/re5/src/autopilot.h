@@ -37,4 +37,13 @@ void SetSaveGuard(bool on);
 // Game thread: times out an autopilot that could not finish.
 void OnGameTick();
 
+/// Developer mode (M10 F0): the next time the game's Mercenaries menu script asks Iniciar/Solo/Duo
+/// while the autopilot is not armed, it is answered with Iniciar and this mode (game work +0x5CC: 0 Solo,
+/// 1 Duo online, 2 Split screen) and the screens after it are the game's own. -1 clears it.
+void SetDevMercenariesMode(int mode);
+/// Menu input bits added to the game's menu input query (kFnMenuInput) on this thread until
+/// cleared with 0, and the pad's decide bits: a caller feeds a screen's move() a decide press.
+void InjectMenuBits(unsigned bits);
+unsigned DecideBits();
+
 }  // namespace rmre5::autopilot

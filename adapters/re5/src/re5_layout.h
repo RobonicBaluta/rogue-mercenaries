@@ -738,7 +738,7 @@ constexpr std::size_t kMenuModeCursor = 0x18C;  // uIdStartUp20 Solo/Duo page: i
 constexpr std::size_t kMenuCharacterIndex = 0x194;  // uIdStartUp22: int32 selected costume slot
 // game work: Mercenaries setup written by those screens
 constexpr std::size_t kGameWorkMercItem = 0x5C8;   // int32: 0 Iniciar, 1 Marcadores
-constexpr std::size_t kGameWorkMercMode = 0x5CC;   // int32: 0 Solo, 1 Duo split, 2 Duo online
+constexpr std::size_t kGameWorkMercMode = 0x5CC;   // int32: 0 Solo, 1 Duo (online), 2 Split screen (MODE SELECT)
 constexpr std::size_t kGameWorkStage = 0x5D4;      // int32 stage index (0..7)
 constexpr std::size_t kGameWorkCharacter = 0x600;  // int32[4] costume slot per player
 constexpr std::size_t kGameWorkMercFlag = 0x79E;   // uint8 set by the Solo/Duo page's 4th option

@@ -32,6 +32,7 @@
 #include <string>
 #include <vector>
 
+#include "autopilot.h"
 #include "engine.h"
 #include "log.h"
 #include "memory.h"
@@ -93,6 +94,7 @@ std::atomic<Model*> g_model{nullptr};
 std::atomic<bool> g_modMenu{false};      // the mod's screens are showing
 std::atomic<bool> g_resetRequested{false};
 std::atomic<int> g_openOnMenu{-1};       // screen to open by itself at the next Play menu (-1 = none)
+std::atomic<bool> g_devDecideMercenaries{false};  // DecideMercenariesOnPlayMenu
 // Play menu inside its draw on this thread. The engine runs menu move() on
 // job threads, and the label/help helpers are shared by every menu.
 thread_local std::uintptr_t t_drawingMenu = 0;
@@ -611,6 +613,15 @@ void __fastcall PlayMenuMoveDetour(std::uintptr_t self, void*) {
         RM_LOGI("native menu: opened on screen %d by itself", static_cast<int>(screen));
         return;
     }
+    if (state == kStateInput && g_devDecideMercenaries.exchange(false)) {
+        SafeStore<std::int32_t>(self + re5::off::kMenuCursor, kMercenariesItem);
+        SetBallIndex(self, kMercenariesItem);
+        RM_LOGW("native menu: dev: the game's decide on The Mercenaries (no run)");
+        autopilot::InjectMenuBits(autopilot::DecideBits());
+        MoveWithMercenariesOpen(self);
+        autopilot::InjectMenuBits(0);
+        return;
+    }
     // move() handles decide before navigation, so the cursor here is the
     // row drawn highlighted last frame.
     if (state == kStateInput && (MenuInputBits() & PadMask(re5::off::kPadDecideMask)) != 0) {
@@ -863,6 +874,7 @@ void OnGameTick() {
 bool MenuAtInput() { return g_atInput.load() && GetTickCount() - g_lastMenuFrame.load() < 500; }
 void OpenOnPlayMenu(ScreenId screen) { g_openOnMenu = static_cast<int>(screen); }
 void CancelOpenOnPlayMenu() { g_openOnMenu = -1; }
+void DecideMercenariesOnPlayMenu() { g_devDecideMercenaries = true; }
 bool TakeChosen() { return g_chosen.exchange(false); }
 bool Chosen() { return g_chosen.load(); }
 

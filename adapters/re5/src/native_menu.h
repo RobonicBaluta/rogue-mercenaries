@@ -108,6 +108,9 @@ void RestoreItemBoxLabels();
 /// The next time the Play menu waits for input, the mod menu opens by itself on `screen`
 /// (above its main screen), as if ROGUE MERCENARIES had been chosen: a finished run's results.
 void OpenOnPlayMenu(ScreenId screen);
+/// Developer mode (M10 F0): at the next Play menu waiting for input, the game's own decide on its
+/// Mercenaries row, with no run (the game's Mercenaries menu, played as the game plays it).
+void DecideMercenariesOnPlayMenu();
 void CancelOpenOnPlayMenu();
 // True once (then cleared) after the player chose START RUN.
 bool TakeChosen();

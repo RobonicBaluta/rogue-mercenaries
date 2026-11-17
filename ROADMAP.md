@@ -307,6 +307,55 @@ with `rm_sim` at the end.
 2. Test matrix: every character × host type × a full run, soak runs, save corruption.
 3. Release notes, version, zip.
 
+### M10 — Local co-op (split screen)
+2026-11-17, the user: "lo siguiente es hacer que el juego pueda funcionar en local-coop, haz un plan
+para ello!", then "si, a todo, empieza!" (two controllers at hand; the design below accepted).
+
+The game has split screen of its own: Capcom's 2023 Steam patch (the one that removed Games for
+Windows Live) restored local split-screen co-op, and its Mercenaries MODE SELECT has SOLO, DUO
+(online), SPLIT SCREEN and NO MERCY (game work `+0x5CC` 0/1/2; split screen is the title-flow
+script `0x00BF8070`). sCamera has 8 viewports, the add-player call is known (E22), and the
+Organize/Buy screen has a panel per player. So a run is played in the game's own split-screen
+match, not in a split screen of the mod's.
+
+Design (accepted): each player picks a character, skin and build with their own controller; perks,
+rewards, health and inventory are each player's (each picks a reward in their half of the screen);
+supplies are one shared pool, a purchase goes to the buyer's inventory; a downed player can be
+revived by the other (the game's own dying state), the run ends only when both are down, and a
+fallen player comes back in the next arena with half health; about 1.5 times the enemies and 1.6
+times the bosses' health (tuned with `rm_sim`); two mod skins on the same base slot are refused
+(one file per slot); a run counts for both players' characters in the one profile.
+
+1. ~~F0, research (decides the rest).~~ Done 2026-11-17 (`research/re5-engine-map.md`, "Split-screen
+   Mercenaries"): the game's split screen runs a Mercenaries match. MODE SELECT's SPLIT SCREEN
+   (mode 2) goes to STAGE SELECT, then uIdStartUp24, a two-panel lobby where a pad's START joins
+   player 2 and each player readies (the keyboard is player 1); the match has two human players
+   (sPlayer slots 0 and 1, control 0) and two viewports, player 1 on the top half and player 2 on
+   the bottom; the keyboard drives player 1 and the pad player 2; nothing waited on a network.
+   One player at 0 health ends the match for both ("You Are Dead"), so the run's rule (the run
+   ends when both are down) is the mod's to make (F6). Tests drive player 2 with a virtual pad
+   (dev `pad`, `mercenaries split`, `coopwatch`, `saveguard`). Open: a character taken twice, a
+   dying player revived.
+2. F1, core for two players (no game, tests): the run state holds players (character, build,
+   health, weapons, perks, rewards); seed, arena, supplies and profile are shared; a new
+   snapshot version that still reads the old ones; `rm_sim` plays co-op runs.
+3. F2, starting a co-op run: PLAY offers SOLO and CO-OP; player 2 joins with START on their
+   pad and picks with it; the autopilot answers MODE SELECT with SPLIT SCREEN and the stage and
+   lobby screens (uIdStartUp21, 24) with the run's choices instead of Solo's.
+4. F3, the adapter per player: the 60 uses of the local player in `mod.cpp` become a player
+   list; a hit applies the shooter's perks; loadout, inventory, the pistol in hand, the intro's
+   inventory hold, the flamethrower's stream and the arcs per unit; two worn mod skins and voice
+   folders.
+5. F4, screens for two: rewards and shop in each player's half, each read from its pad; the
+   native Organize/Buy screen with both panels; the next arena starts when both are ready.
+6. F5, HUD and drawing per viewport: the overlay's notices and the element arcs projected with
+   each view's camera and clipped to its half.
+7. F6, director and balance: enemy and boss scaling, down and revive, the run's end, `rm_sim`
+   co-op balance.
+8. F7, progress and telemetry for both players: unlocks, run counts, events tagged by player.
+9. F8, ship: README co-op section, tests, version and both packages; the user's two-controller
+   playtest.
+
 ## 6. Risks and how they are handled
 
 - **Context-bound engine objects** (screens and models created outside their context
@@ -314,8 +363,8 @@ with `rm_sim` at the end.
   owner loads; spikes start in a dev command and a disposable test run.
 - **Scripts in campaign areas.** Suppress per area (event list, triggers); start with areas
   that are open combat spaces.
-- **Co-op and network code paths.** Solo only; flows that wait on partner sync are entered
-  past the sync or not at all.
+- **Co-op and network code paths.** Solo only until M10 (local split screen); flows that wait
+  on partner sync are entered past the sync or not at all. Online co-op stays out.
 - **Game updates.** Every address is checked by signature at start; a mismatch disables the
   feature and says so.
 

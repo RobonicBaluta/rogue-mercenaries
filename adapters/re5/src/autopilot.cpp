@@ -64,6 +64,7 @@ std::atomic<unsigned> g_lockedStages{0};  // bit per stage the game refused this
 thread_local std::uint32_t t_injectBits = 0;  // menu input bits added for this frame
 std::atomic<bool> g_resultsHook{false};
 std::atomic<bool> g_toTitle{false};  // a run is over: skip its results screen, then back to the title
+std::atomic<int> g_devMercMode{-1};  // SetDevMercenariesMode
 std::atomic<DWORD> g_toTitleAt{0};
 constexpr DWORD kToTitleTimeoutMs = 180000;  // never left set into plain Mercenaries play
 
@@ -103,6 +104,16 @@ int __fastcall FlowStep20Detour(std::uintptr_t ctx, void*) {
             SafeStore<std::int32_t>(gw + re5::off::kGameWorkMercMode, 0);
             SafeStore<std::uint8_t>(gw + re5::off::kGameWorkMercFlag, 0);
             RM_LOGI("autopilot: flow Iniciar/Solo answered, screen skipped");
+            return 1;
+        }
+    }
+    if (!g_armed.load() && g_devMercMode.load() >= 0 && ReadOr<std::uint8_t>(ctx + re5::off::kFlowStepState, 1) == 0) {
+        if (const auto gw = GameWork()) {
+            const int mode = g_devMercMode.exchange(-1);
+            SafeStore<std::int32_t>(gw + re5::off::kGameWorkMercItem, 0);
+            SafeStore<std::int32_t>(gw + re5::off::kGameWorkMercMode, mode);
+            SafeStore<std::uint8_t>(gw + re5::off::kGameWorkMercFlag, 0);
+            RM_LOGW("autopilot: dev: flow Iniciar answered with mode %d; the next screens are the game's", mode);
             return 1;
         }
     }
@@ -424,6 +435,15 @@ void Arm(const Plan& plan) {
     // With the flow hooks no screen ever takes input; black out from here.
     if (g_flowHooks.load() && !g_faded.exchange(true)) FadeToBlack(4);
 }
+
+void SetDevMercenariesMode(int mode) {
+    g_devMercMode = mode;
+    RM_LOGW("autopilot: dev: the next Mercenaries menu answers mode %d", mode);
+}
+
+void InjectMenuBits(unsigned bits) { t_injectBits = bits; }
+
+unsigned DecideBits() { return DecideMask(); }
 
 void Disarm(const char* reason) {
     if (!g_armed.exchange(false)) return;

@@ -5,6 +5,7 @@
 #include <MinHook.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <mutex>
 #include <vector>
@@ -29,6 +30,7 @@ using GetDeviceStateFn = HRESULT(STDMETHODCALLTYPE*)(void* self, DWORD size, LPV
 using GetDeviceDataFn = HRESULT(STDMETHODCALLTYPE*)(void* self, DWORD objectSize, LPDIDEVICEOBJECTDATA data,
                                                     LPDWORD inOut, DWORD flags);
 using XInputGetStateFn = DWORD(WINAPI*)(DWORD user, void* state);
+using XInputGetCapabilitiesFn = DWORD(WINAPI*)(DWORD user, DWORD flags, void* caps);
 
 struct DeviceHook {
     void* target = nullptr;
@@ -45,6 +47,14 @@ unsigned char g_rawKeys[256] = {};
 unsigned char g_rawJoy[32] = {};
 unsigned short g_rawXButtons = 0;
 XInputGetStateFn g_origXInputGetState = nullptr;
+XInputGetCapabilitiesFn g_origXInputGetCapabilities = nullptr;
+
+// Virtual pads (SetVirtualPad, developer mode) and the polls per user.
+std::mutex g_virtualMutex;
+VirtualPad g_virtual[4];
+DWORD g_virtualPacket[4] = {};
+std::atomic<unsigned long> g_polls[4];
+std::atomic<bool> g_pollLogged[4];
 
 bool Blocking() { return g_sink && g_sink->BlockGameInput(); }
 // Keys and buttons only (HookSink::HoldGameButtons); under a full block that one rules.
@@ -333,7 +343,32 @@ HRESULT STDMETHODCALLTYPE GetDeviceDataDetour(void* self, DWORD objectSize, LPDI
 }
 
 DWORD WINAPI XInputGetStateDetour(DWORD user, void* state) {
-    const DWORD result = g_origXInputGetState(user, state);
+    DWORD result = g_origXInputGetState(user, state);
+    if (user < 4) {
+        g_polls[user].fetch_add(1);
+        if (!g_pollLogged[user].exchange(true)) {
+            RM_LOGI("xinput: the game polls user %lu (first answer %lu)", static_cast<unsigned long>(user), static_cast<unsigned long>(result));
+        }
+        VirtualPad v;
+        DWORD packet = 0;
+        {
+            std::lock_guard lock(g_virtualMutex);
+            v = g_virtual[user];
+            packet = g_virtualPacket[user];
+        }
+        if (v.on && state) {
+            // XINPUT_STATE: DWORD packet number, then XINPUT_GAMEPAD (WORD buttons, BYTE left and right
+            // triggers, SHORT thumbs LX LY RX RY).
+            auto* p = static_cast<unsigned char*>(state);
+            std::memcpy(p, &packet, 4);
+            std::memcpy(p + 4, &v.buttons, 2);
+            p[6] = v.lt;
+            p[7] = v.rt;
+            const short thumbs[4] = {v.lx, v.ly, v.rx, v.ry};
+            std::memcpy(p + 8, thumbs, sizeof(thumbs));
+            result = ERROR_SUCCESS;
+        }
+    }
     if (result == ERROR_SUCCESS && state && user == 0) {
         // XINPUT_STATE: DWORD packet number, then XINPUT_GAMEPAD whose first WORD is the buttons.
         std::memcpy(&g_rawXButtons, static_cast<const char*>(state) + sizeof(DWORD), sizeof(g_rawXButtons));
@@ -351,6 +386,28 @@ DWORD WINAPI XInputGetStateDetour(DWORD user, void* state) {
         std::memset(static_cast<char*>(state) + sizeof(DWORD), 0, 4);
     }
     return result;
+}
+
+DWORD WINAPI XInputGetCapabilitiesDetour(DWORD user, DWORD flags, void* caps) {
+    bool virtualOn = false;
+    if (user < 4) {
+        std::lock_guard lock(g_virtualMutex);
+        virtualOn = g_virtual[user].on;
+    }
+    if (virtualOn && caps) {
+        // XINPUT_CAPABILITIES (20 bytes): Type, SubType, Flags, then a gamepad block of what it has.
+        auto* p = static_cast<unsigned char*>(caps);
+        std::memset(p, 0, 20);
+        p[0] = 1;  // XINPUT_DEVTYPE_GAMEPAD
+        p[1] = 1;  // XINPUT_DEVSUBTYPE_GAMEPAD
+        const unsigned short all = 0xF3FF;
+        std::memcpy(p + 4, &all, 2);
+        p[6] = p[7] = 0xFF;
+        const short full = 0x7FFF;
+        for (int k = 0; k < 4; ++k) std::memcpy(p + 8 + k * 2, &full, 2);
+        return ERROR_SUCCESS;
+    }
+    return g_origXInputGetCapabilities(user, flags, caps);
 }
 
 bool HookOne(void* target, void* detour, void** original, const char* name) {
@@ -398,6 +455,25 @@ void SetOwnedInputs(const std::vector<OwnedInput>& inputs) {
 bool RawKeyDown(int scancode) { return scancode >= 0 && scancode < 256 && (g_rawKeys[scancode] & 0x80) != 0; }
 bool RawJoyButton(int index) { return index >= 0 && index < 32 && (g_rawJoy[index] & 0x80) != 0; }
 unsigned short RawXInputButtons() { return g_rawXButtons; }
+
+void SetVirtualPad(int user, const VirtualPad& pad) {
+    if (user < 0 || user > 3) return;
+    std::lock_guard lock(g_virtualMutex);
+    const VirtualPad& old = g_virtual[user];
+    if (old.on != pad.on || old.buttons != pad.buttons || old.lt != pad.lt || old.rt != pad.rt || old.lx != pad.lx ||
+        old.ly != pad.ly || old.rx != pad.rx || old.ry != pad.ry) {
+        ++g_virtualPacket[user];
+    }
+    g_virtual[user] = pad;
+}
+
+VirtualPad GetVirtualPad(int user) {
+    if (user < 0 || user > 3) return {};
+    std::lock_guard lock(g_virtualMutex);
+    return g_virtual[user];
+}
+
+unsigned long XInputPolls(int user) { return user >= 0 && user < 4 ? g_polls[user].load() : 0; }
 
 void TickGame(const char* source) {
     // The main thread both polls input and presents (observed on build
@@ -485,6 +561,10 @@ bool InstallInputHooks(void* realDirectInput8Create) {
         if (void* target = reinterpret_cast<void*>(GetProcAddress(xinput, "XInputGetState"))) {
             g_status.xinput = HookOne(target, reinterpret_cast<void*>(&XInputGetStateDetour),
                                       reinterpret_cast<void**>(&g_origXInputGetState), "XInputGetState");
+        }
+        if (void* target = reinterpret_cast<void*>(GetProcAddress(xinput, "XInputGetCapabilities"))) {
+            HookOne(target, reinterpret_cast<void*>(&XInputGetCapabilitiesDetour),
+                    reinterpret_cast<void**>(&g_origXInputGetCapabilities), "XInputGetCapabilities");
         }
     } else {
         RM_LOGW("xinput1_3.dll not loaded; controller input is not blocked while the overlay is focused");

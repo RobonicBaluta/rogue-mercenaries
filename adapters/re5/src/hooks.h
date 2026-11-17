@@ -92,6 +92,20 @@ bool RawKeyDown(int scancode);
 bool RawJoyButton(int index);
 unsigned short RawXInputButtons();
 
+/// Developer mode (M10 F0, local co-op research): a virtual XInput gamepad on `user` (0..3). While
+/// `on`, XInputGetState and XInputGetCapabilities answer for that user with this state, connected
+/// whatever the hardware, so a test can play a second player's pad.
+struct VirtualPad {
+    bool on = false;
+    unsigned short buttons = 0;  // XINPUT_GAMEPAD_* bits
+    unsigned char lt = 0, rt = 0;
+    short lx = 0, ly = 0, rx = 0, ry = 0;
+};
+void SetVirtualPad(int user, const VirtualPad& pad);
+VirtualPad GetVirtualPad(int user);
+/// How often the game polled XInputGetState for `user` (0..3) since the start.
+unsigned long XInputPolls(int user);
+
 void SetHookSink(HookSink* sink);
 
 struct HookStatus {

@@ -3860,6 +3860,131 @@ void WatchScreen() {
 }
 UnitPin g_pin;
 
+// ---- M10 F0, local co-op research (developer mode) -----------------------------------------
+// "coopwatch on|off": the game work fields the Mercenaries menus write (Solo/Duo, the Duo screens,
+// the players' costumes and pads), the players, the camera viewports and the virtual pads, logged
+// on every change. "pad <user> ...": a virtual XInput pad (hooks.h SetVirtualPad) for a second
+// player in tests. "mercenaries solo|duo|split": the game's own Mercenaries menu with no run, its
+// first page answered with that mode. "saveguard on|off": the game's save write held (a test's plain
+// match must not write savedata.bin).
+bool g_coopWatch = false;
+double g_coopNext = 0.0;
+std::map<int, std::uint32_t> g_coopGw;
+std::string g_coopPlayersLast, g_coopViewsLast, g_coopPadsLast;
+bool g_devSaveGuard = false;
+double g_padRelease[4] = {0.0, 0.0, 0.0, 0.0};
+unsigned short g_padReleaseButtons[4] = {0, 0, 0, 0};
+bool g_padReleaseSticks[4] = {false, false, false, false};
+
+void WatchCoop(double now) {
+    if (!g_coopWatch || now < g_coopNext) return;
+    g_coopNext = now + 0.2;
+    const auto gw = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
+    if (gw) {
+        std::string changes;
+        const auto scan = [&](int from, int to) {
+            for (int off = from; off < to; off += 4) {
+                const auto v = ReadOr<std::uint32_t>(gw + static_cast<std::size_t>(off), 0);
+                const auto it = g_coopGw.find(off);
+                if (it != g_coopGw.end() && it->second == v) continue;
+                char part[48];
+                if (it == g_coopGw.end()) {
+                    std::snprintf(part, sizeof(part), " +%03X=%X", off, v);
+                } else {
+                    std::snprintf(part, sizeof(part), " +%03X %X->%X", off, it->second, v);
+                }
+                changes += part;
+                g_coopGw[off] = v;
+            }
+        };
+        scan(0x58, 0x5C);
+        scan(0x470, 0x4D0);
+        scan(0x5C8, 0x664);
+        scan(0x79C, 0x7A0);
+        if (!changes.empty()) RM_LOGW("coopwatch: gw%s", changes.c_str());
+    }
+    const auto players = engine::ReadPlayers();
+    std::string line = "count " + std::to_string(players.count) + " local slot " + std::to_string(players.localSlot);
+    for (const auto& p : players.players) {
+        if (!p.object) continue;
+        char part[192];
+        std::snprintf(part, sizeof(part), " | slot %d %s number %d control %d hp %d/%d @%08X", p.slot, p.className.c_str(), p.number,
+                      p.control, p.hp.hp, p.hp.max, static_cast<unsigned>(p.object));
+        line += part;
+    }
+    if (line != g_coopPlayersLast) {
+        g_coopPlayersLast = line;
+        RM_LOGW("coopwatch: players %s", line.c_str());
+    }
+    std::string views;
+    if (const auto cam = ReadOr<std::uintptr_t>(re5::addr::kSCameraInstance, 0)) {
+        for (int i = 0; i < re5::off::kSCameraViewportCount; ++i) {
+            const auto vp = cam + re5::off::kSCameraViewports + static_cast<std::size_t>(i) * re5::off::kViewportSize;
+            const auto active = ReadOr<std::uint8_t>(vp + re5::off::kViewportActive, 0);
+            const auto camera = ReadOr<std::uintptr_t>(vp + re5::off::kViewportCamera, 0);
+            if (!active && !camera) continue;
+            std::int32_t r[4] = {};
+            for (int k = 0; k < 4; ++k) r[k] = ReadOr<std::int32_t>(vp + re5::off::kViewportRegion + static_cast<std::size_t>(k) * 4, 0);
+            char part[224];
+            std::snprintf(part, sizeof(part), " | vp%d active %u no %u scene %u mode %u attr %X region %d %d %d %d camera %s", i, active,
+                          ReadOr<std::uint8_t>(vp + 0x11, 0), ReadOr<std::uint8_t>(vp + 0x12, 0), ReadOr<std::uint8_t>(vp + 0x13, 0),
+                          ReadOr<std::uint32_t>(vp + 0x0C, 0), r[0], r[1], r[2], r[3],
+                          camera ? engine::ClassName(camera).c_str() : "-");
+            views += part;
+        }
+    }
+    if (views != g_coopViewsLast) {
+        g_coopViewsLast = views;
+        RM_LOGW("coopwatch: viewports%s", views.empty() ? " none" : views.c_str());
+    }
+    char pads[256];
+    std::string padLine;
+    for (int u = 0; u < 4; ++u) {
+        const VirtualPad v = GetVirtualPad(u);
+        std::snprintf(pads, sizeof(pads), " | user %d %s%s", u, XInputPolls(u) ? "polled" : "not polled",
+                      v.on ? (" virtual " + std::to_string(v.buttons) + " " + std::to_string(v.lx) + "," + std::to_string(v.ly)).c_str() : "");
+        padLine += pads;
+    }
+    if (padLine != g_coopPadsLast) {
+        g_coopPadsLast = padLine;
+        RM_LOGW("coopwatch: pads%s", padLine.c_str());
+    }
+}
+
+// Virtual pad presses end by themselves ("pad <user> A [ms]").
+void UpdateVirtualPads(double now) {
+    for (int u = 0; u < 4; ++u) {
+        if (g_padRelease[u] <= 0.0 || now < g_padRelease[u]) continue;
+        VirtualPad v = GetVirtualPad(u);
+        v.buttons = static_cast<unsigned short>(v.buttons & ~g_padReleaseButtons[u]);
+        v.lt = v.rt = 0;
+        if (g_padReleaseSticks[u]) v.lx = v.ly = v.rx = v.ry = 0;
+        SetVirtualPad(u, v);
+        g_padRelease[u] = 0.0;
+        g_padReleaseButtons[u] = 0;
+        g_padReleaseSticks[u] = false;
+    }
+}
+
+unsigned short PadButtonBits(const std::string& names, bool& triggers) {
+    static const std::map<std::string, unsigned> bits = {
+        {"UP", 0x0001}, {"DOWN", 0x0002}, {"LEFT", 0x0004}, {"RIGHT", 0x0008}, {"START", 0x0010}, {"BACK", 0x0020},
+        {"LS", 0x0040}, {"RS", 0x0080}, {"LB", 0x0100}, {"RB", 0x0200}, {"A", 0x1000}, {"B", 0x2000}, {"X", 0x4000}, {"Y", 0x8000}};
+    unsigned short out = 0;
+    std::istringstream parts(names);
+    std::string name;
+    while (std::getline(parts, name, '+')) {
+        for (auto& c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        if (name == "LT" || name == "RT") {
+            triggers = true;
+            continue;
+        }
+        const auto it = bits.find(name);
+        if (it != bits.end()) out = static_cast<unsigned short>(out | it->second);
+    }
+    return out;
+}
+
 std::uintptr_t FirstEnemyOf(const std::string& cls) {
     for (const auto& e : engine::ReadEnemyStates()) {
         if (engine::ClassName(e.object) == cls) return e.object;
@@ -3949,6 +4074,8 @@ void WatchUnit(double now) {
         if (g_pin.turn) engine::TurnTo(g_pin.unit, g_pin.yaw, 0);
     }
     WatchScreen();
+    WatchCoop(now);
+    UpdateVirtualPads(now);
     WatchWeapons();
     if (g_watchPlayer) {
         const auto local = engine::LocalPlayer();
@@ -8233,6 +8360,63 @@ void PollDevCommand(double now) {
         const std::uintptr_t unit = cls == "off" ? 0 : FirstEnemyOf(cls);
         SetHitProbe(unit);
         RM_LOGW("dev hitprobe %s -> %08X%s", cls.c_str(), static_cast<unsigned>(unit), engine::Caps().hitCheckProbe ? "" : " (no probe: signature)");
+    } else if (command.rfind("coopwatch ", 0) == 0) {
+        g_coopWatch = command.substr(10) == "on";
+        g_coopGw.clear();
+        g_coopPlayersLast.clear();
+        g_coopViewsLast.clear();
+        g_coopPadsLast.clear();
+        g_coopNext = 0.0;
+        RM_LOGW("dev coopwatch %s", g_coopWatch ? "on" : "off");
+    } else if (command.rfind("pad ", 0) == 0) {
+        // "pad <user> on|off", "pad <user> <A+B..> [ms]" (LT/RT pull a trigger), "pad <user> stick|rstick <x> <y> [ms]".
+        std::istringstream words(command.substr(4));
+        int user = -1;
+        std::string what;
+        words >> user >> what;
+        if (user < 0 || user > 3) {
+            RM_LOGW("dev pad: user 0..3");
+        } else if (what == "on" || what == "off") {
+            VirtualPad v;
+            v.on = what == "on";
+            SetVirtualPad(user, v);
+            g_padRelease[user] = 0.0;
+            RM_LOGW("dev pad %d %s", user, what.c_str());
+        } else if (what == "stick" || what == "rstick") {
+            int x = 0, y = 0, ms = 0;
+            words >> x >> y >> ms;
+            VirtualPad v = GetVirtualPad(user);
+            v.on = true;
+            (what == "stick" ? v.lx : v.rx) = static_cast<short>(std::clamp(x, -32768, 32767));
+            (what == "stick" ? v.ly : v.ry) = static_cast<short>(std::clamp(y, -32768, 32767));
+            SetVirtualPad(user, v);
+            if (ms > 0) {
+                g_padRelease[user] = now + ms / 1000.0;
+                g_padReleaseSticks[user] = true;
+            }
+            RM_LOGW("dev pad %d %s %d %d for %d ms", user, what.c_str(), x, y, ms);
+        } else {
+            int ms = 150;
+            words >> ms;
+            bool triggers = false;
+            const unsigned short bits = PadButtonBits(what, triggers);
+            VirtualPad v = GetVirtualPad(user);
+            v.on = true;
+            v.buttons = static_cast<unsigned short>(v.buttons | bits);
+            if (triggers) v.lt = v.rt = 255;
+            SetVirtualPad(user, v);
+            g_padRelease[user] = now + std::max(ms, 30) / 1000.0;
+            g_padReleaseButtons[user] = static_cast<unsigned short>(g_padReleaseButtons[user] | bits);
+            RM_LOGW("dev pad %d press %s (%04X) for %d ms", user, what.c_str(), bits, ms);
+        }
+    } else if (command == "mercenaries solo" || command == "mercenaries duo" || command == "mercenaries split") {
+        // MODE SELECT's rows: Solo 0, Duo (online) 1, Split screen 2.
+        autopilot::SetDevMercenariesMode(command == "mercenaries split" ? 2 : command == "mercenaries duo" ? 1 : 0);
+        nativemenu::DecideMercenariesOnPlayMenu();
+        RM_LOGW("dev %s: the game's Mercenaries menu at the next Play menu (no run)", command.c_str());
+    } else if (command == "saveguard on" || command == "saveguard off") {
+        g_devSaveGuard = command == "saveguard on";
+        RM_LOGW("dev %s", command.c_str());
     } else if (command.rfind("screenwatch ", 0) == 0) {
         g_screenWatch = command.substr(12) == "on";
         g_screenWatchLast.clear();
@@ -9099,7 +9283,7 @@ private:
         // holds nothing back (the campaign saves as ever).
         static double runMatchSeenAt = -1.0e9;
         if (runMatch) runMatchSeenAt = now;
-        autopilot::SetSaveGuard(now - runMatchSeenAt < kSaveGuardAfterMatch);
+        autopilot::SetSaveGuard(g_devSaveGuard || now - runMatchSeenAt < kSaveGuardAfterMatch);
         if (g->run->phase() == rm::Phase::ArenaActive && g->match.inMatch) ApplyBuildHealth();  // gains mid-arena
         // Items earned by perks, rewards and the shop wait until the player is in a match.
         if (g->match.inMatch && engine::LocalPlayer() && g->run->phase() != rm::Phase::Idle && ReadMercTimer().recent) {
