@@ -37,14 +37,15 @@ INSTALL
 
 OPTIONAL: COSTUME MODS
   A few skins wear a costume mod made by someone else (Excella Experimenter, Jill
-  Classic, Sheva Hound Wolf Squad, Rebecca Winter), and Leon S. Kennedy is a character
-  from a mod. None
+  Classic, Sheva Hound Wolf Squad, Rebecca Winter, Wesker RE4), and Leon S. Kennedy and
+  Ada Wong are characters from mods. None
   of them come with this package, and the mod plays fine without them: SKINS lists such
   a skin in red, and pressing it opens the mod's page on Nexus Mods. Download it there
   (and endorse its creator), then unzip it into
     Resident Evil 5\RogueMercenaries\mods
   Only the costume is used, only while you wear that skin; nothing in the game's own
-  folders changes. For Leon, unzip his Main Files too. Do not install these with a mod
+  folders changes. For Leon, unzip his Main Files too; for Wesker RE4 and Ada, all of
+  their files (their voice lines). Do not install these with a mod
   manager: that replaces the original outfit everywhere.
 
 PLAY
