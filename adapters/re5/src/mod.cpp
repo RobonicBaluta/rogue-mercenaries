@@ -228,6 +228,7 @@ struct ModState {
     int p2Costume = -1;          // M10: player 2's costume slot in the run's first match
     int p1Pad = -2;              // M10: player 1's XInput user (-1 the keyboard, -2 not known yet)
     int p2Pad = -1;              // M10: player 2's XInput user (-1 not known yet)
+    bool coopLobbyNeeded = false;  // M10: a resumed co-op run's next match shows the lobby (player 2 joins again)
     int itemBoxSeat = 0;         // M10: whose ORGANIZE INVENTORY the game's screen holds
     rm::PerkCategory perkCategory = rm::PerkCategory::Style;  // slot opened from the PERKS screen
     std::string diagnosticsResult;
@@ -723,7 +724,7 @@ void ArmMap(int key, int costume) {
     if (coop && engine::Caps().splitScreen) {
         plan.mode = 2;
         plan.costume2 = running ? g->p2Costume : PlayerTwoCostume();
-        plan.skip_lobby = running;
+        plan.skip_lobby = running && !g->coopLobbyNeeded;
     }
     autopilot::Arm(plan);
 }
@@ -1633,6 +1634,21 @@ nativemenu::Screen RunResultsScreen(rm::RunController& run) {
     return screen;
 }
 
+// ---- The mod's ORGANIZE screen (the grid; with two players the run's storage and selling too) ----
+// Its rows: the nine cells, the storage's records, then with an item picked TO THE STORAGE (a cell's)
+// and SELL. The storage is the run's (both players'). Defined with the storage, below.
+struct OrganizeRow {
+    enum Kind { Cell, Stash, ToStorage, Sell } kind = Cell;
+    int index = 0;
+};
+constexpr int kStashPick = 100;  // g->organizePick for a storage record: kStashPick + its index
+std::vector<std::pair<std::uint32_t, int>> StashRecords();
+std::vector<OrganizeRow> OrganizeRows(int pick, int stashCount);
+bool TakeFromStash(int index, std::string& why);
+bool PutCellInStash(int cell, std::string& why);
+std::int64_t SellCell(int cell);
+std::int64_t SellStash(int index);
+
 // The mod menu's first screen, row by row (Build and Decide walk the same list).
 enum class MainRow { Continue, Start, Players, PlayerTwo, Characters, Perks, Credits };
 std::vector<MainRow> MainRows(rm::RunController& run) {
@@ -1701,9 +1717,19 @@ private:
                         case MainRow::Continue: {
                             const rm::ActiveRunCheckpoint& cp = *run.interrupted_run();
                             const rm::CharacterDef* who = g->content->FindCharacter(cp.character_id);
+                            // M10: a two-player run names player 2's character too (its resume point's seats).
+                            std::string second;
+                            const nlohmann::json resume = nlohmann::json::parse(cp.resume, nullptr, false);
+                            if (const auto seats = resume.is_object() ? resume.find("seats") : resume.end();
+                                resume.is_object() && seats != resume.end() && seats->is_array() && !seats->empty() && seats->front().is_object()) {
+                                const std::string p2Id = seats->front().value("character_id", std::string());
+                                if (const rm::CharacterDef* p2 = g->content->FindCharacter(p2Id)) second = Plain(p2->name);
+                            }
                             screen.items.push_back(Item{"CONTINUE RUN",
-                                                        (who ? Plain(who->name) : std::string("Your run")) + ", " +
-                                                            Plural(cp.arenas_cleared, "arena") + " cleared.\nThe arena you left starts again.",
+                                                        (who ? Plain(who->name) : std::string("Your run")) +
+                                                            (second.empty() ? std::string() : " and " + second) + ", " +
+                                                            Plural(cp.arenas_cleared, "arena") + " cleared.\n" +
+                                                            (second.empty() ? "The arena you left starts again." : "After the lobby the arena you left starts again."),
                                                         false, 0, "flag"});
                             break;
                         }
@@ -1985,9 +2011,10 @@ private:
                 }
                 Item organize;
                 organize.label = "ORGANIZE INVENTORY";
-                organize.help = NativeItemBoxReady() ? "Arrange, combine and sell items in the game screen.\nA sale pays half the SHOP price. Buy and upgrade here."
-                                                     : "Rearrange the nine cells of your item grid.";
-                if (const auto& guns = StashGuns(); !guns.empty() && NativeItemBoxReady()) {
+                const bool native = NativeItemBoxReady() && run.SeatCount() < 2;  // co-op: the mod's grid (MatchOrganize)
+                organize.help = native ? "Arrange, combine and sell items in the game screen.\nA sale pays half the SHOP price. Buy and upgrade here."
+                                       : "Swap the cells of your item grid, use the run's storage,\nor sell an item for half its SHOP price.";
+                if (const auto& guns = StashGuns(); !guns.empty()) {
                     organize.label += "   " + guns.back() + (guns.size() > 1 ? " +" + std::to_string(guns.size() - 1) : std::string()) +
                                       " IN STORAGE";
                     organize.color = 0xFFFFD27Fu;
@@ -2002,24 +2029,54 @@ private:
             }
             case ScreenId::MatchOrganize: {
                 const auto grid = ReadGrid();
+                const auto stash = StashRecords();
                 const int pick = g->organizePick;
                 const bool picked = pick >= 0 && pick < kGridCells && grid[static_cast<std::size_t>(pick)].record;
-                screen.header = picked ? "MOVE " + Upper(Plain(GridItemName(grid[static_cast<std::size_t>(pick)].id))) + " TO"
-                                       : "ORGANIZE   PICK AN ITEM";
-                for (int cell = 0; cell < kGridCells; ++cell) {
-                    const GridCell& c = grid[static_cast<std::size_t>(cell)];
+                const bool pickedStash = pick >= kStashPick && pick - kStashPick < static_cast<int>(stash.size());
+                const std::uint32_t pickedId = picked ? grid[static_cast<std::size_t>(pick)].id
+                                                      : pickedStash ? stash[static_cast<std::size_t>(pick - kStashPick)].first : 0;
+                const int pickedCount = picked ? grid[static_cast<std::size_t>(pick)].count
+                                               : pickedStash ? stash[static_cast<std::size_t>(pick - kStashPick)].second : 0;
+                screen.header = picked        ? "MOVE " + Upper(Plain(GridItemName(pickedId))) + " TO"
+                                : pickedStash ? "TAKE " + Upper(Plain(GridItemName(pickedId))) + " OUT"
+                                              : "ORGANIZE   PICK AN ITEM";
+                for (const OrganizeRow& row : OrganizeRows(pick, static_cast<int>(stash.size()))) {
                     Item item;
-                    item.label = std::to_string(cell + 1) + "   " +
-                                 (c.record ? Upper(Plain(GridItemName(c.id))) + (c.count > 1 ? "  " + std::to_string(c.count) : "")
-                                           : std::string("EMPTY"));
-                    if (picked && cell == pick) {
-                        item.label += "   PICKED";
-                        item.color = 0xFFFFD27Fu;
-                        item.help = "Press again to put it back.";
-                    } else if (picked) {
-                        item.help = c.record ? "Press to swap the two items." : "Press to move it here.";
+                    if (row.kind == OrganizeRow::Cell) {
+                        const GridCell& c = grid[static_cast<std::size_t>(row.index)];
+                        item.label = std::to_string(row.index + 1) + "   " +
+                                     (c.record ? Upper(Plain(GridItemName(c.id))) + (c.count > 1 ? "  " + std::to_string(c.count) : "")
+                                               : std::string("EMPTY"));
+                        if (picked && row.index == pick) {
+                            item.label += "   PICKED";
+                            item.color = 0xFFFFD27Fu;
+                            item.help = "Press again to put it back.";
+                        } else if (picked) {
+                            item.help = c.record ? "Press to swap the two items." : "Press to move it here.";
+                        } else if (pickedStash) {
+                            item.help = "Press to take it out of the storage\ninto your grid.";
+                        } else {
+                            item.help = c.record ? "Press to pick it up." : "An empty cell.";
+                        }
+                    } else if (row.kind == OrganizeRow::Stash) {
+                        const auto& [stashId, stashCount] = stash[static_cast<std::size_t>(row.index)];
+                        item.label = "STORAGE   " + Upper(Plain(GridItemName(stashId))) + (stashCount > 1 ? "  " + std::to_string(stashCount) : "");
+                        if (pickedStash && kStashPick + row.index == pick) {
+                            item.label += "   PICKED";
+                            item.color = 0xFFFFD27Fu;
+                            item.help = "Press again to leave it there.";
+                        } else if (picked) {
+                            item.help = "Press to put the picked item in the storage.";
+                        } else {
+                            item.help = "In the run's storage (both players').\nPress to pick it.";
+                        }
+                    } else if (row.kind == OrganizeRow::ToStorage) {
+                        item.label = "TO THE STORAGE";
+                        item.help = "The run's storage keeps it for a later shop\n(both players can take it out).";
                     } else {
-                        item.help = c.record ? "Press to pick it up." : "An empty cell.";
+                        const std::int64_t value = g->run->SaleValue(MakeItemId(RecordItemId(pickedId)), std::max(0, pickedCount));
+                        item.label = "SELL   " + std::to_string(value) + (value == 1 ? " SUPPLY" : " SUPPLIES");
+                        item.help = "Half its shop price, paid in supplies.\nA sold gun leaves the run.";
                     }
                     screen.items.push_back(std::move(item));
                 }
@@ -2397,9 +2454,9 @@ private:
                 }
                 if (index == offers + rerollRow) {  // ORGANIZE INVENTORY
                     // The game's own Organize/Buy screen when it can open here (M7.1); the mod's
-                    // grid screen otherwise. The storage's guns are seen there.
+                    // grid screen otherwise (it lists the storage too). The storage's guns are seen there.
+                    StashGunsSeen();
                     if (NativeItemBoxReady() && run.SeatCount() < 2) {
-                        StashGunsSeen();
                         g->itemBoxRequested = true;
                         g->itemBoxSeat = g->run->ActiveSeat();  // M10: this player's grid in the screen
                         d.outcome = Outcome::Close;
@@ -2424,6 +2481,7 @@ private:
             }
             case ScreenId::MatchOrganize: {
                 const auto grid = ReadGrid();
+                const auto stash = StashRecords();
                 int& pick = g->organizePick;
                 if (index < 0) {  // cancel: drop the picked item, or back to the shop
                     if (pick >= 0) {
@@ -2434,20 +2492,50 @@ private:
                     }
                     break;
                 }
-                if (index >= kGridCells) break;
-                if (pick < 0) {
-                    if (!grid[static_cast<std::size_t>(index)].record) {
-                        d.outcome = Outcome::Denied;
-                        break;
+                const auto rows = OrganizeRows(pick, static_cast<int>(stash.size()));
+                if (index >= static_cast<int>(rows.size())) break;
+                const OrganizeRow row = rows[static_cast<std::size_t>(index)];
+                const bool pickedCell = pick >= 0 && pick < kGridCells;
+                const bool pickedStash = pick >= kStashPick;
+                std::string why;
+                d.outcome = Outcome::Refresh;
+                if (row.kind == OrganizeRow::Cell) {
+                    if (pickedStash) {
+                        if (!TakeFromStash(pick - kStashPick, why)) {
+                            d.outcome = Outcome::Denied;
+                            if (!why.empty()) g->toasts.Push(why);
+                        }
+                        pick = -1;
+                    } else if (!pickedCell) {
+                        if (!grid[static_cast<std::size_t>(row.index)].record) {
+                            d.outcome = Outcome::Denied;
+                            break;
+                        }
+                        pick = row.index;
+                    } else if (pick == row.index) {
+                        pick = -1;
+                    } else {
+                        SwapGridCells(pick, row.index);
+                        pick = -1;
                     }
-                    pick = index;
-                } else if (pick == index) {
+                } else if (row.kind == OrganizeRow::Stash) {
+                    if (pickedCell) {
+                        if (!PutCellInStash(pick, why)) d.outcome = Outcome::Denied;
+                        if (!why.empty()) g->toasts.Push(why);
+                        pick = -1;
+                    } else {
+                        pick = kStashPick + row.index == pick ? -1 : kStashPick + row.index;
+                    }
+                } else if (row.kind == OrganizeRow::ToStorage) {
+                    if (!PutCellInStash(pick, why)) d.outcome = Outcome::Denied;
+                    if (!why.empty()) g->toasts.Push(why);
                     pick = -1;
                 } else {
-                    SwapGridCells(pick, index);
+                    const std::int64_t paid = pickedCell ? SellCell(pick) : SellStash(pick - kStashPick);
+                    if (paid <= 0) d.outcome = Outcome::Denied;
+                    else g->toasts.Push("Sold for " + std::to_string(paid) + (paid == 1 ? " supply" : " supplies"));
                     pick = -1;
                 }
-                d.outcome = Outcome::Refresh;
                 break;
             }
             case ScreenId::MatchRoute: {
@@ -2536,6 +2624,31 @@ void LogRunMap() {
     }
 }
 
+// M10: the pads, when the lobby did not tell (WatchLobbyPads): player 2 the last connected XInput
+// pad, player 1 the first other one (none: the keyboard). Then the lobby's fields with both players
+// in: the later arenas skip the lobby with them.
+void RecordCoopLobby() {
+    if (g->p2Pad < 0) {
+        for (int user = 3; user >= 0 && g->p2Pad < 0; --user) {
+            if (XInputConnected(user)) g->p2Pad = user;
+        }
+    }
+    if (g->p1Pad < -1) {
+        g->p1Pad = -1;
+        for (int user = 0; user < 4 && g->p1Pad < 0; ++user) {
+            if (user != g->p2Pad && XInputConnected(user)) g->p1Pad = user;
+        }
+    }
+    RM_LOGI("co-op: pads: player 1 %s, player 2 %s", g->p1Pad >= 0 ? ("XInput user " + std::to_string(g->p1Pad)).c_str() : "keyboard",
+            g->p2Pad >= 0 ? ("XInput user " + std::to_string(g->p2Pad)).c_str() : "unknown");
+    const auto gw = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
+    std::vector<std::pair<int, std::uint32_t>> fields;
+    for (const int off : {0x490, 0x494, 0x610, 0x614, 0x618, 0x61C, 0x620, 0x624, 0x654, 0x658}) {
+        fields.emplace_back(off, gw ? ReadOr<std::uint32_t>(gw + static_cast<std::size_t>(off), 0) : 0);
+    }
+    autopilot::SetLobby(fields);
+}
+
 // M10: the split-screen match's second player joins the run. Their character is the match's
 // slot-1 class (a mod character in its costume when player 2 chose one), the skin player 2 chose
 // when the lobby kept its costume, else that class's own outfit in the costume the lobby left.
@@ -2571,27 +2684,7 @@ void JoinPlayerTwo(rm::RunController& run) {
         return;
     }
     g->p2Costume = costume;
-    // The pads, when the lobby did not tell (WatchLobbyPads): player 2 the last connected XInput
-    // pad, player 1 the first other one (none: the keyboard).
-    if (g->p2Pad < 0) {
-        for (int user = 3; user >= 0 && g->p2Pad < 0; --user) {
-            if (XInputConnected(user)) g->p2Pad = user;
-        }
-    }
-    if (g->p1Pad < -1) {
-        g->p1Pad = -1;
-        for (int user = 0; user < 4 && g->p1Pad < 0; ++user) {
-            if (user != g->p2Pad && XInputConnected(user)) g->p1Pad = user;
-        }
-    }
-    RM_LOGI("co-op: pads: player 1 %s, player 2 %s", g->p1Pad >= 0 ? ("XInput user " + std::to_string(g->p1Pad)).c_str() : "keyboard",
-            g->p2Pad >= 0 ? ("XInput user " + std::to_string(g->p2Pad)).c_str() : "unknown");
-    // The lobby's fields with both players in: the later arenas skip the lobby with them.
-    std::vector<std::pair<int, std::uint32_t>> fields;
-    for (const int off : {0x490, 0x494, 0x610, 0x614, 0x618, 0x61C, 0x620, 0x624, 0x654, 0x658}) {
-        fields.emplace_back(off, gw ? ReadOr<std::uint32_t>(gw + static_cast<std::size_t>(off), 0) : 0);
-    }
-    autopilot::SetLobby(fields);
+    RecordCoopLobby();
     g->toasts.Push("Rogue Mercenaries: player 2 joined the run");
 }
 
@@ -2600,7 +2693,7 @@ void HandleNativeMenu(double now) {
     matchui::SetModel(&g_menuModel);
     if (nativemenu::TakeChosen()) {
         g->rogueModePending = true;
-        g->toasts.Push(g->coopPlayers == 2 && engine::Caps().splitScreen
+        g->toasts.Push((g->coopPlayers == 2 || g->coopLobbyNeeded) && engine::Caps().splitScreen
                            ? "Rogue Mercenaries: two players. Player 2 presses START to join, then both ready"
                            : "Rogue Mercenaries: choose Solo, a stage and Chris or Sheva");
     }
@@ -2610,6 +2703,16 @@ void HandleNativeMenu(double now) {
         g->rogueModePending = false;  // backed out to the Play menu
         autopilot::Disarm("back at the Play menu");
         host::SetStageOverride(-1);
+        return;
+    }
+    if (nativemenu::MenuAtInput() && g->coopLobbyNeeded && run.HasActiveRun()) {
+        g->rogueModePending = false;
+        g->coopLobbyNeeded = false;
+        g->transition = {};
+        autopilot::Disarm("back at the Play menu");
+        host::SetStageOverride(-1);
+        Report(run.SuspendRun(now), "suspend run (its lobby was left)");
+        RM_LOGI("co-op: the resumed run's lobby was left; the run waits on CONTINUE RUN");
         return;
     }
     if (!g->match.inMatch) return;
@@ -3737,6 +3840,26 @@ void TryBeginArena(double now) {
         } else {
             // Waiting for the match on the next stage.
             if (g->matchGeneration == g->transition.generation || !matchRunning) return;
+            if (g->coopLobbyNeeded) {
+                // A resumed co-op run's first match: player 2 joined again in its lobby.
+                g->coopLobbyNeeded = false;
+                const engine::PlayerInfo* two = nullptr;
+                const auto players = engine::ReadPlayers();
+                for (const auto& p : players.players) {
+                    if (p.object && p.slot == 1 && p.control == 0) two = &p;
+                }
+                if (two != nullptr) {
+                    RecordCoopLobby();
+                    rm::SeatScope seat(run, 1);
+                    const std::string classCharacter = engine::CharacterIdForClass(two->className);
+                    if (!PlaysAs(classCharacter, run.state().character_id, run.state().skin_id)) {
+                        RM_LOGW("co-op: player 2 plays %s but their seat is %s", classCharacter.c_str(), run.state().character_id.c_str());
+                    }
+                } else {
+                    RM_LOGW("co-op: the resumed run's match has no second player (players %d)", players.count);
+                    g->toasts.Push("Rogue Mercenaries: player 2 is not in this match");
+                }
+            }
             const rm::Status status = run.BeginArena(now);
             Report(status, "begin arena");
             g->arenaEndRequested = false;
@@ -4428,7 +4551,8 @@ void UpdateVirtualPads(double now) {
     }
 }
 
-unsigned short PadButtonBits(const std::string& names, bool& triggers) {
+// `triggers`: 1 LT, 2 RT.
+unsigned short PadButtonBits(const std::string& names, int& triggers) {
     static const std::map<std::string, unsigned> bits = {
         {"UP", 0x0001}, {"DOWN", 0x0002}, {"LEFT", 0x0004}, {"RIGHT", 0x0008}, {"START", 0x0010}, {"BACK", 0x0020},
         {"LS", 0x0040}, {"RS", 0x0080}, {"LB", 0x0100}, {"RB", 0x0200}, {"A", 0x1000}, {"B", 0x2000}, {"X", 0x4000}, {"Y", 0x8000}};
@@ -4438,7 +4562,7 @@ unsigned short PadButtonBits(const std::string& names, bool& triggers) {
     while (std::getline(parts, name, '+')) {
         for (auto& c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         if (name == "LT" || name == "RT") {
-            triggers = true;
+            triggers |= name == "LT" ? 1 : 2;
             continue;
         }
         const auto it = bits.find(name);
@@ -5189,37 +5313,55 @@ bool ActionAllowsSpecial(const std::string& action) {
 // aim is started over so its opening sees the change. Off again when the player stops aiming.
 struct ScopeState {
     std::map<std::uintptr_t, std::int32_t> originals;  // weapon record's scope type -> the game's value
+};
+ScopeState g_scope;
+// Each player's (M10 local co-op; index = seat): the scope open, the button last tick, the aim, the
+// record of the scoped gun in hand. The records are the game's, one per gun model: a model scoped
+// for one player is scoped for both while they both hold it.
+struct ScopeSeat {
     bool open = false;
     bool buttonWas = false;
     double aimedAt = -1.0e9;
+    std::uintptr_t held = 0;
 };
-ScopeState g_scope;
+std::array<ScopeSeat, 2> g_scopeSeats;
 constexpr double kScopeAimGrace = 0.4;  // a moment out of the aim's actions (a shot's end) keeps it
 
 void RestoreScopes() {
     for (const auto& [address, value] : g_scope.originals) SafeStore<std::int32_t>(address, value);
     if (!g_scope.originals.empty()) RM_LOGI("scope: the game's %zu scopes put back", g_scope.originals.size());
     g_scope = {};
+    g_scopeSeats = {};
 }
 
-bool ScopeButtonDown() {
-    if (RawKeyDown(g->settings.scopeKey)) return true;
-    const unsigned short xbuttons = RawXInputButtons();
+// The scope button: player 1's Z or their pad's right stick click; player 2's pad's.
+bool ScopeButtonDown(int seat) {
     const auto joy = [](const char* name) {
         const auto it = g_joypadButtons.find(name);
         return it != g_joypadButtons.end() && RawJoyButton(it->second);
     };
+    if (seat > 0) {
+        const unsigned short x = RawXInputButtonsOf(PadUserOfSeat(seat));
+        return (x & XInputBit("RS")) != 0 && (x & XInputBit("LS")) == 0;
+    }
+    if (RawKeyDown(g->settings.scopeKey)) return true;
+    const unsigned short xbuttons = RawXInputButtons();
     // The right stick's click alone: with the left one too it is the second special.
     const bool right = (xbuttons & XInputBit("RS")) != 0 || joy("RS");
     const bool left = (xbuttons & XInputBit("LS")) != 0 || joy("LS");
     return right && !left;
 }
 
+// The active player's turn (SeatTurn): their gun, aim and button; the records are written once
+// every player had their turn (ApplyScopes).
 void DriveScope(double now) {
     if (!engine::Caps().weaponScope || !g->settings.sniperNormalAim) return;
+    const int seat = std::clamp(g->run->ActiveSeat(), 0, 1);
+    ScopeSeat& me = g_scopeSeats[static_cast<std::size_t>(seat)];
     const auto local = g->match.inMatch && g->run->HasActiveRun() ? engine::LocalPlayer() : 0;
     if (!local) {
-        if (!g_scope.originals.empty()) RestoreScopes();
+        if (seat == 0 && !g_scope.originals.empty()) RestoreScopes();
+        me = {};
         return;
     }
     if (g_scope.originals.empty()) {
@@ -5241,24 +5383,34 @@ void DriveScope(double now) {
         const auto address = re5::addr::kWeaponRecords + (raw & 0xFF) * re5::addr::kWeaponRecordSize + re5::off::kWeaponScopeType;
         if ((raw & 0xFF00) == 0x100 && g_scope.originals.count(address)) held = address;
     }
+    me.held = held;
     const std::string action = engine::CurrentActionName(local);
-    if (held && (action.rfind("cPlAction_pl_act_weapon_ready", 0) == 0 || action.rfind("cPlAction_pl_act_weapon_fire", 0) == 0)) g_scope.aimedAt = now;
-    const bool aiming = held && now - g_scope.aimedAt < kScopeAimGrace;
-    const bool button = ScopeButtonDown();
-    const bool pressed = button && !g_scope.buttonWas;
-    g_scope.buttonWas = button;
-    const bool wasOpen = g_scope.open;
-    if (!aiming) g_scope.open = false;
-    else if (pressed) g_scope.open = !g_scope.open;
-    for (const auto& [address, value] : g_scope.originals) {
-        const std::int32_t wanted = g_scope.open && address == held ? value : 0;
-        if (ReadOr<std::int32_t>(address, wanted) != wanted) SafeStore<std::int32_t>(address, wanted);
-    }
-    if (g_scope.open == wasOpen || !aiming) return;
-    RM_LOGI("scope: %s (%s)", g_scope.open ? "through the scope" : "over the shoulder", action.c_str());
+    if (held && (action.rfind("cPlAction_pl_act_weapon_ready", 0) == 0 || action.rfind("cPlAction_pl_act_weapon_fire", 0) == 0)) me.aimedAt = now;
+    const bool aiming = held && now - me.aimedAt < kScopeAimGrace;
+    const bool button = ScopeButtonDown(seat);
+    const bool pressed = button && !me.buttonWas;
+    me.buttonWas = button;
+    const bool wasOpen = me.open;
+    if (!aiming) me.open = false;
+    else if (pressed) me.open = !me.open;
+    if (me.open == wasOpen || !aiming) return;
+    // The record now, before the aim starts over (the other players' turns come later this tick).
+    const auto it = g_scope.originals.find(held);
+    if (it != g_scope.originals.end()) SafeStore<std::int32_t>(held, me.open ? it->second : 0);
+    RM_LOGI("scope: player %d %s (%s)", seat + 1, me.open ? "through the scope" : "over the shoulder", action.c_str());
     static const char* const kAimStart = "cPlAction_pl_act_weapon_ready_begin";
     const auto ids = engine::ActionIdsOf(local, kAimStart);
     if (ids.empty() || !engine::StartAction(local, ids.front(), kAimStart)) RM_LOGW("scope: the aim could not be started over");
+}
+
+// Every scoped gun's record: its own scope while a player has it open, else over the shoulder.
+void ApplyScopes() {
+    for (const auto& [address, value] : g_scope.originals) {
+        bool open = false;
+        for (const ScopeSeat& s : g_scopeSeats) open = open || (s.open && s.held == address);
+        const std::int32_t wanted = open ? value : 0;
+        if (ReadOr<std::int32_t>(address, wanted) != wanted) SafeStore<std::int32_t>(address, wanted);
+    }
 }
 
 // The game's own screens and pause: its pause menu, a paused world, the item screen.
@@ -5879,6 +6031,7 @@ void QueueProcs(std::uintptr_t enemy, const std::vector<rm::WeaponProc>& procs) 
 // (DrawElementArcs), flickering, gone after its time.
 struct ElementArc {
     std::uintptr_t from = 0, to = 0;  // 0: the player's gun (from) / the point (to)
+    std::uintptr_t gunOwner = 0;      // from 0: the player whose gun it is (M10: either player)
     float a[3] = {}, b[3] = {};
     double born = 0.0, until = 0.0;
     std::uint32_t seed = 0;
@@ -5892,6 +6045,7 @@ void AddArc(std::uintptr_t from, std::uintptr_t to, double now, double seconds) 
     ElementArc arc;
     arc.from = from;
     arc.to = to;
+    if (!from) arc.gunOwner = engine::LocalPlayer();
     if (from) UnitPosition(from, arc.a);
     UnitPosition(to, arc.b);
     arc.born = now;
@@ -6086,14 +6240,25 @@ std::string g_flameStreamPath;           // the look in place of the flame now (
 std::string g_flameStreamCompanion;      // with it in place of the flame's second list (the mod's own effects)
 bool g_flameStreamLoops = false;         // a recoloured flame: it keeps going by itself
 rm::Element g_flameStreamElement = rm::Element::Incendiary;
+// The stream's watch (per player: SeatTurn swaps it with the look above).
+struct FlameStreamState {
+    double nextLook = 0.0;
+    int lastFuel = -1;
+    double firingUntil = 0.0, lastTick = 0.0, nextArc = 0.0, nextStreamHit = 0.0, nextGunArc = 0.0;
+    bool wasFiring = false;
+    int firingLogs = 0;
+    std::map<std::uintptr_t, std::pair<double, double>> chill;  // enemy -> seconds in the flame, last seen
+};
+FlameStreamState g_flameStreamState;
 
 // The run's flamethrower's own element with a look in settings flame_streams that is in memory
 // (its evolved one's first); looked at once a second, set for the local player's unit.
 void UpdateFlameStreamLook(double now) {
-    static double next = 0.0;
+    double& next = g_flameStreamState.nextLook;
+    const int seat = g->run->ActiveSeat();
     if (now < next || g_flameUnit == 0 || !g->match.inMatch) {
         // The unit as it is now, every tick (a new match's flamethrower is another unit).
-        SetFlameStream(g_flameStreamPath.empty() || !g->match.inMatch ? 0 : g_flameUnit, g_flameStreamPath, g_flameStreamCompanion,
+        SetFlameStream(seat, g_flameStreamPath.empty() || !g->match.inMatch ? 0 : g_flameUnit, g_flameStreamPath, g_flameStreamCompanion,
                        g_flameStreamLoops, g_flameStreamLoops ? g->settings.flameStreamScale : 1.0f);
         if (now < next) return;
     }
@@ -6132,16 +6297,16 @@ void UpdateFlameStreamLook(double now) {
     }
     if (path != g_flameStreamPath) {
         if (path.empty()) {
-            RM_LOGI("flamethrower: its flame again");
+            RM_LOGI("flamethrower: player %d's: its flame again", seat + 1);
         } else {
-            RM_LOGI("flamethrower: fires %s (%s) in place of its flame", path.c_str(), rm::ElementName(element).data());
+            RM_LOGI("flamethrower: player %d's fires %s (%s) in place of its flame", seat + 1, path.c_str(), rm::ElementName(element).data());
         }
     }
     g_flameStreamPath = path;
     g_flameStreamCompanion = companion;
     g_flameStreamLoops = loops;
     g_flameStreamElement = element;
-    SetFlameStream(path.empty() ? 0 : g_flameUnit, path, companion, loops, loops ? g->settings.flameStreamScale : 1.0f);
+    SetFlameStream(seat, path.empty() ? 0 : g_flameUnit, path, companion, loops, loops ? g->settings.flameStreamScale : 1.0f);
 }
 
 // A flamethrower hit's multiplier on `enemy` (the core's, as for the game's own flame hits).
@@ -6155,9 +6320,9 @@ double StreamMultiplier(std::uintptr_t enemy, double now) {
         ctx.target_hp = hp->hp;
         ctx.target_hp_max = hp->max;
     }
-    if (g->match.localMaxHp > 0) {
-        ctx.player_hp = g->match.localHp;
-        ctx.player_hp_max = g->match.localMaxHp;
+    if (const auto me = engine::ReadHp(engine::LocalPlayer()); me && me->max > 0) {  // the player whose flame it is
+        ctx.player_hp = me->hp;
+        ctx.player_hp_max = me->max;
     }
     ctx.target_frozen = StatusActive(enemy, now, &ElementStatus::frozenUntil);
     ctx.target_poisoned = StatusActive(enemy, now, &ElementStatus::poisonUntil);
@@ -6170,11 +6335,16 @@ constexpr float kFlameHeight = 250.0f;
 constexpr double kStreamHitDamage = 120.0;
 
 void DriveFlameStream(double now) {
-    static int lastFuel = -1;
-    static double firingUntil = 0.0, lastTick = 0.0, nextArc = 0.0, nextStreamHit = 0.0;
-    static bool wasFiring = false;
-    static int firingLogs = 0;
-    static std::map<std::uintptr_t, std::pair<double, double>> chill;  // enemy -> seconds in the flame, last seen
+    FlameStreamState& st = g_flameStreamState;  // this player's (SeatTurn)
+    const int seat = g->run->ActiveSeat();
+    int& lastFuel = st.lastFuel;
+    double& firingUntil = st.firingUntil;
+    double& lastTick = st.lastTick;
+    double& nextStreamHit = st.nextStreamHit;
+    double& nextArc = st.nextArc;
+    bool& wasFiring = st.wasFiring;
+    int& firingLogs = st.firingLogs;
+    auto& chill = st.chill;
     const double dt = std::clamp(now - lastTick, 0.0, 0.25);
     lastTick = now;
     const auto player = engine::LocalPlayer();
@@ -6183,7 +6353,7 @@ void DriveFlameStream(double now) {
     if (!slot || ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != kItemFlamethrower) {
         lastFuel = -1;
         chill.clear();
-        if (wasFiring) KeepFlameStreamLook(false);
+        if (wasFiring) KeepFlameStreamLook(seat, false);
         wasFiring = false;
         return;
     }
@@ -6191,7 +6361,7 @@ void DriveFlameStream(double now) {
     if (lastFuel >= 0 && fuel < lastFuel) firingUntil = now + 0.35;
     lastFuel = fuel;
     // Its fire with the look in place of the flame (the fuel may not go down without the flame).
-    const unsigned long fired = lookInPlace ? FlameStreamFiredAt() : 0;
+    const unsigned long fired = lookInPlace ? FlameStreamFiredAt(seat) : 0;
     if (fired != 0 && GetTickCount() - fired < 350) firingUntil = std::max(firingUntil, now + 0.05);
     const bool firing = now < firingUntil;
     if (firing != wasFiring) {
@@ -6201,7 +6371,7 @@ void DriveFlameStream(double now) {
         }
         wasFiring = firing;
     }
-    if (lookInPlace) KeepFlameStreamLook(firing);
+    if (lookInPlace) KeepFlameStreamLook(seat, firing);
     if (!firing) return;
     const auto elements = g->run->ElementsOf("flamethrower");
     if (elements.empty() && !lookInPlace) return;
@@ -6226,7 +6396,7 @@ void DriveFlameStream(double now) {
     }
     if (inFlame.empty()) return;
     // A Shock flamethrower: lightning from the gun to the nearest one in its flame, again and again.
-    static double nextGunArc = 0.0;
+    double& nextGunArc = st.nextGunArc;
     if (lookInPlace && g_flameStreamElement == rm::Element::Shock && now >= nextGunArc) {
         nextGunArc = now + 0.12;
         AddArc(0, inFlame.front().first, now, 0.16);
@@ -7686,6 +7856,10 @@ struct LateSeat {
     std::uintptr_t flameUnit = 0;
     FlameHideState flameHide;
     RefuelState refuel;
+    std::string flameStreamPath, flameStreamCompanion;
+    bool flameStreamLoops = false;
+    rm::Element flameStreamElement = rm::Element::Incendiary;
+    FlameStreamState flameStream;
 };
 std::array<LateSeat, 2> g_lateSeats;
 
@@ -7711,6 +7885,11 @@ void SwapLateSeat(int index) {
     swap(g_flameUnit, s.flameUnit);
     swap(g_flameHide, s.flameHide);
     swap(g_refuel, s.refuel);
+    swap(g_flameStreamPath, s.flameStreamPath);
+    swap(g_flameStreamCompanion, s.flameStreamCompanion);
+    swap(g_flameStreamLoops, s.flameStreamLoops);
+    swap(g_flameStreamElement, s.flameStreamElement);
+    swap(g_flameStreamState, s.flameStream);
 }
 
 // M10: whose pad is whose, read in the split-screen lobby: player 2 joins with START on their pad,
@@ -7725,7 +7904,8 @@ void WatchLobbyPads(double now) {
         if (b & 0x1010) g_padReadyAt[static_cast<std::size_t>(user)] = now;  // A or START
     }
     static int lastJoin = -1, lastReady = -1;
-    if (g->coopPlayers != 2 || g->run->HasActiveRun()) {
+    const bool lobby = (g->coopPlayers == 2 && !g->run->HasActiveRun()) || g->coopLobbyNeeded;
+    if (!lobby) {
         lastJoin = lastReady = -1;
         return;
     }
@@ -8160,6 +8340,102 @@ int KeepInRunStash(std::uint32_t id, int count, const char* why) {
     return kept;
 }
 
+// ---- The mod's ORGANIZE screen's storage and selling (declared above the menus) ----------------
+std::vector<std::pair<std::uint32_t, int>> StashRecords() {
+    std::vector<std::pair<std::uint32_t, int>> out;
+    if (g_runInBox.runId != g->run->state().run_id) return out;
+    AppendStash(out);
+    return out;
+}
+
+std::vector<OrganizeRow> OrganizeRows(int pick, int stashCount) {
+    std::vector<OrganizeRow> rows;
+    for (int cell = 0; cell < kGridCells; ++cell) rows.push_back({OrganizeRow::Cell, cell});
+    for (int i = 0; i < stashCount; ++i) rows.push_back({OrganizeRow::Stash, i});
+    if (pick >= 0 && pick < kGridCells) rows.push_back({OrganizeRow::ToStorage, 0});
+    if (pick >= 0) rows.push_back({OrganizeRow::Sell, 0});
+    return rows;
+}
+
+// A storage record into the active player's grid (wherever there is room).
+bool TakeFromStash(int index, std::string& why) {
+    if (g_runInBox.runId != g->run->state().run_id || index < 0 || index >= static_cast<int>(g_runInBox.stash.size())) return false;
+    auto& record = g_runInBox.stash[static_cast<std::size_t>(index)];
+    const auto id = static_cast<std::uint32_t>(record[0] | (record[1] << 8));
+    const int count = record[2] | (record[3] << 8);
+    const auto local = engine::LocalPlayer();
+    // A gun is one record: a second of one in the hands would not be made (and was lost here).
+    if (IsWeaponItem(id) && local && FindRecord(local, id)) {
+        why = "You have one already";
+        return false;
+    }
+    const int placed = GiveItem("storage", MakeItemId(id), std::max(1, count));
+    if (placed <= 0) {
+        why = "No room in your grid";
+        return false;
+    }
+    // A gun comes with a full magazine: it gets back the rounds (the fuel) it went in with.
+    if (IsWeaponItem(id) && local) {
+        if (const auto made = FindRecord(local, id)) SafeStore<std::int32_t>(made + re5::off::kSlotCount, std::max(0, count));
+    }
+    if (IsWeaponItem(id) || placed >= count) {
+        g_runInBox.stash.erase(g_runInBox.stash.begin() + index);
+    } else {
+        record[2] = static_cast<std::uint8_t>((count - placed) & 0xFF);
+        record[3] = static_cast<std::uint8_t>(((count - placed) >> 8) & 0xFF);
+    }
+    RM_LOGI("organize: player %d took %04X x%d out of the storage", g->run->ActiveSeat() + 1, id, placed);
+    return true;
+}
+
+// A grid cell of the active player into the run's storage.
+bool PutCellInStash(int cell, std::string& why) {
+    const auto grid = ReadGrid();
+    if (cell < 0 || cell >= kGridCells || !grid[static_cast<std::size_t>(cell)].record) return false;
+    const GridCell& c = grid[static_cast<std::size_t>(cell)];
+    if (c.id == re5::addr::kItemKnife || c.id == re5::addr::kItemUnarmed) return false;
+    const int kept = KeepInRunStash(c.id, std::max(1, c.count), "moved to the storage");
+    if (kept <= 0) {
+        why = "The storage is full";
+        return false;
+    }
+    StashGunsSeen();  // put there by the player in ORGANIZE: no "IN STORAGE" note for it
+    if (IsWeaponItem(c.id) || kept >= c.count) {
+        ClearSlot(c.record);
+    } else {
+        SafeStore<std::int32_t>(c.record + re5::off::kSlotCount, c.count - kept);
+    }
+    why.clear();
+    RM_LOGI("organize: player %d put %04X x%d in the storage", g->run->ActiveSeat() + 1, c.id, kept);
+    return true;
+}
+
+// What a sale pays: the run's shop's value (half its price), credited to the shared supplies; a
+// sold gun leaves the run.
+std::int64_t PaySale(std::uint32_t id, int count) {
+    const std::int64_t value = g->run->SaleValue(MakeItemId(RecordItemId(id)), std::max(0, count));
+    if (IsWeaponItem(id)) Report(g->run->DropWeapon(MakeItemId(RecordItemId(id)), "sold"), "gun sold");
+    if (value > 0) Report(g->run->AdjustSupplies(value, "sold"), "sale");
+    RM_LOGI("organize: player %d sold %04X x%d for %lld", g->run->ActiveSeat() + 1, id, count, static_cast<long long>(value));
+    return value;
+}
+
+std::int64_t SellCell(int cell) {
+    const auto grid = ReadGrid();
+    if (cell < 0 || cell >= kGridCells || !grid[static_cast<std::size_t>(cell)].record) return 0;
+    const GridCell c = grid[static_cast<std::size_t>(cell)];
+    if (c.id == re5::addr::kItemKnife || c.id == re5::addr::kItemUnarmed) return 0;
+    ClearSlot(c.record);
+    return std::max<std::int64_t>(1, PaySale(c.id, c.count));
+}
+
+std::int64_t SellStash(int index) {
+    if (g_runInBox.runId != g->run->state().run_id || index < 0 || index >= static_cast<int>(g_runInBox.stash.size())) return 0;
+    const auto record = g_runInBox.stash[static_cast<std::size_t>(index)];
+    g_runInBox.stash.erase(g_runInBox.stash.begin() + index);
+    return std::max<std::int64_t>(1, PaySale(static_cast<std::uint32_t>(record[0] | (record[1] << 8)), record[2] | (record[3] << 8)));
+}
+
 // The adapter's part of a run's resume point (rm::RunController::SaveResumePoint), taken at a
 // stage change after the inventory snapshot: what the next arena starts with (the carried items,
 // their grid cells, health) plus the run's storage, the gold short of a supply and the guns' levels.
@@ -8187,6 +8463,15 @@ std::string AdapterResumeState() {
     for (const auto& [id, l] : RunLevels()) levels[std::to_string(id)] = {l[0], l[1]};
     j["levels"] = std::move(levels);
     j["level_steps"] = g_weaponLevels.shopSteps;
+    // M10: player 2's (a co-op run): their carried inventory and health, and the costume they wore.
+    if (g->run->SeatCount() > 1) {
+        const AdapterSeat& two = g_adapterSeat == 1 ? AdapterSeat{g->transition.carry, g->transition.cells, g->transition.counts, g->transition.hp, {}}
+                                                    : g_adapterSeats[1];
+        nlohmann::json carry2 = nlohmann::json::array();
+        for (const auto& [id, count] : two.carry) carry2.push_back({id, count});
+        j["seat2"] = {{"carry", std::move(carry2)}, {"cells", two.cells}, {"counts", two.counts}, {"hp", two.hp}};
+        j["p2_costume"] = g->p2Costume;
+    }
     return j.dump();
 }
 
@@ -8219,6 +8504,18 @@ bool RestoreAdapterResumeState(const std::string& text) {
         }
         g_weaponLevels.shopSteps.clear();
         if (j.contains("level_steps")) g_weaponLevels.shopSteps = j.at("level_steps").get<std::map<std::uint32_t, int>>();
+        // M10: player 2's (the adapter's seat 0 is active here: no SeatTurn outside a tick).
+        g_adapterSeats[1] = {};
+        if (j.contains("seat2")) {
+            const nlohmann::json& s = j.at("seat2");
+            AdapterSeat& two = g_adapterSeats[1];
+            for (const auto& e : s.value("carry", nlohmann::json::array())) two.carry.emplace_back(e.at(0).get<std::uint32_t>(), e.at(1).get<int>());
+            if (s.contains("cells")) two.cells = s.at("cells").get<std::array<std::uint32_t, 9>>();
+            if (s.contains("counts")) two.counts = s.at("counts").get<std::array<int, 9>>();
+            two.hp = s.value("hp", -1);
+            RM_LOGI("resume: player 2: %zu carried records, health %d", two.carry.size(), two.hp);
+        }
+        g->p2Costume = j.value("p2_costume", -1);
     } catch (const std::exception& e) {
         RM_LOGW("resume: the adapter's state could not be read (%s)", e.what());
         return false;
@@ -8242,6 +8539,11 @@ bool ContinueRun() {
         return false;
     }
     if (!RestoreAdapterResumeState(*resumed)) RM_LOGW("resume: going on without the carried inventory");
+    g->coopLobbyNeeded = run.SeatCount() > 1 && engine::Caps().splitScreen;
+    if (g->coopLobbyNeeded) {
+        g->p1Pad = -2;  // learned again in the lobby (WatchLobbyPads)
+        g->p2Pad = -1;
+    }
     const int costume = static_cast<int>(std::max<std::int64_t>(0, run.state().character.costume_index));
     const int planned = run.PlannedMapKey();
     const int stage = planned >= 0 ? planned : PickMap(-1);
@@ -8784,6 +9086,15 @@ void PollDevCommand(double now) {
     }
     std::filesystem::remove(file, ec);
     rm::RunController& run = *g->run;
+    // "seat <n> <command>": the command as seat n's player (M10: their run seat, unit and the
+    // adapter's state for them, as in their SeatTurn).
+    std::optional<SeatTurn> seatTurn;
+    if (command.rfind("seat ", 0) == 0 && command.size() > 7 && run.HasActiveRun()) {
+        const int seat = command[5] - '0';
+        command = command.substr(7);
+        seatTurn.emplace(seat);
+        RM_LOGW("dev: as seat %d: %s", seat, command.c_str());
+    }
     if (command == "force_complete" && run.phase() == rm::Phase::ArenaActive) {
         const int remaining = run.RemainingEnemies();
         for (int i = 0; i < remaining; ++i) {
@@ -9126,12 +9437,13 @@ void PollDevCommand(double now) {
         } else {
             int ms = 150;
             words >> ms;
-            bool triggers = false;
+            int triggers = 0;
             const unsigned short bits = PadButtonBits(what, triggers);
             VirtualPad v = GetVirtualPad(user);
             v.on = true;
             v.buttons = static_cast<unsigned short>(v.buttons | bits);
-            if (triggers) v.lt = v.rt = 255;
+            if (triggers & 1) v.lt = 255;
+            if (triggers & 2) v.rt = 255;
             SetVirtualPad(user, v);
             g_padRelease[user] = now + std::max(ms, 30) / 1000.0;
             g_padReleaseButtons[user] = static_cast<unsigned short>(g_padReleaseButtons[user] | bits);
@@ -9692,6 +10004,15 @@ void PollDevCommand(double now) {
             const int left = fn(player + re5::off::kPlayerInventory, item, count);
             RM_LOGW("dev %s item %04X x%d -> %d not placed", command[0] == 'g' ? "give" : "ammo", item, count, left);
         }
+    } else if (command.rfind("equip ", 0) == 0) {
+        // "equip <hex item>": the hands take that item's grid cell (the game's own change of weapon).
+        const auto local = engine::LocalPlayer();
+        const auto id = static_cast<std::uint32_t>(std::strtoul(command.c_str() + 6, nullptr, 16));
+        const auto record = local ? FindRecord(local, id) : 0;
+        const int cell = record ? ReadOr<std::int32_t>(record + kSlotCell, -1) : -1;
+        const bool ok = cell >= 0 && cell < kGridCells && engine::Caps().equipCell &&
+                        SafeStore<std::int32_t>(local + re5::off::kPlayerWeaponCell, cell) && CallEquipCell(local, cell);
+        RM_LOGW("dev equip %04X: cell %d, %s", id, cell + 1, ok ? "in hand" : "not equipped");
     } else if (command.rfind("obtain ", 0) == 0) {
         // "obtain <hex item> [count]": as a shop purchase or a reward hands it over (GiveOrStash:
         // the grid, a gun in a grid cell, what does not fit to the run's storage).
@@ -10036,10 +10357,10 @@ private:
             ApplyMoveSpeed();
             RefuelFlamethrower(now);
             HideHolsteredFlamethrower(now);
+            UpdateFlameStreamLook(now);
+            DriveFlameStream(now);
         }); }
         { ProfileScope p("tick:DriveElements"); DriveElements(now); }
-        { ProfileScope p("tick:UpdateFlameStreamLook"); UpdateFlameStreamLook(now); }
-        { ProfileScope p("tick:DriveFlameStream"); DriveFlameStream(now); }
         { ProfileScope p("tick:DriveEffectGallery"); DriveEffectGallery(now); }
         { ProfileScope p("tick:UpdateModRedirects"); UpdateModRedirects(); }
         { ProfileScope p("tick:TraceTwinShots"); TraceTwinShots(now); }
@@ -10073,7 +10394,7 @@ private:
                 DriveWeaponLevels(now);
             }
         });
-        { ProfileScope p("tick:DriveScope"); DriveScope(now); }
+        { ProfileScope p("tick:DriveScope"); ForEachSeatTurn([&] { DriveScope(now); }); ApplyScopes(); }
         if (g->settings.developerMode) ProbeScene();
         PollDevCommand(now);
         { ProfileScope p("tick:PollItemBox"); PollItemBox(); }
@@ -10668,10 +10989,11 @@ void DrawElementArcsIn(const engine::CameraView& cam, float x0, float y0, float 
             a[1] += kArcHeight;
         } else {
             // The player's gun: chest high, half a metre ahead.
-            if (!player) continue;
-            UnitPosition(player, a);
+            const std::uintptr_t owner = arc.gunOwner ? arc.gunOwner : player;
+            if (!owner) continue;
+            UnitPosition(owner, a);
             float fx = 0.0f, fz = 1.0f;
-            PlayerFacing(player, fx, fz);
+            PlayerFacing(owner, fx, fz);
             a[0] += fx * 50.0f;
             a[2] += fz * 50.0f;
             a[1] += kArcHeight + 10.0f;

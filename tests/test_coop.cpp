@@ -177,7 +177,7 @@ TEST_CASE("co-op: a player down comes back next arena; the run fails when both a
     CHECK(h.rc.ActiveSeat() == 0);
 }
 
-TEST_CASE("co-op: more enemies an arena, and no resume point", "[run]") {
+TEST_CASE("co-op: more enemies an arena", "[run]") {
     test::Harness solo;
     REQUIRE(solo.rc.StartRun("alpha", 9).ok());
     REQUIRE(solo.rc.BeginArena(0.0).ok());
@@ -186,7 +186,6 @@ TEST_CASE("co-op: more enemies an arena, and no resume point", "[run]") {
     test::Harness duo;
     REQUIRE(duo.rc.StartRun("alpha", 9).ok());
     REQUIRE(duo.rc.AddSeat("beta", "").ok());
-    CHECK(duo.rc.SaveResumePoint("adapter").code == ErrorCode::NotEligible);
     REQUIRE(duo.rc.BeginArena(0.0).ok());
     CHECK(duo.rc.state().arenas.back().budget ==
           static_cast<int>(std::lround(solo_budget * duo.rc.content().economy().coop.enemy_mult)));
@@ -224,4 +223,67 @@ TEST_CASE("co-op: two outfits of one game costume slot cannot be worn together w
     REQUIRE(h.rc.StartRun("sheva", 7, "sheva_bsaa").ok());
     CHECK(h.rc.AddSeat("ada", "ada_agent").code == ErrorCode::NotEligible);  // Sheva BSAA's slot, Ada's mod file
     REQUIRE(h.rc.AddSeat("chris", "chris_bsaa").ok());
+}
+
+TEST_CASE("co-op: a suspended run goes on with both players, the fallen one back at the next arena", "[run][persistence]") {
+    test::Harness h;
+    REQUIRE(h.rc.StartRun("alpha", 12).ok());
+    REQUIRE(h.rc.AddSeat("beta", "").ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    {
+        SeatScope s(h.rc, 1);  // player 2 falls; player 1 clears the arena
+        REQUIRE(h.rc.OnPlayerDied(5.0).ok());
+    }
+    test::KillN(h.rc, h.rc.RemainingEnemies(), 6.0);
+    REQUIRE(h.rc.CompleteArena(7.0).ok());
+    REQUIRE(h.rc.ContinueToRewards().ok());
+    for (int seat = 0; seat < 2; ++seat) {
+        SeatScope s(h.rc, seat);
+        if (!h.rc.state().reward_offer.empty()) REQUIRE(h.rc.ChooseReward(0).ok());
+    }
+    for (int seat = 0; seat < 2; ++seat) {
+        SeatScope s(h.rc, seat);
+        REQUIRE(h.rc.LeaveShop().ok());
+    }
+    REQUIRE(h.rc.ChooseRoute(0).ok());
+    // Saved with player 2's turn active: the top level is still player 1's.
+    std::string ids[2], weapons[2];
+    StringMap<int> perks[2];
+    for (int seat = 0; seat < 2; ++seat) {
+        SeatScope s(h.rc, seat);
+        ids[seat] = h.rc.state().character_id;
+        weapons[seat] = h.rc.state().weapons.empty() ? "" : h.rc.state().weapons.front().instance_id;
+        perks[seat] = h.rc.state().perks;
+    }
+    {
+        SeatScope s(h.rc, 1);
+        REQUIRE(h.rc.SaveResumePoint(R"({"seat2":{}})").ok());
+    }
+    CHECK(h.rc.SeatDown(1));
+    const int before = h.rc.state().arena_index;
+    REQUIRE(h.rc.BeginArena(10.0).ok());
+    REQUIRE(h.rc.SuspendRun(11.0).ok());
+    REQUIRE(h.rc.CanResumeRun());
+    Result<std::string> adapter = h.rc.ResumeRun();
+    INFO(adapter.status().message);
+    REQUIRE(adapter.ok());
+    CHECK(*adapter == R"({"seat2":{}})");
+    CHECK(h.rc.SeatCount() == 2);
+    CHECK(h.rc.ActiveSeat() == 0);
+    CHECK(h.rc.state().arena_index == before);
+    CHECK(h.rc.SeatDown(1));
+    CHECK_FALSE(h.rc.SeatDown(0));
+    for (int seat = 0; seat < 2; ++seat) {
+        SeatScope s(h.rc, seat);
+        CHECK(h.rc.state().character_id == ids[seat]);
+        CHECK(h.rc.state().character.id == ids[seat]);
+        CHECK((h.rc.state().weapons.empty() ? "" : h.rc.state().weapons.front().instance_id) == weapons[seat]);
+        CHECK(h.rc.state().perks == perks[seat]);
+    }
+    CHECK(ids[0] != ids[1]);
+    // The next arena: player 2 is back (the adapter sets their health).
+    REQUIRE(h.rc.BeginArena(20.0).ok());
+    CHECK(h.rc.state().arena_index == before + 1);
+    CHECK_FALSE(h.rc.SeatDown(1));
+    CHECK(h.rc.ConsumeRevivedSeats() == std::vector<int>{1});
 }

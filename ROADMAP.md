@@ -346,7 +346,8 @@ times the bosses' health (tuned with `rm_sim`); two mod skins on the same base s
    its reward, the route once every seat left its shop; a seat down (OnPlayerDied) is back next
    arena (`ConsumeRevivedSeats`), the run fails when all are down; `economy.json` "coop" scales the
    arena budget (1.5) and boss health (1.6); events carry "seat"; a run counts for every seat's
-   character; a co-op run saves no resume point (so no snapshot version change). Left for F6:
+   character; alpha.30: a co-op run's resume point keeps every seat ("seats", "seats_down"; the
+   top level is player 1's; the format's version unchanged, a solo point reads as before). Left for F6:
    `rm_sim` co-op runs.
 3. ~~F2, starting a co-op run.~~ Done 2026-11-17 (verified in game, a virtual pad as player 2):
    the Play menu's PLAYERS row (1 / 2, SPLIT SCREEN) and PLAYER 2 screen (every open outfit; one
@@ -363,14 +364,19 @@ times the bosses' health (tuned with `rm_sim`); two mod skins on the same base s
    item grants, gun levels, the stage change's carried inventory and health. alpha.29 (2026-11-17): the pads learned in
    the lobby, player 2's specials on their pad, the specials', moves', weapon card's and
    flamethrower's adapter state per player (LateSeat), chests to the nearest player, the
-   director around each standing player, dying not counted as down. Open: the flamethrower's
-   element look and stream for player 2, player 2's sniper scope button.
+   director around each standing player, dying not counted as down. alpha.30: the
+   flamethrower's element look, stream hits and arcs per player (each player's stream look in
+   hooks_combat, found by the unit that fires); the sniper scope per player (each player's
+   button and aim; the game's weapon records are per gun model, so a model scoped by one is
+   scoped for both while both hold it); CONTINUE RUN of a co-op run (the lobby again, the pads
+   learned there, player 2's carried inventory, health and costume from the resume point).
 5. F4, screens for two. Done in part 2026-11-17 (verified in game): between arenas the reward and
    shop screens take turns (UiSeat: "PLAYER 2" in the header), each player's choice and purchases
    theirs. alpha.29: the screens laid out in the top half (the game's text routine
    draws in the top view only), an element choice goes to its player, ORGANIZE is the mod's
    grid for the player whose turn it is (the native screen is the two-panel co-op one in a split
-   match). Open: selling and the storage in co-op.
+   match). alpha.30: selling and the run's storage in that screen (TO THE STORAGE, SELL, the
+   storage's items listed to take out; the storage is shared).
 6. F5, HUD and drawing per viewport. Done 2026-11-17 (alpha.29): the HUD texts on player 2's half
    (the overlay; the game's routine is clipped to the top view), each player's special rings and
    weapon card on their half, the element arcs in every view's region.

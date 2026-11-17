@@ -164,18 +164,11 @@ ArenaResult ResultFromJson(const json& j) {
     return r;
 }
 
-}  // namespace
-
-std::string SerializeRunResume(const RunState& run) {
-    json j;
-    j["version"] = kRunResumeVersion;
-    j["run_id"] = run.run_id;
-    j["seed"] = run.seed;
+// One player's own fields (PlayerSeat's that a resume point keeps): the run's own, and in local
+// co-op each other seat's in "seats".
+void PlayerToJson(const RunState& run, json& j) {
     j["character_id"] = run.character_id;
     j["skin_id"] = run.skin_id;
-    j["length_id"] = run.length_id;
-    j["bosses_beaten_new"] = run.bosses_beaten_new;
-    j["ladder_beaten"] = run.ladder_beaten;
     json items = json::array();
     for (const LoadoutItem& i : run.loadout.items) {
         items.push_back({{"id", i.id}, {"name", i.name}, {"count", i.count}, {"game_item", i.game_item}});
@@ -186,14 +179,103 @@ std::string SerializeRunResume(const RunState& run) {
     for (const ItemGrant& g : run.item_grants) grants.push_back({{"game_item", g.game_item}, {"count", g.count}, {"source", g.source}});
     j["item_grants"] = std::move(grants);
     j["perk_kill_counts"] = MapToJson(run.perk_kill_counts);
-    j["chests_opened"] = run.chests_opened;
-    j["keys"] = run.keys;
     j["stats"] = {{"damage", Fin(run.stats.damage)},         {"defense", Fin(run.stats.defense)}, {"max_health", Fin(run.stats.max_health)},
                   {"crit", Fin(run.stats.crit)},             {"move_speed", Fin(run.stats.move_speed)}, {"heal", Fin(run.stats.heal)},
                   {"supplies", Fin(run.stats.supplies)},     {"gains", run.stats.gains}};
     json specials = json::array();
     for (const RunState::SpecialUse& s : run.specials) specials.push_back({{"used_arena", s.used_arena}, {"uses", s.uses}});
     j["specials"] = std::move(specials);
+    j["perks"] = MapToJson(run.perks);
+    json weapons = json::array();
+    for (const WeaponInstance& w : run.weapons) weapons.push_back(WeaponToJson(w));
+    j["weapons"] = std::move(weapons);
+    j["reroll_tokens"] = run.reroll_tokens;
+    j["cheat_death_used_total"] = run.cheat_death_used_total;
+    if (run.player_hp) j["player_hp"] = Fin(*run.player_hp);
+    if (run.player_hp_max) j["player_hp_max"] = Fin(*run.player_hp_max);
+}
+
+void PlayerFromJson(const json& j, RunState& r) {
+    r.character_id = j.at("character_id").get<std::string>();
+    r.skin_id = Get(j, "skin_id", std::string());
+    const json& lo = Get(j, "loadout", json::object());
+    r.loadout.weapon_id = Get(lo, "weapon_id", std::string());
+    r.loadout.budget = Get(lo, "budget", std::int64_t{0});
+    r.loadout.spent = Get(lo, "spent", std::int64_t{0});
+    for (const json& i : Get(lo, "items", json::array())) {
+        r.loadout.items.push_back(LoadoutItem{Get(i, "id", std::string()), Get(i, "name", std::string()), Get(i, "count", 1),
+                                              Get(i, "game_item", std::int64_t{-1})});
+    }
+    for (const json& g : Get(j, "item_grants", json::array())) {
+        r.item_grants.push_back(ItemGrant{Get(g, "game_item", std::int64_t{-1}), Get(g, "count", 1), Get(g, "source", std::string())});
+    }
+    MapFromJson(Get(j, "perk_kill_counts", json::object()), r.perk_kill_counts);
+    const json& st = Get(j, "stats", json::object());
+    r.stats.damage = Get(st, "damage", 0.0);
+    r.stats.defense = Get(st, "defense", 0.0);
+    r.stats.max_health = Get(st, "max_health", 0.0);
+    r.stats.crit = Get(st, "crit", 0.0);
+    r.stats.move_speed = Get(st, "move_speed", 0.0);
+    r.stats.heal = Get(st, "heal", 0.0);
+    r.stats.supplies = Get(st, "supplies", 0.0);
+    r.stats.gains = Get(st, "gains", 0);
+    const json& sp = Get(j, "specials", json::array());
+    for (std::size_t i = 0; i < r.specials.size() && i < sp.size(); ++i) {
+        r.specials[i].used_arena = Get(sp[i], "used_arena", 0);
+        r.specials[i].uses = Get(sp[i], "uses", 0);
+    }
+    MapFromJson(Get(j, "perks", json::object()), r.perks);
+    for (const json& w : Get(j, "weapons", json::array())) r.weapons.push_back(WeaponFromJson(w));
+    r.reroll_tokens = Get(j, "reroll_tokens", 0);
+    r.cheat_death_used_total = Get(j, "cheat_death_used_total", 0);
+    if (j.contains("player_hp") && j.at("player_hp").is_number()) r.player_hp = j.at("player_hp").get<double>();
+    if (j.contains("player_hp_max") && j.at("player_hp_max").is_number()) r.player_hp_max = j.at("player_hp_max").get<double>();
+}
+
+// Seat `i`'s player on a RunState of their own (for a seat that is not the active one).
+RunState SeatView(const RunState& run, std::size_t i) {
+    RunState view;
+    PlayerSeat copy = run.seats[i];
+    SwapSeat(view, copy);
+    return view;
+}
+
+}  // namespace
+
+std::string SerializeRunResume(const RunState& run) {
+    json j;
+    j["version"] = kRunResumeVersion;
+    j["run_id"] = run.run_id;
+    j["seed"] = run.seed;
+    j["length_id"] = run.length_id;
+    j["bosses_beaten_new"] = run.bosses_beaten_new;
+    j["ladder_beaten"] = run.ladder_beaten;
+    // The top level is player 1's (seat 0); a co-op run's other players are in "seats".
+    const bool coop = run.seats.size() > 1;
+    if (coop && run.active_seat != 0) {
+        PlayerToJson(SeatView(run, 0), j);
+    } else {
+        PlayerToJson(run, j);
+    }
+    if (coop) {
+        json seats = json::array();
+        json down = json::array();
+        for (std::size_t i = 0; i < run.seats.size(); ++i) {
+            down.push_back(i < run.seat_status.size() && run.seat_status[i].down);
+            if (i == 0) continue;
+            json s = json::object();
+            if (static_cast<int>(i) == run.active_seat) {
+                PlayerToJson(run, s);
+            } else {
+                PlayerToJson(SeatView(run, i), s);
+            }
+            seats.push_back(std::move(s));
+        }
+        j["seats"] = std::move(seats);
+        j["seats_down"] = std::move(down);
+    }
+    j["chests_opened"] = run.chests_opened;
+    j["keys"] = run.keys;
     j["arena_index"] = run.arena_index;
     j["arena_count"] = run.arena_count;
     j["route_id"] = run.route_id;
@@ -214,21 +296,13 @@ std::string SerializeRunResume(const RunState& run) {
     j["supplies_earned"] = run.supplies_earned;
     j["supplies_spent"] = run.supplies_spent;
     j["credits_pending"] = run.credits_pending;
-    j["perks"] = MapToJson(run.perks);
-    json weapons = json::array();
-    for (const WeaponInstance& w : run.weapons) weapons.push_back(WeaponToJson(w));
-    j["weapons"] = std::move(weapons);
     j["next_weapon_serial"] = run.next_weapon_serial;
-    j["reroll_tokens"] = run.reroll_tokens;
-    j["cheat_death_used_total"] = run.cheat_death_used_total;
     json arenas = json::array();
     for (const ArenaMetrics& a : run.arenas) arenas.push_back(MetricsToJson(a));
     j["arenas"] = std::move(arenas);
     json results = json::array();
     for (const ArenaResult& r : run.results) results.push_back(ResultToJson(r));
     j["results"] = std::move(results);
-    if (run.player_hp) j["player_hp"] = Fin(*run.player_hp);
-    if (run.player_hp_max) j["player_hp_max"] = Fin(*run.player_hp_max);
     return j.dump();
 }
 
@@ -243,39 +317,30 @@ Status ParseRunResume(std::string_view text, RunState& out) {
         RunState r;
         r.run_id = j.at("run_id").get<std::string>();
         r.seed = j.at("seed").get<std::uint64_t>();
-        r.character_id = j.at("character_id").get<std::string>();
-        r.skin_id = Get(j, "skin_id", std::string());
         r.length_id = Get(j, "length_id", std::string());
         r.bosses_beaten_new = Get(j, "bosses_beaten_new", std::vector<std::string>{});
         r.ladder_beaten = Get(j, "ladder_beaten", std::vector<std::string>{});
-        const json& lo = Get(j, "loadout", json::object());
-        r.loadout.weapon_id = Get(lo, "weapon_id", std::string());
-        r.loadout.budget = Get(lo, "budget", std::int64_t{0});
-        r.loadout.spent = Get(lo, "spent", std::int64_t{0});
-        for (const json& i : Get(lo, "items", json::array())) {
-            r.loadout.items.push_back(LoadoutItem{Get(i, "id", std::string()), Get(i, "name", std::string()), Get(i, "count", 1),
-                                                  Get(i, "game_item", std::int64_t{-1})});
+        PlayerFromJson(j, r);
+        // A co-op run's other players; seat 0 is the run's own fields (active), its slot a placeholder.
+        const json& seats = Get(j, "seats", json::array());
+        if (!seats.empty()) {
+            r.seats.resize(1);
+            for (const json& s : seats) {
+                RunState view;
+                PlayerFromJson(s, view);
+                PlayerSeat seat;
+                SwapSeat(view, seat);
+                r.seats.push_back(std::move(seat));
+            }
+            const json& down = Get(j, "seats_down", json::array());
+            r.seat_status.resize(r.seats.size());
+            for (std::size_t i = 0; i < r.seat_status.size() && i < down.size(); ++i) {
+                r.seat_status[i].down = down[i].is_boolean() && down[i].get<bool>();
+            }
+            r.active_seat = 0;
         }
-        for (const json& g : Get(j, "item_grants", json::array())) {
-            r.item_grants.push_back(ItemGrant{Get(g, "game_item", std::int64_t{-1}), Get(g, "count", 1), Get(g, "source", std::string())});
-        }
-        MapFromJson(Get(j, "perk_kill_counts", json::object()), r.perk_kill_counts);
         r.chests_opened = Get(j, "chests_opened", 0);
         r.keys = Get(j, "keys", 0);
-        const json& st = Get(j, "stats", json::object());
-        r.stats.damage = Get(st, "damage", 0.0);
-        r.stats.defense = Get(st, "defense", 0.0);
-        r.stats.max_health = Get(st, "max_health", 0.0);
-        r.stats.crit = Get(st, "crit", 0.0);
-        r.stats.move_speed = Get(st, "move_speed", 0.0);
-        r.stats.heal = Get(st, "heal", 0.0);
-        r.stats.supplies = Get(st, "supplies", 0.0);
-        r.stats.gains = Get(st, "gains", 0);
-        const json& sp = Get(j, "specials", json::array());
-        for (std::size_t i = 0; i < r.specials.size() && i < sp.size(); ++i) {
-            r.specials[i].used_arena = Get(sp[i], "used_arena", 0);
-            r.specials[i].uses = Get(sp[i], "uses", 0);
-        }
         r.arena_index = Get(j, "arena_index", 0);
         r.arena_count = Get(j, "arena_count", 3);
         r.route_id = Get(j, "route_id", std::string());
@@ -303,15 +368,9 @@ Status ParseRunResume(std::string_view text, RunState& out) {
         r.supplies_earned = Get(j, "supplies_earned", std::int64_t{0});
         r.supplies_spent = Get(j, "supplies_spent", std::int64_t{0});
         r.credits_pending = Get(j, "credits_pending", std::int64_t{0});
-        MapFromJson(Get(j, "perks", json::object()), r.perks);
-        for (const json& w : Get(j, "weapons", json::array())) r.weapons.push_back(WeaponFromJson(w));
         r.next_weapon_serial = Get(j, "next_weapon_serial", 1);
-        r.reroll_tokens = Get(j, "reroll_tokens", 0);
-        r.cheat_death_used_total = Get(j, "cheat_death_used_total", 0);
         for (const json& a : Get(j, "arenas", json::array())) r.arenas.push_back(MetricsFromJson(a));
         for (const json& res : Get(j, "results", json::array())) r.results.push_back(ResultFromJson(res));
-        if (j.contains("player_hp") && j.at("player_hp").is_number()) r.player_hp = j.at("player_hp").get<double>();
-        if (j.contains("player_hp_max") && j.at("player_hp_max").is_number()) r.player_hp_max = j.at("player_hp_max").get<double>();
         out = std::move(r);
     } catch (const json::exception& e) {
         return Status::Error(ErrorCode::ParseError, std::string("resume point: ") + e.what());

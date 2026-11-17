@@ -331,35 +331,48 @@ void __fastcall PlayerAddHpDetour(std::uintptr_t self, void*, std::int16_t amoun
 using Wp21FireFn = void(__thiscall*)(std::uintptr_t self, std::uintptr_t attack);
 Wp21FireFn g_origWp21Fire = nullptr;
 std::mutex g_streamMutex;
-std::uintptr_t g_streamUnit = 0;
-std::string g_streamPath, g_streamCompanion;
-bool g_streamLoops = false;
-float g_streamScale = 1.0f;
-std::uint32_t g_streamEffect = 0;     // the look the mod started at the nozzle (0: none)
-std::uint32_t g_companionEffect = 0;  // and its companion's
-DWORD g_streamEffectAt = 0;
-std::atomic<DWORD> g_streamFiredAt{0};
-int g_streamFireLogs = 0;
+// One per player (M10: each player's flamethrower has its own look; index = seat).
+struct StreamLook {
+    std::uintptr_t unit = 0;
+    std::string path, companion;
+    bool loops = false;
+    float scale = 1.0f;
+    std::uint32_t effect = 0;           // the look the mod started at the nozzle (0: none)
+    std::uint32_t companionEffect = 0;  // and its companion's
+    DWORD effectAt = 0;
+    DWORD firedAt = 0;
+    int fireLogs = 0;
+};
+StreamLook g_streams[2];
 constexpr DWORD kStreamLookRestartMs = 300;
 
-void StopStreamLookLocked() {
-    if (g_streamEffect != 0) engine::StopEffect(g_streamEffect);
-    if (g_companionEffect != 0) engine::StopEffect(g_companionEffect);
-    g_streamEffect = 0;
-    g_companionEffect = 0;
+StreamLook* StreamOfSeat(int seat) { return seat >= 0 && seat < 2 ? &g_streams[seat] : nullptr; }
+
+StreamLook* StreamOfUnit(std::uintptr_t unit) {
+    for (StreamLook& s : g_streams) {
+        if (unit != 0 && s.unit == unit) return &s;
+    }
+    return nullptr;
+}
+
+void StopStreamLookLocked(StreamLook& s) {
+    if (s.effect != 0) engine::StopEffect(s.effect);
+    if (s.companionEffect != 0) engine::StopEffect(s.companionEffect);
+    s.effect = 0;
+    s.companionEffect = 0;
 }
 
 // With g_streamMutex held: the look at the nozzle (joint 0, where the flame starts) and its
 // companion, the last ones stopped first; with `force` (a fire, as the game starts its flame again
 // at each), else only when kStreamLookRestartMs have passed.
-void RefreshStreamLookLocked(std::uintptr_t unit, bool force) {
-    if (ReadOr<std::uintptr_t>(unit, 0) != re5::addr::kVtableWp21) return;  // not (or no longer) the flamethrower
+void RefreshStreamLookLocked(StreamLook& s, bool force) {
+    if (ReadOr<std::uintptr_t>(s.unit, 0) != re5::addr::kVtableWp21) return;  // not (or no longer) the flamethrower
     const DWORD now = GetTickCount();
-    if (!force && g_streamEffect != 0 && now - g_streamEffectAt < kStreamLookRestartMs) return;
-    StopStreamLookLocked();
-    g_streamEffect = engine::StartEffect(g_streamPath.c_str(), unit, 0, g_streamScale);
-    if (!g_streamCompanion.empty()) g_companionEffect = engine::StartEffect(g_streamCompanion.c_str(), unit, 0, g_streamScale);
-    g_streamEffectAt = now;
+    if (!force && s.effect != 0 && now - s.effectAt < kStreamLookRestartMs) return;
+    StopStreamLookLocked(s);
+    s.effect = engine::StartEffect(s.path.c_str(), s.unit, 0, s.scale);
+    if (!s.companion.empty()) s.companionEffect = engine::StartEffect(s.companion.c_str(), s.unit, 0, s.scale);
+    s.effectAt = now;
 }
 
 // The game's fire (re5::addr::kFnWp21Fire) without its flame: the firing flag, the old stream
@@ -367,7 +380,8 @@ void RefreshStreamLookLocked(std::uintptr_t unit, bool force) {
 // element's look at the nozzle instead.
 void __fastcall Wp21FireDetour(std::uintptr_t self, void*, std::uintptr_t attack) {
     std::unique_lock lock(g_streamMutex);
-    if (self == 0 || self != g_streamUnit || g_streamPath.empty()) {
+    StreamLook* s = StreamOfUnit(self);
+    if (s == nullptr || s->path.empty()) {
         lock.unlock();
         g_origWp21Fire(self, attack);
         return;
@@ -377,13 +391,14 @@ void __fastcall Wp21FireDetour(std::uintptr_t self, void*, std::uintptr_t attack
     if (SafeRead(self + re5::off::kWp21StreamEffect, old) && old != 0) engine::StopEffect(old);
     SafeStore<std::uint32_t>(self + re5::off::kWp21StreamEffect, 0);
     SafeStore<std::uintptr_t>(self + re5::off::kWp21AttackData, attack);
-    RefreshStreamLookLocked(self, true);
+    RefreshStreamLookLocked(*s, true);
     const DWORD now = GetTickCount();
-    const DWORD before = g_streamFiredAt.exchange(now);
-    if (g_streamFireLogs < 4) {
-        ++g_streamFireLogs;
-        RM_LOGI("flamethrower: fired with %s in place of its flame (look %u; %lu ms since its last fire)", g_streamPath.c_str(),
-                g_streamEffect, before != 0 ? static_cast<unsigned long>(now - before) : 0ul);
+    const DWORD before = s->firedAt;
+    s->firedAt = now;
+    if (s->fireLogs < 4) {
+        ++s->fireLogs;
+        RM_LOGI("flamethrower: %08X fired with %s in place of its flame (look %u; %lu ms since its last fire)", static_cast<unsigned>(self),
+                s->path.c_str(), s->effect, before != 0 ? static_cast<unsigned long>(now - before) : 0ul);
     }
 }
 
@@ -459,40 +474,47 @@ void SetCoopDeathHold(bool on) {
     if (g_coopDeathHold.exchange(on) != on) RM_LOGI("co-op: a fallen player %s the match", on ? "no longer ends" : "ends");
 }
 
-void SetFlameStream(std::uintptr_t unit, const std::string& path, const std::string& companion, bool loops, float scale) {
+void SetFlameStream(int seat, std::uintptr_t unit, const std::string& path, const std::string& companion, bool loops, float scale) {
     std::lock_guard lock(g_streamMutex);
-    if (unit == g_streamUnit && path == g_streamPath && companion == g_streamCompanion && loops == g_streamLoops &&
-        scale == g_streamScale) {
-        return;
-    }
-    StopStreamLookLocked();
-    g_streamUnit = path.empty() ? 0 : unit;
-    g_streamPath = g_streamUnit != 0 ? path : std::string();
-    g_streamCompanion = g_streamUnit != 0 ? companion : std::string();
-    g_streamLoops = loops;
-    g_streamScale = scale;
-    g_streamFiredAt = 0;
-    g_streamFireLogs = 0;
+    StreamLook* s = StreamOfSeat(seat);
+    if (s == nullptr) return;
+    const std::uintptr_t want = path.empty() ? 0 : unit;
+    if (want == s->unit && path == s->path && companion == s->companion && loops == s->loops && scale == s->scale) return;
+    StopStreamLookLocked(*s);
+    s->unit = want;
+    s->path = want != 0 ? path : std::string();
+    s->companion = want != 0 ? companion : std::string();
+    s->loops = loops;
+    s->scale = scale;
+    s->firedAt = 0;
+    s->fireLogs = 0;
 }
 
-unsigned long FlameStreamFiredAt() { return g_streamFiredAt.load(); }
-
-void KeepFlameStreamLook(bool firing) {
+unsigned long FlameStreamFiredAt(int seat) {
     std::lock_guard lock(g_streamMutex);
-    if (!firing || g_streamUnit == 0 || g_streamPath.empty()) {
-        StopStreamLookLocked();
+    const StreamLook* s = StreamOfSeat(seat);
+    return s != nullptr ? s->firedAt : 0;
+}
+
+void KeepFlameStreamLook(int seat, bool firing) {
+    std::lock_guard lock(g_streamMutex);
+    StreamLook* found = StreamOfSeat(seat);
+    if (found == nullptr) return;
+    StreamLook& s = *found;
+    if (!firing || s.unit == 0 || s.path.empty()) {
+        StopStreamLookLocked(s);
         return;
     }
     // A look that keeps going (a recoloured flame) is started by the pull's fire and left alone while
     // firing (2026-11-11: started again every 0.3 s, its opening burst flashed the whole screen; the
     // user: "can you make the particles way lesser? the whole screen flashes"). Only when there was
     // no fire (the look set while firing) is one started.
-    if (g_streamLoops) {
-        if (g_streamEffect == 0) RefreshStreamLookLocked(g_streamUnit, true);
+    if (s.loops) {
+        if (s.effect == 0) RefreshStreamLookLocked(s, true);
         return;
     }
-    if (GetTickCount() - g_streamFiredAt.load() < kStreamLookRestartMs) return;  // its fires start it again
-    RefreshStreamLookLocked(g_streamUnit, false);
+    if (GetTickCount() - s.firedAt < kStreamLookRestartMs) return;  // its fires start it again
+    RefreshStreamLookLocked(s, false);
 }
 
 void SetPartnerUnit(std::uintptr_t unit) {

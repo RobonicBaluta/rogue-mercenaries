@@ -87,7 +87,7 @@ PLAY
       and a gun offered while your grid is full says TO STORAGE.
     - Dying or beating the run's last boss ends the run and banks your Credits.
 
-TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29
+TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPHA.30
   Two players on one PC, the screen split in two: the game's own split screen. Player 2
   needs a controller; player 1 can use the keyboard or another controller.
   In the mod's menu set PLAYERS to 2, choose PLAYER 2's character and outfit, then
@@ -107,11 +107,16 @@ TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29
       PLAYER 2 and player 2 does. The screens sit in the top half of the split screen.
       Any controller or the keyboard works them.
     - ORGANIZE INVENTORY shows the nine cells of the player whose turn it is: pick one,
-      then another, to swap them. Selling and the storage are not there with two players.
+      then another, to swap them. A picked item can also go TO THE STORAGE or be SOLD
+      (half its SHOP price, in supplies). The storage is the run's, both players': pick
+      an item there, then a cell, to take it into your grid. A gun keeps its rounds.
+    - Each player's flamethrower shows its element's colours, and each player's sniper
+      rifle has its scope on their own controller (right stick click while aiming).
     - The lobby only appears before the first arena. After the run the game goes back to
       the Play menu with the run's results.
-  Not there yet: the flamethrower's element look for player 2 (theirs burns as usual),
-  the sniper scope button for player 2, and continuing an interrupted two-player run.
+    - An interrupted two-player run (the game closed or a match quit) is saved like a
+      solo one: CONTINUE RUN shows the lobby again, player 2 presses START to join, both
+      press Ready, and the arena that was left starts again with each player's items.
 
 KNOWN ISSUES (ALPHA)
   - The mod does not need the Extra Content DLC or The Mercenaries unlocked, but it has

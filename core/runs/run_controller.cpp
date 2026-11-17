@@ -255,7 +255,6 @@ void RunController::UpdateCheckpoint() {
 Status RunController::SaveResumePoint(std::string adapter_state) {
     constexpr std::string_view op = "save_resume_point";
     if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
-    if (SeatCount() > 1) return Fail(op, ErrorCode::NotEligible, "a co-op run is not resumed");
     const bool beforeFirst = run_.phase == Phase::Idle && run_.arena_index == 0;
     const bool beforeNext = run_.phase == Phase::RouteSelection && run_.route_chosen;
     if (!beforeFirst && !beforeNext) {
@@ -508,16 +507,26 @@ Result<std::string> RunController::ResumeRun() {
     RunState r;
     const Status parsed = ParseRunResume(profile_.active_run->resume, r);
     if (!parsed.ok()) return Fail(op, parsed.code, parsed.message);
-    const CharacterDef* ch = content_->FindCharacter(r.character_id);
-    const SkinDef* skin = ch != nullptr ? FindSkin(*ch, r.skin_id) : nullptr;
-    if (ch == nullptr || skin == nullptr) {
-        return Fail(op, ErrorCode::UnknownId, "the run's character '" + r.character_id + "' or skin '" + r.skin_id + "' is gone");
-    }
-    // The character as StartRun made it: the skin, then the builds of the run's perks.
-    r.character = ApplySkin(*ch, *skin);
-    for (const auto& [id, stacks] : r.perks) {
-        const PerkDef* def = content_->FindPerk(id);
-        if (def != nullptr && def->build) ApplyPerkBuild(r.character.build, *def->build);
+    // Each player's character as StartRun (AddSeat) made it: the skin, then the builds of their perks.
+    const auto build = [this](RunState& view) -> bool {
+        const CharacterDef* ch = content_->FindCharacter(view.character_id);
+        const SkinDef* skin = ch != nullptr ? FindSkin(*ch, view.skin_id) : nullptr;
+        if (ch == nullptr || skin == nullptr) return false;
+        view.character = ApplySkin(*ch, *skin);
+        for (const auto& [id, stacks] : view.perks) {
+            const PerkDef* def = content_->FindPerk(id);
+            if (def != nullptr && def->build) ApplyPerkBuild(view.character.build, *def->build);
+        }
+        return true;
+    };
+    for (std::size_t i = 0; i < std::max<std::size_t>(r.seats.size(), 1); ++i) {
+        RunState other;
+        if (i > 0) SwapSeat(other, r.seats[i]);
+        RunState& view = i == 0 ? r : other;
+        const bool ok = build(view);
+        const std::string who = "the run's character '" + view.character_id + "' or skin '" + view.skin_id + "' is gone";
+        if (i > 0) SwapSeat(other, r.seats[i]);
+        if (!ok) return Fail(op, ErrorCode::UnknownId, who);
     }
     r.active = true;
     r.phase = r.arena_index == 0 ? Phase::Idle : Phase::RouteSelection;
