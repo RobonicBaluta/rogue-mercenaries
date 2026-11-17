@@ -867,6 +867,153 @@
       "unlock_boss": "boss:uEm41",
       "unlock_count": 1,
       "unlock_text": "Beat Uroboros Aheri"
+    },
+    {
+      "id": "ada",
+      "name": "Ada Wong",
+      "enabled": true,
+      "starting_weapons": [
+        "m92f"
+      ],
+      "exclusive_mechanic": "",
+      "unlock_cost_credits": 0,
+      "costume_index": 3,
+      "skins": [
+        {
+          "id": "ada_agent",
+          "name": "Agent",
+          "costume_index": 3,
+          "mod": {
+            "name": "Ada Bundle",
+            "author": "Cond3mned, Kreed, Nealktorce, Yumiko, Freyr95, Cixon",
+            "url": "https://www.nexusmods.com/residentevil5goldedition/mods/1091",
+            "folders": [
+              "sound\\bgm\\oto\\emo_voice\\mod\\adaw"
+            ],
+            "files": [
+              {
+                "name": "uPl01ShebaNormal.arc",
+                "size": 21215645
+              },
+              {
+                "name": "uWp1f.arc",
+                "size": 1035170
+              }
+            ],
+            "portrait": {
+              "file": "ada_agent.png"
+            }
+          },
+          "build": {
+            "name": "Intel Network",
+            "icon": "radio",
+            "summary": "Her own Px4. Shops give a free NEW STOCK and better rarities. Handguns 25 percent harder. Supplies x0.85.",
+            "starting_weapon": "px4",
+            "free_shop_rerolls": 1,
+            "rarity_shift": 0.2,
+            "category_damage": {
+              "handgun": 0.25
+            },
+            "supplies_mult": 0.85,
+            "pistol_in_hand": true
+          }
+        },
+        {
+          "id": "ada_assignment",
+          "name": "Assignment",
+          "costume_index": 4,
+          "mod": {
+            "name": "Ada Bundle",
+            "author": "Cond3mned, Kreed, Nealktorce, Yumiko, Freyr95, Cixon",
+            "url": "https://www.nexusmods.com/residentevil5goldedition/mods/1091",
+            "folders": [
+              "sound\\bgm\\oto\\emo_voice\\mod\\adaw"
+            ],
+            "files": [
+              {
+                "name": "uPl01ShebaCos1.arc",
+                "size": 100704300
+              },
+              {
+                "name": "uWp1f.arc",
+                "size": 1035170
+              }
+            ],
+            "portrait": {
+              "file": "ada_assignment.png"
+            }
+          },
+          "build": {
+            "name": "Assignment",
+            "icon": "smg",
+            "summary": "Starts with a rare MP5. Machine guns and rifles hit 25 percent harder. Health x0.9.",
+            "starting_weapon": "h_and_k_mp5",
+            "starting_weapon_rarity": "rare",
+            "category_damage": {
+              "smg": 0.25,
+              "rifle": 0.25
+            },
+            "max_health_mult": 0.9,
+            "pistol_in_hand": true
+          },
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "ada",
+          "unlock_count": 2,
+          "unlock_text": "Complete 2 runs as Ada"
+        },
+        {
+          "id": "ada_red_dress",
+          "name": "Red Dress",
+          "costume_index": 5,
+          "mod": {
+            "name": "Ada Bundle",
+            "author": "Cond3mned, Kreed, Nealktorce, Yumiko, Freyr95, Cixon",
+            "url": "https://www.nexusmods.com/residentevil5goldedition/mods/1091",
+            "folders": [
+              "sound\\bgm\\oto\\emo_voice\\mod\\adaw"
+            ],
+            "files": [
+              {
+                "name": "uPl01ShebaCos2.arc",
+                "size": 25572120
+              },
+              {
+                "name": "uWp1f.arc",
+                "size": 1035170
+              }
+            ],
+            "portrait": {
+              "file": "ada_red_dress.png"
+            }
+          },
+          "build": {
+            "name": "Separate Ways",
+            "icon": "bow",
+            "summary": "Starts with a rare longbow. Bows hit 40 percent harder, and every pickup is ammo for the gun in hand.",
+            "starting_weapon": "longbow",
+            "starting_weapon_rarity": "rare",
+            "category_damage": {
+              "bow": 0.4
+            },
+            "drops_as_held_ammo": true
+          },
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "ada",
+          "unlock_count": 4,
+          "unlock_text": "Complete 4 runs as Ada"
+        }
+      ],
+      "starting_passive": "ada_butterfly",
+      "skill_pool": [
+        "ada_grapple",
+        "ada_double_agent",
+        "ada_assassin",
+        "ada_bowgun"
+      ],
+      "unlock_kind": "boss_beaten",
+      "unlock_boss": "boss:uEm84",
+      "unlock_count": 1,
+      "unlock_text": "Beat Jill"
     }
   ]
 }

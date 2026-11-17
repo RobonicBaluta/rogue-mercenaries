@@ -263,6 +263,31 @@
       "icon": "boot"
     },
     {
+      "id": "ada_butterfly",
+      "name": "Butterfly",
+      "description": "Ada. Her shots deal 30 percent more to enemies under half their health.",
+      "category": "style",
+      "rarity": "common",
+      "tags": [
+        "damage"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "outgoing_damage_mult",
+          "value": 0.3,
+          "condition": {
+            "type": "target_hp_below",
+            "fraction": 0.5
+          }
+        }
+      ],
+      "characters": [
+        "ada"
+      ],
+      "icon": "star"
+    },
+    {
       "id": "chris_boulder_puncher",
       "name": "Boulder Puncher",
       "description": "Chris. Melee hits deal two and a half times the damage, handguns 25 percent less.",
@@ -717,6 +742,86 @@
       "icon": "crosshair"
     },
     {
+      "id": "ada_grapple",
+      "name": "Grapple Gun",
+      "description": "Ada. She slips out of every grab at once, and every melee kill pays 1 supply. Heals 20 percent smaller.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "melee"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "supplies_on_kill",
+          "amount": 1,
+          "melee_only": true
+        }
+      ],
+      "characters": [
+        "ada"
+      ],
+      "unlock_cost_credits": 150,
+      "build": {
+        "break_grabs": true,
+        "heal_mult": 0.8
+      },
+      "icon": "chain"
+    },
+    {
+      "id": "ada_double_agent",
+      "name": "Double Agent",
+      "description": "Ada. 10 extra supplies for every arena cleared, but she takes 15 percent more damage.",
+      "category": "style",
+      "rarity": "rare",
+      "tags": [
+        "supplies"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "supplies_on_arena_clear",
+          "amount": 10,
+          "require_no_damage": false
+        },
+        {
+          "kind": "incoming_damage_mult",
+          "value": 0.15
+        }
+      ],
+      "characters": [
+        "ada"
+      ],
+      "unlock_cost_credits": 180,
+      "icon": "credits"
+    },
+    {
+      "id": "ada_assassin",
+      "name": "Assassin",
+      "description": "Ada. 15 percent of her hits are critical for two and a half times the damage. 85 percent health.",
+      "category": "style",
+      "rarity": "epic",
+      "tags": [
+        "crit"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "crit",
+          "chance": 0.15,
+          "multiplier": 2.5
+        }
+      ],
+      "characters": [
+        "ada"
+      ],
+      "unlock_cost_credits": 200,
+      "build": {
+        "max_health_mult": 0.85
+      },
+      "icon": "crosshair"
+    },
+    {
       "id": "excella_golden_parachute",
       "name": "Golden Parachute",
       "description": "Excella. Once per arena she survives a lethal hit with 25 percent health. 20 percent fewer supplies.",
@@ -1062,6 +1167,34 @@
       ],
       "unlock_cost_credits": 150,
       "icon": "handgun"
+    },
+    {
+      "id": "ada_bowgun",
+      "name": "Bowgun",
+      "description": "Ada starts with the longbow and 20 arrows.",
+      "category": "supply",
+      "rarity": "rare",
+      "tags": [
+        "weapon"
+      ],
+      "max_stacks": 1,
+      "effects": [
+        {
+          "kind": "item_on_start",
+          "game_item": 271,
+          "amount": 1
+        },
+        {
+          "kind": "item_on_start",
+          "game_item": 523,
+          "amount": 20
+        }
+      ],
+      "characters": [
+        "ada"
+      ],
+      "unlock_cost_credits": 150,
+      "icon": "bow"
     },
     {
       "id": "excella_rifle",

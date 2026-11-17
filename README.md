@@ -176,6 +176,8 @@ the others are written and wait for a playtest (2026-11-03).
 | Excella: Experimenter (mod) | Complete 3 runs as Excella |
 | Leon: Jacket (mod) | Complete 3 runs as Leon |
 | Wesker: RE4 (mod) | Complete 3 runs as Wesker |
+| Ada Wong (mod) | Beat Jill |
+| Ada: Assignment, Red Dress (mod) | Complete 2, 4 runs as Ada |
 
 **Mod skins (optional).** Some skins wear a costume mod made by someone else, from its creator's page on Nexus Mods.
 None of it comes with ROGUE MERCENARIES: without the mod the game plays as always, and SKINS lists the skin in red,
@@ -194,6 +196,21 @@ Use this folder, not a mod manager: one that installs the mod into the game repl
 | Wesker | RE4 | [RE4 Wesker Reimagined](https://www.nexusmods.com/residentevil5goldedition/mods/1019) (izacky, kreed, Freyr95, Cixon64, DimensionalBoy, nealktorce) | Mastermind | RE4's Mercenaries Wesker: starts with a rare Lightning Hawk (his silenced magnum), magnums hit 30 percent harder and his melee twice as hard. It wears S.T.A.R.S. Wesker's slot (that outfit keeps its look), so only his own Samurai Edge, Lightning Hawk and Hydra are for him. Unzip all of it: his new voice lines too. |
 
 Only the costume file of a mod is used: the Excella mod's other files (her weapons, items, menus and music) are not.
+
+**Ada Wong** (a character of her own, from the [Ada Bundle](https://www.nexusmods.com/residentevil5goldedition/mods/1091)
+by Cond3mned, Kreed, Nealktorce, Yumiko, Freyr95 and Cixon). Unzip all of it (her voice lines and her gun too). She
+wears Sheva's Default, Clubbin and Tribal slots (those outfits stay Sheva's) and moves like Sheva; while she is played
+the Px4 shows as her own gun. The mod says its hair is off in two of the outfits. Without the mod CHARACTERS lists her
+in red, and pressing her opens the mod's page; it has no preview, so SKINS shows Sheva's bust unless a picture is put
+in the mod's folder as `ada_agent.png`, `ada_assignment.png` or `ada_red_dress.png` (a square bust; transparency is
+kept). Her own perks: **Butterfly**
+(her trait: shots deal 30 percent more to enemies under half their health), **Grapple Gun** (she slips every grab, a
+melee kill pays 1 supply, heals 20 percent smaller), **Double Agent** (10 more supplies an arena, 15 percent more
+damage taken), **Assassin** (15 percent of hits critical for two and a half times, 85 percent health), and the
+supply **Bowgun** (the longbow and 20 arrows). Her skins: **Agent** (Intel Network: her Px4, a free NEW STOCK and
+better rarities in every shop, handguns 25 percent harder, supplies x0.85), **Assignment** (a rare MP5, machine guns
+and rifles 25 percent harder, health x0.9) and **Red Dress** (Separate Ways: a rare longbow, bows 40 percent harder,
+every pickup ammo for the gun in hand).
 
 **Leon S. Kennedy** (a character of his own, from [Leon Definitive Edition](https://www.nexusmods.com/residentevil5goldedition/mods/223)
 by kreed and izacky). Unzip all of it, its *Main Files* too (his voice lines): without them he cannot be picked. He

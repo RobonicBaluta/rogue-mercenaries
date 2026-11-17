@@ -6,6 +6,7 @@ HAND, INCENDIARY, FLASH, SPRAY, HANDGUN_AMMO = 0x0106, 0x0107, 0x0108, 0x0304, 0
 M92F, ITHACA, MP5, LHAWK, SHELLS, MG_AMMO, MAGNUM_AMMO = 0x0102, 0x0104, 0x0113, 0x011A, 0x0203, 0x0202, 0x0209
 VZ61, M500, M29, PSG1, DRAGUNOV, RIFLE_AMMO = 0x0103, 0x011B, 0x010B, 0x011C, 0x0120, 0x0204
 M93R = 0x011E
+LONGBOW, ARROWS = 0x010F, 0x020B
 
 
 def perk(pid, name, desc, category, effects, characters=None, cost=0, rarity='common', tags=None, enabled=True, build=None):
@@ -57,6 +58,10 @@ perks += [
     # Leon S. Kennedy (a mod character, 2026-11-08: Leon Definitive Edition): RE4's shoot, kick, shoot.
     perk('leon_roundhouse', 'Roundhouse', 'Leon. For 4 seconds after a melee hit his shots deal 40 percent more.', 'style',
          [{'kind': 'outgoing_damage_mult', 'value': 0.4, 'condition': {'type': 'after_melee', 'window_seconds': 4}}], ['leon'],
+         tags=['damage']),
+    # Ada Wong (a mod character, 2026-11-17: the Ada Bundle in Sheva's outfits): the spy who finishes the job.
+    perk('ada_butterfly', 'Butterfly', 'Ada. Her shots deal 30 percent more to enemies under half their health.', 'style',
+         [{'kind': 'outgoing_damage_mult', 'value': 0.3, 'condition': {'type': 'target_hp_below', 'fraction': 0.5}}], ['ada'],
          tags=['damage']),
 ]
 # Two more per character (2026-11-04, the user's go): each a rule with its cost, made of what the
@@ -111,6 +116,15 @@ perks += [
          build={'melee_damage': 1.0, 'category_damage': {'rifle': -0.25}}),
     perk('leon_agent_training', 'Agent Training', 'Leon. 20 percent of his hits are critical and deal double damage. Heals 25 percent smaller.', 'style',
          [{'kind': 'crit', 'chance': 0.2, 'multiplier': 2.0}], ['leon'], cost=200, rarity='epic', tags=['crit'], build={'heal_mult': 0.75}),
+    perk('ada_grapple', 'Grapple Gun', 'Ada. She slips out of every grab at once, and every melee kill pays 1 supply. Heals 20 percent smaller.',
+         'style', [{'kind': 'supplies_on_kill', 'amount': 1, 'melee_only': True}], ['ada'], cost=150, rarity='rare', tags=['melee'],
+         build={'break_grabs': True, 'heal_mult': 0.8}),
+    perk('ada_double_agent', 'Double Agent', 'Ada. 10 extra supplies for every arena cleared, but she takes 15 percent more damage.',
+         'style', [{'kind': 'supplies_on_arena_clear', 'amount': 10, 'require_no_damage': False},
+                   {'kind': 'incoming_damage_mult', 'value': 0.15}], ['ada'], cost=180, rarity='rare', tags=['supplies']),
+    perk('ada_assassin', 'Assassin', 'Ada. 15 percent of her hits are critical for two and a half times the damage. 85 percent health.',
+         'style', [{'kind': 'crit', 'chance': 0.15, 'multiplier': 2.5}], ['ada'], cost=200, rarity='epic', tags=['crit'],
+         build={'max_health_mult': 0.85}),
     perk('excella_golden_parachute', 'Golden Parachute', 'Excella. Once per arena she survives a lethal hit with 25 percent health. 20 percent fewer supplies.', 'style',
          [{'kind': 'cheat_death', 'per_arena': 1, 'leave_hp_fraction': 0.25}], ['excella'], cost=200, rarity='epic', tags=['survival'],
          build={'supplies_mult': 0.8}),
@@ -131,6 +145,8 @@ perks += [
     perk('rebecca_rifle', 'Rookie Marksman', 'Rebecca starts with a PSG-1 and 10 rounds.', 'supply', [item_start(PSG1), item_start(RIFLE_AMMO, 10)], ['rebecca'], cost=150, rarity='rare', tags=['weapon']),
     perk('leon_matilda', 'Matilda', 'Leon starts with an M93R and 30 handgun rounds.', 'supply', [item_start(M93R), item_start(HANDGUN_AMMO, 30)],
          ['leon'], cost=150, rarity='rare', tags=['weapon']),
+    perk('ada_bowgun', 'Bowgun', 'Ada starts with the longbow and 20 arrows.', 'supply', [item_start(LONGBOW), item_start(ARROWS, 20)],
+         ['ada'], cost=150, rarity='rare', tags=['weapon']),
     perk('excella_rifle', 'Private Security', 'Excella starts with a Dragunov and 10 rounds.', 'supply', [item_start(DRAGUNOV), item_start(RIFLE_AMMO, 10)], ['excella'], cost=150, rarity='rare', tags=['weapon']),
 ]
 # ---- Support: bad situations. ----
@@ -307,6 +323,27 @@ BUILDS = {
         'summary': 'Every shop has a refine at half price and a free NEW STOCK. Better rarities. Supplies x0.8.',
         'refine_every_shop': True, 'refine_price_mult': 0.5, 'free_shop_rerolls': 1, 'rarity_shift': 0.3, 'supplies_mult': 0.8,
     },
+    # Ada's three (the Ada Bundle in Sheva's Default, Clubbin and Tribal slots, 2026-11-17): a red-topped
+    # agent with her network, RE4's Assignment Ada in black, and RE4's red dress (Separate Ways) with a
+    # bow for her crossbow. A slot whose costume holds another gun hands her its pistol (pistol_in_hand).
+    'ada_agent': {
+        'name': 'Intel Network', 'icon': 'radio',
+        # Her own gun: the Px4, which the bundle's uWp1f shows as hers.
+        'summary': 'Her own Px4. Shops give a free NEW STOCK and better rarities. Handguns 25 percent harder. Supplies x0.85.',
+        'starting_weapon': 'px4', 'free_shop_rerolls': 1, 'rarity_shift': 0.2, 'category_damage': {'handgun': 0.25},
+        'supplies_mult': 0.85, 'pistol_in_hand': True,
+    },
+    'ada_assignment': {
+        'name': 'Assignment', 'icon': 'smg',
+        'summary': 'Starts with a rare MP5. Machine guns and rifles hit 25 percent harder. Health x0.9.',
+        'starting_weapon': 'h_and_k_mp5', 'starting_weapon_rarity': 'rare', 'category_damage': {'smg': 0.25, 'rifle': 0.25},
+        'max_health_mult': 0.9, 'pistol_in_hand': True,
+    },
+    'ada_red_dress': {
+        'name': 'Separate Ways', 'icon': 'bow',
+        'summary': 'Starts with a rare longbow. Bows hit 40 percent harder, and every pickup is ammo for the gun in hand.',
+        'starting_weapon': 'longbow', 'starting_weapon_rarity': 'rare', 'category_damage': {'bow': 0.4}, 'drops_as_held_ammo': True,
+    },
     # Rebecca in winter gear (Winter Outfit by Angeltitilxyz, 2026-11-10, the user: "give it the whole
     # ordeal"): a medic out in the cold, her rounds freezing what they hit. Cryo freezes on a tenth
     # of the hits and the next hit shatters (weapons.json elements).
@@ -369,6 +406,7 @@ ICONS = {
     'rebecca_chemist': 'herb', 'rebecca_steady_nerves': 'rifle', 'excella_hostile_takeover': 'credits',
     'excella_golden_parachute': 'parachute',
     'leon_roundhouse': 'boot', 'leon_suplex': 'fist', 'leon_agent_training': 'crosshair', 'leon_matilda': 'handgun',
+    'ada_butterfly': 'star', 'ada_grapple': 'chain', 'ada_double_agent': 'credits', 'ada_assassin': 'crosshair', 'ada_bowgun': 'bow',
 }
 for p in perks:
     if p['id'] in ICONS:
@@ -402,10 +440,11 @@ pools = {
     'rebecca': ['rebecca_chemist', 'rebecca_steady_nerves', 'rebecca_rifle'],
     'excella': ['excella_hostile_takeover', 'excella_golden_parachute', 'excella_rifle'],
     'leon': ['leon_suplex', 'leon_agent_training', 'leon_matilda'],
+    'ada': ['ada_grapple', 'ada_double_agent', 'ada_assassin', 'ada_bowgun'],
 }
 passives = {'chris': 'chris_veteran', 'sheva': 'sheva_field_training', 'jill': 'jill_battle_instinct', 'wesker': 'wesker_firestarter',
             'josh': 'josh_squad_tactics', 'barry': 'barry_demolition_man', 'rebecca': 'rebecca_combat_medic', 'excella': 'excella_executive_bonus',
-            'leon': 'leon_roundhouse'}
+            'leon': 'leon_roundhouse', 'ada': 'ada_butterfly'}
 
 
 def help_lines(text, width=54):
@@ -449,6 +488,7 @@ CHARACTER_UNLOCKS = {
     'rebecca': _stat('no_damage_arenas', 5, 'Clear 5 arenas without taking damage'),
     'excella': _stat('credits_earned', 1500, 'Earn 1500 credits in total'),
     'leon': _boss('boss:uEm41', 'Beat Uroboros Aheri'),
+    'ada': _boss('boss:uEm84', 'Beat Jill'),
 }
 SKIN_UNLOCKS = {
     'chris_safari': _runs_as('chris', 'Chris', 2),
@@ -466,6 +506,8 @@ SKIN_UNLOCKS = {
     'leon_jacket': _runs_as('leon', 'Leon', 3),
     'rebecca_winter': _runs_as('rebecca', 'Rebecca', 3),
     'wesker_re4': _runs_as('wesker', 'Wesker', 3),
+    'ada_assignment': _runs_as('ada', 'Ada', 2),
+    'ada_red_dress': _runs_as('ada', 'Ada', 4),
 }
 UNLOCK_FIELDS = ('unlock_kind', 'unlock_count', 'unlock_character', 'unlock_boss', 'unlock_text')
 # Supported third-party mods (2026-11-08, the user's list: "not mandatory", "you need to go to the
@@ -535,6 +577,31 @@ MOD_SKINS.append(
              'folders': ['sound\\bgm\\oto\\emo_voice\\w4'],
              # Its preview (a picture 4096 square): his bust, the pistol in his hand.
              'portrait': {'file': 'screenshot.jpg', 'crop': [1040, 80, 1920, 1920]}}})
+# Ada Wong: a character of her own, worn in Sheva's outfits (CHAR | Ada Bundle - Sheva, version 3, by
+# Cond3mned, Kreed, Nealktorce, Yumiko, Freyr95 and Cixon, 2026-11-17, the user: "do the same thing with
+# the new character ADA, that uses Sheva as base"; its page from the user). It replaces Sheva's Default
+# (slot 3, uPl01ShebaNormal), Clubbin (4, Cos1) and Tribal (5, Cos2), the Px4's model (uWp1f, her gun)
+# and brings her voice lines (emo_voice\mod\adaw). No preview of its own: the user's busts (official
+# renders, cut out and cropped 2026-11-17) in the mod's folder as ada_agent.png and so on; without them
+# SKINS shows Sheva's bust.
+if not any(x['id'] == 'ada' for x in c['characters']):
+    c['characters'].append({'id': 'ada', 'name': 'Ada Wong', 'enabled': True, 'starting_weapons': ['m92f'],
+                            'exclusive_mechanic': '', 'unlock_cost_credits': 0, 'costume_index': 3, 'skins': []})
+# Her rolled pistol is any (the slot's own handgun takes its place in her hands); her Px4 comes as a
+# build's gun of its own (Agent), which no swap of the starting pistol takes away.
+next(x for x in c['characters'] if x['id'] == 'ada')['starting_weapons'] = ['m92f']
+ADA_MOD = {'name': 'Ada Bundle', 'author': 'Cond3mned, Kreed, Nealktorce, Yumiko, Freyr95, Cixon',
+           'url': 'https://www.nexusmods.com/residentevil5goldedition/mods/1091',
+           'folders': ['sound\\bgm\\oto\\emo_voice\\mod\\adaw']}
+ADA_GUN = {'name': 'uWp1f.arc', 'size': 1035170}
+MOD_SKINS += [
+    {'character': 'ada', 'base': 'sheva_bsaa', 'id': 'ada_agent', 'name': 'Agent',
+     'mod': dict(ADA_MOD, files=[{'name': 'uPl01ShebaNormal.arc', 'size': 21215645}, ADA_GUN], portrait={'file': 'ada_agent.png'})},
+    {'character': 'ada', 'base': 'sheva_clubbin', 'id': 'ada_assignment', 'name': 'Assignment',
+     'mod': dict(ADA_MOD, files=[{'name': 'uPl01ShebaCos1.arc', 'size': 100704300}, ADA_GUN], portrait={'file': 'ada_assignment.png'})},
+    {'character': 'ada', 'base': 'sheva_tribal', 'id': 'ada_red_dress', 'name': 'Red Dress',
+     'mod': dict(ADA_MOD, files=[{'name': 'uPl01ShebaCos2.arc', 'size': 25572120}, ADA_GUN], portrait={'file': 'ada_red_dress.png'})},
+]
 MOD_BASE = {m['id']: m['base'] for m in MOD_SKINS}
 for m in MOD_SKINS:
     ch = next(x for x in c['characters'] if x['id'] == m['character'])

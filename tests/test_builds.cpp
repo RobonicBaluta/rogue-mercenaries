@@ -854,6 +854,51 @@ TEST_CASE("RE4 Wesker wears S.T.A.R.S. Wesker's slot and starts with a rare Ligh
     CHECK_FALSE(without.rc.StartRun("wesker", 5, "wesker_re4").ok());
 }
 
+// Ada Wong (2026-11-17): a character of her own in Sheva's Default, Clubbin and Tribal outfits.
+TEST_CASE("Ada Wong wears Sheva's three outfits, each skin with its build", "[builds]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const CharacterDef* ada = r.content->FindCharacter("ada");
+    const CharacterDef* sheva = r.content->FindCharacter("sheva");
+    REQUIRE(ada != nullptr);
+    REQUIRE(sheva != nullptr);
+    CHECK(ada->starting_passive == "ada_butterfly");
+    const std::vector<std::pair<std::string, std::string>> slots = {
+        {"ada_agent", "sheva_bsaa"}, {"ada_assignment", "sheva_clubbin"}, {"ada_red_dress", "sheva_tribal"}};
+    for (const auto& [mine, base] : slots) {
+        INFO(mine);
+        const SkinDef* a = FindSkin(*ada, mine);
+        const SkinDef* b = FindSkin(*sheva, base);
+        REQUIRE(a != nullptr);
+        REQUIRE(b != nullptr);
+        REQUIRE(a->mod.has_value());
+        CHECK(a->costume_index == b->costume_index);
+        CHECK_FALSE(a->build.name.empty());
+    }
+    Profile open;
+    UnlockEverything(open, *r.content);
+    const auto has = [](const RunState& s, const char* base) {
+        return std::find_if(s.weapons.begin(), s.weapons.end(), [base](const WeaponInstance& w) { return w.base_id == base; });
+    };
+    {
+        test::Harness h(r.content, open);
+        h.rc.SetInstalledModSkins({"ada_agent"});
+        REQUIRE(h.rc.StartRun("ada", 7, "ada_agent").ok());
+        CHECK(has(h.rc.state(), "px4") != h.rc.state().weapons.end());  // her own gun, a gun of its own
+        CHECK(h.rc.state().character.build.pistol_in_hand);
+    }
+    {
+        test::Harness h(r.content, open);
+        h.rc.SetInstalledModSkins({"ada_red_dress"});
+        REQUIRE(h.rc.StartRun("ada", 7, "ada_red_dress").ok());
+        const auto bow = has(h.rc.state(), "longbow");
+        REQUIRE(bow != h.rc.state().weapons.end());
+        CHECK(bow->rarity == Rarity::Rare);
+    }
+    test::Harness without(r.content, open);
+    CHECK_FALSE(without.rc.StartRun("ada", 7, "ada_agent").ok());
+}
+
 TEST_CASE("a run length's pace fills every stat on its last gain, never before", "[builds]") {
     const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
     REQUIRE(r.ok());
