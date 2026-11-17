@@ -711,6 +711,56 @@
           "unlock_boss": "boss:uEm82",
           "unlock_count": 1,
           "unlock_text": "Locked"
+        },
+        {
+          "id": "wesker_re4",
+          "name": "RE4",
+          "costume_index": 9,
+          "mod": {
+            "name": "Albert Wesker (RE4)",
+            "author": "izacky, kreed, Freyr95, Cixon64, DimensionalBoy, nealktorce",
+            "url": "https://www.nexusmods.com/residentevil5goldedition/mods/1019",
+            "files": [
+              {
+                "name": "uPl03WeskerCos2.arc",
+                "size": 38051508
+              }
+            ],
+            "folders": [
+              "sound\\bgm\\oto\\emo_voice\\w4"
+            ],
+            "portrait": {
+              "file": "screenshot.jpg",
+              "crop": [
+                1040,
+                80,
+                1920,
+                1920
+              ]
+            }
+          },
+          "build": {
+            "name": "Mastermind",
+            "icon": "shades",
+            "summary": "A rare Lightning Hawk. Magnums 30 percent harder, melee twice as hard. His own three guns only.",
+            "usable_weapons": {
+              "ids": [
+                "samurai_edge",
+                "l_hawk",
+                "hydra"
+              ]
+            },
+            "starting_weapon": "l_hawk",
+            "starting_weapon_rarity": "rare",
+            "category_damage": {
+              "magnum": 0.3
+            },
+            "melee_damage": 1.0
+          },
+          "unlock_kind": "runs_completed_as",
+          "unlock_character": "wesker",
+          "unlock_count": 3,
+          "unlock_text": "Complete 3 runs as Wesker"
         }
       ]
     },

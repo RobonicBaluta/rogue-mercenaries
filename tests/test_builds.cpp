@@ -823,6 +823,37 @@ TEST_CASE("Hound Wolf Sheva starts with a rare flamethrower and a pistol in hand
     CHECK_FALSE(fairy.rc.state().character.build.pistol_in_hand);
 }
 
+// Wesker in his RE4 clothes (2026-11-17): a mod skin in S.T.A.R.S. Wesker's slot, his build Mastermind.
+TEST_CASE("RE4 Wesker wears S.T.A.R.S. Wesker's slot and starts with a rare Lightning Hawk", "[builds]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const CharacterDef* wesker = r.content->FindCharacter("wesker");
+    REQUIRE(wesker != nullptr);
+    const SkinDef* re4 = nullptr;
+    const SkinDef* stars = nullptr;
+    for (const SkinDef& s : wesker->skins) {
+        if (s.id == "wesker_re4") re4 = &s;
+        if (s.id == "wesker_stars") stars = &s;
+    }
+    REQUIRE(re4 != nullptr);
+    REQUIRE(stars != nullptr);
+    REQUIRE(re4->mod.has_value());
+    CHECK(re4->costume_index == stars->costume_index);
+    CHECK(re4->build.name == "Mastermind");
+    Profile open;
+    UnlockEverything(open, *r.content);
+    test::Harness h(r.content, open);
+    h.rc.SetInstalledModSkins({"wesker_re4"});
+    REQUIRE(h.rc.StartRun("wesker", 5, "wesker_re4").ok());
+    const auto& weapons = h.rc.state().weapons;
+    const auto hawk = std::find_if(weapons.begin(), weapons.end(), [](const WeaponInstance& w) { return w.base_id == "l_hawk"; });
+    REQUIRE(hawk != weapons.end());
+    CHECK(hawk->rarity == Rarity::Rare);
+    // Without the mod he cannot wear it.
+    test::Harness without(r.content, open);
+    CHECK_FALSE(without.rc.StartRun("wesker", 5, "wesker_re4").ok());
+}
+
 TEST_CASE("a run length's pace fills every stat on its last gain, never before", "[builds]") {
     const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
     REQUIRE(r.ok());

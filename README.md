@@ -151,6 +151,7 @@ the others are written and wait for a playtest (2026-11-03).
 | Excella | Dress | Ambition | Every melee kill raises one stat for the rest of the run, up to its cap: damage (to +90 percent), defence (to +63), health (to +90), critical chance (to +27), movement speed (to +54), healing (to +45) or supplies (to +20). Every stat is full after 54 melee kills on a short run, 142 on a long one and 249 on a marathon, so each gain is bigger on a shorter run. |
 | Wesker | Midnight | Uroboros Speed | Special: a dash, or a lunge at an enemy ahead (below); a second special, the burst. Untouchable while they act. 70 percent of his health. |
 | Wesker | S.T.A.R.S. | Iron Fist | Melee hits three times as hard. Only his own Samurai Edge, Lightning Hawk and Hydra can be bought or used. |
+| Wesker | RE4 (mod) | Mastermind | Starts with a rare Lightning Hawk. Magnums hit 30 percent harder, melee twice as hard. Only his own Samurai Edge, Lightning Hawk and Hydra. |
 
 **Unlocks.** Lifetime progress, kept in your profile. A character's first skin comes with the character.
 
@@ -174,6 +175,7 @@ the others are written and wait for a playtest (2026-11-03).
 | Jill: Classic (mod) | Beat the Giant Uroboros |
 | Excella: Experimenter (mod) | Complete 3 runs as Excella |
 | Leon: Jacket (mod) | Complete 3 runs as Leon |
+| Wesker: RE4 (mod) | Complete 3 runs as Wesker |
 
 **Mod skins (optional).** Some skins wear a costume mod made by someone else, from its creator's page on Nexus Mods.
 None of it comes with ROGUE MERCENARIES: without the mod the game plays as always, and SKINS lists the skin in red,
@@ -188,6 +190,8 @@ Use this folder, not a mod manager: one that installs the mod into the game repl
 | Excella | Experimenter | [Excella the Experimenter](https://www.nexusmods.com/residentevil5goldedition/mods/387) (TheGrimrose) | Field Trials | Every arena all her guns carry one random element (the arena's name is followed by it). Every shop offers a refine, at half price. Health x0.8. |
 | Jill | Classic | [Jill HDR Casual](https://www.nexusmods.com/residentevil5goldedition/mods/135) | Last Escape | Starts with the grenade launcher. Every gun she holds carries Incendiary, Cryo and Toxic (its flame, freeze and acid rounds). Only handguns and launchers are hers. Health x0.85. The mod comes in four variants (gear or not, gloves or not): keep the one you like in the mods folder (with several, the first by folder name is worn). |
 | Sheva | Hound Wolf Squad | [Hound Wolf Squad Sheva](https://www.nexusmods.com/residentevil5goldedition/mods/1177) (Angeltitilxyz) | Scorched Earth | Starts with a pistol in hand (not her costume's M3) and a rare flamethrower, whose fuel comes back 50 percent faster. Every gun she holds is Incendiary. Supplies x0.75. |
+
+| Wesker | RE4 | [RE4 Wesker Reimagined](https://www.nexusmods.com/residentevil5goldedition/mods/1019) (izacky, kreed, Freyr95, Cixon64, DimensionalBoy, nealktorce) | Mastermind | RE4's Mercenaries Wesker: starts with a rare Lightning Hawk (his silenced magnum), magnums hit 30 percent harder and his melee twice as hard. It wears S.T.A.R.S. Wesker's slot (that outfit keeps its look), so only his own Samurai Edge, Lightning Hawk and Hydra are for him. Unzip all of it: his new voice lines too. |
 
 Only the costume file of a mod is used: the Excella mod's other files (her weapons, items, menus and music) are not.
 

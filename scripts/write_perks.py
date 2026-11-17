@@ -328,6 +328,17 @@ BUILDS = {
         'summary': 'His melee hits three times as hard. Only his own Samurai Edge, Lightning Hawk and Hydra are for him.',
         'usable_weapons': {'ids': ['samurai_edge', 'l_hawk', 'hydra']}, 'melee_damage': 2.0,
     },
+    # Wesker in his RE4 clothes (the Albert Wesker (RE4) mod, 2026-11-17, the user: "add it to the Wesker
+    # Skins menu and make all the perks and stuff for him"): RE4's Mercenaries Wesker, a silenced magnum
+    # handgun (the Killer7) and his palm strike. The mod stands in for S.T.A.R.S. Wesker, whose model
+    # holds only his own three guns (see wesker_stars), so his are those.
+    'wesker_re4': {
+        'name': 'Mastermind', 'icon': 'shades',
+        'summary': 'A rare Lightning Hawk. Magnums 30 percent harder, melee twice as hard. His own three guns only.',
+        'usable_weapons': {'ids': ['samurai_edge', 'l_hawk', 'hydra']},
+        'starting_weapon': 'l_hawk', 'starting_weapon_rarity': 'rare',
+        'category_damage': {'magnum': 0.3}, 'melee_damage': 1.0,
+    },
     'barry_stars': {
         'name': 'Old Reliable', 'icon': 'magnum',
         'summary': 'Starts with an S and W M29 that upgrades without limit, and half again as much health.',
@@ -454,6 +465,7 @@ SKIN_UNLOCKS = {
     'excella_experimenter': _runs_as('excella', 'Excella', 3),
     'leon_jacket': _runs_as('leon', 'Leon', 3),
     'rebecca_winter': _runs_as('rebecca', 'Rebecca', 3),
+    'wesker_re4': _runs_as('wesker', 'Wesker', 3),
 }
 UNLOCK_FIELDS = ('unlock_kind', 'unlock_count', 'unlock_character', 'unlock_boss', 'unlock_text')
 # Supported third-party mods (2026-11-08, the user's list: "not mandatory", "you need to go to the
@@ -510,6 +522,19 @@ MOD_SKINS.append(
              'files': [{'name': 'uPl07RebeccaNormal.arc', 'size': 46621903}],
              # Its preview: her bust on black.
              'portrait': {'file': 'screenshot.jpg', 'crop': [490, 0, 940, 940]}}})
+# Wesker in his RE4 clothes (Albert Wesker (RE4) (STARS), 2026-11-17): S.T.A.R.S. Wesker's file
+# (slot 9, uPl03WeskerCos2.arc; Midnight's is Cos1, adapter.log 2026-11-11), with new voice lines its
+# costume asks for (emo_voice\w4, not in the game). Its page: RE4 Wesker Reimagined, the reworked RE4
+# Wesker by izacky and kreed that stands in for S.T.A.R.S. Wesker with voice lines (the user's copy
+# names izacky, kreed, Freyr95, Cixon64, DimensionalBoy and nealktorce).
+MOD_SKINS.append(
+    {'character': 'wesker', 'base': 'wesker_stars', 'id': 'wesker_re4', 'name': 'RE4',
+     'mod': {'name': 'Albert Wesker (RE4)', 'author': 'izacky, kreed, Freyr95, Cixon64, DimensionalBoy, nealktorce',
+             'url': 'https://www.nexusmods.com/residentevil5goldedition/mods/1019',
+             'files': [{'name': 'uPl03WeskerCos2.arc', 'size': 38051508}],
+             'folders': ['sound\\bgm\\oto\\emo_voice\\w4'],
+             # Its preview (a picture 4096 square): his bust, the pistol in his hand.
+             'portrait': {'file': 'screenshot.jpg', 'crop': [1040, 80, 1920, 1920]}}})
 MOD_BASE = {m['id']: m['base'] for m in MOD_SKINS}
 for m in MOD_SKINS:
     ch = next(x for x in c['characters'] if x['id'] == m['character'])
