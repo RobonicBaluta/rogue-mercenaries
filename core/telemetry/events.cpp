@@ -38,6 +38,7 @@ std::string_view EventTypeName(EventType type) {
         case EventType::ItemGranted: return "item_granted";
         case EventType::WeaponRefined: return "weapon_refined";
         case EventType::WeaponLost: return "weapon_lost";
+        case EventType::PlayerJoined: return "player_joined";
         case EventType::PerkEquipped: return "perk_equipped";
         case EventType::ChestOpened: return "chest_opened";
         case EventType::RunSuspended: return "run_suspended";

@@ -43,6 +43,7 @@ enum class EventType {
     RunResumed,         // a suspended or interrupted run goes on
     WeaponRefined,      // a held gun went one tier up (reward, shop, chest)
     WeaponLost,         // a gun left the run: no longer held (sold, used up) or given up
+    PlayerJoined,       // local co-op: another player's seat joined the run (M10)
 };
 std::string_view EventTypeName(EventType type);
 

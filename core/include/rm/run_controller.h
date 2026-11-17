@@ -339,6 +339,33 @@ public:
     /// With a ladder length (EconomyConfig::Ladder; empty = the first): locked lengths are refused.
     Status StartRun(std::string_view character_id, std::uint64_t seed, std::string_view skin_id, std::string_view length_id);
 
+    // --- local co-op (ROADMAP M10) -------------------------------------------------------------
+    // A run has one seat per player; seat 0 is the player StartRun was called for. Each seat has
+    // its own character, skin, build, loadout, perks, weapons, stats, rewards, shop and health
+    // (PlayerSeat); the seed, run map, route, supplies, keys and chests are the players'
+    // together. Every player-facing call (kills, hits, damage, heals, specials, chests, rewards,
+    // the shop, item grants, Snapshot, state()) acts for the active seat: make the player's seat
+    // active first (ActivateSeat or SeatScope). A seat's supply transactions are its own (the same
+    // perk pays each seat). The run goes to the shop once every seat chose its reward and to the
+    // route once every seat left the shop; ChooseRoute decides for everyone. A seat at 0 health
+    // (OnPlayerDied while it is active) is down until the next arena, which it starts with
+    // EconomyConfig::Coop::revive_health of its health; the run fails when every seat is down.
+    // With more than one seat an arena's enemy budget and boss health are scaled (Coop) and the
+    // run cannot be resumed (no resume point is saved).
+    /// Seats in the active run (1 without co-op; 0 with no run).
+    [[nodiscard]] int SeatCount() const;
+    [[nodiscard]] int ActiveSeat() const { return run_.active_seat; }
+    /// Another player joins a run that has not begun its first arena, with this character and skin
+    /// (gated as StartRun gates them). Two different skins that need the same game costume slot
+    /// while one of them is a mod skin are refused (the slot is one file).
+    Status AddSeat(std::string_view character_id, std::string_view skin_id);
+    /// Makes `seat` the one the player-facing calls act for. Cheap (swaps); no event.
+    Status ActivateSeat(int seat);
+    [[nodiscard]] bool SeatDown(int seat) const;
+    /// The seats that came back at this arena's start since the last call (their health is the
+    /// adapter's to set: EconomyConfig::Coop::revive_health of the maximum).
+    std::vector<int> ConsumeRevivedSeats();
+
     /// The ladder for the menu: every length in order, with what the profile has opened.
     struct LadderLengthView {
         std::string id;
@@ -609,6 +636,28 @@ private:
     void EnterRouteSelection();
     void CompleteRun();
     void FailRun(double now, std::string_view reason);
+    // Local co-op helpers. ForEachSeat runs `fn` with every seat active in turn (seat 0 first)
+    // and the seat active before active again afterwards.
+    template <class Fn>
+    void ForEachSeat(Fn&& fn) {
+        const int previous = run_.active_seat;
+        const int count = SeatCount();
+        for (int i = 0; i < count; ++i) {
+            (void)ActivateSeat(i);
+            fn(i);
+        }
+        (void)ActivateSeat(previous);
+    }
+    [[nodiscard]] bool EverySeatChoseReward() const;
+    [[nodiscard]] bool EverySeatLeftShop() const;
+    RunState::SeatStatus* ActiveSeatStatus();
+    /// The character and its skin a seat may play, or the failure (StartRun's gates).
+    Status CheckPlayable(std::string_view op, std::string_view character_id, std::string_view skin_id,
+                         const CharacterDef*& ch, const SkinDef*& skin) const;
+    /// The active seat's character, skin and rolled loadout (StartRun's first step for a player).
+    void SetUpSeat(const CharacterDef& ch, const SkinDef& skin);
+    /// The active seat's starting supplies (the unspent loadout points), weapons and perks.
+    void EquipSeat(const CharacterDef& ch);
 
     std::shared_ptr<const Content> content_;
     Profile profile_;
@@ -629,6 +678,21 @@ private:
     RunState run_;
     std::optional<Streams> streams_;
     std::optional<RunSummary> last_summary_;
+};
+
+/// Makes a seat active for a scope (RunController::ActivateSeat), then the one before again.
+class SeatScope {
+  public:
+    SeatScope(RunController& rc, int seat) : rc_(rc), previous_(rc.ActiveSeat()) { ok_ = rc_.ActivateSeat(seat).ok(); }
+    ~SeatScope() { (void)rc_.ActivateSeat(previous_); }
+    SeatScope(const SeatScope&) = delete;
+    SeatScope& operator=(const SeatScope&) = delete;
+    [[nodiscard]] bool ok() const { return ok_; }
+
+  private:
+    RunController& rc_;
+    int previous_ = 0;
+    bool ok_ = false;
 };
 
 }  // namespace rm

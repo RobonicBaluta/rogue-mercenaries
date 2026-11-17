@@ -202,6 +202,16 @@ struct EconomyConfig {
         int max = 9;
     } keys;
 
+    /// Local co-op (M10, 2026-11-17): with two players an arena's enemy budget is enemy_mult times
+    /// as large and a boss's health boss_hp_mult times; a player down comes back in the next arena
+    /// with revive_health of their health. max_players: the seats a run takes.
+    struct Coop {
+        double enemy_mult = 1.5;
+        double boss_hp_mult = 1.6;
+        double revive_health = 0.5;
+        int max_players = 2;
+    } coop;
+
     /// The run lengths a player climbs (the user's ladder, 2026-11-07). A length first ends on its
     /// easy boss; beating it adds the hard ones as a choice; beating a hard one unlocks the length
     /// whose `unlocked_by` names it. A longer run also fights every shorter length's boss at that

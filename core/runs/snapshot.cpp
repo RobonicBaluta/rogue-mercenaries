@@ -118,6 +118,12 @@ RunSnapshot RunController::Snapshot(double now) const {
     s.run_id = run_.run_id;
     s.character_id = run_.character_id;
     s.skin_id = run_.skin_id;
+    s.seat = run_.active_seat;
+    s.seat_count = std::max(1, SeatCount());
+    if (static_cast<std::size_t>(run_.active_seat) < run_.seat_status.size()) {
+        s.seat_down = run_.seat_status[static_cast<std::size_t>(run_.active_seat)].down;
+        s.shop_done = run_.seat_status[static_cast<std::size_t>(run_.active_seat)].shop_done;
+    }
     if (run_.active) s.loadout = FormatLoadout(run_.loadout, c);
     s.route_id = run_.route_id;
     if (const RouteDef* r = Route()) s.route_name = r->name;

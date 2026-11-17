@@ -1635,7 +1635,7 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     const Diag d = file.Sub("");
     CheckKeys(d, doc, {"schema_version", "run", "rewards", "weapon_rarity", "upgrades", "supplies",
                        "credits", "rating", "damage", "shop", "run_map", "chests", "keys", "enemy_threat",
-                       "run_rosters", "ladder", "refine", "_comment"});
+                       "run_rosters", "ladder", "refine", "coop", "_comment"});
     if (const json* s = Section(d, doc, "run")) {
         const Diag sd = d.Sub(": run");
         CheckKeys(sd, *s, {"arena_count", "starting_route", "starting_supplies",
@@ -1827,6 +1827,18 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
         ReadRarityPrices(sd, *s, "perk_price", eco.shop.perk_price);
         ReadRarityPrices(sd, *s, "weapon_price", eco.shop.weapon_price);
         GetIntRange(sd, *s, "perk_offers", eco.shop.perk_offers, true, 0, 6);
+    }
+    if (Get(doc, "coop") != nullptr) {
+        if (const json* s = Section(d, doc, "coop")) {
+            const Diag cd = d.Sub(": coop");
+            CheckKeys(cd, *s, {"enemy_mult", "boss_hp_mult", "revive_health", "max_players", "_comment"});
+            if (GetNumber(cd, *s, "enemy_mult", eco.coop.enemy_mult, false)) CheckRange(cd, "enemy_mult", eco.coop.enemy_mult, 1.0, 4.0);
+            if (GetNumber(cd, *s, "boss_hp_mult", eco.coop.boss_hp_mult, false)) CheckRange(cd, "boss_hp_mult", eco.coop.boss_hp_mult, 1.0, 4.0);
+            if (GetNumber(cd, *s, "revive_health", eco.coop.revive_health, false)) CheckRange(cd, "revive_health", eco.coop.revive_health, 0.05, 1.0);
+            std::int64_t players = eco.coop.max_players;
+            if (GetInt(cd, *s, "max_players", players, false)) CheckRange(cd, "max_players", static_cast<double>(players), 1, 2);
+            eco.coop.max_players = static_cast<int>(players);
+        }
     }
     if (Get(doc, "keys") != nullptr) {
         if (const json* s = Section(d, doc, "keys")) {

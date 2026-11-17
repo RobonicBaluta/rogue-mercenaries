@@ -336,9 +336,18 @@ times the bosses' health (tuned with `rm_sim`); two mod skins on the same base s
    ends when both are down) is the mod's to make (F6). Tests drive player 2 with a virtual pad
    (dev `pad`, `mercenaries split`, `coopwatch`, `saveguard`). Open: a character taken twice, a
    dying player revived.
-2. F1, core for two players (no game, tests): the run state holds players (character, build,
-   health, weapons, perks, rewards); seed, arena, supplies and profile are shared; a new
-   snapshot version that still reads the old ones; `rm_sim` plays co-op runs.
+2. ~~F1, core for two players (no game, tests).~~ Done 2026-11-17 (`tests/test_coop.cpp`): seats.
+   RunState's per-player fields (PlayerSeat: character, skin, build, loadout, perks, weapons,
+   stats, specials, buffs, rewards, shop, kill records, health, heal requests, item grants) hold
+   the active seat's; the others wait in `RunState::seats` and `RunController::ActivateSeat` /
+   `SeatScope` swap them in, so every existing rule works for either player. `AddSeat` (before the
+   first arena, gated as StartRun, two players at most, two outfits of one costume slot refused
+   when one is a mod's); a seat's supply transactions are its own; the shop once every seat chose
+   its reward, the route once every seat left its shop; a seat down (OnPlayerDied) is back next
+   arena (`ConsumeRevivedSeats`), the run fails when all are down; `economy.json` "coop" scales the
+   arena budget (1.5) and boss health (1.6); events carry "seat"; a run counts for every seat's
+   character; a co-op run saves no resume point (so no snapshot version change). Left for F6:
+   `rm_sim` co-op runs.
 3. F2, starting a co-op run: PLAY offers SOLO and CO-OP; player 2 joins with START on their
    pad and picks with it; the autopilot answers MODE SELECT with SPLIT SCREEN and the stage and
    lobby screens (uIdStartUp21, 24) with the run's choices instead of Solo's.

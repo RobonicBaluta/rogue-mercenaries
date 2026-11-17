@@ -155,6 +155,52 @@ struct RunStats {
     double* Field(std::string_view stat);
 };
 
+/// The build's specials (slot 0 the special, 1 special_2): when each is usable again, the
+/// cooldown its last use started (scaled per move), the arena of its last use (0 = never).
+struct SpecialUse {
+    double ready_at = 0.0;
+    double cooldown = 0.0;
+    int used_arena = 0;
+    int uses = 0;
+};
+
+/// One player's own part of a run (M10, local co-op, 2026-11-17). RunState's fields of these names
+/// hold the active seat's (RunController::ActivateSeat); the other seats wait in RunState::seats.
+/// What is not here (the seed, the run map, the route, supplies, keys, chests, the arenas'
+/// metrics) is the players' together. SwapSeat below exchanges every field listed here.
+struct PlayerSeat {
+    std::string character_id;
+    std::string skin_id;
+    CharacterDef character;
+    Loadout loadout;
+    std::vector<ItemGrant> item_grants;
+    StringMap<int> perk_kill_counts;
+    RunStats stats;
+    double invulnerable_until = -1.0;
+    double damage_buff = 0.0;
+    double damage_buff_until = -1.0;
+    std::array<SpecialUse, 2> specials{};
+    StringMap<int> perks;
+    std::vector<WeaponInstance> weapons;
+    int reroll_tokens = 0;
+    int cheat_death_used_total = 0;
+    std::vector<RewardChoice> reward_offer;
+    double reward_rarity_shift = 0.0;
+    bool reward_refine_sure = false;
+    bool reward_chosen = false;
+    std::vector<ShopOffer> shop_offers;
+    int free_shop_rerolls = 0;
+    int shop_restocks = 0;
+    int shop_generation = 0;
+    std::vector<KillRecord> kill_records;
+    StringMap<int> weapon_hits;
+    int arena_element = -1;
+    std::optional<double> last_melee_time;
+    std::optional<double> player_hp;
+    std::optional<double> player_hp_max;
+    std::vector<HealRequest> heal_requests;
+};
+
 /// Complete temporary state of one run. Rebuilt from scratch by StartRun.
 struct RunState {
     bool active = false;
@@ -175,14 +221,7 @@ struct RunState {
     double invulnerable_until = -1.0;  // a build's heal or dash: no damage taken until then
     double damage_buff = 0.0;          // a build's heal: extra outgoing damage until damage_buff_until
     double damage_buff_until = -1.0;
-    /// The build's specials (slot 0 the special, 1 special_2): when each is usable again, the
-    /// cooldown its last use started (scaled per move), the arena of its last use (0 = never).
-    struct SpecialUse {
-        double ready_at = 0.0;
-        double cooldown = 0.0;
-        int used_arena = 0;
-        int uses = 0;
-    };
+    using SpecialUse = rm::SpecialUse;
     std::array<SpecialUse, 2> specials{};
     Phase phase = Phase::Idle;
     int arena_index = 0;  // arenas begun so far; the current arena number while active
@@ -230,7 +269,54 @@ struct RunState {
 
     std::vector<HealRequest> heal_requests;
     std::string end_reason;
+
+    // M10 local co-op. One player: `seats` is empty. Two or more: seats[i] holds seat i's own
+    // state (PlayerSeat) while another seat is active; the active seat's entry is empty, its state
+    // being in the fields above. seat_status is every seat's, whichever is active.
+    struct SeatStatus {
+        bool down = false;       // at 0 health this arena (back in the next one)
+        bool revive = false;     // came back at an arena's start: the adapter sets its health
+        bool shop_done = false;  // left this shop visit
+    };
+    std::vector<PlayerSeat> seats;
+    std::vector<SeatStatus> seat_status;
+    int active_seat = 0;
 };
+
+/// Exchanges a seat's own state (PlayerSeat's fields) between the run's fields and `seat`.
+inline void SwapSeat(RunState& run, PlayerSeat& seat) {
+    using std::swap;
+    swap(run.character_id, seat.character_id);
+    swap(run.skin_id, seat.skin_id);
+    swap(run.character, seat.character);
+    swap(run.loadout, seat.loadout);
+    swap(run.item_grants, seat.item_grants);
+    swap(run.perk_kill_counts, seat.perk_kill_counts);
+    swap(run.stats, seat.stats);
+    swap(run.invulnerable_until, seat.invulnerable_until);
+    swap(run.damage_buff, seat.damage_buff);
+    swap(run.damage_buff_until, seat.damage_buff_until);
+    swap(run.specials, seat.specials);
+    swap(run.perks, seat.perks);
+    swap(run.weapons, seat.weapons);
+    swap(run.reroll_tokens, seat.reroll_tokens);
+    swap(run.cheat_death_used_total, seat.cheat_death_used_total);
+    swap(run.reward_offer, seat.reward_offer);
+    swap(run.reward_rarity_shift, seat.reward_rarity_shift);
+    swap(run.reward_refine_sure, seat.reward_refine_sure);
+    swap(run.reward_chosen, seat.reward_chosen);
+    swap(run.shop_offers, seat.shop_offers);
+    swap(run.free_shop_rerolls, seat.free_shop_rerolls);
+    swap(run.shop_restocks, seat.shop_restocks);
+    swap(run.shop_generation, seat.shop_generation);
+    swap(run.kill_records, seat.kill_records);
+    swap(run.weapon_hits, seat.weapon_hits);
+    swap(run.arena_element, seat.arena_element);
+    swap(run.last_melee_time, seat.last_melee_time);
+    swap(run.player_hp, seat.player_hp);
+    swap(run.player_hp_max, seat.player_hp_max);
+    swap(run.heal_requests, seat.heal_requests);
+}
 
 struct PerkView {
     std::string id;
@@ -321,6 +407,11 @@ struct RunSnapshot {
     double invulnerable_left = 0.0;
     double damage_buff_left = 0.0;
     double damage_buff = 0.0;
+    // M10 local co-op: the seat this snapshot is of (the active one) and the run's seats.
+    int seat = 0;
+    int seat_count = 1;
+    bool seat_down = false;
+    bool shop_done = false;  // this seat left the shop; the others are still in it
 };
 
 }  // namespace rm

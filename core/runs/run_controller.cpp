@@ -73,6 +73,7 @@ Event RunController::MakeEvent(EventType type, EventLevel level) const {
     if (run_.active) {
         e.run_id = run_.run_id;
         e.arena = run_.arena_index;
+        if (!run_.seats.empty()) e.Add("seat", run_.active_seat);
     }
     return e;
 }
@@ -143,7 +144,16 @@ PerkGateInput RunController::MakeGateInput(CursePolicy curses) const {
     return in;
 }
 
-bool RunController::CreditSupplies(const std::string& tx, std::int64_t amount, std::string_view reason, bool build_mult) {
+namespace {
+// Local co-op: a seat other than the first gets transaction ids of its own, so the same perk or
+// reward pays each seat (the ledger refuses an id twice).
+std::string SeatTx(const RunState& run, const std::string& tx) {
+    return run.active_seat > 0 ? tx + ":seat" + std::to_string(run.active_seat) : tx;
+}
+}  // namespace
+
+bool RunController::CreditSupplies(const std::string& seat_tx, std::int64_t amount, std::string_view reason, bool build_mult) {
+    const std::string tx = SeatTx(run_, seat_tx);
     if (build_mult) amount = RoundAmount(static_cast<double>(amount) * run_.character.build.supplies_mult * (1.0 + run_.stats.supplies));
     if (amount <= 0) return false;
     const TxResult r = run_.supplies.Credit(tx, amount);
@@ -163,7 +173,8 @@ bool RunController::CreditSupplies(const std::string& tx, std::int64_t amount, s
     return true;
 }
 
-TxResult RunController::DebitSupplies(const std::string& tx, std::int64_t amount, std::string_view reason) {
+TxResult RunController::DebitSupplies(const std::string& seat_tx, std::int64_t amount, std::string_view reason) {
+    const std::string tx = SeatTx(run_, seat_tx);
     const TxResult r = run_.supplies.Debit(tx, amount);
     if (r == TxResult::Applied) {
         run_.supplies_spent += amount;
@@ -228,7 +239,7 @@ void RunController::UpdateCheckpoint() {
     if (!run_.active) return;
     ActiveRunCheckpoint cp;
     cp.run_id = run_.run_id;
-    cp.character_id = run_.character_id;
+    cp.character_id = run_.seats.empty() || run_.active_seat == 0 ? run_.character_id : run_.seats.front().character_id;
     cp.seed = run_.seed;
     cp.arenas_cleared = static_cast<int>(run_.results.size());
     for (const ArenaMetrics& a : run_.arenas) cp.kills += a.player_kills;
@@ -244,6 +255,7 @@ void RunController::UpdateCheckpoint() {
 Status RunController::SaveResumePoint(std::string adapter_state) {
     constexpr std::string_view op = "save_resume_point";
     if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    if (SeatCount() > 1) return Fail(op, ErrorCode::NotEligible, "a co-op run is not resumed");
     const bool beforeFirst = run_.phase == Phase::Idle && run_.arena_index == 0;
     const bool beforeNext = run_.phase == Phase::RouteSelection && run_.route_chosen;
     if (!beforeFirst && !beforeNext) {
@@ -781,27 +793,9 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
                                std::string_view length_id) {
     constexpr std::string_view op = "start_run";
     if (run_.active) return Fail(op, ErrorCode::RunInProgress, "run " + run_.run_id + " has not ended");
-    const CharacterDef* ch = content_->FindCharacter(character_id);
-    switch (CheckCharacter(ch, profile_.unlocked_characters)) {
-        case CharacterGate::Unknown:
-            return Fail(op, ErrorCode::UnknownId, "unknown character '" + std::string(character_id) + "'");
-        case CharacterGate::Disabled:
-            return Fail(op, ErrorCode::Disabled, "character '" + std::string(character_id) + "' is not available yet");
-        case CharacterGate::Locked:
-            return Fail(op, ErrorCode::Locked, "character '" + std::string(character_id) + "' is locked");
-        case CharacterGate::Selectable:
-        case CharacterGate::NotInstalled: break;  // a skin's gate only
-    }
-    const SkinDef* skin = FindSkin(*ch, skin_id);
-    if (skin == nullptr) {
-        return Fail(op, ErrorCode::UnknownId, "unknown skin '" + std::string(skin_id) + "' for " + ch->id);
-    }
-    switch (SkinGate(*skin)) {
-        case CharacterGate::Locked: return Fail(op, ErrorCode::Locked, "skin '" + skin->id + "' is locked");
-        case CharacterGate::NotInstalled:
-            return Fail(op, ErrorCode::NotEligible, "skin '" + skin->id + "' needs its mod (" + skin->mod->name + ")");
-        default: break;
-    }
+    const CharacterDef* ch = nullptr;
+    const SkinDef* skin = nullptr;
+    if (Status s = CheckPlayable(op, character_id, skin_id, ch, skin); !s.ok()) return s;
     const EconomyConfig& eco = content_->economy();
     // The ladder's length (EconomyConfig::Ladder): the first one unless named.
     const EconomyConfig::Ladder::Length* length = nullptr;
@@ -820,9 +814,6 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     fresh.active = true;
     fresh.run_id = RunIdFor(profile_.next_run_number);
     fresh.seed = seed;
-    fresh.character_id = ch->id;
-    fresh.skin_id = skin->id;
-    fresh.character = ApplySkin(*ch, *skin);
     fresh.phase = Phase::Idle;
     // The finale's arena is added when the run earns it (CompleteArena).
     fresh.arena_count = length != nullptr ? length->arenas : eco.run.arena_count;
@@ -839,7 +830,7 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         Rng::Derive(seed, streams::kLoadout),
         Rng::Derive(seed, streams::kDirector),
     });
-    run_.loadout = RollLoadout(run_.character, *content_, streams_->loadout);
+    SetUpSeat(*ch, *skin);
     run_.keys = eco.keys.enabled ? eco.keys.start : 0;
     if (length != nullptr) {
         // Every shorter length's bosses at their arenas, its own at its end (each its easy boss,
@@ -871,14 +862,56 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         .Add("skin", skin->id).Add("length", run_.length_id).Add("loadout_weapon", run_.loadout.weapon_id)
         .Add("loadout", FormatLoadout(run_.loadout, *content_)).Add("loadout_spent", run_.loadout.spent);
     Emit(std::move(e));
+    EquipSeat(*ch);
+    UpdateCheckpoint();
+    (void)SaveProfile("start_run");
+    return Status::Success();
+}
 
-    // Unspent loadout points become supplies.
-    const std::int64_t starting_supplies =
-        eco.run.starting_supplies + std::max<std::int64_t>(run_.loadout.budget - run_.loadout.spent, 0);
-    if (run_.supplies.Credit("start", starting_supplies) == TxResult::Applied && starting_supplies > 0) {
+Status RunController::CheckPlayable(std::string_view op, std::string_view character_id, std::string_view skin_id,
+                                    const CharacterDef*& ch, const SkinDef*& skin) const {
+    ch = content_->FindCharacter(character_id);
+    switch (CheckCharacter(ch, profile_.unlocked_characters)) {
+        case CharacterGate::Unknown:
+            return Fail(op, ErrorCode::UnknownId, "unknown character '" + std::string(character_id) + "'");
+        case CharacterGate::Disabled:
+            return Fail(op, ErrorCode::Disabled, "character '" + std::string(character_id) + "' is not available yet");
+        case CharacterGate::Locked:
+            return Fail(op, ErrorCode::Locked, "character '" + std::string(character_id) + "' is locked");
+        case CharacterGate::Selectable:
+        case CharacterGate::NotInstalled: break;  // a skin's gate only
+    }
+    skin = FindSkin(*ch, skin_id);
+    if (skin == nullptr) {
+        return Fail(op, ErrorCode::UnknownId, "unknown skin '" + std::string(skin_id) + "' for " + ch->id);
+    }
+    switch (SkinGate(*skin)) {
+        case CharacterGate::Locked: return Fail(op, ErrorCode::Locked, "skin '" + skin->id + "' is locked");
+        case CharacterGate::NotInstalled:
+            return Fail(op, ErrorCode::NotEligible, "skin '" + skin->id + "' needs its mod (" + skin->mod->name + ")");
+        default: break;
+    }
+    return Status::Success();
+}
+
+void RunController::SetUpSeat(const CharacterDef& ch, const SkinDef& skin) {
+    run_.character_id = ch.id;
+    run_.skin_id = skin.id;
+    run_.character = ApplySkin(ch, skin);
+    run_.loadout = RollLoadout(run_.character, *content_, streams_->loadout);
+}
+
+void RunController::EquipSeat(const CharacterDef& character) {
+    const CharacterDef* ch = &character;
+    const EconomyConfig& eco = content_->economy();
+    // Unspent loadout points become supplies (the run's starting supplies once, with the first seat).
+    const std::int64_t starting_supplies = (run_.active_seat == 0 ? eco.run.starting_supplies : 0) +
+                                           std::max<std::int64_t>(run_.loadout.budget - run_.loadout.spent, 0);
+    const std::string start_tx = SeatTx(run_, "start");
+    if (run_.supplies.Credit(start_tx, starting_supplies) == TxResult::Applied && starting_supplies > 0) {
         Event c = MakeEvent(EventType::CurrencyChanged);
         c.Add("currency", "supplies").Add("delta", starting_supplies).Add("balance", run_.supplies.balance())
-            .Add("tx", "start").Add("reason", "starting_supplies");
+            .Add("tx", start_tx).Add("reason", "starting_supplies");
         Emit(std::move(c));
     }
     // Only the rolled weapon (the pistol): every other gun comes from supply perks, rewards or
@@ -921,9 +954,105 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         const PerkDef* def = content_->FindPerk(id);
         if (def != nullptr && def->build) ApplyPerkBuild(run_.character.build, *def->build);
     }
-    UpdateCheckpoint();
-    (void)SaveProfile("start_run");
+}
+
+// ---- local co-op (ROADMAP M10) -------------------------------------------------------------
+
+int RunController::SeatCount() const {
+    if (!run_.active) return 0;
+    return run_.seats.empty() ? 1 : static_cast<int>(run_.seats.size());
+}
+
+Status RunController::ActivateSeat(int seat) {
+    if (seat == run_.active_seat) return Status::Success();
+    const int count = run_.seats.empty() ? 1 : static_cast<int>(run_.seats.size());
+    if (seat < 0 || seat >= count) return Status::Error(ErrorCode::InvalidIndex, "no seat " + std::to_string(seat));
+    SwapSeat(run_, run_.seats[static_cast<std::size_t>(run_.active_seat)]);  // the active seat waits
+    SwapSeat(run_, run_.seats[static_cast<std::size_t>(seat)]);              // `seat` comes in
+    run_.active_seat = seat;
     return Status::Success();
+}
+
+Status RunController::AddSeat(std::string_view character_id, std::string_view skin_id) {
+    constexpr std::string_view op = "add_seat";
+    if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    if (run_.phase != Phase::Idle || run_.arena_index != 0) {
+        return Fail(op, ErrorCode::WrongPhase, "a player joins before the run's first arena");
+    }
+    const int count = SeatCount();
+    if (count >= content_->economy().coop.max_players) {
+        return Fail(op, ErrorCode::NotEligible, "the run has " + std::to_string(count) + " players already");
+    }
+    const CharacterDef* ch = nullptr;
+    const SkinDef* skin = nullptr;
+    if (Status s = CheckPlayable(op, character_id, skin_id, ch, skin); !s.ok()) return s;
+    // Two outfits in one game costume slot: the slot is one file, and a mod skin replaces it.
+    for (int i = 0; i < count; ++i) {
+        const bool active = i == run_.active_seat;
+        const std::string& other_character = active ? run_.character_id : run_.seats[static_cast<std::size_t>(i)].character_id;
+        const std::string& other_skin = active ? run_.skin_id : run_.seats[static_cast<std::size_t>(i)].skin_id;
+        const CharacterDef* oc = content_->FindCharacter(other_character);
+        const SkinDef* os = oc != nullptr ? FindSkin(*oc, other_skin) : nullptr;
+        if (os != nullptr && os->id != skin->id && os->costume_index == skin->costume_index &&
+            (os->mod.has_value() || skin->mod.has_value())) {
+            return Fail(op, ErrorCode::NotEligible,
+                        "skins '" + os->id + "' and '" + skin->id + "' need the same game costume slot " + std::to_string(skin->costume_index));
+        }
+    }
+    if (run_.seats.empty()) {
+        run_.seats.resize(1);  // seat 0, the active one: its state is in the run's fields
+        run_.seat_status.resize(1);
+    }
+    run_.seats.emplace_back();
+    run_.seat_status.emplace_back();
+    const int seat = count;
+    const int previous = run_.active_seat;
+    (void)ActivateSeat(seat);
+    SetUpSeat(*ch, *skin);
+    Event e = MakeEvent(EventType::PlayerJoined);
+    e.Add("character", ch->id).Add("skin", skin->id).Add("loadout_weapon", run_.loadout.weapon_id)
+        .Add("loadout", FormatLoadout(run_.loadout, *content_)).Add("loadout_spent", run_.loadout.spent);
+    Emit(std::move(e));
+    EquipSeat(*ch);
+    (void)ActivateSeat(previous);
+    UpdateCheckpoint();
+    (void)SaveProfile("add_seat");
+    return Status::Success();
+}
+
+bool RunController::SeatDown(int seat) const {
+    return seat >= 0 && static_cast<std::size_t>(seat) < run_.seat_status.size() &&
+           run_.seat_status[static_cast<std::size_t>(seat)].down;
+}
+
+std::vector<int> RunController::ConsumeRevivedSeats() {
+    std::vector<int> out;
+    for (std::size_t i = 0; i < run_.seat_status.size(); ++i) {
+        if (!run_.seat_status[i].revive) continue;
+        run_.seat_status[i].revive = false;
+        out.push_back(static_cast<int>(i));
+    }
+    return out;
+}
+
+RunState::SeatStatus* RunController::ActiveSeatStatus() {
+    const auto i = static_cast<std::size_t>(run_.active_seat);
+    return i < run_.seat_status.size() ? &run_.seat_status[i] : nullptr;
+}
+
+bool RunController::EverySeatChoseReward() const {
+    if (!run_.reward_chosen) return false;
+    for (std::size_t i = 0; i < run_.seats.size(); ++i) {
+        if (static_cast<int>(i) != run_.active_seat && !run_.seats[i].reward_chosen) return false;
+    }
+    return true;
+}
+
+bool RunController::EverySeatLeftShop() const {
+    for (const RunState::SeatStatus& s : run_.seat_status) {
+        if (!s.shop_done) return false;
+    }
+    return true;
 }
 
 Status RunController::AbandonRun(double now) {
@@ -950,8 +1079,10 @@ void RunController::FailRun(double now, std::string_view reason) {
     }
     run_.phase = Phase::RunFailed;
     run_.end_reason = std::string(reason);
-    run_.reward_offer.clear();
-    run_.shop_offers.clear();
+    ForEachSeat([this](int) {
+        run_.reward_offer.clear();
+        run_.shop_offers.clear();
+    });
     run_.route_choices.clear();
     UpdateCheckpoint();
     (void)SaveProfile("run_failed");
@@ -961,6 +1092,24 @@ Status RunController::OnPlayerDied(double now) {
     if (!run_.active) return Fail("player_died", ErrorCode::NoActiveRun, "no active run");
     if (run_.phase == Phase::RunComplete || run_.phase == Phase::RunFailed) {
         return Fail("player_died", ErrorCode::WrongPhase, "run already finished");
+    }
+    if (SeatCount() > 1) {
+        RunState::SeatStatus* status = ActiveSeatStatus();
+        if (status != nullptr && !status->down) {
+            status->down = true;
+            if (run_.phase == Phase::ArenaActive) {
+                if (ArenaMetrics* a = CurrentArena()) ++a->deaths;
+            }
+            Event d = MakeEvent(EventType::PlayerDamaged);
+            d.Add("down", true);
+            Emit(std::move(d));
+        }
+        bool everyone = true;
+        for (const RunState::SeatStatus& s : run_.seat_status) everyone = everyone && s.down;
+        if (!everyone) {
+            UpdateCheckpoint();
+            return Status::Success();
+        }
     }
     FailRun(now, "died");
     Event e = MakeEvent(EventType::PlayerDamaged);
@@ -985,26 +1134,37 @@ Status RunController::BeginArena(double now) {
     }
     ++run_.arena_index;
     const EconomyConfig::Ladder& ladder = content_->economy().ladder;
-    const int budget = route->enemy_budget + ladder.budget_per_arena * ladder.Steps(run_.arena_index);
+    const EconomyConfig::Coop& coop = content_->economy().coop;
+    const bool together = SeatCount() > 1;
+    int budget = route->enemy_budget + ladder.budget_per_arena * ladder.Steps(run_.arena_index);
+    if (together) budget = std::max(1, static_cast<int>(std::lround(static_cast<double>(budget) * coop.enemy_mult)));
     ArenaMetrics m;
     m.arena = run_.arena_index;
     m.route_id = route->id;
     m.budget = budget;
     m.start_time = now;
     run_.arenas.push_back(std::move(m));
-    run_.kill_records.clear();
-    run_.last_melee_time.reset();
     run_.seen_enemy_ids.clear();
-    // A build with arena_element: every gun carries one random element this arena.
-    run_.arena_element = -1;
-    if (run_.character.build.arena_element && !content_->elements().empty() && streams_) {
-        const auto& elements = content_->elements();
-        run_.arena_element = static_cast<int>(elements[streams_->loot.Index(elements.size())].element);
+    ForEachSeat([this](int) {
+        run_.kill_records.clear();
+        run_.last_melee_time.reset();
+        // A build with arena_element: every gun carries one random element this arena.
+        run_.arena_element = -1;
+        if (run_.character.build.arena_element && !content_->elements().empty() && streams_) {
+            const auto& elements = content_->elements();
+            run_.arena_element = static_cast<int>(elements[streams_->loot.Index(elements.size())].element);
+        }
+        run_.reward_offer.clear();
+        run_.reward_chosen = false;
+        run_.shop_offers.clear();
+    });
+    // A player who went down in the last arena is back (the adapter sets their health).
+    for (RunState::SeatStatus& s : run_.seat_status) {
+        if (s.down) s.revive = true;
+        s.down = false;
+        s.shop_done = false;
     }
     run_.clamp_logged = false;
-    run_.reward_offer.clear();
-    run_.reward_chosen = false;
-    run_.shop_offers.clear();
     run_.route_choices.clear();
     run_.route_chosen = false;
     run_.phase = Phase::ArenaActive;
@@ -1018,7 +1178,7 @@ Status RunController::BeginArena(double now) {
                 if (e.home >= 0) guests += (guests.empty() ? "" : ",") + e.unit_class;
             }
             ArenaThreat threat = content_->economy().enemy_threat.ForArena(run_.arena_index, route->difficulty_tier);
-            threat.boss_hp_mult = BossHpMult(map_stage_);
+            threat.boss_hp_mult = BossHpMult(map_stage_) * (together ? coop.boss_hp_mult : 1.0);
             director_.emplace(*map, budget, route->difficulty_tier, streams_->director.Next(), threat);
             director_->PickChests(content_->economy().chests.per_arena + run_.character.build.extra_chests);
             run_.arenas.back().budget = director_->budget();  // a boss arena: the boss alone
@@ -1374,28 +1534,30 @@ Result<ArenaResult> RunController::CompleteArena(double now) {
 
     CreditSupplies(ArenaTx(a.arena, "clear"),
                    RoundAmount(static_cast<double>(eco.supplies.per_arena_clear) * route.reward_mult), "arena_clear");
-    for (const auto& [id, stacks] : run_.perks) {
-        const PerkDef* def = content_->FindPerk(id);
-        if (def == nullptr) continue;
-        for (const EffectDef& ef : def->effects) {
-            if (ef.kind == EffectKind::ItemOnArenaClear && caps_.Has(cap::kInventory)) {
-                const EffectParams p = ef.AtStacks(stacks);
-                run_.item_grants.push_back(ItemGrant{static_cast<std::int64_t>(std::lround(p.game_item)),
-                                                     std::max(1, static_cast<int>(std::lround(p.amount))), id});
-                Event t = MakeEvent(EventType::PerkTriggered);
-                t.Add("source", id).Add("trigger", "arena_clear");
-                Emit(std::move(t));
-                continue;
-            }
-            if (ef.kind != EffectKind::SuppliesOnArenaClear) continue;
-            if (ef.require_no_damage && a.damage_taken > 0.0) continue;
-            if (CreditSupplies(ArenaTx(a.arena, "clear:perk:" + id), RoundAmount(ef.AtStacks(stacks).amount), id)) {
-                Event t = MakeEvent(EventType::PerkTriggered);
-                t.Add("source", id).Add("trigger", "arena_clear");
-                Emit(std::move(t));
+    ForEachSeat([&](int) {
+        for (const auto& [id, stacks] : run_.perks) {
+            const PerkDef* def = content_->FindPerk(id);
+            if (def == nullptr) continue;
+            for (const EffectDef& ef : def->effects) {
+                if (ef.kind == EffectKind::ItemOnArenaClear && caps_.Has(cap::kInventory)) {
+                    const EffectParams p = ef.AtStacks(stacks);
+                    run_.item_grants.push_back(ItemGrant{static_cast<std::int64_t>(std::lround(p.game_item)),
+                                                         std::max(1, static_cast<int>(std::lround(p.amount))), id});
+                    Event t = MakeEvent(EventType::PerkTriggered);
+                    t.Add("source", id).Add("trigger", "arena_clear");
+                    Emit(std::move(t));
+                    continue;
+                }
+                if (ef.kind != EffectKind::SuppliesOnArenaClear) continue;
+                if (ef.require_no_damage && a.damage_taken > 0.0) continue;
+                if (CreditSupplies(ArenaTx(a.arena, "clear:perk:" + id), RoundAmount(ef.AtStacks(stacks).amount), id)) {
+                    Event t = MakeEvent(EventType::PerkTriggered);
+                    t.Add("source", id).Add("trigger", "arena_clear");
+                    Emit(std::move(t));
+                }
             }
         }
-    }
+    });
 
     const double credits = (static_cast<double>(eco.credits.per_kill * a.player_kills) +
                             static_cast<double>(eco.credits.per_arena_clear) * eco.credits.rating_mult[RatingIndex(rating)]) *
@@ -1432,22 +1594,25 @@ Result<ArenaResult> RunController::CompleteArena(double now) {
     }
     run_.results.push_back(result);
 
-    run_.reward_rarity_shift = route.rarity_bonus + eco.rewards.rating_rarity_bonus[RatingIndex(rating)];
-    // A refine among the rewards now and then; likelier after a top-rated arena. Decided here, once
-    // an arena: a reroll of the offer keeps it.
+    // Each seat's own offer (its perks, weapons and build decide what it may get).
     const auto sure_rating = ParseRating(eco.refine.reward_rating);
     const double rated_chance = RefineChance(eco.refine, eco.refine.reward_rated_chance, run_.arena_count);
-    run_.reward_refine_sure = sure_rating && RatingIndex(rating) <= RatingIndex(*sure_rating) &&
-                              (rated_chance >= 1.0 || streams_->reward.NextDouble() < rated_chance);
-    // The last arena offers nothing: there is nothing left to use a reward on.
-    PruneLostWeapons();
-    run_.reward_offer.clear();
-    if (run_.arena_index < run_.arena_count) {
-        run_.reward_offer = GenerateRewardOffer(streams_->reward, MakeOfferContext(run_.reward_rarity_shift),
-                                                [this] { return NextInstanceId(); });
-        AddRefineReward(run_.reward_refine_sure);
-    }
-    run_.reward_chosen = false;
+    ForEachSeat([&](int) {
+        run_.reward_rarity_shift = route.rarity_bonus + eco.rewards.rating_rarity_bonus[RatingIndex(rating)];
+        // A refine among the rewards now and then; likelier after a top-rated arena. Decided here,
+        // once an arena: a reroll of the offer keeps it.
+        run_.reward_refine_sure = sure_rating && RatingIndex(rating) <= RatingIndex(*sure_rating) &&
+                                  (rated_chance >= 1.0 || streams_->reward.NextDouble() < rated_chance);
+        // The last arena offers nothing: there is nothing left to use a reward on.
+        PruneLostWeapons();
+        run_.reward_offer.clear();
+        if (run_.arena_index < run_.arena_count) {
+            run_.reward_offer = GenerateRewardOffer(streams_->reward, MakeOfferContext(run_.reward_rarity_shift),
+                                                    [this] { return NextInstanceId(); });
+            AddRefineReward(run_.reward_refine_sure);
+        }
+        run_.reward_chosen = false;
+    });
     run_.phase = Phase::ArenaResults;
     UpdateCheckpoint();
     (void)SaveProfile("arena_completed");
@@ -1566,6 +1731,7 @@ Status RunController::ChooseReward(std::size_t index) {
     if (choice.kind == RewardKind::Refine) e.Add("weapon_instance", choice.target_instance_id);
     Emit(std::move(e));
 
+    if (!EverySeatChoseReward()) return Status::Success();  // the other players still choose
     if (run_.arena_index >= run_.arena_count) {
         CompleteRun();
     } else {
@@ -1575,14 +1741,17 @@ Status RunController::ChooseReward(std::size_t index) {
 }
 
 void RunController::EnterShop() {
-    PruneLostWeapons();
     const RouteDef* route = Route();
-    run_.shop_offers = GenerateShopOffers(streams_->shop, MakeOfferContext(route != nullptr ? route->rarity_bonus : 0.0),
-                                          run_.weapons, run_.reroll_tokens, [this] { return NextInstanceId(); });
-    AddRefineOffer();
-    run_.free_shop_rerolls = run_.character.build.free_shop_rerolls;
-    run_.shop_restocks = 0;
-    run_.shop_generation = 0;
+    ForEachSeat([&](int) {
+        PruneLostWeapons();
+        run_.shop_offers = GenerateShopOffers(streams_->shop, MakeOfferContext(route != nullptr ? route->rarity_bonus : 0.0),
+                                              run_.weapons, run_.reroll_tokens, [this] { return NextInstanceId(); });
+        AddRefineOffer();
+        run_.free_shop_rerolls = run_.character.build.free_shop_rerolls;
+        run_.shop_restocks = 0;
+        run_.shop_generation = 0;
+    });
+    for (RunState::SeatStatus& s : run_.seat_status) s.shop_done = false;
     run_.phase = Phase::Shop;
     Event e = MakeEvent(EventType::ShopEntered);
     e.Add("offers", run_.shop_offers.size()).Add("supplies", run_.supplies.balance());
@@ -1741,6 +1910,9 @@ Status RunController::RerollShop() {
     constexpr std::string_view op = "reroll_shop";
     if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
     if (run_.phase != Phase::Shop) return Fail(op, ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
+    if (const RunState::SeatStatus* st = ActiveSeatStatus(); st != nullptr && st->shop_done) {
+        return Fail(op, ErrorCode::WrongPhase, "this player left the shop");
+    }
     const std::int64_t price = ShopRestockPrice();
     if (price < 0) return Fail(op, ErrorCode::NotEligible, "no new stock at this shop");
     if (price > 0) {
@@ -1772,6 +1944,9 @@ Status RunController::Purchase(std::size_t index) {
     constexpr std::string_view op = "purchase";
     if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
     if (run_.phase != Phase::Shop) return Fail(op, ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
+    if (const RunState::SeatStatus* st = ActiveSeatStatus(); st != nullptr && st->shop_done) {
+        return Fail(op, ErrorCode::WrongPhase, "this player left the shop");
+    }
     if (index >= run_.shop_offers.size()) return Fail(op, ErrorCode::InvalidIndex, "no offer at index " + std::to_string(index));
     ShopOffer& offer = run_.shop_offers[index];
     if (offer.purchased) return Fail(op, ErrorCode::AlreadyBought, "offer already bought");
@@ -1857,6 +2032,8 @@ Status RunController::LeaveShop() {
     if (run_.phase != Phase::Shop) {
         return Fail("leave_shop", ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
     }
+    if (RunState::SeatStatus* status = ActiveSeatStatus()) status->shop_done = true;
+    if (!EverySeatLeftShop()) return Status::Success();  // the other players are still shopping
     EnterRouteSelection();
     return Status::Success();
 }
@@ -2249,6 +2426,7 @@ Result<RunSummary> RunController::EndRun() {
     if (run_.phase != Phase::RunComplete && run_.phase != Phase::RunFailed) {
         return Fail(op, ErrorCode::WrongPhase, "run is still in progress (phase " + std::string(PhaseName(run_.phase)) + ")");
     }
+    (void)ActivateSeat(0);  // the summary is the first player's; every seat's character counts below
     const EconomyConfig& eco = content_->economy();
     const bool completed = run_.phase == Phase::RunComplete;
     const std::int64_t amount =
@@ -2286,7 +2464,14 @@ Result<RunSummary> RunController::EndRun() {
         profile_.stats.best_arena = std::max<std::int64_t>(profile_.stats.best_arena, s.arenas_cleared);
         profile_.stats.total_kills += s.total_kills;
         profile_.stats.credits_earned += amount;
-        if (completed) ++profile_.stats.runs_completed_as[run_.character_id];
+        if (completed) {
+            StringSet counted;
+            counted.insert(run_.character_id);
+            ++profile_.stats.runs_completed_as[run_.character_id];
+            for (std::size_t i = 1; i < run_.seats.size(); ++i) {
+                if (counted.insert(run_.seats[i].character_id).second) ++profile_.stats.runs_completed_as[run_.seats[i].character_id];
+            }
+        }
         for (const ArenaResult& a : s.arenas) {
             if (a.no_damage) ++profile_.stats.no_damage_arenas;
             if (a.rating == Rating::S) ++profile_.stats.s_rank_arenas;
@@ -2311,6 +2496,9 @@ Result<RunSummary> RunController::EndRun() {
     run_.active = false;
     run_.phase = Phase::Idle;
     run_.heal_requests.clear();
+    run_.seats.clear();
+    run_.seat_status.clear();
+    run_.active_seat = 0;
     streams_.reset();
     last_summary_ = s;
     return s;
