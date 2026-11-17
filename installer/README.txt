@@ -55,6 +55,8 @@ PLAY
     CONTINUE RUN - only after a run was interrupted (a quit or a crash): the arena you
                    left starts again.
     START RUN    - starts a run with the selected character.
+    PLAYERS      - 1, or 2 on a split screen (see TWO PLAYERS below).
+    PLAYER 2     - with 2 players: player 2's character and outfit.
     CHARACTERS   - pick a character and a skin. Most skins change how the run plays
                    (the line under each skin explains it).
     PERKS        - three slots: Style, Supply, Support. Locked perks are red and show
@@ -85,12 +87,34 @@ PLAY
       and a gun offered while your grid is full says TO STORAGE.
     - Dying or beating the run's last boss ends the run and banks your Credits.
 
+TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28
+  Two players on one PC, the screen split in two: the game's own split screen. Player 2
+  needs a controller; player 1 can use the keyboard or another controller.
+  In the mod's menu set PLAYERS to 2, choose PLAYER 2's character and outfit, then
+  START RUN. The game's split-screen lobby appears: player 2 presses START on their
+  controller to join, then both press Ready. Player 1 plays on the top half, player 2
+  on the bottom half.
+    - Each player has their own character, skin build, perks, weapons, inventory and
+      health. The supplies are shared.
+    - An arena has half again as many enemies, and a boss has more health.
+    - A player who falls stays down until the next arena, which they start with half
+      their health. The run ends when both have fallen.
+    - Between arenas player 1 picks a reward and shops first; then the screens say
+      PLAYER 2 and player 2 does. For now any controller or the keyboard works these
+      screens.
+    - The lobby only appears before the first arena.
+  Not there yet: player 2's skin specials, the mod's numbers on player 2's half,
+  ORGANIZE INVENTORY for player 2 (it shows player 1's items), and continuing an
+  interrupted two-player run (it cannot be continued).
+
 KNOWN ISSUES (ALPHA)
   - The mod does not need the Extra Content DLC or The Mercenaries unlocked, but it has
     only been played on one full save, with those simulated for the rest. If "Rogue
     Mercenaries" shows at the top right but something is missing, send your logs.
   - New in this version and not played yet: the bosses on arenas 4 and 8 of longer runs
     and the 13th arena.
+  - Two players (split screen) has only been tried with a simulated second controller:
+    please report what goes wrong with two real ones.
   - Uroboros Mkono, one of the alternate bosses of arena 8, may not be beatable yet:
     pick another boss there.
   - In one campaign area a ladder could not be climbed, and a fall left the player

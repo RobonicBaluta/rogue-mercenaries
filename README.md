@@ -94,6 +94,15 @@ About the Play menu row:
 - reach it with the keyboard or a gamepad, because mouse hover does not select it;
 - set `"native_menu": false` in `adapter.json` to turn it off.
 
+### Two players (split screen)
+
+New in 0.2.0-alpha.28 (ROADMAP M10; tried in game with a simulated second pad, not yet with two controllers). The Play menu's **PLAYERS** row switches between 1 and **2, SPLIT SCREEN**; **PLAYER 2** then chooses player 2's character and outfit from every open one (an outfit that would share player 1's costume slot while one of them is a mod's is red: the slot is one file of the game). **START RUN** goes through the game's own split-screen mode: its lobby appears with both costumes, player 2 joins with **START** on their controller, both press **Ready**, and the match has player 1 on the top half and player 2 on the bottom. Player 1 can use the keyboard.
+- Each player is a seat of the run with their own character, skin build, perks, weapons, inventory, stats and health; supplies, keys, chests, the run map and route are shared. Hits, kills, damage and heals count for the player who made or took them.
+- An arena has 1.5 times the enemies and a boss 1.6 times the health (`economy.json` `coop`).
+- A player at zero health is down: the game would end the match for both, the mod holds that back while the other player stands. The fallen player lies there until the next arena, which they start with half their health; the run ends when both are down.
+- Between arenas the reward and shop screens take turns: player 1's, then **PLAYER 2**'s (any controller or the keyboard works them for now). NEXT ROUTE decides for both. The stage change carries each player's inventory and health. After a split-screen match the game comes back to its lobby; the mod skips it from the second arena on.
+- Not there yet: player 2's specials, the HUD on player 2's half, ORGANIZE INVENTORY for player 2 (it shows player 1's grid), each player's menus on their own half, and CONTINUE RUN for a two-player run (none is saved).
+
 ### Style perks
 
 The PERKS menu's first slot is the character's way of playing: one free trait each, and more to buy with Credits. Most
