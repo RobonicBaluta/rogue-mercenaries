@@ -729,8 +729,16 @@ bool EffectInMemory(const char* path) {
 }
 
 bool ReadCameraView(CameraView& out) {
+    const auto views = ReadCameraViews();
+    if (views.empty()) return false;
+    out = views.front();
+    return true;
+}
+
+std::vector<CameraView> ReadCameraViews() {
+    std::vector<CameraView> views;
     const auto system = ReadOr<std::uintptr_t>(re5::addr::kSCameraInstance, 0);
-    if (!system) return false;
+    if (!system) return views;
     for (int i = 0; i < re5::off::kSCameraViewportCount; ++i) {
         const std::uintptr_t viewport = system + re5::off::kSCameraViewports + static_cast<std::size_t>(i) * re5::off::kViewportSize;
         const auto camera = ReadOr<std::uintptr_t>(viewport + re5::off::kViewportCamera, 0);
@@ -749,10 +757,9 @@ bool ReadCameraView(CameraView& out) {
         v.farPlane = ReadOr<float>(camera + re5::off::kCameraFar, 0.0f);
         for (int k = 0; k < 4; ++k) v.region[k] = ReadOr<std::int32_t>(viewport + re5::off::kViewportRegion + static_cast<std::size_t>(k) * 4, 0);
         if (!(v.fov > 1.0f && v.fov < 179.0f && v.aspect > 0.1f && v.aspect < 10.0f && v.nearPlane > 0.0f && v.farPlane > v.nearPlane)) continue;
-        out = v;
-        return true;
+        views.push_back(v);
     }
-    return false;
+    return views;
 }
 
 std::vector<std::string> LoadedEffectLists() {
@@ -1114,26 +1121,57 @@ ActingPlayerScope::ActingPlayerScope(std::uintptr_t unit) : previous_(t_actingPl
 
 ActingPlayerScope::~ActingPlayerScope() { t_actingPlayer = previous_; }
 
+const std::array<std::uintptr_t, 4>& HumanPlayers();
+
 std::uintptr_t LocalPlayer() {
     if (t_actingPlayer) return t_actingPlayer;
+    // The first human player (the cached scan, M10), else ReadPlayers' pick (the first listed).
+    for (const std::uintptr_t human : HumanPlayers()) {
+        if (human) return human;
+    }
     const auto snap = ReadPlayers();
     return snap.localSlot >= 0 ? snap.players[snap.localSlot].object : 0;
 }
 
+// The human players by sPlayer slot (control 0), read at most once every 2 ms on a thread: the
+// co-op turns ask for them many times a tick (ReadPlayers also reads names and health).
+const std::array<std::uintptr_t, 4>& HumanPlayers() {
+    thread_local std::array<std::uintptr_t, 4> humans{};
+    thread_local LARGE_INTEGER readAt{};
+    static const LONGLONG window = [] {
+        LARGE_INTEGER f{};
+        QueryPerformanceFrequency(&f);
+        return f.QuadPart / 500;  // 2 ms
+    }();
+    LARGE_INTEGER now{};
+    QueryPerformanceCounter(&now);
+    if (readAt.QuadPart != 0 && now.QuadPart - readAt.QuadPart < window) return humans;
+    readAt = now;
+    humans.fill(0);
+    if (!g_caps.players) return humans;
+    const auto sp = ReadOr<std::uintptr_t>(re5::addr::kSPlayerInstance, 0);
+    if (!sp) return humans;
+    for (int i = 0; i < 4; ++i) {
+        const auto object = ReadOr<std::uintptr_t>(sp + re5::off::kSPlayerList + i * 4, 0);
+        if (!object || ReadOr<std::int32_t>(object + re5::off::kPlayerControl, -1) != 0) continue;
+        if (!IsKindOf(object, re5::addr::kDtiUPlayer)) continue;
+        humans[static_cast<std::size_t>(i)] = object;
+    }
+    return humans;
+}
+
 int HumanPlayerSlot(std::uintptr_t unit) {
     if (!unit) return -1;
-    const auto snap = ReadPlayers();
-    for (const auto& p : snap.players) {
-        if (p.object == unit && p.control == 0) return p.slot;
+    const auto& humans = HumanPlayers();
+    for (int i = 0; i < 4; ++i) {
+        if (humans[static_cast<std::size_t>(i)] == unit) return i;
     }
     return -1;
 }
 
 std::uintptr_t HumanPlayerInSlot(int slot) {
     if (slot < 0 || slot >= 4) return 0;
-    const auto snap = ReadPlayers();
-    const auto& p = snap.players[static_cast<std::size_t>(slot)];
-    return p.object && p.control == 0 ? p.object : 0;
+    return HumanPlayers()[static_cast<std::size_t>(slot)];
 }
 
 EnemiesSnapshot ReadEnemies() {

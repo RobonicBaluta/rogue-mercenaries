@@ -360,15 +360,21 @@ times the bosses' health (tuned with `rm_sim`); two mod skins on the same base s
    player's turn (the core's seat, the adapter's per-player state, `LocalPlayer()` answering that
    player's unit through engine::ActingPlayerScope); the combat hooks take any human player; hits,
    kills, damage and heals act for their player; each player gets the loadout, the build's health,
-   item grants, gun levels, the stage change's carried inventory and health. Open: player 2's
-   specials and pad bindings, the flamethrower's stream and element arcs for player 2, the
-   per-player state still global in mod.cpp (combos, buffs shown, the inventory hold).
+   item grants, gun levels, the stage change's carried inventory and health. alpha.29 (2026-11-17): the pads learned in
+   the lobby, player 2's specials on their pad, the specials', moves', weapon card's and
+   flamethrower's adapter state per player (LateSeat), chests to the nearest player, the
+   director around each standing player, dying not counted as down. Open: the flamethrower's
+   element look and stream for player 2, player 2's sniper scope button.
 5. F4, screens for two. Done in part 2026-11-17 (verified in game): between arenas the reward and
    shop screens take turns (UiSeat: "PLAYER 2" in the header), each player's choice and purchases
-   theirs. Open: each player's own half of the screen and pad (one menu, any pad, for now); the
-   native Organize/Buy screen still shows player 1's inventory; an element choice after a refine
-   in co-op.
-6. F5, HUD and drawing per viewport: the overlay's notices and the element arcs projected with
+   theirs. alpha.29: the screens laid out in the top half (the game's text routine
+   draws in the top view only), an element choice goes to its player, ORGANIZE is the mod's
+   grid for the player whose turn it is (the native screen is the two-panel co-op one in a split
+   match). Open: selling and the storage in co-op.
+6. F5, HUD and drawing per viewport. Done 2026-11-17 (alpha.29): the HUD texts on player 2's half
+   (the overlay; the game's routine is clipped to the top view), each player's special rings and
+   weapon card on their half, the element arcs in every view's region.
+   Was: the overlay's notices and the element arcs projected with
    each view's camera and clipped to its half.
 7. F6, director and balance. Done in part 2026-11-17 (verified in game): the budget (x1.5, 30
    enemies for 20) and boss health scaling; a player at zero health is down while the other stands:

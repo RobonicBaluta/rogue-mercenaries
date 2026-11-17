@@ -86,11 +86,21 @@ struct OwnedInput {
     unsigned short xinput = 0;    // XInput buttons held together
     unsigned joy = 0;             // DirectInput joystick buttons held together
 };
-/// The bindings owned now (none: an empty list); set from the game thread.
+/// The bindings owned now (none: an empty list); set from the game thread. They are player 1's:
+/// the keyboard, the DirectInput pad and the XInput pad of the primary user (SetPrimaryPadUser).
 void SetOwnedInputs(const std::vector<OwnedInput>& inputs);
 bool RawKeyDown(int scancode);
 bool RawJoyButton(int index);
+/// The primary XInput user's buttons (player 1's pad; user 0 unless set).
 unsigned short RawXInputButtons();
+/// M10 local co-op: the XInput user whose pad is player 1's (0 by default, -1 none: the keyboard);
+/// another user's buttons, whether it answered its last poll, and the button combos the mod owns
+/// on that user's pad (another player's specials; XInput bits, each combo held together).
+void SetPrimaryPadUser(int user);
+int PrimaryPadUser();
+unsigned short RawXInputButtonsOf(int user);
+bool XInputConnected(int user);
+void SetOwnedPadInputs(int user, const std::vector<unsigned short>& combos);
 
 /// Developer mode (M10 F0, local co-op research): a virtual XInput gamepad on `user` (0..3). While
 /// `on`, XInputGetState and XInputGetCapabilities answer for that user with this state, connected

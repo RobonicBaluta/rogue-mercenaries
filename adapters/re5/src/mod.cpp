@@ -185,6 +185,7 @@ struct ModState {
     };
     std::vector<Relock> relockChests;   // M8 keys: chests opened without a key, placed again
     bool shopUiRequested = false;       // back to the SHOP screen when that screen closes
+    bool organizeUiRequested = false;   // dev "organize" in co-op: the mod's grid screen (opened after the tick)
     std::string notice;       // short line shown instead of the status (chest contents)
     int organizePick = -1;    // ORGANIZE: grid cell picked up (-1 = none)
     double noticeUntil = 0.0;
@@ -225,6 +226,9 @@ struct ModState {
     int coopPlayers = 1;         // M10 local co-op: 1 solo, 2 split screen (the Play menu's PLAYERS)
     std::string p2Skin;          // M10: player 2's chosen skin id (empty: the first other outfit)
     int p2Costume = -1;          // M10: player 2's costume slot in the run's first match
+    int p1Pad = -2;              // M10: player 1's XInput user (-1 the keyboard, -2 not known yet)
+    int p2Pad = -1;              // M10: player 2's XInput user (-1 not known yet)
+    int itemBoxSeat = 0;         // M10: whose ORGANIZE INVENTORY the game's screen holds
     rm::PerkCategory perkCategory = rm::PerkCategory::Style;  // slot opened from the PERKS screen
     std::string diagnosticsResult;
     // Set when any mod code threw; the game keeps running with vanilla rules.
@@ -965,12 +969,24 @@ void SwapAdapterSeat(AdapterSeat& s) {
     swap(g_buildHealth, s.buildHealth);
 }
 
+// Each player's specials, moves, weapon card and flamethrower state (LateSeat, defined with them).
+void SwapLateSeat(int index);
+
 void ActivateAdapterSeat(int seat) {
     if (seat == g_adapterSeat || seat < 0 || seat >= static_cast<int>(g_adapterSeats.size())) return;
     SwapAdapterSeat(g_adapterSeats[static_cast<std::size_t>(g_adapterSeat)]);
+    SwapLateSeat(g_adapterSeat);
     SwapAdapterSeat(g_adapterSeats[static_cast<std::size_t>(seat)]);
+    SwapLateSeat(seat);
     g_adapterSeat = seat;
 }
+
+// The XInput user of a seat's pad: player 1's (-1: the keyboard), player 2's.
+int PadUserOfSeat(int seat) { return seat == 0 ? (g->p1Pad >= -1 ? g->p1Pad : 0) : g->p2Pad; }
+
+// The overlay's widgets on a player's half of the split screen (1280x720 layout lines).
+constexpr float kSplitHalfLines = 360.0f;
+float g_drawShiftY = 0.0f;
 
 // One player's turn: the run's seat (the core's player-facing calls act for it), the adapter's
 // per-player state, and LocalPlayer() answering that player's unit (its sPlayer slot is its seat:
@@ -1017,6 +1033,10 @@ int UiSeat(rm::RunController& run) {
     const int count = run.SeatCount();
     if (count < 2) return 0;
     const rm::Phase phase = run.phase();
+    for (int seat = 0; seat < count; ++seat) {  // a gun refined to Epic: its player chooses the element
+        rm::SeatScope scope(run, seat);
+        if (!run.PendingElementChoices().empty()) return seat;
+    }
     for (int seat = 0; seat < count; ++seat) {
         if (phase == rm::Phase::Shop) {
             const auto& status = run.state().seat_status;
@@ -1037,6 +1057,8 @@ void ReviveSeat(int seat) {
     const int wanted = std::max(1, static_cast<int>(std::lround(hp->max * g->content->economy().coop.revive_health)));
     if (wanted < hp->hp) engine::WriteHp(unit, wanted);
     RM_LOGI("co-op: player %d is back with %d/%d health", seat + 1, std::min(wanted, hp->hp), hp->max);
+    g->notice = "PLAYER " + std::to_string(seat + 1) + " IS BACK";
+    g->noticeUntil = Now() + 4.0;
 }
 
 // ---- M10 local co-op: player 2's choice ------------------------------------------------------
@@ -1128,7 +1150,16 @@ std::vector<std::string> WornSkins() {
         }
     } else {
         out.push_back(g->selectedSkin);
-        if (g->coopPlayers == 2) out.push_back(PlayerTwoChoice(run.Characters()).skin);
+        if (g->coopPlayers == 2) {
+            static std::string key, pick;
+            const std::string now = g->p2Skin + "|" + g->selectedSkin + "|" + std::to_string(g->selectedCharacter) + "|" +
+                                    std::to_string(g_modSkinFiles.size());
+            if (now != key) {
+                key = now;
+                pick = PlayerTwoChoice(run.Characters()).skin;
+            }
+            out.push_back(pick);
+        }
     }
     return out;
 }
@@ -2367,9 +2398,10 @@ private:
                 if (index == offers + rerollRow) {  // ORGANIZE INVENTORY
                     // The game's own Organize/Buy screen when it can open here (M7.1); the mod's
                     // grid screen otherwise. The storage's guns are seen there.
-                    if (NativeItemBoxReady()) {
+                    if (NativeItemBoxReady() && run.SeatCount() < 2) {
                         StashGunsSeen();
                         g->itemBoxRequested = true;
+                        g->itemBoxSeat = g->run->ActiveSeat();  // M10: this player's grid in the screen
                         d.outcome = Outcome::Close;
                         break;
                     }
@@ -2539,6 +2571,21 @@ void JoinPlayerTwo(rm::RunController& run) {
         return;
     }
     g->p2Costume = costume;
+    // The pads, when the lobby did not tell (WatchLobbyPads): player 2 the last connected XInput
+    // pad, player 1 the first other one (none: the keyboard).
+    if (g->p2Pad < 0) {
+        for (int user = 3; user >= 0 && g->p2Pad < 0; --user) {
+            if (XInputConnected(user)) g->p2Pad = user;
+        }
+    }
+    if (g->p1Pad < -1) {
+        g->p1Pad = -1;
+        for (int user = 0; user < 4 && g->p1Pad < 0; ++user) {
+            if (user != g->p2Pad && XInputConnected(user)) g->p1Pad = user;
+        }
+    }
+    RM_LOGI("co-op: pads: player 1 %s, player 2 %s", g->p1Pad >= 0 ? ("XInput user " + std::to_string(g->p1Pad)).c_str() : "keyboard",
+            g->p2Pad >= 0 ? ("XInput user " + std::to_string(g->p2Pad)).c_str() : "unknown");
     // The lobby's fields with both players in: the later arenas skip the lobby with them.
     std::vector<std::pair<int, std::uint32_t>> fields;
     for (const int off : {0x490, 0x494, 0x610, 0x614, 0x618, 0x61C, 0x620, 0x624, 0x654, 0x658}) {
@@ -3036,14 +3083,29 @@ constexpr float kOwnScaleMax = 4.0f;
 std::uintptr_t EquippedGunSlot();
 
 std::uintptr_t g_flameUnit = 0;  // the local player's flamethrower unit (uWp21), once found
+// Its scan and scale (per player: SeatTurn swaps them).
+struct FlameHideState {
+    double lastScan = -10.0;
+    bool refused = false;
+    float own = 0.0f;    // its scale in hand, as the game set it (0: not seen yet)
+    int lastState = -1;  // logged: 0 shown, 1 hidden
+    int rewrites = 0;
+};
+FlameHideState g_flameHide;
+// Its refuel (per player).
+struct RefuelState {
+    int lastCount = -1;
+    double lastFiredAt = 0.0, lastTickAt = 0.0, owed = 0.0;
+};
+RefuelState g_refuel;
 
 void HideHolsteredFlamethrower(double now) {
     std::uintptr_t& unit = g_flameUnit;
-    static double lastScan = -10.0;
-    static bool refused = false;
-    static float own = 0.0f;    // its scale in hand, as the game set it (0: not seen yet)
-    static int lastState = -1;  // logged: 0 shown, 1 hidden
-    static int rewrites = 0;
+    double& lastScan = g_flameHide.lastScan;
+    bool& refused = g_flameHide.refused;
+    float& own = g_flameHide.own;
+    int& lastState = g_flameHide.lastState;
+    int& rewrites = g_flameHide.rewrites;
     const auto player = engine::LocalPlayer();
     if (!player || !g->match.inMatch) {
         unit = 0;
@@ -3115,8 +3177,10 @@ void HideHolsteredFlamethrower(double now) {
 }
 
 void RefuelFlamethrower(double now) {
-    static int lastCount = -1;
-    static double lastFiredAt = 0.0, lastTickAt = 0.0, owed = 0.0;
+    int& lastCount = g_refuel.lastCount;
+    double& lastFiredAt = g_refuel.lastFiredAt;
+    double& lastTickAt = g_refuel.lastTickAt;
+    double& owed = g_refuel.owed;
     const auto player = engine::LocalPlayer();
     if (!player || !g->match.inMatch || !g->run->HasActiveRun() || g->run->phase() != rm::Phase::ArenaActive) {
         lastCount = -1;
@@ -4541,6 +4605,26 @@ void WakeUroboros() {
 // ROADMAP M1: on a stage listed in maps.json the run owns the arena. The game's own spawns
 // stay off for the whole match (also between arenas), and the core's director decides what
 // to spawn where; the adapter spawns it and reports which unit became which ticket.
+// M10: the player the director spawns around. Solo: the local player. Co-op: each standing player
+// in turn, a few seconds each, so enemies come for both; never a fallen one.
+std::uintptr_t DirectorFocusPlayer(double now) {
+    if (g->run->SeatCount() < 2) return engine::LocalPlayer();
+    std::vector<std::uintptr_t> standing;
+    for (int seat = 0; seat < 2; ++seat) {
+        const auto unit = engine::HumanPlayerInSlot(seat);
+        const auto hp = unit ? engine::ReadHp(unit) : std::nullopt;
+        if (hp && hp->hp > 0) standing.push_back(unit);
+    }
+    if (standing.empty()) return engine::LocalPlayer();
+    static double switchedAt = 0.0;
+    static std::size_t turn = 0;
+    if (now - switchedAt > 4.0) {
+        switchedAt = now;
+        ++turn;
+    }
+    return standing[turn % standing.size()];
+}
+
 void DriveDirector(double now) {
     WatchUnit(now);  // a developer watch, quiet or not
     rm::RunController& run = *g->run;
@@ -4592,7 +4676,7 @@ void DriveDirector(double now) {
         g->noticeUntil = now + 0.3;
     }
     std::optional<std::array<double, 3>> player;
-    if (const auto local = engine::LocalPlayer()) {
+    if (const auto local = DirectorFocusPlayer(now)) {
         player = std::array<double, 3>{ReadOr<float>(local + re5::off::kUnitPosition, 0.0f),
                                        ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f),
                                        ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f)};
@@ -4666,8 +4750,15 @@ void DriveArena(double now) {
         for (int seat = 0; seat < run.SeatCount() && seat < 2; ++seat) {
             const double since = g->match.seatZeroHpSince[static_cast<std::size_t>(seat)];
             if (run.SeatDown(seat) || since < 0 || now - since < 2.0) continue;
+            // Dying is not down: the other player can still help them up (the game's revive). Down
+            // is a death action (die_common, an execution's die_*), or a minute at zero.
+            const auto unit = engine::HumanPlayerInSlot(seat);
+            const std::string action = unit ? engine::CurrentActionName(unit) : std::string();
+            if (action.rfind("cPlAction_pl_act_die", 0) != 0 && now - since < 60.0) continue;
             SeatTurn turn(seat);
             Report(run.OnPlayerDied(now), seat == 0 ? "player 1 down" : "player 2 down");
+            g->notice = "PLAYER " + std::to_string(seat + 1) + " IS DOWN";
+            g->noticeUntil = now + 4.0;
             if (run.phase() != rm::Phase::ArenaActive) return;  // both down: the run failed
         }
     } else if (!bossDown && g->match.zeroHpSince >= 0 && now - g->match.zeroHpSince >= 2.0) {
@@ -4914,6 +5005,28 @@ void ApplyHeals() {
 
 // Time-bonus pickups during a run's arena are chests; the countdown add is suppressed for
 // as long as a run is alive (the countdown is held anyway).
+void UnitPosition(std::uintptr_t unit, float out[3]);
+
+// M10: the player nearest a point (a chest just opened): its seat (0 in solo or unknown).
+int NearestSeat(const float pos[3]) {
+    const int count = g->run->SeatCount();
+    int best = 0;
+    float bestDistance = -1.0f;
+    for (int seat = 0; seat < count; ++seat) {
+        const auto unit = engine::HumanPlayerInSlot(seat);
+        if (!unit) continue;
+        float p[3] = {};
+        UnitPosition(unit, p);
+        const float dx = p[0] - pos[0], dy = p[1] - pos[1], dz = p[2] - pos[2];
+        const float d = dx * dx + dy * dy + dz * dz;
+        if (bestDistance < 0.0f || d < bestDistance) {
+            bestDistance = d;
+            best = seat;
+        }
+    }
+    return best;
+}
+
 void OpenChests(double now) {
     rm::RunController& run = *g->run;
     SuppressMercAddTime(run.HasActiveRun() && g->match.inMatch);
@@ -4935,6 +5048,8 @@ void OpenChests(double now) {
         float pos[3] = {};
         const bool located = TakeTimeBonusPosition(pos);
         if (run.phase() != rm::Phase::ArenaActive) break;
+        // M10: the chest is the nearest player's (their items, their gun refined).
+        SeatTurn turn(located && run.SeatCount() > 1 ? NearestSeat(pos) : 0);
         const auto chest = run.OpenChest(now, EquippedWeaponBaseId());
         if (!chest.ok()) {
             Report(chest.status(), "open chest");
@@ -5004,14 +5119,16 @@ const std::vector<std::string>& SpecialPad(int slot) { return slot == 1 ? g->set
 
 // Held now, and on which device (for the log).
 bool SpecialComboDown(int slot, const char** source = nullptr) {
-    if (RawKeyDown(SpecialKey(slot))) {
+    // M10: player 1 has the keyboard, the DirectInput pad and their XInput pad; player 2 their pad.
+    const int seat = g->run->ActiveSeat();
+    if (seat == 0 && RawKeyDown(SpecialKey(slot))) {
         if (source) *source = "keyboard";
         return true;
     }
     const auto& names = SpecialPad(slot);
     if (names.empty()) return false;
-    const unsigned short xbuttons = RawXInputButtons();
-    bool xinput = true, dinput = true;
+    const unsigned short xbuttons = seat == 0 ? RawXInputButtons() : RawXInputButtonsOf(PadUserOfSeat(seat));
+    bool xinput = true, dinput = seat == 0;
     for (const std::string& name : names) {
         const std::uint16_t bit = XInputBit(name);
         xinput = xinput && bit != 0 && (xbuttons & bit) == bit;
@@ -5046,6 +5163,7 @@ std::string SpecialBindingText(int slot) {
     if (GetKeyNameTextA(SpecialKey(slot) << 16, key, sizeof(key)) <= 0) std::snprintf(key, sizeof(key), "KEY %02X", SpecialKey(slot));
     std::string pad;
     for (const std::string& name : SpecialPad(slot)) pad += (pad.empty() ? "" : "+") + name;
+    if (g->run->ActiveSeat() > 0) return pad;  // M10: player 2 has only their pad
     return Upper(key) + (pad.empty() ? "" : " / " + pad);
 }
 
@@ -7286,7 +7404,18 @@ void DriveSpecial(double now) {
             if (build.Special(slot).Any()) owned.push_back(OwnedFor(slot));
         }
     }
-    SetOwnedInputs(owned);
+    if (run.ActiveSeat() == 0) {
+        SetOwnedInputs(owned);
+        if (run.SeatCount() < 2) {
+            for (int user = 0; user < 4; ++user) SetOwnedPadInputs(user, {});
+        }
+    } else {
+        std::vector<unsigned short> combos;
+        for (const OwnedInput& o : owned) {
+            if (o.xinput) combos.push_back(o.xinput);
+        }
+        SetOwnedPadInputs(PadUserOfSeat(run.ActiveSeat()), combos);
+    }
     WatchDodge(now);
     StepBossMove(now);
     if (!arena) {
@@ -7345,7 +7474,7 @@ void DrawSpecialWidget(int slot) {
     const float k = std::min(display.x / 1280.0f, display.y / 720.0f);
     const float ox = (display.x - 1280.0f * k) * 0.5f;
     const float oy = (display.y - 720.0f * k) * 0.5f;
-    const ImVec2 c(ox + (96.0f + 104.0f * static_cast<float>(slot)) * k, oy + 596.0f * k);
+    const ImVec2 c(ox + (96.0f + 104.0f * static_cast<float>(slot)) * k, oy + (596.0f + g_drawShiftY) * k);
     const float r = 38.0f * k;
     ImDrawList* list = ImGui::GetBackgroundDrawList();
     const bool acting = slot == 1 ? now < g_burstUntil : !g_move.kind.empty() && g_move.kind != "dash";
@@ -7441,7 +7570,7 @@ void DrawWeaponCard() {
     const float size = 15.0f * k, gap = 18.0f * k;
     float width = 0.0f;
     for (const auto& [line, color] : lines) width = std::max(width, font->CalcTextSizeA(size, FLT_MAX, 0.0f, line.c_str()).x);
-    const float right = ox + 1250.0f * k, bottom = oy + 548.0f * k;
+    const float right = ox + 1250.0f * k, bottom = oy + (548.0f + g_drawShiftY) * k;
     const float top = bottom - gap * static_cast<float>(lines.size()) - 12.0f * k;
     const float fade = static_cast<float>(std::min(1.0, (g_cardUntil - now) / 0.5));
     list->AddRectFilled(ImVec2(right - width - 20.0f * k, top), ImVec2(right, bottom), IM_COL32(0, 0, 0, static_cast<int>(150 * fade)), 6.0f * k);
@@ -7536,9 +7665,132 @@ void ApplyMoveSpeed() {
     keep(to);
 }
 
+// ---- M10: each player's specials, moves, weapon card and flamethrower --------------------------
+// The active seat's are the live globals; the others wait here (SwapLateSeat, from SeatTurn).
+struct LateSeat {
+    SpecialMove move;
+    bool comboHeld[2] = {false, false};
+    double specialDeniedUntil = 0.0;
+    double burstUntil = -1.0;
+    std::string armedMove;
+    double armedAt = -1.0;
+    std::uintptr_t twinGuns[2] = {0, 0};
+    int twinGunsGeneration = -1;
+    double dodgeAt = -1.0;
+    bool dodgeSeen = false;
+    BossMove boss;
+    std::uintptr_t grabBroken = 0;
+    std::string cardWeapon;
+    double cardUntil = -1.0;
+    SpeedTrack speed;
+    std::uintptr_t flameUnit = 0;
+    FlameHideState flameHide;
+    RefuelState refuel;
+};
+std::array<LateSeat, 2> g_lateSeats;
+
+void SwapLateSeat(int index) {
+    if (index < 0 || index >= static_cast<int>(g_lateSeats.size())) return;
+    LateSeat& s = g_lateSeats[static_cast<std::size_t>(index)];
+    using std::swap;
+    swap(g_move, s.move);
+    swap(g_comboHeld, s.comboHeld);
+    swap(g_specialDeniedUntil, s.specialDeniedUntil);
+    swap(g_burstUntil, s.burstUntil);
+    swap(g_armedMove, s.armedMove);
+    swap(g_armedAt, s.armedAt);
+    swap(g_twinGuns, s.twinGuns);
+    swap(g_twinGunsGeneration, s.twinGunsGeneration);
+    swap(g_dodgeAt, s.dodgeAt);
+    swap(g_dodgeSeen, s.dodgeSeen);
+    swap(g_boss, s.boss);
+    swap(g_grabBroken, s.grabBroken);
+    swap(g_cardWeapon, s.cardWeapon);
+    swap(g_cardUntil, s.cardUntil);
+    swap(g_speed, s.speed);
+    swap(g_flameUnit, s.flameUnit);
+    swap(g_flameHide, s.flameHide);
+    swap(g_refuel, s.refuel);
+}
+
+// M10: whose pad is whose, read in the split-screen lobby: player 2 joins with START on their pad,
+// player 1 readies with A (or Enter on the keyboard). A run's pads are those of its first match.
+std::array<double, 4> g_padStartAt{-10.0, -10.0, -10.0, -10.0};
+std::array<double, 4> g_padReadyAt{-10.0, -10.0, -10.0, -10.0};
+
+void WatchLobbyPads(double now) {
+    for (int user = 0; user < 4; ++user) {
+        const unsigned short b = RawXInputButtonsOf(user);
+        if (b & 0x0010) g_padStartAt[static_cast<std::size_t>(user)] = now;
+        if (b & 0x1010) g_padReadyAt[static_cast<std::size_t>(user)] = now;  // A or START
+    }
+    static int lastJoin = -1, lastReady = -1;
+    if (g->coopPlayers != 2 || g->run->HasActiveRun()) {
+        lastJoin = lastReady = -1;
+        return;
+    }
+    const auto gw = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
+    const int join = gw ? ReadOr<std::int32_t>(gw + 0x624, -1) : -1;    // player 2: 0 out, 1 in, 2 ready
+    const int ready = gw ? ReadOr<std::int32_t>(gw + 0x620, -1) : -1;   // player 1: 1 in, 2 ready
+    const auto latest = [&](const std::array<double, 4>& at, int skip) {
+        int best = -1;
+        for (int user = 0; user < 4; ++user) {
+            if (user == skip || now - at[static_cast<std::size_t>(user)] > 1.5) continue;
+            if (best < 0 || at[static_cast<std::size_t>(user)] > at[static_cast<std::size_t>(best)]) best = user;
+        }
+        return best;
+    };
+    if (lastJoin == 0 && join == 1) {
+        const int user = latest(g_padStartAt, -1);
+        if (user >= 0) g->p2Pad = user;
+        RM_LOGI("co-op: player 2 joined the lobby with %s", user >= 0 ? ("XInput user " + std::to_string(user)).c_str() : "a pad not seen");
+    }
+    if (lastReady == 1 && ready == 2) {
+        g->p1Pad = latest(g_padReadyAt, g->p2Pad);  // -1: the keyboard
+        RM_LOGI("co-op: player 1 readied with %s", g->p1Pad >= 0 ? ("XInput user " + std::to_string(g->p1Pad)).c_str() : "the keyboard");
+    }
+    lastJoin = join;
+    lastReady = ready;
+}
+
+// M10: the fight's HUD texts on player 2's half of the split screen (the game's text routine draws
+// only in the top view), laid out as the top half's, 360 lines lower.
+matchui::Hud g_splitHud;
+
+void DrawSplitHud() {
+    if (!g_splitHud.split || matchui::IsOpen()) return;
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const float k = std::min(display.x / 1280.0f, display.y / 720.0f);
+    const float ox = (display.x - 1280.0f * k) * 0.5f;
+    const float oy = (display.y - 720.0f * k) * 0.5f;
+    ImDrawList* list = ImGui::GetBackgroundDrawList();
+    ImFont* font = ImGui::GetFont();
+    const auto text = [&](const std::string& s, float x, float y, float size, ImU32 colour) {
+        if (s.empty()) return;
+        const ImVec2 sz = font->CalcTextSizeA(size * k, FLT_MAX, 0.0f, s.c_str());
+        const ImVec2 at(ox + x * k - sz.x * 0.5f, oy + (y + kSplitHalfLines) * k - sz.y * 0.5f);
+        list->AddText(font, size * k, ImVec2(at.x + 1.0f, at.y + 1.0f), IM_COL32(0, 0, 0, 200), s.c_str());
+        list->AddText(font, size * k, at, colour, s.c_str());
+    };
+    text(g_splitHud.notice, 640.0f, 36.0f, 17.0f, IM_COL32(255, 255, 255, 235));
+    text(g_splitHud.left, 224.0f, 128.0f, 19.0f, IM_COL32(255, 255, 255, 235));
+    text(g_splitHud.center, 640.0f, 176.0f, 15.0f, IM_COL32(220, 220, 220, 200));
+    text(g_splitHud.right, 1056.0f, 128.0f, 19.0f, IM_COL32(255, 255, 255, 235));
+}
+
 void DrawSpecialWidgets() {
     rm::RunController& run = *g->run;
     if (!run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || !g->match.inMatch || matchui::IsOpen()) return;
+    if (run.SeatCount() > 1) {
+        // M10: each player's rings on their half of the split screen (player 1 on top).
+        ForEachSeatTurn([&] {
+            g_drawShiftY = run.ActiveSeat() == 0 ? -kSplitHalfLines : 0.0f;
+            DrawSpecialWidget(0);
+            DrawSpecialWidget(1);
+        });
+        g_drawShiftY = 0.0f;
+        return;
+    }
     DrawSpecialWidget(0);
     DrawSpecialWidget(1);
 }
@@ -7555,7 +7807,14 @@ void UpdateMatchStatus() {
     matchui::Hud hud;
     int counter = -1;
     if (g->settings.nativeMatchUi && run.HasActiveRun() && g->match.inMatch) {
-        const rm::RunSnapshot s = run.Snapshot(Now());
+        // What the HUD shows, read straight from the run (a full Snapshot each tick cost 80 us).
+        struct {
+            int remaining, arena, arena_count, keys;
+            std::int64_t supplies;
+            bool keys_needed;
+        } s{run.RemainingEnemies(), run.state().arena_index, run.state().arena_count, run.state().keys,
+            run.state().supplies.balance(),
+            g->content->economy().keys.enabled && !run.state().character.build.chest_keys_exempt};
         if (phase == rm::Phase::ArenaActive) {
             // With the game's clock hidden its big digits count the enemies left; otherwise
             // the number goes into the label.
@@ -7585,7 +7844,9 @@ void UpdateMatchStatus() {
             hud.notice = "NEXT STAGE LOADING";
         }
     }
+    hud.split = run.HasActiveRun() && run.SeatCount() > 1 && g->match.inMatch;
     SetMercHudCounter(counter);
+    g_splitHud = hud;
     matchui::SetHud(hud);
 }
 
@@ -8230,7 +8491,15 @@ bool NativeItemBoxReady() {
 }
 
 // Every frame: once the screen reports it is done (obj+0x3C), it goes, as in phase 3.
+void PollItemBoxNow();
+
+// M10: the screen opens with, and gives back, the grid of the player whose shop asked for it.
 void PollItemBox() {
+    SeatTurn turn(g->itemBoxSeat);
+    PollItemBoxNow();
+}
+
+void PollItemBoxNow() {
     static double openedAt = 0.0;
     static bool paused = false;
     if (g->itemBoxRequested && !matchui::IsOpen()) {
@@ -8446,6 +8715,57 @@ void TraceTwinShots(double now) {
                 ReadOr<float>(s + 0xFD4, 0.0f), ReadOr<std::uint32_t>(s + 0x1CA0, 0), ReadOr<std::uint32_t>(s + 0x1CA4, 0),
                 ReadOr<std::uint32_t>(s + 0xFDC, 0));
     }
+}
+
+// Developer mode: where the mod's time goes, by section (logged every 10 s, the largest first).
+struct ProfileAccum {
+    double us = 0.0;
+    long calls = 0;
+};
+std::map<std::string, ProfileAccum> g_profile;
+double g_profileLoggedAt = 0.0;
+
+class ProfileScope {
+public:
+    explicit ProfileScope(const char* name) : name_(g->settings.developerMode ? name : nullptr) {
+        if (name_) QueryPerformanceCounter(&start_);
+    }
+    ~ProfileScope() {
+        if (!name_) return;
+        static const double usPerTick = [] {
+            LARGE_INTEGER f{};
+            QueryPerformanceFrequency(&f);
+            return 1.0e6 / static_cast<double>(f.QuadPart);
+        }();
+        LARGE_INTEGER end{};
+        QueryPerformanceCounter(&end);
+        ProfileAccum& a = g_profile[name_];
+        a.us += static_cast<double>(end.QuadPart - start_.QuadPart) * usPerTick;
+        ++a.calls;
+    }
+    ProfileScope(const ProfileScope&) = delete;
+    ProfileScope& operator=(const ProfileScope&) = delete;
+
+private:
+    const char* name_;
+    LARGE_INTEGER start_{};
+};
+
+void LogProfile(double now) {
+    if (!g->settings.developerMode || now - g_profileLoggedAt < 10.0) return;
+    const double span = now - g_profileLoggedAt;
+    g_profileLoggedAt = now;
+    std::vector<std::pair<std::string, ProfileAccum>> rows(g_profile.begin(), g_profile.end());
+    g_profile.clear();
+    std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.second.us > b.second.us; });
+    std::string line;
+    for (std::size_t i = 0; i < rows.size() && i < 10; ++i) {
+        char part[96];
+        std::snprintf(part, sizeof(part), " | %s %.0f us/s (%.1f us x %ld)", rows[i].first.c_str(), rows[i].second.us / span,
+                      rows[i].second.us / std::max(1L, rows[i].second.calls), rows[i].second.calls);
+        line += part;
+    }
+    if (!line.empty()) RM_LOGI("profile:%s", line.c_str());
 }
 
 // Developer automation: <data>\dev.command holds one command per file drop.
@@ -8828,6 +9148,19 @@ void PollDevCommand(double now) {
         std::sscanf(command.c_str() + 7, "%d %d", &seat, &hp);
         const auto unit = engine::HumanPlayerInSlot(seat);
         RM_LOGW("dev seathp %d %d: %s", seat, hp, unit && engine::WriteHp(unit, hp) ? "ok" : "no such player");
+    } else if (command == "organize" && run.phase() == rm::Phase::Shop) {
+        // "organize": the SHOP's ORGANIZE INVENTORY row for the player whose turn it is (M10 tests):
+        // the game's screen in solo, the mod's grid screen in co-op.
+        g->itemBoxSeat = UiSeat(run);
+        StashGunsSeen();
+        matchui::Close();
+        if (run.SeatCount() < 2) {
+            g->itemBoxRequested = true;
+        } else {
+            g->organizePick = -1;
+            g->organizeUiRequested = true;  // opened after the tick: the screen builds under the mutex itself
+        }
+        RM_LOGW("dev organize: player %d's grid", g->itemBoxSeat + 1);
     } else if (command.rfind("mortal ", 0) == 0) {
         int seat = 0;
         char what[8] = {};
@@ -9658,12 +9991,16 @@ private:
             g->shopUiRequested = false;
             matchui::Open(nativemenu::ScreenId::MatchShop);
         }
+        if (g->organizeUiRequested) {
+            g->organizeUiRequested = false;
+            matchui::Open(nativemenu::ScreenId::MatchOrganize);
+        }
     }
 
     void TickLocked() {
         std::lock_guard lock(g->mutex);
         const double now = Now();
-        ObserveMatch(now);
+        { ProfileScope p("tick:ObserveMatch"); ObserveMatch(now); }
         if (g->match.inMatch && g->run->HasActiveRun() && g_startMovedGeneration != g->matchGeneration &&
             MoveToMapStart("match start")) {
             g_startMovedGeneration = g->matchGeneration;
@@ -9673,35 +10010,41 @@ private:
         if (g->settings.uiDemo) {
             DriveUiDemo(now);
         } else {
-            HandleNativeMenu(now);
-            WatchArenaMatch(now);
-            TryBeginArena(now);
+            { ProfileScope p("tick:HandleNativeMenu"); HandleNativeMenu(now); }
+            { ProfileScope p("tick:WatchArenaMatch"); WatchArenaMatch(now); }
+            { ProfileScope p("tick:TryBeginArena"); TryBeginArena(now); }
         }
-        UpdateInventoryHold(now);
-        SkipMercIntro(g->run->HasActiveRun());  // a run's match starts without the announcer's intro
-        DriveDirector(now);
-        DriveBossFall(now);
-        TameBossKills();
-        ReleaseBossHolds(now);
-        WatchEventCamera(now);
-        DriveArena(now);
-        DetectEnemyDeaths(now);
-        OpenChests(now);
-        ApplyHeals();
-        DriveSpecial(now);
-        DriveElements(now);
-        UpdateFlameStreamLook(now);
-        DriveFlameStream(now);
-        DriveEffectGallery(now);
-        UpdateModRedirects();
-        DriveGrabBreak(now);
-        TraceTwinShots(now);
-        DrivePartner(now);
-        WatchEquippedWeapon(now);
-        SampleHitStates(now);
-        ApplyMoveSpeed();
-        RefuelFlamethrower(now);
-        HideHolsteredFlamethrower(now);
+        { ProfileScope p("tick:UpdateInventoryHold"); UpdateInventoryHold(now); }
+        { ProfileScope p("tick:SkipMercIntro"); SkipMercIntro(g->run->HasActiveRun()); }  // a run's match starts without the announcer's intro
+        { ProfileScope p("tick:DriveDirector"); DriveDirector(now); }
+        { ProfileScope p("tick:DriveBossFall"); DriveBossFall(now); }
+        { ProfileScope p("tick:TameBossKills"); TameBossKills(); }
+        { ProfileScope p("tick:ReleaseBossHolds"); ReleaseBossHolds(now); }
+        { ProfileScope p("tick:WatchEventCamera"); WatchEventCamera(now); }
+        { ProfileScope p("tick:DriveArena"); DriveArena(now); }
+        { ProfileScope p("tick:DetectEnemyDeaths"); DetectEnemyDeaths(now); }
+        { ProfileScope p("tick:OpenChests"); OpenChests(now); }
+        // M10: player 1's pad is the mod's primary one; each player's own turn below.
+        SetPrimaryPadUser(g->run->HasActiveRun() && g->run->SeatCount() > 1 ? PadUserOfSeat(0) : 0);
+        WatchLobbyPads(now);
+        { ProfileScope playersScope("tick:players");
+        ForEachSeatTurn([&] {
+            ApplyHeals();
+            DriveSpecial(now);
+            DriveGrabBreak(now);
+            WatchEquippedWeapon(now);
+            ApplyMoveSpeed();
+            RefuelFlamethrower(now);
+            HideHolsteredFlamethrower(now);
+        }); }
+        { ProfileScope p("tick:DriveElements"); DriveElements(now); }
+        { ProfileScope p("tick:UpdateFlameStreamLook"); UpdateFlameStreamLook(now); }
+        { ProfileScope p("tick:DriveFlameStream"); DriveFlameStream(now); }
+        { ProfileScope p("tick:DriveEffectGallery"); DriveEffectGallery(now); }
+        { ProfileScope p("tick:UpdateModRedirects"); UpdateModRedirects(); }
+        { ProfileScope p("tick:TraceTwinShots"); TraceTwinShots(now); }
+        { ProfileScope p("tick:DrivePartner"); DrivePartner(now); }
+        { ProfileScope p("tick:SampleHitStates"); SampleHitStates(now); }
         // A run's campaign area keeps the player camera: its camera zones and scripted zone
         // cameras are off (user playtest 2026-11-08, the Volcano).
         areacams::SetRunWantsOff(g->run->HasActiveRun() && CurrentMapKey() >= kFirstCampaignStage);
@@ -9720,6 +10063,7 @@ private:
         static double runMatchSeenAt = -1.0e9;
         if (runMatch) runMatchSeenAt = now;
         autopilot::SetSaveGuard(g_devSaveGuard || now - runMatchSeenAt < kSaveGuardAfterMatch);
+        LogProfile(now);
         SetCoopDeathHold(g->run->HasActiveRun() && g->run->SeatCount() > 1);
         ForEachSeatTurn([&] {
             if (g->run->phase() == rm::Phase::ArenaActive && g->match.inMatch) ApplyBuildHealth();  // gains mid-arena
@@ -9729,15 +10073,15 @@ private:
                 DriveWeaponLevels(now);
             }
         });
-        DriveScope(now);
+        { ProfileScope p("tick:DriveScope"); DriveScope(now); }
         if (g->settings.developerMode) ProbeScene();
         PollDevCommand(now);
-        PollItemBox();
-        SettleFinishedRun();
-        UpdateTimerPolicy();
-        UpdatePreloads();
-        PlaceArenaChests();
-        UpdateMatchStatus();
+        { ProfileScope p("tick:PollItemBox"); PollItemBox(); }
+        { ProfileScope p("tick:SettleFinishedRun"); SettleFinishedRun(); }
+        { ProfileScope p("tick:UpdateTimerPolicy"); UpdateTimerPolicy(); }
+        { ProfileScope p("tick:UpdatePreloads"); UpdatePreloads(); }
+        { ProfileScope p("tick:PlaceArenaChests"); PlaceArenaChests(); }
+        { ProfileScope p("tick:UpdateMatchStatus"); UpdateMatchStatus(); }
         const rm::Phase phase = g->run->phase();
         if (phase != g->lastPhase) {
             RM_LOGI("phase %s -> %s", std::string(rm::PhaseName(g->lastPhase)).c_str(),
@@ -10259,6 +10603,9 @@ void ModDraw() {
 // Each arc over the picture: its two ends where the game's camera shows them (rm::screenfx, the
 // game's own maths), a jagged path between them that changes every 50 ms, a wide faint glow and a
 // thin bright core, fading out at its end. Once a match the camera is logged as read.
+void DrawElementArcsIn(const engine::CameraView& cam, float x0, float y0, float width, float height, double now);
+
+// The arcs in every view: one in solo, each player's on their half of a split screen (M10).
 void DrawElementArcs() {
     if (g_arcs.empty()) return;
     const double now = Now();
@@ -10267,9 +10614,9 @@ void DrawElementArcs() {
         g_arcs.clear();
         return;
     }
-    engine::CameraView cam;
     static int loggedGeneration = -1;
-    if (!engine::ReadCameraView(cam)) {
+    const auto views = engine::ReadCameraViews();
+    if (views.empty()) {
         if (loggedGeneration != g->matchGeneration) {
             loggedGeneration = g->matchGeneration;
             RM_LOGW("arcs: no camera to draw them with (sCamera's viewports); not drawn");
@@ -10277,8 +10624,30 @@ void DrawElementArcs() {
         return;
     }
     const ImVec2 display = ImGui::GetIO().DisplaySize;
+    ImDrawList* list = ImGui::GetBackgroundDrawList();
+    for (const engine::CameraView& cam : views) {
+        // A viewport's region (x0 y0 x1 y1 in screen pixels; none: the whole screen).
+        const bool region = cam.region[2] > cam.region[0] && cam.region[3] > cam.region[1];
+        const float x0 = region ? static_cast<float>(cam.region[0]) : 0.0f;
+        const float y0 = region ? static_cast<float>(cam.region[1]) : 0.0f;
+        const float w = region ? static_cast<float>(cam.region[2] - cam.region[0]) : display.x;
+        const float h = region ? static_cast<float>(cam.region[3] - cam.region[1]) : display.y;
+        if (views.size() > 1 && !region) continue;
+        list->PushClipRect(ImVec2(x0, y0), ImVec2(x0 + w, y0 + h), true);
+        DrawElementArcsIn(cam, x0, y0, w, h, now);
+        list->PopClipRect();
+    }
     if (loggedGeneration != g->matchGeneration) {
         loggedGeneration = g->matchGeneration;
+        RM_LOGI("arcs: drawn in %zu view(s)", views.size());
+    }
+}
+
+void DrawElementArcsIn(const engine::CameraView& cam, float x0, float y0, float width, float height, double now) {
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    static int loggedViews = 0;
+    if (loggedViews < 4) {
+        ++loggedViews;
         RM_LOGI("arcs: camera %s %08X (viewport %d, region %d %d %d %d): eye %.0f %.0f %.0f, target %.0f %.0f %.0f, up %.2f %.2f %.2f, "
                 "fov %.1f, aspect %.3f, near %.1f, far %.0f; screen %.0f x %.0f",
                 engine::ClassName(cam.camera).c_str(), static_cast<unsigned>(cam.camera), cam.viewport, cam.region[0], cam.region[1],
@@ -10310,9 +10679,13 @@ void DrawElementArcs() {
         if (engine::ReadHp(arc.to)) UnitPosition(arc.to, b);
         else std::copy(std::begin(arc.b), std::end(arc.b), b);
         b[1] += kArcHeight;
-        const auto pa = rm::screenfx::Project(viewProj, a, display.x, display.y);
-        const auto pb = rm::screenfx::Project(viewProj, b, display.x, display.y);
+        auto pa = rm::screenfx::Project(viewProj, a, width, height);
+        auto pb = rm::screenfx::Project(viewProj, b, width, height);
         if (!pa || !pb) continue;
+        pa->x += x0;
+        pa->y += y0;
+        pb->x += x0;
+        pb->y += y0;
         if (drawnLogs < 3) {
             ++drawnLogs;
             RM_LOGI("arcs: %s -> %s at %.0f %.0f -> %.0f %.0f on the screen", arc.from ? engine::ClassName(arc.from).c_str() : "the gun",
@@ -10356,11 +10729,24 @@ void DrawUnguarded() {
     DrawMenuPortrait();
     DrawMenuIcons();
     std::lock_guard lock(g->mutex);
-    DrawElementArcs();
-    DrawSpecialWidgets();
-    DrawWeaponCard();
+    { ProfileScope p("draw:DrawElementArcs"); DrawElementArcs(); }
+    { ProfileScope p("draw:DrawSplitHud"); DrawSplitHud(); }
+    { ProfileScope p("draw:DrawSpecialWidgets"); DrawSpecialWidgets(); }
+    if (g->run->SeatCount() > 1) {
+        ForEachSeatTurn([] {  // M10: each player's card on their half
+            g_drawShiftY = g->run->ActiveSeat() == 0 ? -kSplitHalfLines : 0.0f;
+            DrawWeaponCard();
+        });
+        g_drawShiftY = 0.0f;
+    } else {
+        DrawWeaponCard();
+    }
+    ProfileScope snapScope("draw:snapshot");
+    // The run's snapshot only when the overlay draws with it: its own HUD (no native one) or its window.
+    const bool overlayHud = !(g->settings.nativeMatchUi && g->match.inMatch && g->run->HasActiveRun());
+    if (!overlayHud && !overlay::IsFocused()) return;
     const rm::RunSnapshot snapshot = g->run->Snapshot(Now());
-    if (!(g->settings.nativeMatchUi && g->match.inMatch && g->run->HasActiveRun())) DrawHud(snapshot);
+    if (overlayHud) DrawHud(snapshot);
     if (!overlay::IsFocused()) return;
     g_hotkeys = overlay::TakeHotkeys();
 

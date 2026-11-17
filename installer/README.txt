@@ -87,7 +87,7 @@ PLAY
       and a gun offered while your grid is full says TO STORAGE.
     - Dying or beating the run's last boss ends the run and banks your Credits.
 
-TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28
+TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29
   Two players on one PC, the screen split in two: the game's own split screen. Player 2
   needs a controller; player 1 can use the keyboard or another controller.
   In the mod's menu set PLAYERS to 2, choose PLAYER 2's character and outfit, then
@@ -97,15 +97,21 @@ TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28
     - Each player has their own character, skin build, perks, weapons, inventory and
       health. The supplies are shared.
     - An arena has half again as many enemies, and a boss has more health.
-    - A player who falls stays down until the next arena, which they start with half
+    - Each player's skin special is on their own controller (LB+RB, both sticks), with
+      its rings on their half; the arena, enemies left and supplies show on both halves.
+    - A player who is dying (crawling) can still be helped up by the other, the game's
+      way. A player who dies stays down until the next arena, which they start with half
       their health. The run ends when both have fallen.
+    - A chest is the nearest player's. Enemies come for both players.
     - Between arenas player 1 picks a reward and shops first; then the screens say
-      PLAYER 2 and player 2 does. For now any controller or the keyboard works these
-      screens.
-    - The lobby only appears before the first arena.
-  Not there yet: player 2's skin specials, the mod's numbers on player 2's half,
-  ORGANIZE INVENTORY for player 2 (it shows player 1's items), and continuing an
-  interrupted two-player run (it cannot be continued).
+      PLAYER 2 and player 2 does. The screens sit in the top half of the split screen.
+      Any controller or the keyboard works them.
+    - ORGANIZE INVENTORY shows the nine cells of the player whose turn it is: pick one,
+      then another, to swap them. Selling and the storage are not there with two players.
+    - The lobby only appears before the first arena. After the run the game goes back to
+      the Play menu with the run's results.
+  Not there yet: the flamethrower's element look for player 2 (theirs burns as usual),
+  the sniper scope button for player 2, and continuing an interrupted two-player run.
 
 KNOWN ISSUES (ALPHA)
   - The mod does not need the Extra Content DLC or The Mercenaries unlocked, but it has
@@ -113,7 +119,7 @@ KNOWN ISSUES (ALPHA)
     Mercenaries" shows at the top right but something is missing, send your logs.
   - New in this version and not played yet: the bosses on arenas 4 and 8 of longer runs
     and the 13th arena.
-  - Two players (split screen) has only been tried with a simulated second controller:
+  - Two players (split screen) has been tried with a simulated second controller only:
     please report what goes wrong with two real ones.
   - Uroboros Mkono, one of the alternate bosses of arena 8, may not be beatable yet:
     pick another boss there.

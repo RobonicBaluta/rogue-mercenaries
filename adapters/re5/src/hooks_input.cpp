@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstring>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #include "hooks.h"
@@ -46,6 +47,13 @@ DeviceHook g_dataHooks[2];
 unsigned char g_rawKeys[256] = {};
 unsigned char g_rawJoy[32] = {};
 unsigned short g_rawXButtons = 0;
+// M10: every XInput user's last buttons and answer; player 1's pad (the primary user); the combos
+// owned on the other users' pads.
+std::atomic<unsigned short> g_rawXButtonsUser[4];
+std::atomic<bool> g_xConnected[4];
+std::atomic<int> g_primaryPadUser{0};
+std::vector<unsigned short> g_ownedPads[4];
+std::vector<std::pair<ULONGLONG, int>> g_padHolds[4];  // per combo: pressedAt, state (0 free, 1 owned, 2 passed)
 XInputGetStateFn g_origXInputGetState = nullptr;
 XInputGetCapabilitiesFn g_origXInputGetCapabilities = nullptr;
 
@@ -102,6 +110,25 @@ unsigned short HideXInput(unsigned short buttons) {
     for (std::size_t i = 0; i < g_owned.size() && i < g_xHolds.size(); ++i) {
         if (g_owned[i].xinput == 0) continue;
         hide |= static_cast<unsigned short>(HideFor(buttons & g_owned[i].xinput, g_owned[i].xinput, g_xHolds[i], now));
+    }
+    return hide;
+}
+
+// The owned combos on another player's pad (SetOwnedPadInputs), with the same combo window as
+// player 1's (HideFor).
+unsigned short HidePad(int user, unsigned short buttons) {
+    std::lock_guard lock(g_ownedMutex);
+    const ULONGLONG now = GetTickCount64();
+    unsigned short hide = 0;
+    auto& combos = g_ownedPads[user];
+    auto& holds = g_padHolds[user];
+    for (std::size_t i = 0; i < combos.size() && i < holds.size(); ++i) {
+        ComboHold h;
+        h.pressedAt = holds[i].first;
+        h.owned = holds[i].second == 1;
+        h.passed = holds[i].second == 2;
+        hide |= static_cast<unsigned short>(HideFor(buttons & combos[i], combos[i], h, now));
+        holds[i] = {h.pressedAt, h.owned ? 1 : h.passed ? 2 : 0};
     }
     return hide;
 }
@@ -346,6 +373,7 @@ DWORD WINAPI XInputGetStateDetour(DWORD user, void* state) {
     DWORD result = g_origXInputGetState(user, state);
     if (user < 4) {
         g_polls[user].fetch_add(1);
+        g_xConnected[user].store(result == ERROR_SUCCESS);
         if (!g_pollLogged[user].exchange(true)) {
             RM_LOGI("xinput: the game polls user %lu (first answer %lu)", static_cast<unsigned long>(user), static_cast<unsigned long>(result));
         }
@@ -369,16 +397,27 @@ DWORD WINAPI XInputGetStateDetour(DWORD user, void* state) {
             result = ERROR_SUCCESS;
         }
     }
-    if (result == ERROR_SUCCESS && state && user == 0) {
+    const int primary = g_primaryPadUser.load();
+    if (result == ERROR_SUCCESS && state && user < 4) {
         // XINPUT_STATE: DWORD packet number, then XINPUT_GAMEPAD whose first WORD is the buttons.
-        std::memcpy(&g_rawXButtons, static_cast<const char*>(state) + sizeof(DWORD), sizeof(g_rawXButtons));
+        unsigned short raw = 0;
+        std::memcpy(&raw, static_cast<const char*>(state) + sizeof(DWORD), sizeof(raw));
+        g_rawXButtonsUser[user].store(raw);
+        if (static_cast<int>(user) == primary) g_rawXButtons = raw;
+    } else if (user < 4) {
+        g_rawXButtonsUser[user].store(0);
+        if (static_cast<int>(user) == primary) g_rawXButtons = 0;
     }
     if (Blocking() && result == ERROR_SUCCESS && state) {
         // XINPUT_STATE: DWORD packet number followed by the gamepad block.
         std::memset(static_cast<char*>(state) + sizeof(DWORD), 0, 12);
-    } else if (result == ERROR_SUCCESS && state && user == 0) {
+    } else if (result == ERROR_SUCCESS && state && static_cast<int>(user) == primary) {
         auto* buttons = reinterpret_cast<unsigned short*>(static_cast<char*>(state) + sizeof(DWORD));
         const unsigned short hide = HideXInput(*buttons);
+        if (hide) *buttons = static_cast<unsigned short>(*buttons & ~hide);
+    } else if (result == ERROR_SUCCESS && state && user < 4) {
+        auto* buttons = reinterpret_cast<unsigned short*>(static_cast<char*>(state) + sizeof(DWORD));
+        const unsigned short hide = HidePad(static_cast<int>(user), *buttons);
         if (hide) *buttons = static_cast<unsigned short>(*buttons & ~hide);
     }
     if (result == ERROR_SUCCESS && state && Holding()) {
@@ -455,6 +494,27 @@ void SetOwnedInputs(const std::vector<OwnedInput>& inputs) {
 bool RawKeyDown(int scancode) { return scancode >= 0 && scancode < 256 && (g_rawKeys[scancode] & 0x80) != 0; }
 bool RawJoyButton(int index) { return index >= 0 && index < 32 && (g_rawJoy[index] & 0x80) != 0; }
 unsigned short RawXInputButtons() { return g_rawXButtons; }
+
+void SetPrimaryPadUser(int user) {
+    const int clamped = user < 0 || user > 3 ? -1 : user;
+    if (g_primaryPadUser.exchange(clamped) != clamped) {
+        RM_LOGI("input: player 1's pad is %s", clamped < 0 ? "none (the keyboard)" : ("XInput user " + std::to_string(clamped)).c_str());
+    }
+}
+
+int PrimaryPadUser() { return g_primaryPadUser.load(); }
+
+unsigned short RawXInputButtonsOf(int user) { return user >= 0 && user < 4 ? g_rawXButtonsUser[user].load() : 0; }
+
+bool XInputConnected(int user) { return user >= 0 && user < 4 && g_xConnected[user].load(); }
+
+void SetOwnedPadInputs(int user, const std::vector<unsigned short>& combos) {
+    if (user < 0 || user > 3) return;
+    std::lock_guard lock(g_ownedMutex);
+    if (g_ownedPads[user] == combos) return;
+    g_ownedPads[user] = combos;
+    g_padHolds[user].assign(combos.size(), {0, 0});
+}
 
 void SetVirtualPad(int user, const VirtualPad& pad) {
     if (user < 0 || user > 3) return;

@@ -51,6 +51,15 @@ constexpr float kHelpScale = 0.42f;
 constexpr float kNoticeScale = 0.38f;
 constexpr float kSideScale = 0.46f;
 constexpr float kCenterScale = 0.36f;
+// M10: on the game's split screen its text routine draws in the top view only (clipped at the
+// middle), so the screens are laid out in the top half: closer rows, fewer at once, the help above
+// the middle (1280x720 canvas; the top view is 0..360).
+struct Layout {
+    int headerY, firstRowY, rowPitch, helpY, maxRows;
+    float headerScale, rowScale, helpScale;
+};
+constexpr Layout kFullLayout{kHeaderY, kFirstRowY, kRowPitch, kHelpY, kMaxRows, kHeaderScale, kRowScale, kHelpScale};
+constexpr Layout kSplitLayout{22, 64, 32, 290, 7, 0.46f, 0.40f, 0.34f};
 constexpr std::uint32_t kWhite = 0xFFFFFFFFu;
 constexpr std::uint32_t kSelected = 0xFFFFD27Fu;
 constexpr std::uint32_t kLocked = 0xFFFF5050u;
@@ -169,7 +178,8 @@ void Frame(std::uintptr_t self) {
         }
     }
     // Visible window and texts.
-    const int visible = std::min(n, kMaxRows);
+    const Layout& layout = g_hud.split ? kSplitLayout : kFullLayout;
+    const int visible = std::min(n, layout.maxRows);
     if (level->cursor < level->offset) level->offset = level->cursor;
     if (level->cursor >= level->offset + visible) level->offset = level->cursor - visible + 1;
     level->offset = std::clamp(level->offset, 0, std::max(n - visible, 0));
@@ -186,7 +196,7 @@ void Frame(std::uintptr_t self) {
         nativemenu::SetSlotText(nativemenu::kHelpSlot, nativemenu::WrapText(help, kHelpChars));
         nativemenu::SetSlotText(nativemenu::kHeaderSlot, g_screen.header);
     }
-    Draw(self, nativemenu::kHeaderSlot, 640, kHeaderY, kHeaderScale, kWhite);
+    Draw(self, nativemenu::kHeaderSlot, 640, layout.headerY, layout.headerScale, kWhite);
     for (int r = 0; r < visible; ++r) {
         const int index = level->offset + r;
         const Item& item = g_screen.items[static_cast<std::size_t>(index)];
@@ -194,9 +204,9 @@ void Frame(std::uintptr_t self) {
         std::uint32_t colour = item.locked ? kLocked : (item.color != 0 ? item.color : (selected ? kSelected : kWhite));
         // The cursor row is full strength and a little larger; the others are dimmed.
         colour = (colour & 0x00FFFFFFu) | (selected ? 0xFF000000u : 0x98000000u);
-        Draw(self, r, 640, kFirstRowY + r * kRowPitch, selected ? kRowScale * 1.12f : kRowScale, colour);
+        Draw(self, r, 640, layout.firstRowY + r * layout.rowPitch, selected ? layout.rowScale * 1.12f : layout.rowScale, colour);
     }
-    Draw(self, nativemenu::kHelpSlot, 640, kHelpY, kHelpScale, kWhite);
+    Draw(self, nativemenu::kHelpSlot, 640, layout.helpY, layout.helpScale, kWhite);
 }
 
 std::atomic<bool> g_pauseMenuOpen{false};

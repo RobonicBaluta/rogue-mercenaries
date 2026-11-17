@@ -30,6 +30,9 @@ struct Hud {
     std::string left;
     std::string center;
     std::string right;
+    // M10: two players on the game's split screen. The game's text routine draws in the top
+    // view only; the overlay draws the texts on the bottom half (mod.cpp DrawSplitHud).
+    bool split = false;
 };
 void SetHud(const Hud& hud);
 

@@ -164,6 +164,9 @@ struct CameraView {
 };
 /// False when there is none, or its numbers do not look like a camera's.
 bool ReadCameraView(CameraView& out);
+/// Every active viewport's camera that looks like one (M10: a split screen has one per player, each
+/// in its region of the screen).
+std::vector<CameraView> ReadCameraViews();
 /// True when nativePC_MT\<path>.efl exists next to the game.
 bool EffectFileExists(const std::string& path);
 /// Puts `list` into one of the unit's motion list slots through the game's own (reference

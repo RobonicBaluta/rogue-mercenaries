@@ -189,6 +189,21 @@ int __fastcall FlowStepDetour(std::uintptr_t ctx, void*, int kind) {
 // "done" with no back or cancel, which the script reads as +1 and then starts the match).
 void __fastcall SplitSetupDetour(std::uintptr_t ctx, void* edx) {
     const auto state = ReadOr<std::uint8_t>(ctx + 0x24, 0);
+    // A co-op run is over: its last match came back to the lobby too. "Back" there (its result -1)
+    // returns the script to the Iniciar step, whose back (FlowStep20Detour) leads to the title.
+    if (g_toTitle.load() && !g_armed.load() && state == 0x0C) {
+        const auto step = ReadOr<std::uint8_t>(ctx + re5::off::kFlowStepState, 0);
+        const auto screen = ReadOr<std::uintptr_t>(ctx + re5::off::kFlowScreen, 0);
+        if (step == 0) {
+            SafeStore<std::int32_t>(ctx + 0x28, -1);
+            SafeStore<std::uint8_t>(ctx + re5::off::kFlowStepState, 2);
+            RM_LOGI("autopilot: split screen lobby answered with back, to the title");
+        } else if (step == 1 && screen && ReadOr<std::uint8_t>(screen + re5::off::kScreenDone, 1) == 0) {
+            SafeStore<std::uint8_t>(screen + re5::off::kScreenBack, 1);
+            SafeStore<std::uint8_t>(screen + re5::off::kScreenDone, 1);
+            RM_LOGI("autopilot: split screen lobby was up; answered with back, to the title");
+        }
+    }
     const bool skip = g_skipLobbyPending.load() || (g_armed.load() && g_mode.load() == 2 && g_skipLobby.load());
     if (skip && state == 0x0C) {
         if (const auto gw = GameWork()) {
