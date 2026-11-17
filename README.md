@@ -198,9 +198,10 @@ Use this folder, not a mod manager: one that installs the mod into the game repl
 Only the costume file of a mod is used: the Excella mod's other files (her weapons, items, menus and music) are not.
 
 **Ada Wong** (a character of her own, from the [Ada Bundle](https://www.nexusmods.com/residentevil5goldedition/mods/1091)
-by Cond3mned, Kreed, Nealktorce, Yumiko, Freyr95 and Cixon). Unzip all of it (her voice lines and her gun too). She
-wears Sheva's Default, Clubbin and Tribal slots (those outfits stay Sheva's) and moves like Sheva; while she is played
-the Px4 shows as her own gun. The mod says its hair is off in two of the outfits. Without the mod CHARACTERS lists her
+by Cond3mned, Kreed, Nealktorce, Yumiko, Freyr95 and Cixon). Unzip all of it (her voice lines and its Px4 file too).
+She wears Sheva's Default, Clubbin and Tribal slots (those outfits stay Sheva's) and moves like Sheva. The mod's Px4
+file is the game's Px4 (the same model, sounds and effects) with new hand movements for it: while she is played her
+Px4 is held its way. The mod says its hair is off in two of the outfits. Without the mod CHARACTERS lists her
 in red, and pressing her opens the mod's page; it has no preview, so SKINS shows Sheva's bust unless a picture is put
 in the mod's folder as `ada_agent.png`, `ada_assignment.png` or `ada_red_dress.png` (a square bust; transparency is
 kept). Her own perks: **Butterfly**

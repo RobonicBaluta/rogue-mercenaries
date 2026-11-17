@@ -328,7 +328,7 @@ BUILDS = {
     # bow for her crossbow. A slot whose costume holds another gun hands her its pistol (pistol_in_hand).
     'ada_agent': {
         'name': 'Intel Network', 'icon': 'radio',
-        # Her own gun: the Px4, which the bundle's uWp1f shows as hers.
+        # The Px4, held her way (the bundle's uWp1f: the game's Px4, with new hand movements for it).
         'summary': 'Her own Px4. Shops give a free NEW STOCK and better rarities. Handguns 25 percent harder. Supplies x0.85.',
         'starting_weapon': 'px4', 'free_shop_rerolls': 1, 'rarity_shift': 0.2, 'category_damage': {'handgun': 0.25},
         'supplies_mult': 0.85, 'pistol_in_hand': True,
@@ -580,7 +580,8 @@ MOD_SKINS.append(
 # Ada Wong: a character of her own, worn in Sheva's outfits (CHAR | Ada Bundle - Sheva, version 3, by
 # Cond3mned, Kreed, Nealktorce, Yumiko, Freyr95 and Cixon, 2026-11-17, the user: "do the same thing with
 # the new character ADA, that uses Sheva as base"; its page from the user). It replaces Sheva's Default
-# (slot 3, uPl01ShebaNormal), Clubbin (4, Cos1) and Tribal (5, Cos2), the Px4's model (uWp1f, her gun)
+# (slot 3, uPl01ShebaNormal), Clubbin (4, Cos1) and Tribal (5, Cos2), the Px4's archive (uWp1f: against the
+# game's, the same model, textures, sounds and effects; only Jill's Px4 and Chris's M93R hand movements differ)
 # and brings her voice lines (emo_voice\mod\adaw). No preview of its own: the user's busts (official
 # renders, cut out and cropped 2026-11-17) in the mod's folder as ada_agent.png and so on; without them
 # SKINS shows Sheva's bust.
