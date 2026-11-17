@@ -105,6 +105,9 @@ void SetVirtualPad(int user, const VirtualPad& pad);
 VirtualPad GetVirtualPad(int user);
 /// How often the game polled XInputGetState for `user` (0..3) since the start.
 unsigned long XInputPolls(int user);
+/// M10 local co-op: while on, a human player's death (the death camera that ends the match) is held
+/// back as long as another human player has health left.
+void SetCoopDeathHold(bool on);
 
 void SetHookSink(HookSink* sink);
 

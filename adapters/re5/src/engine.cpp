@@ -131,6 +131,8 @@ bool VerifySignatures(unsigned timeoutMs) {
                         SignatureOk("flow_merc_setup") && SignatureOk("startup21_stage_write") &&
                         SignatureOk("startup22_character_write");
     g_caps.resultsScreen = g_caps.flowScript && SignatureOk("merce_results_move");
+    g_caps.splitScreen = g_caps.flowScript && SignatureOk("flow_split_setup");
+    g_caps.gameOverCheck = SignatureOk("app_request") && SignatureOk("game_over_check");
     g_caps.gameoverScreen = g_caps.resultsScreen && SignatureOk("gameover_move") && SignatureOk("gameover_move_slot") &&
                             SignatureOk("gameover_decide") && SignatureOk("gameover_decide_block");
     g_caps.pauseScreen = g_caps.playMenu && SignatureOk("pause_move");
@@ -1102,9 +1104,36 @@ PlayersSnapshot ReadPlayers() {
     return snap;
 }
 
+namespace {
+thread_local std::uintptr_t t_actingPlayer = 0;  // ActingPlayerScope
+}  // namespace
+
+ActingPlayerScope::ActingPlayerScope(std::uintptr_t unit) : previous_(t_actingPlayer) {
+    if (unit) t_actingPlayer = unit;
+}
+
+ActingPlayerScope::~ActingPlayerScope() { t_actingPlayer = previous_; }
+
 std::uintptr_t LocalPlayer() {
+    if (t_actingPlayer) return t_actingPlayer;
     const auto snap = ReadPlayers();
     return snap.localSlot >= 0 ? snap.players[snap.localSlot].object : 0;
+}
+
+int HumanPlayerSlot(std::uintptr_t unit) {
+    if (!unit) return -1;
+    const auto snap = ReadPlayers();
+    for (const auto& p : snap.players) {
+        if (p.object == unit && p.control == 0) return p.slot;
+    }
+    return -1;
+}
+
+std::uintptr_t HumanPlayerInSlot(int slot) {
+    if (slot < 0 || slot >= 4) return 0;
+    const auto snap = ReadPlayers();
+    const auto& p = snap.players[static_cast<std::size_t>(slot)];
+    return p.object && p.control == 0 ? p.object : 0;
 }
 
 EnemiesSnapshot ReadEnemies() {

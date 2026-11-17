@@ -49,6 +49,8 @@ struct Verified {
     bool setupScreens = false;  // Mercenaries setup screens (direct start)
     bool fader = false;         // the game's screen fader (black-out while the autopilot runs)
     bool flowScript = false;    // title-flow script steps (direct start without screens)
+    bool splitScreen = false;   // M10: the split-screen setup script (a co-op run's matches)
+    bool gameOverCheck = false; // M10: the match's game-over check (a co-op run's fallen player)
     bool inventory = false;     // uPlayer inventory layout and add helpers
     bool resultsScreen = false; // Mercenaries results screen move (auto-accept between stages)
     bool gameoverScreen = false; // game-over screen move and its decide (a run's death answers "no")
@@ -238,7 +240,24 @@ struct PlayersSnapshot {
     int localSlot = -1;  // best guess, see LocalPlayerSlot()
 };
 PlayersSnapshot ReadPlayers();
+/// The player the mod plays for: the local one (the first human player, control 0), or on this
+/// thread the unit an ActingPlayerScope names (M10 local co-op: the second player's turn).
 std::uintptr_t LocalPlayer();
+/// M10 local co-op: a human player's sPlayer slot (control 0; a split-screen match's player 1 is
+/// slot 0, player 2 slot 1), -1 for any other unit; the human player in a slot, 0 when none.
+int HumanPlayerSlot(std::uintptr_t unit);
+std::uintptr_t HumanPlayerInSlot(int slot);
+/// While alive, LocalPlayer() on this thread answers `unit` (0: no change).
+class ActingPlayerScope {
+public:
+    explicit ActingPlayerScope(std::uintptr_t unit);
+    ~ActingPlayerScope();
+    ActingPlayerScope(const ActingPlayerScope&) = delete;
+    ActingPlayerScope& operator=(const ActingPlayerScope&) = delete;
+
+private:
+    std::uintptr_t previous_ = 0;
+};
 
 struct EnemiesSnapshot {
     int listed = 0;

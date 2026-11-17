@@ -16,6 +16,9 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
+#include <mutex>
+#include <string>
 
 #include "engine.h"
 #include "log.h"
@@ -65,6 +68,15 @@ thread_local std::uint32_t t_injectBits = 0;  // menu input bits added for this 
 std::atomic<bool> g_resultsHook{false};
 std::atomic<bool> g_toTitle{false};  // a run is over: skip its results screen, then back to the title
 std::atomic<int> g_devMercMode{-1};  // SetDevMercenariesMode
+// M10 local co-op (Plan::mode, costume2, skip_lobby; SetLobby).
+std::atomic<int> g_mode{0};
+std::atomic<int> g_costume2{-1};
+std::atomic<bool> g_skipLobby{false};
+std::atomic<bool> g_skipLobbyPending{false};
+std::mutex g_lobbyMutex;
+std::vector<std::pair<int, std::uint32_t>> g_lobby;
+using SplitSetupFn = void(__fastcall*)(std::uintptr_t ctx, void*);
+SplitSetupFn g_origSplitSetup = nullptr;
 std::atomic<DWORD> g_toTitleAt{0};
 constexpr DWORD kToTitleTimeoutMs = 180000;  // never left set into plain Mercenaries play
 
@@ -101,9 +113,9 @@ int __fastcall FlowStep20Detour(std::uintptr_t ctx, void*) {
     if (g_armed.load() && ReadOr<std::uint8_t>(ctx + re5::off::kFlowStepState, 1) == 0) {
         if (const auto gw = GameWork()) {
             SafeStore<std::int32_t>(gw + re5::off::kGameWorkMercItem, 0);
-            SafeStore<std::int32_t>(gw + re5::off::kGameWorkMercMode, 0);
+            SafeStore<std::int32_t>(gw + re5::off::kGameWorkMercMode, g_mode.load());
             SafeStore<std::uint8_t>(gw + re5::off::kGameWorkMercFlag, 0);
-            RM_LOGI("autopilot: flow Iniciar/Solo answered, screen skipped");
+            RM_LOGI("autopilot: flow Iniciar/%s answered, screen skipped", g_mode.load() == 2 ? "Split screen" : "Solo");
             return 1;
         }
     }
@@ -146,6 +158,19 @@ int __fastcall FlowStepDetour(std::uintptr_t ctx, void*, int kind) {
             if (kind == 0) {
                 SafeStore<std::int32_t>(gw + re5::off::kGameWorkStage, g_stage.load());
                 RM_LOGI("autopilot: flow stage %d written, stage screen skipped", g_stage.load());
+                if (g_mode.load() == 2) {
+                    // Split screen: no character screen; the lobby that follows shows these costumes.
+                    SafeStore<std::int32_t>(gw + re5::off::kGameWorkCharacter, g_costume.load());
+                    if (g_costume2.load() >= 0) SafeStore<std::int32_t>(gw + re5::off::kGameWorkCharacter + 4, g_costume2.load());
+                    if (g_skipLobby.load()) {
+                        std::lock_guard lock(g_lobbyMutex);
+                        for (const auto& [off, value] : g_lobby) SafeStore<std::uint32_t>(gw + static_cast<std::size_t>(off), value);
+                        g_skipLobbyPending = true;
+                    }
+                    RM_LOGI("autopilot: split screen, costumes %d and %d written; %s", g_costume.load(), g_costume2.load(),
+                            g_skipLobby.load() ? "the lobby is skipped (its fields written back)" : "the lobby is the game's");
+                    Disarm("split screen: stage and costumes written");
+                }
             } else {
                 SafeStore<std::int32_t>(gw + re5::off::kGameWorkCharacter, g_costume.load());
                 RM_LOGI("autopilot: flow costume slot %d written, character screen skipped", g_costume.load());
@@ -155,6 +180,41 @@ int __fastcall FlowStepDetour(std::uintptr_t ctx, void*, int kind) {
         }
     }
     return g_origFlowStep(ctx, kind);
+}
+
+// The split-screen setup script. After a split-screen match the game comes back to its lobby (state
+// 0xC) with both players still in, not to the stage screen (2026-11-17), so a later arena of a co-op
+// run is answered there: the next stage, both costumes and the lobby's fields written, then the
+// lobby skipped (before it is created: straight to the match start, 0x14) or accepted (it is up: its
+// "done" with no back or cancel, which the script reads as +1 and then starts the match).
+void __fastcall SplitSetupDetour(std::uintptr_t ctx, void* edx) {
+    const auto state = ReadOr<std::uint8_t>(ctx + 0x24, 0);
+    const bool skip = g_skipLobbyPending.load() || (g_armed.load() && g_mode.load() == 2 && g_skipLobby.load());
+    if (skip && state == 0x0C) {
+        if (const auto gw = GameWork()) {
+            SafeStore<std::int32_t>(gw + re5::off::kGameWorkStage, g_stage.load());
+            SafeStore<std::int32_t>(gw + re5::off::kGameWorkCharacter, g_costume.load());
+            if (g_costume2.load() >= 0) SafeStore<std::int32_t>(gw + re5::off::kGameWorkCharacter + 4, g_costume2.load());
+            {
+                std::lock_guard lock(g_lobbyMutex);
+                for (const auto& [off, value] : g_lobby) SafeStore<std::uint32_t>(gw + static_cast<std::size_t>(off), value);
+            }
+            const auto step = ReadOr<std::uint8_t>(ctx + re5::off::kFlowStepState, 0);
+            const auto screen = ReadOr<std::uintptr_t>(ctx + re5::off::kFlowScreen, 0);
+            if (step == 0) {
+                SafeStore<std::uint8_t>(ctx + 0x24, 0x14);
+                RM_LOGI("autopilot: split screen lobby skipped, stage %d (both players joined in the run's first match)", g_stage.load());
+            } else if (step == 1 && screen) {
+                SafeStore<std::uint8_t>(screen + re5::off::kScreenBack, 0);
+                SafeStore<std::uint8_t>(screen + 0x3F, 0);  // cancel
+                SafeStore<std::uint8_t>(screen + re5::off::kScreenDone, 1);
+                RM_LOGI("autopilot: split screen lobby accepted, stage %d (both players joined in the run's first match)", g_stage.load());
+            }
+            g_skipLobbyPending = false;
+            Disarm("split screen: the lobby answered");
+        }
+    }
+    g_origSplitSetup(ctx, edx);
 }
 
 std::uint32_t __stdcall MenuInputDetour(int pad, int mode) {
@@ -380,6 +440,10 @@ bool Install() {
                   reinterpret_cast<void**>(&g_origFlowStep20))) {
         g_flowHooks = true;
         RM_LOGI("autopilot: title-flow script hooks queued (screens are skipped)");
+        if (engine::Caps().splitScreen &&
+            QueueHook(re5::addr::kFnFlowSplitSetup, reinterpret_cast<void*>(&SplitSetupDetour), reinterpret_cast<void**>(&g_origSplitSetup))) {
+            RM_LOGI("autopilot: split-screen setup hook queued (a co-op run's later lobbies are skipped)");
+        }
     }
     if (g_flowHooks.load() && engine::Caps().resultsScreen &&
         QueueHook(re5::addr::kFnMerceResultsMove, reinterpret_cast<void*>(&ResultsMoveDetour),
@@ -430,10 +494,34 @@ void Arm(const Plan& plan) {
     g_screen = 0;
     g_armedAt = GetTickCount();
     g_toTitle = false;
+    g_mode = plan.mode;
+    g_costume2 = plan.costume2;
+    g_skipLobby = plan.mode == 2 && plan.skip_lobby && LobbyKnown();
+    g_skipLobbyPending = false;
     g_armed = true;
-    RM_LOGI("autopilot: armed (stage %d, costume slot %d)", plan.stage, plan.costume);
-    // With the flow hooks no screen ever takes input; black out from here.
-    if (g_flowHooks.load() && !g_faded.exchange(true)) FadeToBlack(4);
+    RM_LOGI("autopilot: armed (stage %d, costume slot %d, mode %d, player 2 costume %d%s)", plan.stage, plan.costume, plan.mode,
+            plan.costume2, g_skipLobby.load() ? ", lobby skipped" : "");
+    // With the flow hooks no screen ever takes input; black out from here (not before a split-screen
+    // lobby the players must see).
+    const bool lobbyShown = plan.mode == 2 && !g_skipLobby.load();
+    if (g_flowHooks.load() && !lobbyShown && !g_faded.exchange(true)) FadeToBlack(4);
+}
+
+void SetLobby(const std::vector<std::pair<int, std::uint32_t>>& fields) {
+    std::lock_guard lock(g_lobbyMutex);
+    g_lobby = fields;
+    std::string line;
+    for (const auto& [off, value] : fields) {
+        char part[32];
+        std::snprintf(part, sizeof(part), " +%03X=%X", static_cast<unsigned>(off), value);
+        line += part;
+    }
+    RM_LOGI("autopilot: split-screen lobby fields kept:%s", line.c_str());
+}
+
+bool LobbyKnown() {
+    std::lock_guard lock(g_lobbyMutex);
+    return !g_lobby.empty();
 }
 
 void SetDevMercenariesMode(int mode) {

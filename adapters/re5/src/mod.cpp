@@ -157,6 +157,7 @@ struct MatchState {
     int localHp = 0;
     int localMaxHp = 0;
     double zeroHpSince = -1.0;
+    std::array<double, 2> seatZeroHpSince{-1.0, -1.0};  // M10: each human player's (sPlayer slot)
 };
 
 struct ModState {
@@ -221,6 +222,9 @@ struct ModState {
     int selectedCharacter = 0;
     std::string selectedSkin;  // skin id for the selected character (empty = default)
     std::string selectedLength;  // the ladder length of the next run (empty = the first)
+    int coopPlayers = 1;         // M10 local co-op: 1 solo, 2 split screen (the Play menu's PLAYERS)
+    std::string p2Skin;          // M10: player 2's chosen skin id (empty: the first other outfit)
+    int p2Costume = -1;          // M10: player 2's costume slot in the run's first match
     rm::PerkCategory perkCategory = rm::PerkCategory::Style;  // slot opened from the PERKS screen
     std::string diagnosticsResult;
     // Set when any mod code threw; the game keeps running with vanilla rules.
@@ -317,6 +321,14 @@ void ObserveMatch(double now) {
         if (m.zeroHpSince < 0) m.zeroHpSince = now;
     } else {
         m.zeroHpSince = -1.0;
+    }
+    for (std::size_t slot = 0; slot < m.seatZeroHpSince.size(); ++slot) {
+        const auto& p = players.players[slot];
+        if (p.object && p.control == 0 && p.hp.hp <= 0 && p.hp.max > 0) {
+            if (m.seatZeroHpSince[slot] < 0) m.seatZeroHpSince[slot] = now;
+        } else {
+            m.seatZeroHpSince[slot] = -1.0;
+        }
     }
     const MercTimerView merc = ReadMercTimer();
     if (merc.recent) {
@@ -691,13 +703,25 @@ int PickMap(int avoid, int level = 0) {
     return keys[static_cast<std::size_t>(static_cast<std::uint64_t>(counter.QuadPart) % keys.size())];
 }
 
+int PlayerTwoCostume();
+
 // Arms the autopilot for the next match on map `key`: a Mercenaries stage directly, a campaign
 // area through Mercenaries stage 0 with the host loading its stage number instead.
 void ArmMap(int key, int costume) {
     const bool campaign = key >= kFirstCampaignStage;
     g->currentStage = key;
     host::SetStageOverride(campaign ? key : -1);
-    autopilot::Arm({campaign ? 0 : key, costume, std::max(1, g->settings.stageCount)});
+    autopilot::Plan plan{campaign ? 0 : key, costume, std::max(1, g->settings.stageCount)};
+    // M10: a co-op run's matches are the game's split-screen ones (the first with its lobby, where
+    // player 2 joins; the later ones without it).
+    const bool running = g->run->HasActiveRun();
+    const bool coop = running ? g->run->SeatCount() > 1 : g->coopPlayers == 2;
+    if (coop && engine::Caps().splitScreen) {
+        plan.mode = 2;
+        plan.costume2 = running ? g->p2Costume : PlayerTwoCostume();
+        plan.skip_lobby = running;
+    }
+    autopilot::Arm(plan);
 }
 
 // The director map of the stage being played. maps.json keys Mercenaries maps by their stage
@@ -908,23 +932,233 @@ void ScanModSkins() {
     g_modRedirectSkin = "-";  // set again on the next tick
 }
 
-// The redirects of the skin chosen or played now (each tick; only a change touches them).
+// ---- M10 local co-op: each player's turn -------------------------------------------------------
+// The skin build's maximum health (M8, Barry): once per match, scaled from the maximum the match
+// started with; health is then full (a stage change restores the carried health after this).
+// The maximum the match started with, and what the build made of it (one per match).
+struct BuildHealthState {
+    int generation = -1;
+    int baseMax = 0;
+    int appliedMax = 0;
+};
+BuildHealthState g_buildHealth;
+
+// What the adapter keeps of one player (the inventory and health a stage change carries, the
+// build's health). The active seat's is in the live state (g->transition, g_buildHealth); the
+// other seats' wait here, swapped in by SeatTurn as the core's seats are (rm::SeatScope).
+struct AdapterSeat {
+    std::vector<std::pair<std::uint32_t, int>> carry;
+    std::array<std::uint32_t, 9> cells{};
+    std::array<int, 9> counts{};
+    int hp = -1;
+    BuildHealthState buildHealth;
+};
+std::array<AdapterSeat, 2> g_adapterSeats;
+int g_adapterSeat = 0;
+
+void SwapAdapterSeat(AdapterSeat& s) {
+    using std::swap;
+    swap(g->transition.carry, s.carry);
+    swap(g->transition.cells, s.cells);
+    swap(g->transition.counts, s.counts);
+    swap(g->transition.hp, s.hp);
+    swap(g_buildHealth, s.buildHealth);
+}
+
+void ActivateAdapterSeat(int seat) {
+    if (seat == g_adapterSeat || seat < 0 || seat >= static_cast<int>(g_adapterSeats.size())) return;
+    SwapAdapterSeat(g_adapterSeats[static_cast<std::size_t>(g_adapterSeat)]);
+    SwapAdapterSeat(g_adapterSeats[static_cast<std::size_t>(seat)]);
+    g_adapterSeat = seat;
+}
+
+// One player's turn: the run's seat (the core's player-facing calls act for it), the adapter's
+// per-player state, and LocalPlayer() answering that player's unit (its sPlayer slot is its seat:
+// a split-screen match's player 2 is slot 1). Seat 0 changes nothing. Hold g->mutex.
+class SeatTurn {
+public:
+    explicit SeatTurn(int seat)
+        : seat_(Clamp(seat)), previous_(g_adapterSeat), scope_(*g->run, seat_), acting_(seat_ > 0 ? engine::HumanPlayerInSlot(seat_) : 0) {
+        ActivateAdapterSeat(seat_);
+    }
+    ~SeatTurn() { ActivateAdapterSeat(previous_); }
+    SeatTurn(const SeatTurn&) = delete;
+    SeatTurn& operator=(const SeatTurn&) = delete;
+    [[nodiscard]] int seat() const { return seat_; }
+    /// The seat of a human player's unit (0 for anything else and in solo).
+    static int OfUnit(std::uintptr_t unit) {
+        const int slot = engine::HumanPlayerSlot(unit);
+        return Clamp(slot);
+    }
+
+private:
+    static int Clamp(int seat) { return seat > 0 && seat < g->run->SeatCount() ? seat : 0; }
+    int seat_ = 0;
+    int previous_ = 0;
+    rm::SeatScope scope_;
+    engine::ActingPlayerScope acting_;
+};
+
+// `fn` once per player of the run, each in its turn (once in solo; a seat whose player is not in
+// the match is skipped, so player 1's unit never stands in for them).
+template <class Fn>
+void ForEachSeatTurn(Fn&& fn) {
+    const int count = std::max(1, g->run->SeatCount());
+    for (int seat = 0; seat < count; ++seat) {
+        if (seat > 0 && engine::HumanPlayerInSlot(seat) == 0) continue;
+        SeatTurn turn(seat);
+        fn();
+    }
+}
+
+// The seat whose screen the between-arena menus show: the first player still to choose a reward
+// or still in the shop (player 1 otherwise).
+int UiSeat(rm::RunController& run) {
+    const int count = run.SeatCount();
+    if (count < 2) return 0;
+    const rm::Phase phase = run.phase();
+    for (int seat = 0; seat < count; ++seat) {
+        if (phase == rm::Phase::Shop) {
+            const auto& status = run.state().seat_status;
+            if (static_cast<std::size_t>(seat) < status.size() && !status[static_cast<std::size_t>(seat)].shop_done) return seat;
+        } else if (phase == rm::Phase::RewardSelection) {
+            rm::SeatScope scope(run, seat);
+            if (!run.state().reward_chosen) return seat;
+        }
+    }
+    return 0;
+}
+
+// A player who fell in the last arena starts this one with the co-op revive share of their health.
+void ReviveSeat(int seat) {
+    const auto unit = engine::HumanPlayerInSlot(seat);
+    const auto hp = unit ? engine::ReadHp(unit) : std::nullopt;
+    if (!hp || hp->max <= 0) return;
+    const int wanted = std::max(1, static_cast<int>(std::lround(hp->max * g->content->economy().coop.revive_health)));
+    if (wanted < hp->hp) engine::WriteHp(unit, wanted);
+    RM_LOGI("co-op: player %d is back with %d/%d health", seat + 1, std::min(wanted, hp->hp), hp->max);
+}
+
+// ---- M10 local co-op: player 2's choice ------------------------------------------------------
+const rm::SkinAvailability* SelectedSkin(const rm::CharacterAvailability& c);
+int PortraitOf(const std::string& skinId, int costume);
+
+// Every outfit player 2 may wear: the selectable skins of the selectable characters.
+struct PlayerTwoOption {
+    const rm::CharacterAvailability* character = nullptr;
+    const rm::SkinAvailability* skin = nullptr;
+};
+std::vector<PlayerTwoOption> PlayerTwoOptions(const std::vector<rm::CharacterAvailability>& characters) {
+    std::vector<PlayerTwoOption> out;
+    for (const auto& c : characters) {
+        if (c.gate != rm::CharacterGate::Selectable) continue;
+        for (const auto& s : c.skins) {
+            if (s.gate == rm::CharacterGate::Selectable) out.push_back({&c, &s});
+        }
+    }
+    return out;
+}
+
+// Player 1's skin id as the menu has it (empty: none).
+std::string PlayerOneSkin(const std::vector<rm::CharacterAvailability>& characters) {
+    if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) return {};
+    const rm::SkinAvailability* s = SelectedSkin(characters[static_cast<std::size_t>(g->selectedCharacter)]);
+    return s != nullptr ? s->id : std::string();
+}
+
+// Two different outfits of one game costume slot cannot be worn together when one is a mod's (the
+// slot is one file; RunController::AddSeat refuses them too).
+bool SkinsClash(const std::string& a, const std::string& b) {
+    if (a.empty() || b.empty() || a == b) return false;
+    const rm::SkinDef* sa = nullptr;
+    const rm::SkinDef* sb = nullptr;
+    for (const rm::CharacterDef& c : g->content->characters()) {
+        for (const rm::SkinDef& s : c.skins) {
+            if (s.id == a) sa = &s;
+            if (s.id == b) sb = &s;
+        }
+    }
+    return sa != nullptr && sb != nullptr && sa->costume_index == sb->costume_index && (sa->mod || sb->mod);
+}
+
+struct PlayerTwoPick {
+    std::string character;
+    std::string skin;
+    std::string label;  // "Sheva  BSAA"
+    int costume = -1;
+    int portrait = -1;
+};
+// Player 2's outfit: the chosen one while it can be worn, else the first outfit in another costume
+// slot than player 1's.
+PlayerTwoPick PlayerTwoChoice(const std::vector<rm::CharacterAvailability>& characters) {
+    const auto options = PlayerTwoOptions(characters);
+    const std::string one = PlayerOneSkin(characters);
+    const PlayerTwoOption* pick = nullptr;
+    for (const auto& o : options) {
+        if (o.skin->id == g->p2Skin && !SkinsClash(one, o.skin->id)) pick = &o;
+    }
+    for (std::size_t i = 0; pick == nullptr && i < options.size(); ++i) {
+        const auto& o = options[i];
+        bool sameSlot = false;
+        for (const auto& c : characters) {
+            for (const auto& s : c.skins) sameSlot = sameSlot || (s.id == one && s.costume_index == o.skin->costume_index);
+        }
+        if (!sameSlot) pick = &o;
+    }
+    PlayerTwoPick out;
+    if (pick == nullptr) return out;
+    out.character = pick->character->id;
+    out.skin = pick->skin->id;
+    out.label = pick->character->name + (pick->character->skins.size() > 1 ? "  " + pick->skin->name : std::string());
+    out.costume = static_cast<int>(pick->skin->costume_index);
+    out.portrait = PortraitOf(pick->skin->id, out.costume);
+    return out;
+}
+
+int PlayerTwoCostume() { return PlayerTwoChoice(g->run->Characters()).costume; }
+
+// The skins worn now: each seat's in a run, else the menu's (player 2's too with PLAYERS 2).
+std::vector<std::string> WornSkins() {
+    rm::RunController& run = *g->run;
+    std::vector<std::string> out;
+    if (run.HasActiveRun()) {
+        for (int seat = 0; seat < run.SeatCount(); ++seat) {
+            rm::SeatScope scope(run, seat);
+            out.push_back(run.state().skin_id);
+        }
+    } else {
+        out.push_back(g->selectedSkin);
+        if (g->coopPlayers == 2) out.push_back(PlayerTwoChoice(run.Characters()).skin);
+    }
+    return out;
+}
+
+// The redirects of the skins chosen or played now (each tick; only a change touches them). Two
+// players wear two skins; they never share a costume slot when one is a mod's (SkinsClash).
 void UpdateModRedirects() {
     if (g_devRedirects) return;
-    rm::RunController& run = *g->run;
-    const std::string skin = run.HasActiveRun() ? run.state().skin_id : g->selectedSkin;
-    const auto it = g_modSkinFiles.find(skin);
     const std::filesystem::path effects = effectspack::Ready();  // the mod's own effects (effects_pack.h)
-    const std::string key = (it == g_modSkinFiles.end() ? std::string() : skin) + (effects.empty() ? "" : "|effects");
+    std::string key;
+    std::vector<fileredirect::Redirect> redirects;
+    std::vector<std::string> wearing;
+    for (const std::string& skin : WornSkins()) {
+        const auto it = g_modSkinFiles.find(skin);
+        if (it == g_modSkinFiles.end()) continue;
+        key += (key.empty() ? "" : ",") + skin;
+        redirects.insert(redirects.end(), it->second.begin(), it->second.end());
+        wearing.push_back(skin);
+    }
+    key += effects.empty() ? "" : "|effects";
     if (key == g_modRedirectSkin) return;
     g_modRedirectSkin = key;
-    std::vector<fileredirect::Redirect> redirects = it == g_modSkinFiles.end() ? std::vector<fileredirect::Redirect>{} : it->second;
     if (!effects.empty()) {
         const std::string tail = std::string("Image\\Archive\\") + rm::fx::kEffectsArchive + ".arc";
         redirects.push_back({fileredirect::NormaliseTail(std::wstring(tail.begin(), tail.end())), effects.wstring()});
     }
     fileredirect::SetRedirects(redirects);
-    if (it != g_modSkinFiles.end()) RM_LOGI("mods: %s wears its mod (%zu files read from the mods folder)", skin.c_str(), it->second.size());
+    for (const std::string& skin : wearing) {
+        RM_LOGI("mods: %s wears its mod (%zu files read from the mods folder)", skin.c_str(), g_modSkinFiles[skin].size());
+    }
 }
 
 // A mod's page in the browser (only a Nexus Mods page, as the content allows).
@@ -1368,18 +1602,34 @@ nativemenu::Screen RunResultsScreen(rm::RunController& run) {
     return screen;
 }
 
+// The mod menu's first screen, row by row (Build and Decide walk the same list).
+enum class MainRow { Continue, Start, Players, PlayerTwo, Characters, Perks, Credits };
+std::vector<MainRow> MainRows(rm::RunController& run) {
+    std::vector<MainRow> rows;
+    if (run.CanResumeRun()) rows.push_back(MainRow::Continue);
+    rows.push_back(MainRow::Start);
+    if (engine::Caps().splitScreen) {
+        rows.push_back(MainRow::Players);
+        if (g->coopPlayers == 2) rows.push_back(MainRow::PlayerTwo);
+    }
+    rows.push_back(MainRow::Characters);
+    rows.push_back(MainRow::Perks);
+    rows.push_back(MainRow::Credits);
+    return rows;
+}
+
 // Screens of the native menu, built from the run controller. Called on the
 // game's menu thread, so everything happens under the mod mutex.
 class MenuModel final : public nativemenu::Model {
 public:
     nativemenu::Screen Build(nativemenu::ScreenId id) override {
         std::lock_guard lock(g->mutex);
-        return Guarded("menu build", nativemenu::Screen{}, [&] { return BuildLocked(id); });
+        return Guarded("menu build", nativemenu::Screen{}, [&] { return BuildTurn(id); });
     }
 
     nativemenu::Decision Decide(nativemenu::ScreenId id, int index) override {
         std::lock_guard lock(g->mutex);
-        return Guarded("menu decide", nativemenu::Decision{}, [&] { return DecideLocked(id, index); });
+        return Guarded("menu decide", nativemenu::Decision{}, [&] { return DecideTurn(id, index); });
     }
 
 private:
@@ -1389,32 +1639,96 @@ private:
 
     std::string CreditsLine() const { return Plural(g->run->profile().credits.balance(), "credit"); }
 
+    // M10: the between-arena screens show and act for the player whose turn it is (UiSeat).
+    nativemenu::Screen BuildTurn(ScreenId id) {
+        const int seat = UiSeat(*g->run);
+        SeatTurn turn(seat);
+        nativemenu::Screen screen = BuildLocked(id);
+        if (turn.seat() > 0 && (id == ScreenId::MatchRewards || id == ScreenId::MatchShop || id == ScreenId::MatchOrganize ||
+                                id == ScreenId::MatchElement)) {
+            screen.header = "PLAYER " + std::to_string(turn.seat() + 1) + "   " + screen.header;
+        }
+        return screen;
+    }
+
+    nativemenu::Decision DecideTurn(ScreenId id, int index) {
+        SeatTurn turn(UiSeat(*g->run));
+        return DecideLocked(id, index);
+    }
+
     nativemenu::Screen BuildLocked(ScreenId id) {
         rm::RunController& run = *g->run;
         const rm::Profile& profile = run.profile();
         nativemenu::Screen screen;
         switch (id) {
-            case ScreenId::Main:
+            case ScreenId::Main: {
                 screen.header = "ROGUE MERCENARIES   " + Upper(CreditsLine());
                 screen.portrait = SelectedPortrait(run);
-                screen.items = {
-                    {"START RUN", "Solo Mercenaries on any stage. Pick your character,\nthe run starts with the match.",
-                     false, 0, "crosshair"},
-                    {"CHARACTERS", "Choose who you play. Locked characters show\nhow to unlock them.", false, 0, "person"},
-                    {"PERKS", "Permanent perks. Locked ones are bought with credits.", false, 0, "medal"},
-                    {"CREDITS", "Your credits, lifetime records and weapon unlocks.", false, 0, "credits"},
-                };
-                if (run.CanResumeRun()) {
-                    const rm::ActiveRunCheckpoint& cp = *run.interrupted_run();
-                    const rm::CharacterDef* who = g->content->FindCharacter(cp.character_id);
-                    screen.items.insert(screen.items.begin(),
-                                        Item{"CONTINUE RUN",
-                                             (who ? Plain(who->name) : std::string("Your run")) + ", " +
-                                                 Plural(cp.arenas_cleared, "arena") + " cleared.\nThe arena you left starts again.",
-                                             false, 0, "flag"});
-                    screen.items[1].help = "A new run. The one you can continue\nis banked as interrupted.";
+                const bool two = g->coopPlayers == 2;
+                for (const MainRow row : MainRows(run)) {
+                    switch (row) {
+                        case MainRow::Continue: {
+                            const rm::ActiveRunCheckpoint& cp = *run.interrupted_run();
+                            const rm::CharacterDef* who = g->content->FindCharacter(cp.character_id);
+                            screen.items.push_back(Item{"CONTINUE RUN",
+                                                        (who ? Plain(who->name) : std::string("Your run")) + ", " +
+                                                            Plural(cp.arenas_cleared, "arena") + " cleared.\nThe arena you left starts again.",
+                                                        false, 0, "flag"});
+                            break;
+                        }
+                        case MainRow::Start:
+                            screen.items.push_back(Item{"START RUN",
+                                                        run.CanResumeRun() ? "A new run. The one you can continue\nis banked as interrupted."
+                                                        : two ? "Two players, the screen split in two. Player 2 joins\nwith START on a second controller."
+                                                              : "Solo Mercenaries on any stage. Pick your character,\nthe run starts with the match.",
+                                                        false, 0, "crosshair"});
+                            break;
+                        case MainRow::Players:
+                            screen.items.push_back(Item{two ? "PLAYERS   2, SPLIT SCREEN" : "PLAYERS   1",
+                                                        "Press to switch between one player and two\n(split screen, a controller for player 2).",
+                                                        false, 0, "person"});
+                            break;
+                        case MainRow::PlayerTwo: {
+                            const PlayerTwoPick p2 = PlayerTwoChoice(run.Characters());
+                            Item item{"PLAYER 2   " + (p2.skin.empty() ? std::string("NONE") : Upper(Plain(p2.label))),
+                                      "Player 2's character and outfit, with its build.\nPress to choose.", p2.skin.empty(), 0, "person"};
+                            item.portrait = p2.portrait;
+                            screen.items.push_back(std::move(item));
+                            break;
+                        }
+                        case MainRow::Characters:
+                            screen.items.push_back(Item{"CHARACTERS", "Choose who you play. Locked characters show\nhow to unlock them.",
+                                                        false, 0, "person"});
+                            break;
+                        case MainRow::Perks:
+                            screen.items.push_back(Item{"PERKS", "Permanent perks. Locked ones are bought with credits.", false, 0, "medal"});
+                            break;
+                        case MainRow::Credits:
+                            screen.items.push_back(Item{"CREDITS", "Your credits, lifetime records and weapon unlocks.", false, 0, "credits"});
+                            break;
+                    }
                 }
                 break;
+            }
+            case ScreenId::Player2: {
+                screen.header = "PLAYER 2";
+                const auto characters = run.Characters();
+                const PlayerTwoPick current = PlayerTwoChoice(characters);
+                const std::string one = PlayerOneSkin(characters);
+                for (const PlayerTwoOption& o : PlayerTwoOptions(characters)) {
+                    Item item;
+                    item.label = Upper(Plain(o.character->name + (o.character->skins.size() > 1 ? "  " + o.skin->name : std::string())));
+                    if (o.skin->id == current.skin) item.label += "   <";
+                    item.icon = "person";
+                    item.portrait = PortraitOf(o.skin->id, static_cast<int>(o.skin->costume_index));
+                    item.locked = SkinsClash(one, o.skin->id);
+                    item.help = item.locked ? std::string("Player 1's outfit takes this costume slot\n(a mod's outfit is one file of the game).")
+                                            : "Player 2 plays " + Plain(o.character->name) + " in this outfit,\nwith its build and perks.";
+                    screen.items.push_back(std::move(item));
+                }
+                screen.empty_help = "No character is open yet.";
+                break;
+            }
             case ScreenId::RunResults:
                 screen = RunResultsScreen(run);
                 break;
@@ -1808,20 +2122,35 @@ private:
             d.outcome = receipt.ok() ? Outcome::Refresh : Outcome::Denied;
         };
         switch (id) {
-            case ScreenId::Main:
-                // CONTINUE RUN comes first while a run can go on; the other rows follow it.
-                if (run.CanResumeRun()) {
-                    if (index == 0) {
-                        if (!ContinueRun()) {
-                            d.outcome = Outcome::Denied;
-                            break;
-                        }
-                        d.outcome = Outcome::StartRun;
+            case ScreenId::Main: {
+                // CONTINUE RUN comes first while a run can go on; the other rows follow it (MainRows).
+                const auto rows = MainRows(run);
+                if (index < 0 || index >= static_cast<int>(rows.size())) break;
+                const MainRow row = rows[static_cast<std::size_t>(index)];
+                if (row == MainRow::Continue) {
+                    if (!ContinueRun()) {
+                        d.outcome = Outcome::Denied;
                         break;
                     }
-                    --index;
+                    d.outcome = Outcome::StartRun;
+                    break;
                 }
-                if (index == 0) {
+                if (row == MainRow::Players) {
+                    g->coopPlayers = g->coopPlayers == 2 ? 1 : 2;
+                    RM_LOGI("menu: players %d", g->coopPlayers);
+                    d.outcome = Outcome::Refresh;
+                    break;
+                }
+                if (row == MainRow::PlayerTwo) {
+                    d.outcome = Outcome::Push;
+                    d.next = ScreenId::Player2;
+                    break;
+                }
+                if (row == MainRow::Start && g->coopPlayers == 2 && PlayerTwoChoice(run.Characters()).skin.empty()) {
+                    d.outcome = Outcome::Denied;  // no outfit player 2 can wear
+                    break;
+                }
+                if (row == MainRow::Start) {
                     // The ladder: with more than one length open, RUN LENGTH picks it.
                     const auto lengths = run.LadderLengths();
                     const auto open = std::count_if(lengths.begin(), lengths.end(), [](const auto& l) { return l.open; });
@@ -1836,9 +2165,24 @@ private:
                     d.outcome = Outcome::StartRun;
                 } else {
                     d.outcome = Outcome::Push;
-                    d.next = index == 1 ? ScreenId::Characters : index == 2 ? ScreenId::Perks : ScreenId::Credits;
+                    d.next = row == MainRow::Characters ? ScreenId::Characters : row == MainRow::Perks ? ScreenId::Perks : ScreenId::Credits;
                 }
                 break;
+            }
+            case ScreenId::Player2: {
+                const auto characters = run.Characters();
+                const auto options = PlayerTwoOptions(characters);
+                if (index < 0 || index >= static_cast<int>(options.size())) break;
+                const PlayerTwoOption& o = options[static_cast<std::size_t>(index)];
+                if (SkinsClash(PlayerOneSkin(characters), o.skin->id)) {
+                    d.outcome = Outcome::Denied;
+                    break;
+                }
+                g->p2Skin = o.skin->id;
+                RM_LOGI("menu: player 2 wears %s (%s)", o.skin->id.c_str(), o.character->id.c_str());
+                d.outcome = Outcome::Back;
+                break;
+            }
             case ScreenId::RunLength: {
                 const auto lengths = run.LadderLengths();
                 if (index < 0 || index >= static_cast<int>(lengths.size())) break;
@@ -1971,8 +2315,14 @@ private:
                     if (!st.ok()) { d.outcome = Outcome::Denied; break; }
                     const rm::OfferView& o = s.reward_offers[static_cast<std::size_t>(index)];
                     RM_LOGI("reward chosen: %s %s (%s): %s", o.kind.c_str(), o.title.c_str(), o.rarity.c_str(), o.detail.c_str());
+                    if (run.phase() == rm::Phase::RewardSelection && run.PendingElementChoices().empty()) {
+                        d.outcome = Outcome::Refresh;  // M10: the other player's turn
+                        break;
+                    }
                     d.outcome = Outcome::Push;
-                    d.next = run.phase() == rm::Phase::Shop ? ScreenId::MatchShop : ScreenId::MatchRunOver;
+                    d.next = run.phase() == rm::Phase::Shop             ? ScreenId::MatchShop
+                             : run.phase() == rm::Phase::RewardSelection ? ScreenId::MatchRewards
+                                                                         : ScreenId::MatchRunOver;
                     if (!run.PendingElementChoices().empty()) {  // refined to Epic: its element first
                         g_elementNext = d.next;
                         d.next = ScreenId::MatchElement;
@@ -2032,6 +2382,10 @@ private:
                 const rm::Status st = run.LeaveShop();
                 Report(st, "leave shop");
                 if (!st.ok()) { d.outcome = Outcome::Denied; break; }
+                if (run.phase() == rm::Phase::Shop) {
+                    d.outcome = Outcome::Refresh;  // M10: the other player's shop
+                    break;
+                }
                 d.outcome = Outcome::Push;
                 d.next = ScreenId::MatchRoute;
                 break;
@@ -2150,12 +2504,58 @@ void LogRunMap() {
     }
 }
 
+// M10: the split-screen match's second player joins the run. Their character is the match's
+// slot-1 class (a mod character in its costume when player 2 chose one), the skin player 2 chose
+// when the lobby kept its costume, else that class's own outfit in the costume the lobby left.
+void JoinPlayerTwo(rm::RunController& run) {
+    const auto players = engine::ReadPlayers();
+    const engine::PlayerInfo* two = nullptr;
+    for (const auto& p : players.players) {
+        if (p.object && p.slot == 1 && p.control == 0) two = &p;
+    }
+    if (two == nullptr) {
+        RM_LOGW("co-op: no second player in this match (players %d); the run is solo", players.count);
+        g->toasts.Push("Rogue Mercenaries: player 2 did not join; the run is solo");
+        return;
+    }
+    const auto gw = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
+    const int costume = gw ? ReadOr<std::int32_t>(gw + re5::off::kGameWorkCharacter + 4, -1) : -1;
+    const std::string classCharacter = engine::CharacterIdForClass(two->className);
+    const PlayerTwoPick choice = PlayerTwoChoice(run.Characters());
+    std::string character = classCharacter;
+    std::string skin;
+    if (!choice.skin.empty() && choice.costume == costume && PlaysAs(classCharacter, choice.character, choice.skin)) {
+        character = choice.character;
+        skin = choice.skin;
+    } else if (const rm::CharacterDef* def = g->content->FindCharacter(classCharacter)) {
+        for (const rm::SkinDef& s : def->skins) {
+            if (!s.mod && s.costume_index == costume && skin.empty()) skin = s.id;
+        }
+    }
+    const rm::Status status = run.AddSeat(character, skin);
+    Report(status, ("co-op: player 2 joins as " + character + " (" + (skin.empty() ? std::string("default") : skin) + ")").c_str());
+    if (!status.ok()) {
+        g->toasts.Push("Rogue Mercenaries: player 2 could not join: " + status.message);
+        return;
+    }
+    g->p2Costume = costume;
+    // The lobby's fields with both players in: the later arenas skip the lobby with them.
+    std::vector<std::pair<int, std::uint32_t>> fields;
+    for (const int off : {0x490, 0x494, 0x610, 0x614, 0x618, 0x61C, 0x620, 0x624, 0x654, 0x658}) {
+        fields.emplace_back(off, gw ? ReadOr<std::uint32_t>(gw + static_cast<std::size_t>(off), 0) : 0);
+    }
+    autopilot::SetLobby(fields);
+    g->toasts.Push("Rogue Mercenaries: player 2 joined the run");
+}
+
 void HandleNativeMenu(double now) {
     nativemenu::SetModel(&g_menuModel);
     matchui::SetModel(&g_menuModel);
     if (nativemenu::TakeChosen()) {
         g->rogueModePending = true;
-        g->toasts.Push("Rogue Mercenaries: choose Solo, a stage and Chris or Sheva");
+        g->toasts.Push(g->coopPlayers == 2 && engine::Caps().splitScreen
+                           ? "Rogue Mercenaries: two players. Player 2 presses START to join, then both ready"
+                           : "Rogue Mercenaries: choose Solo, a stage and Chris or Sheva");
     }
     if (!g->rogueModePending) return;
     rm::RunController& run = *g->run;
@@ -2183,6 +2583,7 @@ void HandleNativeMenu(double now) {
         g->toasts.Push("Rogue Mercenaries: " + status.message);
         return;
     }
+    if (g->coopPlayers == 2 && engine::Caps().splitScreen) JoinPlayerTwo(run);
     if (g->content->economy().ladder.enabled) {
         std::string beaten;
         for (const std::string& key : run.profile().stats.bosses_beaten) beaten += (beaten.empty() ? "" : ", ") + key;
@@ -2954,11 +3355,13 @@ void RestoreCarriedHp() {
 // Route chosen: end this match through the game's own time-up, accept its results screen
 // behind the fader and let the title-flow script restart the match on another stage.
 void StartStageTransition(double now) {
-    SnapshotInventory();
-    g->transition.hp = -1;
-    if (const auto local = engine::LocalPlayer()) {
-        if (const auto hp = engine::ReadHp(local)) g->transition.hp = hp->hp;
-    }
+    ForEachSeatTurn([] {
+        SnapshotInventory();
+        g->transition.hp = -1;
+        if (const auto local = engine::LocalPlayer()) {
+            if (const auto hp = engine::ReadHp(local)) g->transition.hp = hp->hp;
+        }
+    });
     // The point the run goes on from after a crash or a quit (2026-11-07): the run between arenas
     // and what the next arena starts with.
     Report(g->run->SaveResumePoint(AdapterResumeState()), "resume point");
@@ -3045,16 +3448,6 @@ void RestockWeapons() {
 
 constexpr float kStartTolerance = 1000.0f;  // engine units (10 m) from the map's start
 constexpr float kStartLevel = 40.0f;        // or another level there (s204: the boat under the ledge)
-
-// The skin build's maximum health (M8, Barry): once per match, scaled from the maximum the match
-// started with; health is then full (a stage change restores the carried health after this).
-// The maximum the match started with, and what the build made of it (one per match).
-struct BuildHealthState {
-    int generation = -1;
-    int baseMax = 0;
-    int appliedMax = 0;
-};
-BuildHealthState g_buildHealth;
 
 // The skin build's maximum health (M8: Barry, Midnight Wesker) times the health a run gained
 // (Excella). Applied at an arena's start (health then full; a stage change restores the carried
@@ -3285,9 +3678,13 @@ void TryBeginArena(double now) {
             g->arenaEndRequested = false;
             if (status.ok()) {
                 ArenaBegan(now);
-                ApplyCarriedInventory();
-                RestockWeapons();
-                RestoreCarriedHp();
+                ForEachSeatTurn([] {
+                    ApplyBuildHealth();  // (player 1's: done by ArenaBegan) before the carried health
+                    ApplyCarriedInventory();
+                    RestockWeapons();
+                    RestoreCarriedHp();
+                });
+                for (const int seat : run.ConsumeRevivedSeats()) ReviveSeat(seat);
                 g->transition.pending = false;
                 RM_LOGI("stage change: arena %d started on stage %d", run.state().arena_index, g->currentStage);
             }
@@ -3303,7 +3700,7 @@ void TryBeginArena(double now) {
     Report(status, "begin arena");
     g->arenaEndRequested = false;
     if (status.ok()) ArenaBegan(now);
-    if (status.ok() && waitingFirst) ApplyLoadoutToInventory();
+    if (status.ok() && waitingFirst) ForEachSeatTurn([] { ApplyLoadoutToInventory(); });
 }
 
 // The arena start's hold (the user, 2026-11-11: "when you start a stage and change weapon fast, it
@@ -3872,6 +4269,7 @@ double g_coopNext = 0.0;
 std::map<int, std::uint32_t> g_coopGw;
 std::string g_coopPlayersLast, g_coopViewsLast, g_coopPadsLast;
 bool g_devSaveGuard = false;
+unsigned g_devMortalSeats = 0;  // "mortal <seat> on|off": dev invulnerability spares that player (M10 tests)
 double g_padRelease[4] = {0.0, 0.0, 0.0, 0.0};
 unsigned short g_padReleaseButtons[4] = {0, 0, 0, 0};
 bool g_padReleaseSticks[4] = {false, false, false, false};
@@ -4262,8 +4660,18 @@ void DriveArena(double now) {
     // stagger: DriveBossFall); nothing ends the arena meanwhile, and a boss beaten stays beaten.
     const bool bossDown = g->boss.dead && run.IsArenaComplete();
     if (bossDown && now - g->boss.diedAt < kBossFallSeconds) return;
-    // Player death: HP held at zero (Mercenaries solo has no revive).
-    if (!bossDown && g->match.zeroHpSince >= 0 && now - g->match.zeroHpSince >= 2.0) {
+    // M10: in co-op a player at zero health is down (the match goes on: SetCoopDeathHold); the run
+    // fails when both are.
+    if (!bossDown && run.SeatCount() > 1) {
+        for (int seat = 0; seat < run.SeatCount() && seat < 2; ++seat) {
+            const double since = g->match.seatZeroHpSince[static_cast<std::size_t>(seat)];
+            if (run.SeatDown(seat) || since < 0 || now - since < 2.0) continue;
+            SeatTurn turn(seat);
+            Report(run.OnPlayerDied(now), seat == 0 ? "player 1 down" : "player 2 down");
+            if (run.phase() != rm::Phase::ArenaActive) return;  // both down: the run failed
+        }
+    } else if (!bossDown && g->match.zeroHpSince >= 0 && now - g->match.zeroHpSince >= 2.0) {
+        // Player death: HP held at zero (Mercenaries solo has no revive).
         Report(run.OnPlayerDied(now), "player died");
         return;
     }
@@ -8414,6 +8822,28 @@ void PollDevCommand(double now) {
         autopilot::SetDevMercenariesMode(command == "mercenaries split" ? 2 : command == "mercenaries duo" ? 1 : 0);
         nativemenu::DecideMercenariesOnPlayMenu();
         RM_LOGW("dev %s: the game's Mercenaries menu at the next Play menu (no run)", command.c_str());
+    } else if (command.rfind("seathp ", 0) == 0) {
+        // "seathp <seat> <hp>": a co-op player's health (M10 tests: a player down).
+        int seat = 0, hp = 0;
+        std::sscanf(command.c_str() + 7, "%d %d", &seat, &hp);
+        const auto unit = engine::HumanPlayerInSlot(seat);
+        RM_LOGW("dev seathp %d %d: %s", seat, hp, unit && engine::WriteHp(unit, hp) ? "ok" : "no such player");
+    } else if (command.rfind("mortal ", 0) == 0) {
+        int seat = 0;
+        char what[8] = {};
+        std::sscanf(command.c_str() + 7, "%d %7s", &seat, what);
+        if (seat >= 0 && seat < 8) {
+            if (std::string(what) == "on") g_devMortalSeats |= 1u << seat; else g_devMortalSeats &= ~(1u << seat);
+        }
+        RM_LOGW("dev mortal %d %s (mask %X)", seat, what, g_devMortalSeats);
+    } else if (command.rfind("coop ", 0) == 0) {
+        // "coop on [skin]" / "coop off": PLAYERS 2 (player 2's skin) or 1, as the Play menu sets them.
+        std::istringstream words(command.substr(5));
+        std::string what, skin;
+        words >> what >> skin;
+        g->coopPlayers = what == "on" ? 2 : 1;
+        if (!skin.empty()) g->p2Skin = skin;
+        RM_LOGW("dev coop: players %d, player 2 skin '%s'", g->coopPlayers, g->p2Skin.c_str());
     } else if (command == "saveguard on" || command == "saveguard off") {
         g_devSaveGuard = command == "saveguard on";
         RM_LOGW("dev %s", command.c_str());
@@ -9043,6 +9473,7 @@ private:
     float Outgoing(const OutgoingHit& hit) {
         if (!hit.attackerIsLocal) return 1.0f;
         std::lock_guard lock(g->mutex);
+        SeatTurn turn(SeatTurn::OfUnit(hit.attacker));
         rm::HitContext ctx;
         ctx.now = Now();
         ctx.weapon_id = EquippedWeaponBaseId();
@@ -9125,6 +9556,7 @@ private:
             return;
         }
         std::lock_guard lock(g->mutex);
+        SeatTurn turn(r.attackerIsLocal ? SeatTurn::OfUnit(r.attacker) : 0);
         rm::KillEvent kill;
         kill.now = Now();
         kill.by_player = r.attackerIsLocal;
@@ -9154,6 +9586,7 @@ private:
         return Guarded("heal", amount, [&] {
             std::lock_guard lock(g->mutex);
             if (!g->run->HasActiveRun()) return amount;
+            SeatTurn turn(SeatTurn::OfUnit(player));
             const auto hp = engine::ReadHp(engine::LocalPlayer());
             rm::HealContext ctx;
             ctx.now = Now();
@@ -9177,6 +9610,7 @@ private:
 
     IncomingDecision IncomingImpl(const IncomingHit& hit) {
         std::lock_guard lock(g->mutex);
+        SeatTurn turn(SeatTurn::OfUnit(hit.player));
         rm::IncomingContext ctx;
         ctx.now = Now();
         ctx.amount = hit.damage;
@@ -9184,7 +9618,8 @@ private:
         ctx.hp_max = hit.maxHp;
         const auto result = g->run->ComputeIncoming(ctx);
         IncomingDecision decision;
-        decision.multiplier = g->settings.devInvulnerable
+        const bool invulnerable = g->settings.devInvulnerable && (g_devMortalSeats & (1u << turn.seat())) == 0;
+        decision.multiplier = invulnerable
                                   ? 0.0f
                                   : static_cast<float>(result.multiplier) * g->settings.devIncomingMultiplier;
         if (g->settings.probeHits && g->run->phase() == rm::Phase::ArenaActive) {
@@ -9201,6 +9636,7 @@ private:
                 r.maxHp);
         if (r.appliedDamage <= 0) return;  // absorbed (developer invulnerability)
         std::lock_guard lock(g->mutex);
+        SeatTurn turn(SeatTurn::OfUnit(r.player));
         rm::DamageEvent damage;
         damage.now = Now();
         damage.amount = std::max(0, r.hpBefore - r.hpAfter);
@@ -9284,12 +9720,15 @@ private:
         static double runMatchSeenAt = -1.0e9;
         if (runMatch) runMatchSeenAt = now;
         autopilot::SetSaveGuard(g_devSaveGuard || now - runMatchSeenAt < kSaveGuardAfterMatch);
-        if (g->run->phase() == rm::Phase::ArenaActive && g->match.inMatch) ApplyBuildHealth();  // gains mid-arena
-        // Items earned by perks, rewards and the shop wait until the player is in a match.
-        if (g->match.inMatch && engine::LocalPlayer() && g->run->phase() != rm::Phase::Idle && ReadMercTimer().recent) {
-            ApplyItemGrants();
-            DriveWeaponLevels(now);
-        }
+        SetCoopDeathHold(g->run->HasActiveRun() && g->run->SeatCount() > 1);
+        ForEachSeatTurn([&] {
+            if (g->run->phase() == rm::Phase::ArenaActive && g->match.inMatch) ApplyBuildHealth();  // gains mid-arena
+            // Items earned by perks, rewards and the shop wait until the player is in a match.
+            if (g->match.inMatch && engine::LocalPlayer() && g->run->phase() != rm::Phase::Idle && ReadMercTimer().recent) {
+                ApplyItemGrants();
+                DriveWeaponLevels(now);
+            }
+        });
         DriveScope(now);
         if (g->settings.developerMode) ProbeScene();
         PollDevCommand(now);

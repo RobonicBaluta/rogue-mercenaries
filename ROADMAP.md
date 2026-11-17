@@ -348,19 +348,34 @@ times the bosses' health (tuned with `rm_sim`); two mod skins on the same base s
    arena budget (1.5) and boss health (1.6); events carry "seat"; a run counts for every seat's
    character; a co-op run saves no resume point (so no snapshot version change). Left for F6:
    `rm_sim` co-op runs.
-3. F2, starting a co-op run: PLAY offers SOLO and CO-OP; player 2 joins with START on their
-   pad and picks with it; the autopilot answers MODE SELECT with SPLIT SCREEN and the stage and
-   lobby screens (uIdStartUp21, 24) with the run's choices instead of Solo's.
-4. F3, the adapter per player: the 60 uses of the local player in `mod.cpp` become a player
-   list; a hit applies the shooter's perks; loadout, inventory, the pistol in hand, the intro's
-   inventory hold, the flamethrower's stream and the arcs per unit; two worn mod skins and voice
-   folders.
-5. F4, screens for two: rewards and shop in each player's half, each read from its pad; the
-   native Organize/Buy screen with both panels; the next arena starts when both are ready.
+3. ~~F2, starting a co-op run.~~ Done 2026-11-17 (verified in game, a virtual pad as player 2):
+   the Play menu's PLAYERS row (1 / 2, SPLIT SCREEN) and PLAYER 2 screen (every open outfit; one
+   that would share player 1's costume slot with a mod's is refused); START RUN arms MODE SELECT
+   with SPLIT SCREEN, the stage, both costumes, and leaves the game's lobby on screen, where
+   player 2 joins with START and both ready; at the match player 2 joins the run (AddSeat, the
+   match's slot-1 class); both outfits' mod files are redirected. After a split-screen match the
+   game comes back to its lobby with both players in: later arenas answer it there (stage,
+   costumes and the first lobby's fields written, the lobby skipped).
+4. F3, the adapter per player. Done in part 2026-11-17 (verified in game): `SeatTurn` makes a
+   player's turn (the core's seat, the adapter's per-player state, `LocalPlayer()` answering that
+   player's unit through engine::ActingPlayerScope); the combat hooks take any human player; hits,
+   kills, damage and heals act for their player; each player gets the loadout, the build's health,
+   item grants, gun levels, the stage change's carried inventory and health. Open: player 2's
+   specials and pad bindings, the flamethrower's stream and element arcs for player 2, the
+   per-player state still global in mod.cpp (combos, buffs shown, the inventory hold).
+5. F4, screens for two. Done in part 2026-11-17 (verified in game): between arenas the reward and
+   shop screens take turns (UiSeat: "PLAYER 2" in the header), each player's choice and purchases
+   theirs. Open: each player's own half of the screen and pad (one menu, any pad, for now); the
+   native Organize/Buy screen still shows player 1's inventory; an element choice after a refine
+   in co-op.
 6. F5, HUD and drawing per viewport: the overlay's notices and the element arcs projected with
    each view's camera and clipped to its half.
-7. F6, director and balance: enemy and boss scaling, down and revive, the run's end, `rm_sim`
-   co-op balance.
+7. F6, director and balance. Done in part 2026-11-17 (verified in game): the budget (x1.5, 30
+   enemies for 20) and boss health scaling; a player at zero health is down while the other stands:
+   the death camera (0x0076D9F0) and the game over flag (cleared at the match's game-over check
+   0x00719F10, whoever set it) are held while a human player has health, the fallen lies there,
+   the run counts them down and the next arena brings them back with half their health. Open: both
+   down in game, `rm_sim` co-op balance.
 8. F7, progress and telemetry for both players: unlocks, run counts, events tagged by player.
 9. F8, ship: README co-op section, tests, version and both packages; the user's two-controller
    playtest.

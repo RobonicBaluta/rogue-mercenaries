@@ -13,7 +13,7 @@ namespace rmre5::nativemenu {
 enum class ScreenId {
     Main = 0, Characters, Perks, Credits, Skins, PerkList,
     MatchResults, MatchRewards, MatchShop, MatchRoute, MatchRunOver, MatchOrganize,
-    RunResults, RunLength, MatchElement
+    RunResults, RunLength, MatchElement, Player2
 };
 
 struct Item {

@@ -108,8 +108,69 @@ using DeathEventFn = void(__fastcall*)(std::uintptr_t self, void* edx, int playe
 DeathEventFn g_origDeathEvent = nullptr;
 std::atomic<std::uintptr_t> g_partnerUnit{0};
 std::atomic<int> g_partnerDeathLogged{0};
+std::atomic<bool> g_coopDeathHold{false};  // SetCoopDeathHold
+
+// Human players with health left (M10: a co-op match goes on while one stands).
+int StandingHumans() {
+    const auto snap = engine::ReadPlayers();
+    int standing = 0;
+    for (const auto& p : snap.players) {
+        if (p.object && p.control == 0 && p.hp.hp > 0) ++standing;
+    }
+    return standing;
+}
+
+// The application's request (thiscall (flags), re5::addr::kFnAppRequest): every way the game ends a
+// match on a player's death asks for the game over with kAppGameOver (twelve callers, 2026-11-17: the
+// death camera is only one of them). In a co-op run it is dropped while a human player stands.
+using AppRequestFn = void(__fastcall*)(std::uintptr_t app, void* edx, std::uint32_t flags);
+AppRequestFn g_origAppRequest = nullptr;
+constexpr std::uint32_t kAppGameOver = 0x08000000;
+
+// The match's game-over check (re5::addr::kFnGameOverCheck) reads the game over flag each frame; in
+// a co-op run it finds it cleared while a human player stands, whoever set it.
+using GameOverCheckFn = std::uint32_t(__fastcall*)(std::uintptr_t self, void* edx);
+GameOverCheckFn g_origGameOverCheck = nullptr;
+
+std::uint32_t __fastcall GameOverCheckDetour(std::uintptr_t self, void* edx) {
+    if (g_coopDeathHold.load(std::memory_order_relaxed)) {
+        const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+        const auto flags = app ? ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) : 0;
+        if ((flags & kAppGameOver) != 0) {
+            const int standing = StandingHumans();
+            if (standing > 0 && SafeStore<std::uint32_t>(app + re5::off::kAppFlags, flags & ~kAppGameOver)) {
+                static std::atomic<int> logged{0};
+                if (logged.fetch_add(1) < 8) RM_LOGI("co-op: the game over flag cleared (%d player(s) standing)", standing);
+            }
+        }
+    }
+    return g_origGameOverCheck(self, edx);
+}
+
+void __fastcall AppRequestDetour(std::uintptr_t app, void* edx, std::uint32_t flags) {
+    if ((flags & kAppGameOver) != 0 && g_coopDeathHold.load(std::memory_order_relaxed)) {
+        const int standing = StandingHumans();
+        if (standing > 0) {
+            static std::atomic<int> logged{0};
+            if (logged.fetch_add(1) < 8) RM_LOGI("co-op: the game over is held back (%d player(s) standing)", standing);
+            flags &= ~kAppGameOver;
+            if (flags == 0) return;
+        }
+    }
+    g_origAppRequest(app, edx, flags);
+}
 
 void __fastcall DeathEventDetour(std::uintptr_t self, void* edx, int player) {
+    // M10: a co-op run goes on while a human player stands; the fallen one lies where they fell
+    // until the next arena (the game would end the match for both).
+    if (g_coopDeathHold.load(std::memory_order_relaxed)) {
+        const int standing = StandingHumans();
+        if (standing > 0) {
+            static std::atomic<int> logged{0};
+            if (logged.fetch_add(1) < 8) RM_LOGI("co-op: player %d is down; the match goes on (%d standing)", player, standing);
+            return;
+        }
+    }
     if (const std::uintptr_t partner = g_partnerUnit.load(std::memory_order_relaxed)) {
         const int number = ReadOr<std::uint8_t>(partner + re5::off::kPlayerNumber, 0xFF);
         const auto local = engine::LocalPlayer();
@@ -175,7 +236,7 @@ void __fastcall EnemyOnHitDetour(std::uintptr_t self, void*, std::uintptr_t hit)
     if (hit) {
         scope.attacker = engine::HitAttacker(hit);
         scope.attackerIsPlayer = scope.attacker && engine::IsKindOf(scope.attacker, re5::addr::kDtiUPlayer);
-        scope.attackerIsLocal = scope.attackerIsPlayer && scope.attacker == engine::LocalPlayer();
+        scope.attackerIsLocal = scope.attackerIsPlayer && engine::HumanPlayerSlot(scope.attacker) >= 0;
     }
     t_hit = &scope;
     g_origEnemyOnHit(self, hit);
@@ -221,7 +282,7 @@ void __fastcall CharacterSubHpDetour(std::uintptr_t self, void*, std::int16_t am
 }
 
 void __fastcall PlayerSubHpDetour(std::uintptr_t self, void*, std::int16_t amount) {
-    if (amount <= 0 || !g_sink || self != engine::LocalPlayer()) {
+    if (amount <= 0 || !g_sink || engine::HumanPlayerSlot(self) < 0) {
         g_origPlayerSubHp(self, amount);
         return;
     }
@@ -259,7 +320,7 @@ SubHpFn g_origPlayerAddHp = nullptr;
 
 // A healing item on the local player: the sink may change the amount (a build's heals).
 void __fastcall PlayerAddHpDetour(std::uintptr_t self, void*, std::int16_t amount) {
-    if (amount > 0 && g_sink && self == engine::LocalPlayer()) {
+    if (amount > 0 && g_sink && engine::HumanPlayerSlot(self) >= 0) {
         const int wanted = g_sink->HealAmount(self, amount);
         amount = static_cast<std::int16_t>(wanted < 0 ? 0 : (wanted > 32767 ? 32767 : wanted));
     }
@@ -370,6 +431,14 @@ bool InstallCombatHooks() {
         Hook(re5::addr::kFnPlayerDeathEvent, reinterpret_cast<void*>(&DeathEventDetour), reinterpret_cast<void**>(&g_origDeathEvent),
              "player execution (a computer partner's does not end the run)");
     }
+    if (ok && caps.gameOverCheck) {
+        Hook(re5::addr::kFnGameOverCheck, reinterpret_cast<void*>(&GameOverCheckDetour), reinterpret_cast<void**>(&g_origGameOverCheck),
+             "game-over check (a co-op run's game over waits for the last player standing)");
+    }
+    if (ok && caps.appRequest) {
+        Hook(re5::addr::kFnAppRequest, reinterpret_cast<void*>(&AppRequestDetour), reinterpret_cast<void**>(&g_origAppRequest),
+             "application request (a co-op run's game over waits for the last player standing)");
+    }
     if (ok && caps.bossBrain) {
         Hook(re5::addr::kFnEm40CanDive, reinterpret_cast<void*>(&Em40CanDiveDetour), reinterpret_cast<void**>(&g_origEm40CanDive),
              "uEm40 may-dive (a run has one player)");
@@ -384,6 +453,10 @@ bool InstallCombatHooks() {
     }
     g_status.combat = ok;
     return ok;
+}
+
+void SetCoopDeathHold(bool on) {
+    if (g_coopDeathHold.exchange(on) != on) RM_LOGI("co-op: a fallen player %s the match", on ? "no longer ends" : "ends");
 }
 
 void SetFlameStream(std::uintptr_t unit, const std::string& path, const std::string& companion, bool loops, float scale) {

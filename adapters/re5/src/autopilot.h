@@ -3,13 +3,28 @@
 // Drives the game's own Mercenaries setup screens after START RUN; see
 // autopilot.cpp.
 
+#include <cstdint>
+#include <utility>
+#include <vector>
+
 namespace rmre5::autopilot {
 
 struct Plan {
     int stage = 0;        // uIdStartUp21 row (0..stage_count-1)
     int costume = 0;      // uIdStartUp22 slot (the game's character/costume index)
     int stage_count = 8;  // rows to cycle through when the game refuses a locked stage
+    // M10 local co-op: MODE SELECT's row (0 Solo, 2 Split screen) and player 2's costume slot (-1:
+    // the game's default). With 2 the stage is answered as in Solo, both costumes are written, and
+    // the two-player lobby is the game's (player 2 joins with START), unless skip_lobby: a later
+    // arena of a co-op run, whose lobby fields (SetLobby) are written back and the lobby skipped.
+    int mode = 0;
+    int costume2 = -1;
+    bool skip_lobby = false;
 };
+/// M10: the split-screen lobby's game work fields once both players are in (read at a co-op run's
+/// first match), written back when a later arena's lobby is skipped. Empty: none known.
+void SetLobby(const std::vector<std::pair<int, std::uint32_t>>& fields);
+bool LobbyKnown();
 
 // Queues the hooks; call before MH_ApplyQueued.
 bool Install();

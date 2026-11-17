@@ -190,6 +190,10 @@ constexpr std::size_t kWeaponLevelStride = 0x1E8;
 // number, or -1 for the first one down). Starts the death camera that ends in the game over; only
 // the campaign's mode filters which player it is for (research/re5-engine-map.md).
 constexpr std::uintptr_t kFnPlayerDeathEvent = 0x0076D9F0;
+// The match's game-over check (fastcall (state object), 3 callers in the main loop's states): with
+// app +0x10438 & 0x8000000 set it switches the main state to 9, the game over (M10 F6: the flag is
+// set by more than the death camera; in a split-screen match one player's death sets it).
+constexpr std::uintptr_t kFnGameOverCheck = 0x00719F10;
 // uPlayer: the hands take the item of a cell, thiscall (cell, 1), what the game's weapon_change
 // action calls at its swap (research/re5-engine-map.md).
 constexpr std::uintptr_t kFnPlayerEquipCell = 0x00B73B50;
@@ -356,6 +360,11 @@ constexpr std::uintptr_t kAppForceLock = 0x01249C2E;
 constexpr std::uintptr_t kImportEnterCriticalSection = 0x00F4A0F8;
 constexpr std::uintptr_t kImportLeaveCriticalSection = 0x00F4A164;
 constexpr std::uintptr_t kFnFlowMercSetup = 0x00BF78B0;
+// The split-screen setup script (MODE SELECT row 2, M10 F0): state 0 resets both players' fields
+// (gw+0x620/+0x624 present, +0x654/+0x658 pads -1), 0xB Step(ctx, 0) the stage screen, 0xC creates
+// the two-player lobby uIdStartUp24 itself (FUN_00A46690) and waits for it, 0x14 starts the match
+// (scene request 0x27).
+constexpr std::uintptr_t kFnFlowSplitSetup = 0x00BF8070;
 // Inventory (found with Ghidra from uPlayer::PickUpItem, FUN_007E9DF0): the
 // inventory object is uPlayer+0x21A0; __thiscall helpers on it:
 //   int AddToStacks(int item, int count): tops up existing stacks of `item`
@@ -798,6 +807,7 @@ inline constexpr Signature kSignatures[] = {
     // `push esi; mov esi, [esp+8]; cmp esi, -1; push edi; mov edi, ecx; jle; cmp esi, 4; jge;
     // cmp [edi+esi*4+0x24], 0; jz; pop edi; xor eax, eax`.
     {"player_death_event", addr::kFnPlayerDeathEvent, "51 55 8B E9 89 6C 24 04 E8 A3 E2 FF FF 8B 0D DC 27 1B 01 E8 48 90 07 00"},
+    {"game_over_check", addr::kFnGameOverCheck, "51 A1 A4 40 23 01 53 55 8B D9 8B 88 2C 04 01 00 83 79 58 01 56 57 89 5C"},
     {"player_equip_cell", addr::kFnPlayerEquipCell, "56 57 8B 7C 24 0C 83 FF 0F 8B F1 75 13 57 8D 8E A0 21 00 00 E8 97 7F 0D 00"},
     {"weapon_record", 0x00770380, "8B 44 24 04 8B C8 81 E1 00 FF 00 00 81 F9 00 01 00 00 74 03 33 C0 C3 25 FF 00 00 00 8D 04 80 C1 E0 06 05 70 51 1B 01 C3"},
     {"weapon_scope_read", 0x00B699E2, "83 B8 98 00 00 00 00 75 24 A1 58 21 1B 01"},
@@ -941,6 +951,7 @@ inline constexpr Signature kSignatures[] = {
     {"layout_element_count", 0x00CDADA0, "8B 41 0C C3"},
     {"flow_step20", addr::kFnFlowStep20, "56 8B F1 0F BE 46 25 83 E8 00 74 57 83 E8 01 74"},
     {"flow_merc_setup", addr::kFnFlowMercSetup, "56 8B F1 0F BE 46 24 83 F8 15 0F 87 AE 01 00 00"},
+    {"flow_split_setup", addr::kFnFlowSplitSetup, "56 8B F1 0F BE 46 24 83 F8 15 0F 87 48 02 00 00"},
     {"inventory_add_to_stacks", addr::kFnInventoryAddToStacks, "83 EC 64 53 8B 5C 24 6C 55 56 57 33 FF 33 C0 89"},
     {"inventory_add_ammo", addr::kFnInventoryAddAmmo, "53 8B 5C 24 0C 55 8B 6C 24 0C 56 57 8B F9 33 F6"},
     {"inventory_create", addr::kFnInventoryCreate, "8B 44 24 48 8B 54 24 44 50 8B 44 24 44 52 8B 54"},
