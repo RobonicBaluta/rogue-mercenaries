@@ -4744,6 +4744,7 @@
       "id": "campaign_s503",
       "name": "Freighter Deck",
       "stage": 503,
+      "rotation": false,
       "start": [1718.5, 0.0, 19263.3],
       "max_alive": 12,
       "min_player_distance": 800,

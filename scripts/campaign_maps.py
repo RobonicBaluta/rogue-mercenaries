@@ -129,6 +129,11 @@ NO_ROTATION = {
     # The campaign's opening area: the story keeps the inventory, weapon switching and the HUD off
     # there until an event a run never reaches (user playtest 2026-11-03).
     100: 'the story keeps the inventory, weapons and HUD off',
+    # Every AI waypoint of the area (276) lies in one 35 x 18 m box in the middle of the deck (y 0 to
+    # 2 m); the rest of the deck the player can walk (the upper deck, 50 m off) has none, so the
+    # enemies cannot follow there (a player 2026-11-18: "had no pathing to follow me anywhere in the
+    # stage except for the wide open area in the middle").
+    503: 'the enemies can only walk the middle of the deck',
 }  # 505 was out (2026-11-08, a ladder up from its ground floor could not be grabbed: a Mercenaries
 # match never built the area's ladders; since 2026-11-18 the adapter files its "layouts" and builds
 # them, all eight, one climbed in game). 503 was out (its random upper-deck start); the start warp (M6.2) fixed that. 508 was out

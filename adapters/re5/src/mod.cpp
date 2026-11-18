@@ -9600,6 +9600,23 @@ void PollDevCommand(double now) {
     } else if (command == "chest" && run.phase() == rm::Phase::ArenaActive) {
         SimulateTimeBonusPickup();  // goes through the same path as a real pickup
         RM_LOGW("dev chest: pickup simulated");
+    } else if (command.rfind("spawnat ", 0) == 0) {
+        // "spawnat <x> <y> <z> <class> [weapon hex]": one unit at a map position (does a spawn point
+        // reach the player?).
+        std::istringstream words(command.substr(8));
+        float at[3] = {};
+        std::string cls, weaponText;
+        words >> at[0] >> at[1] >> at[2] >> cls >> weaponText;
+        if (cls.empty() || (resources::Available() && !resources::ArchiveLoaded(cls))) {
+            RM_LOGW("dev spawnat: no class, or %s is not loaded on this stage", cls.c_str());
+            return;
+        }
+        director::SpawnSpec spec;
+        spec.unitClass = cls;
+        std::memcpy(spec.pos, at, sizeof(spec.pos));
+        spec.weapon = weaponText.empty() ? -1 : static_cast<int>(std::strtoul(weaponText.c_str(), nullptr, 16));
+        const std::uintptr_t unit = director::Spawn(spec);
+        RM_LOGW("dev spawnat %s at %.0f %.0f %.0f -> %08X", cls.c_str(), at[0], at[1], at[2], static_cast<unsigned>(unit));
     } else if (command.rfind("spawn ", 0) == 0) {
         // "spawn <class> [weapon hex] [count] [distance] [field=value ...]": e.g. "spawn uEm10 70100 3"
         // next to the player; the fields are a map profile's (maps.json "fields": "attribute=32768").
