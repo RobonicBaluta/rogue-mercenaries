@@ -194,6 +194,10 @@ constexpr SpawnFieldDef kSpawnFields[] = {
     {"arm_set_joint", 0xF4, 'i', true},  {"attribute", 0xF8, 'i', true},      {"plaga", 0xFC, 'i', true},
     {"sub_bomb", 0x100, 'i', true},      {"attack", 0x104, 'i', true},        {"mask", 0x108, 'i', true},
     {"lefty", 0x10C, 'b', true},         {"neck_event", 0x10D, 'b', true},
+    // cSetInfoEnemy's mModelType and mMontageNo (FUN_00CCE070, read in game 2026-11-18): the
+    // look. A Majini's montage picks its head; uEm21 (the megaphone Majini, one model, em2100) has
+    // montage 0 in every placement of the game's (s100, s114, s400) and spawned headless without.
+    {"model_type", 0x74, 'i', false},    {"montage", 0x7C, 'i', false},
 };
 constexpr std::size_t kArmField = 10;  // "arm"
 

@@ -334,9 +334,16 @@ on a floor within a step of his own, or he does not move. Specials only work whi
 and in control: not while grabbed, hit, down, using an item, in a story action, with the game paused
 or in a menu.
 
-**Stuck enemies.** An enemy that has not moved for 12 s while far from you (8 s for a boss), or one of
-the last three when nothing has died for 25 s and it is far, is moved to a point within your reach and
-the spot it was stuck at is not used again that arena (doors the story opens, ledges).
+**Stuck enemies.** An enemy is moved only where no player can see it: not near a player with no wall
+between, and not inside any game camera's view (each split-screen half has its own), so turning the
+camera never shows one vanish. One that has not moved for 30 s while far from every player is moved to
+a point within reach, but only while the fight is quiet (nothing died for 20 s), one at a time and some
+seconds apart; a boss after 8 s. The spot it stood at is not used again that arena (doors the story
+opens, ledges). One of the last three, when nothing has died for 25 s and it is far, comes nearer the
+same way. The very last enemy, when nothing has hurt it for 20 s and it is far (40 s if it is near),
+is pulled to a point nearer you but at least 12 m away, at most twice, 30 s apart; a Majini that never
+saw you walks back to its own spot, so after that it is finished and the arena ends. (Before alpha.32
+idle enemies were moved after 12 s, which a player saw as enemies teleporting all over the map.)
 
 ## What still needs a human
 

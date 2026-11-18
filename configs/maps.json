@@ -91,7 +91,10 @@
           "class": "uEm21",
           "weight": 1,
           "special": true,
-          "arms": [459125]
+          "arms": [459125],
+          "profiles": [
+            {"weight": 1, "fields": {"montage": 0, "armed": 1, "attribute": 1048576}}
+          ]
         }
       ]
     },
@@ -1159,7 +1162,10 @@
           "class": "uEm21",
           "weight": 1,
           "special": true,
-          "arms": [459125]
+          "arms": [459125],
+          "profiles": [
+            {"weight": 1, "fields": {"montage": 0, "armed": 1, "attribute": 1048576}}
+          ]
         }
       ]
     },
@@ -1474,7 +1480,10 @@
           "class": "uEm21",
           "weight": 1,
           "special": true,
-          "arms": [459125]
+          "arms": [459125],
+          "profiles": [
+            {"weight": 1, "fields": {"montage": 0, "armed": 1, "attribute": 1048576}}
+          ]
         }
       ]
     },
@@ -1965,7 +1974,10 @@
           "class": "uEm21",
           "weight": 1,
           "special": true,
-          "arms": [459125]
+          "arms": [459125],
+          "profiles": [
+            {"weight": 1, "fields": {"montage": 0, "armed": 1, "attribute": 1048576}}
+          ]
         }
       ]
     },
@@ -2654,7 +2666,10 @@
           "class": "uEm21",
           "weight": 1,
           "special": true,
-          "arms": [459125]
+          "arms": [459125],
+          "profiles": [
+            {"weight": 1, "fields": {"montage": 0, "armed": 1, "attribute": 1048576}}
+          ]
         }
       ]
     },
@@ -3310,7 +3325,10 @@
           "class": "uEm21",
           "weight": 1,
           "special": true,
-          "arms": [459125]
+          "arms": [459125],
+          "profiles": [
+            {"weight": 1, "fields": {"montage": 0, "armed": 1, "attribute": 1048576}}
+          ]
         }
       ]
     },

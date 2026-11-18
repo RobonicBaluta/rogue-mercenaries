@@ -4133,6 +4133,7 @@ struct StuckTrack {
     bool warped = false;      // moved, and not yet seen leaving the point it was moved to
     float warpedFrom[3] = {};
     int failedWarps = 0;      // moves it came straight back from
+    int lonePulls = 0;        // pulls towards the player as the very last enemy
     int lastHp = -1;
     double hurtAt = 0.0;      // the last time its health went down
 };
@@ -4162,6 +4163,91 @@ bool PlayerMaySee(std::uintptr_t local, const std::array<double, 3>& player, con
     const float body[3] = {pos[0], pos[1] + kBodyHeight, pos[2]};
     const auto hit = engine::CastSegment(eye, body);
     return !hit || !hit->Blocked();
+}
+
+// M10 and a player's report (2026-11-18: enemies "teleport all over the map ... any time the
+// enemy wasn't right in front of me"): the facing guess above misses where the camera looks (the
+// right stick turns it, not the player), and in co-op it only knew one player. Now a point is seen
+// when it is near any standing player with no wall between, or inside any game camera's view
+// (each split-screen half has one) with nothing between that camera and it.
+struct Watchers {
+    std::vector<std::array<double, 3>> players;  // standing human players
+    std::vector<std::uintptr_t> units;           // the same players' units (the facing fallback)
+    std::vector<engine::CameraView> views;
+};
+constexpr float kViewMargin = 1.15f;  // a little wider than the camera's own view
+
+Watchers ReadWatchers() {
+    Watchers w;
+    const int seats = std::max(1, g->run->SeatCount());
+    for (int seat = 0; seat < seats; ++seat) {
+        const auto unit = seats > 1 ? engine::HumanPlayerInSlot(seat) : engine::LocalPlayer();
+        if (!unit) continue;
+        const auto hp = engine::ReadHp(unit);
+        if (seats > 1 && (!hp || hp->hp <= 0)) continue;  // a fallen player sees nothing
+        w.players.push_back({ReadOr<float>(unit + re5::off::kUnitPosition, 0.0f), ReadOr<float>(unit + re5::off::kUnitPosition + 4, 0.0f),
+                             ReadOr<float>(unit + re5::off::kUnitPosition + 8, 0.0f)});
+        w.units.push_back(unit);
+    }
+    w.views = engine::ReadCameraViews();
+    return w;
+}
+
+bool InCameraView(const engine::CameraView& v, const float point[3]) {
+    float f[3] = {v.target[0] - v.eye[0], v.target[1] - v.eye[1], v.target[2] - v.eye[2]};
+    const float fl = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+    if (fl < 1.0e-3f) return true;  // no direction: count it as seen
+    for (float& c : f) c /= fl;
+    float u[3] = {v.up[0], v.up[1], v.up[2]};
+    float r[3] = {f[1] * u[2] - f[2] * u[1], f[2] * u[0] - f[0] * u[2], f[0] * u[1] - f[1] * u[0]};
+    const float rl = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+    if (rl < 1.0e-3f) return true;
+    for (float& c : r) c /= rl;
+    u[0] = r[1] * f[2] - r[2] * f[1];
+    u[1] = r[2] * f[0] - r[0] * f[2];
+    u[2] = r[0] * f[1] - r[1] * f[0];
+    const float to[3] = {point[0] - v.eye[0], point[1] - v.eye[1], point[2] - v.eye[2]};
+    const float z = to[0] * f[0] + to[1] * f[1] + to[2] * f[2];
+    if (z <= 0.0f) return false;  // behind the camera
+    const float tanV = std::tan(v.fov * 0.5f * 3.14159265f / 180.0f) * kViewMargin;
+    const float tanH = tanV * v.aspect;
+    const float x = to[0] * r[0] + to[1] * r[1] + to[2] * r[2];
+    const float y = to[0] * u[0] + to[1] * u[1] + to[2] * u[2];
+    return std::fabs(x) <= z * tanH && std::fabs(y) <= z * tanV;
+}
+
+bool AnyoneMaySee(const Watchers& w, const float pos[3]) {
+    const float body[3] = {pos[0], pos[1] + kBodyHeight, pos[2]};
+    const auto clear = [&](const float from[3]) {
+        const auto hit = engine::CastSegment(from, body);
+        return !hit || !hit->Blocked();
+    };
+    for (const auto& p : w.players) {
+        const float dx = pos[0] - static_cast<float>(p[0]), dz = pos[2] - static_cast<float>(p[2]);
+        const float eye[3] = {static_cast<float>(p[0]), static_cast<float>(p[1]) + kEyeHeight, static_cast<float>(p[2])};
+        if (std::sqrt(dx * dx + dz * dz) <= kSeenNear && clear(eye)) return true;
+    }
+    if (w.views.empty()) {
+        // No camera to read: each player's facing, as before.
+        for (std::size_t i = 0; i < w.players.size(); ++i) {
+            if (PlayerMaySee(w.units[i], w.players[i], pos)) return true;
+        }
+        return false;
+    }
+    for (const auto& v : w.views) {
+        if (InCameraView(v, body) && clear(v.eye)) return true;
+    }
+    return false;
+}
+
+// The nearest standing player to `pos` (horizontally): its index in w.players, and the distance.
+std::pair<std::size_t, float> NearestWatcher(const Watchers& w, const float pos[3]) {
+    std::pair<std::size_t, float> best{0, std::numeric_limits<float>::max()};
+    for (std::size_t i = 0; i < w.players.size(); ++i) {
+        const float d = static_cast<float>(std::hypot(pos[0] - w.players[i][0], pos[2] - w.players[i][2]));
+        if (d < best.second) best = {i, d};
+    }
+    return best;
 }
 
 // Nothing in a straight line between `p` and the player (a boss's way to him: the Uroboros
@@ -4201,7 +4287,14 @@ double g_stuckCheckAt = 0.0;
 int g_stuckRemaining = -1;
 double g_stuckRemainingSince = 0.0;
 constexpr double kStuckCheckEvery = 0.5;
-constexpr double kStuckSeconds = 12.0;
+// A Majini that has not seen the player stands where it is (its search circle can be 5 m), so
+// "unmoved 12 s, 9 m away" moved idle enemies about all the time: "is it normal for enemies to
+// teleport all over the map? ... pretty much any time the enemy wasn't right in front of me" (a
+// player's report, 2026-11-18). Now an enemy stands unmoved 30 s, and only while the fight is
+// quiet (nothing died for a while), before it is moved; one move at a time, some seconds apart.
+constexpr double kStuckSeconds = 30.0;
+constexpr double kQuietBeforeMoves = 20.0;     // no kill for this long before a stuck one is moved
+constexpr double kMoveSpacing = 6.0;           // seconds between two moves (bosses aside)
 constexpr double kBossStuckSeconds = 8.0;
 constexpr double kBossLogEvery = 5.0;
 constexpr float kStuckMove = 150.0f;           // moved less than this ...
@@ -4210,10 +4303,18 @@ constexpr int kLastEnemies = 3;
 constexpr double kLastEnemiesQuiet = 25.0;     // no kill for this long ...
 constexpr float kLastEnemiesFar = 1500.0f;     // ... and this far: pulled in
 constexpr int kFailedWarpsToFinish = 2;        // one of the last back where it was after this many moves: finished
-constexpr double kLoneFarSeconds = 8.0;        // the very last enemy, unhurt this long and ...
-constexpr float kLoneFar = 1200.0f;            // ... this far away or on another floor, is pulled in
-constexpr double kLoneQuietSeconds = 20.0;     // ... or unhurt this long and not right here
-constexpr float kLoneNear = 500.0f;
+// The very last enemy came "too close" and moved "too much" (the user, 2026-11-18: the Mines'
+// crawler, often on a wall above the player's floor): it waits longer, is pulled only from
+// farther, never to a point nearer than kLonePullMin, and its wait starts over after a pull.
+constexpr double kLoneFarSeconds = 20.0;       // the very last enemy, unhurt this long and ...
+constexpr float kLoneFar = 1500.0f;            // ... this far away (or 8 m away on another floor), is pulled in
+constexpr float kLoneOtherFloorFar = 800.0f;
+constexpr double kLoneQuietSeconds = 40.0;     // ... or unhurt this long and not near
+constexpr float kLoneNear = 1000.0f;
+constexpr float kLonePullMin = 1200.0f;        // a pull's point is at least this far from the player
+constexpr double kLonePullEvery = 30.0;        // seconds between two pulls of the last enemy
+constexpr int kMaxLonePulls = 2;               // then, still far and unhurt, it is finished
+double g_lastMoveAt = -1.0e9;
 
 void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& player) {
     rm::RunController& run = *g->run;
@@ -4228,6 +4329,10 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
     for (auto it = g_stuckTracks.begin(); it != g_stuckTracks.end();) {
         it = g->directorUnits.count(it->first) ? std::next(it) : g_stuckTracks.erase(it);
     }
+    // Every standing player and camera (co-op: both): an enemy fighting player 2 is not "far",
+    // and one either player may see stays where it is.
+    Watchers watchers = ReadWatchers();
+    if (watchers.players.empty()) watchers.players.push_back(*player);
     for (const auto& [unit, id] : g->directorUnits) {
         const auto hp = engine::ReadHp(unit);
         if (!hp || hp->hp <= 0) continue;
@@ -4239,7 +4344,8 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
         t.lastHp = hp->hp;
         const float moved = std::sqrt(std::pow(pos[0] - t.anchor[0], 2.0f) + std::pow(pos[1] - t.anchor[1], 2.0f) +
                                       std::pow(pos[2] - t.anchor[2], 2.0f));
-        const float away = static_cast<float>(std::sqrt(std::pow(pos[0] - (*player)[0], 2.0) + std::pow(pos[2] - (*player)[2], 2.0)));
+        const auto [nearestIndex, away] = NearestWatcher(watchers, pos);
+        const std::array<double, 3>& nearest = watchers.players[nearestIndex];
         if (t.warped && moved > kStuckMove) {
             // It left the point it was moved to: straight back where it was, the move did not
             // take. A Licker (uEm32) in a campaign area went back to the same spot after every
@@ -4271,7 +4377,7 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
             if (now - loggedAt >= kBossLogEvery) {
                 loggedAt = now;
                 RM_LOGI("director: boss %s at %.0f %.0f %.0f, %.1f m from the player (%.1f m above), %s", engine::ClassName(unit).c_str(),
-                        pos[0], pos[1], pos[2], away / 100.0f, (pos[1] - static_cast<float>((*player)[1])) / 100.0f,
+                        pos[0], pos[1], pos[2], away / 100.0f, (pos[1] - static_cast<float>(nearest[1])) / 100.0f,
                         engine::CurrentActionName(unit).c_str());
             }
             // The giant Uroboros holds its dome and moves around it itself (cEm43ActShift); moved
@@ -4295,17 +4401,32 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
             t.seenNoted = false;
             if (!lastFew && !lone) continue;
         }
-        const bool stuck = away > kStuckFar && now - t.anchorAt > (boss ? kBossStuckSeconds : kStuckSeconds);
-        const bool straggler = lastFew && !boss && away > kLastEnemiesFar;
+        const bool quiet = now - g_stuckRemainingSince > kQuietBeforeMoves;
+        // The very last enemy only by its own rule below (towards the player): moved as "stuck" to
+        // any point in reach it was taken 36 m away, from 12 m (2026-11-18).
+        const bool stuck = !lone && away > kStuckFar && (boss ? now - t.anchorAt > kBossStuckSeconds : quiet && now - t.anchorAt > kStuckSeconds);
+        const bool straggler = !lone && lastFew && !boss && away > kLastEnemiesFar;
         const double unhurt = now - std::max(t.hurtAt, g_stuckRemainingSince);
-        const bool otherFloor = std::fabs(pos[1] - static_cast<float>((*player)[1])) > static_cast<float>(kSameFloor);
-        const bool lost = lone && ((unhurt > kLoneFarSeconds && (away > kLoneFar || otherFloor)) || (unhurt > kLoneQuietSeconds && away > kLoneNear));
-        if ((!stuck && !straggler && !lost) || now - t.lastRescue < 15.0) continue;
-        // Never before the player's eyes: one he may be looking at stays where it is, and the
-        // others go only to a point out of his sight (user playtest 2026-11-04: enemies vanished
+        const bool otherFloor = std::fabs(pos[1] - static_cast<float>(nearest[1])) > static_cast<float>(kSameFloor);
+        const bool lost = lone && ((unhurt > kLoneFarSeconds && (away > kLoneFar || (otherFloor && away > kLoneOtherFloorFar))) ||
+                                   (unhurt > kLoneQuietSeconds && away > kLoneNear));
+        if ((!stuck && !straggler && !lost) || now - t.lastRescue < (lost ? kLonePullEvery : 15.0)) continue;
+        if (lost && t.lonePulls >= kMaxLonePulls) {
+            // A Majini that never saw the player walks back to its own spot after a pull (34 m in
+            // 30 s on the Village, 2026-11-18), and pulled again and again it seemed to teleport
+            // all the time. After two pulls the last enemy is finished so the arena can end
+            // (counted like any death, DetectEnemyDeaths), as one that cannot be moved is.
+            const bool done = director::Damage(unit, hp->hp);
+            RM_LOGI("director: %s, the last one, %.0f m from the player and unhurt %.0f s after %d pulls; %s", engine::ClassName(unit).c_str(),
+                    away / 100.0f, unhurt, t.lonePulls, done ? "finished so the arena can end" : "its damage was refused");
+            t.lastRescue = now;
+            continue;
+        }
+        if (!boss && now - g_lastMoveAt < kMoveSpacing) continue;  // one at a time
+        // Never before the players' eyes: one they may be looking at stays where it is, and the
+        // others go only to a point out of their sight (user playtest 2026-11-04: enemies vanished
         // in view and appeared elsewhere).
-        const auto local = engine::LocalPlayer();
-        if (PlayerMaySee(local, *player, pos)) {
+        if (AnyoneMaySee(watchers, pos)) {
             if (!t.seenNoted) {
                 t.seenNoted = true;
                 RM_LOGI("director: %s still %.0f s at %.0f %.0f %.0f, %.0f m from the player, in his sight; left there",
@@ -4317,18 +4438,35 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
         // Out of his sight, never near a spot one stood stuck at, and his own floor first (as a
         // boss's spawn): from another floor it often found no way down to him.
         // Failing those, anywhere out of his sight, as before.
+        // The point is chosen near the player nearest to it (co-op: the one it was after).
+        const std::optional<std::array<double, 3>> target = nearest;
+        const float awayNow = away;
         auto accept = [&](bool sameFloor, bool avoidTraps) {
             return [&, sameFloor, avoidTraps](const std::array<double, 3>& p) {
                 const float at[3] = {static_cast<float>(p[0]), static_cast<float>(p[1]), static_cast<float>(p[2])};
-                if (PlayerMaySee(local, *player, at) || (avoidTraps && NearTrap(p))) return false;
-                if (boss && !OpenToPlayer(*player, p)) return false;
-                return !sameFloor || std::fabs(p[1] - (*player)[1]) <= kSameFloor;
+                if (AnyoneMaySee(watchers, at) || (avoidTraps && NearTrap(p))) return false;
+                if (boss && !OpenToPlayer(nearest, p)) return false;
+                // A pull brings the last one nearer (one went from 15 m to 30 m, every nearer point
+                // being in sight), and never nearer than kLonePullMin.
+                if (lost) {
+                    const float d = NearestWatcher(watchers, at).second;
+                    if (d < kLonePullMin || d > awayNow - kStuckMove) return false;
+                }
+                return !sameFloor || std::fabs(p[1] - nearest[1]) <= kSameFloor;
             };
         };
-        auto to = run.DirectorRelocate(id, player, accept(true, true), lost);
-        if (!to) to = run.DirectorRelocate(id, player, accept(false, true), lost);
-        if (!to) to = run.DirectorRelocate(id, player, accept(false, false), lost);
+        auto to = run.DirectorRelocate(id, target, accept(true, true), lost);
+        if (!to) to = run.DirectorRelocate(id, target, accept(false, true), lost);
+        if (!to) to = run.DirectorRelocate(id, target, accept(false, false), lost);
         if (!to) {
+            if (lost) {
+                // No nearer point out of sight: counts as a pull, so it cannot wait forever.
+                ++t.lonePulls;
+                t.lastRescue = now;
+                RM_LOGI("director: %s, the last one, %.0f m from the player: no nearer point out of sight (%d)",
+                        engine::ClassName(unit).c_str(), away / 100.0f, t.lonePulls);
+                continue;
+            }
             t.lastRescue = now - 10.0;  // no point out of sight now: again in 5 s
             continue;
         }
@@ -4344,6 +4482,11 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
         t.warped = copies > 0;
         t.anchorAt = now;
         t.lastRescue = now;
+        if (lost) {
+            t.hurtAt = now;  // its wait for another pull starts over
+            ++t.lonePulls;
+        }
+        if (!boss) g_lastMoveAt = now;
     }
 }
 
@@ -9943,6 +10086,34 @@ void PollDevCommand(double now) {
         int killed = 0;
         for (const auto& e : engine::ReadEnemyStates()) killed += e.hp > 0 && director::Kill(e.object) ? 1 : 0;
         RM_LOGW("dev killall: %d enemies killed", killed);
+    } else if (command == "watchers") {
+        // The rescue's sight test (AnyoneMaySee): each camera, then each director enemy, its
+        // distance to the nearest standing player and whether a player may see it.
+        const Watchers w = ReadWatchers();
+        for (const auto& v : w.views) {
+            RM_LOGW("dev watchers: view %d eye %.0f %.0f %.0f target %.0f %.0f %.0f fov %.1f aspect %.2f", v.viewport, v.eye[0], v.eye[1],
+                    v.eye[2], v.target[0], v.target[1], v.target[2], v.fov, v.aspect);
+        }
+        for (const auto& [unit, id] : g->directorUnits) {
+            const auto hp = engine::ReadHp(unit);
+            if (!hp || hp->hp <= 0) continue;
+            float pos[3];
+            for (int k = 0; k < 3; ++k) pos[k] = ReadOr<float>(unit + re5::off::kUnitPosition + k * 4, 0.0f);
+            const float body[3] = {pos[0], pos[1] + kBodyHeight, pos[2]};
+            bool inView = false;
+            for (const auto& v : w.views) inView = inView || InCameraView(v, body);
+            RM_LOGW("dev watchers: %s %s %.1f m from the nearest player, %s, %s", id.c_str(), engine::ClassName(unit).c_str(),
+                    w.players.empty() ? -1.0f : NearestWatcher(w, pos).second / 100.0f, inView ? "in a camera's view" : "out of view",
+                    AnyoneMaySee(w, pos) ? "SEEN" : "unseen");
+        }
+    } else if (command == "killone") {
+        // One real death: the first live enemy (to bring an arena down to its last enemy).
+        for (const auto& e : engine::ReadEnemyStates()) {
+            if (e.hp > 0 && director::Kill(e.object)) {
+                RM_LOGW("dev killone: %s killed, %d left", engine::ClassName(e.object).c_str(), run.RemainingEnemies() - 1);
+                break;
+            }
+        }
     } else if (command.rfind("survey ", 0) == 0) {
         director::SetSurvey(command.substr(7) == "on");
         world::SetSurvey(command.substr(7) == "on");

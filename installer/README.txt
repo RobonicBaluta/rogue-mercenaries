@@ -127,15 +127,16 @@ KNOWN ISSUES (ALPHA)
     Mercenaries" shows at the top right but something is missing, send your logs.
   - New in this version and not played yet: the bosses on arenas 4 and 8 of longer runs
     and the 13th arena.
-  - Two players (split screen) has been tried with a simulated second controller only:
-    please report what goes wrong with two real ones.
+  - Two players (split screen) is new and has had one short session with two real
+    controllers: please report what goes wrong.
   - Uroboros Mkono, one of the alternate bosses of arena 8, may not be beatable yet:
     pick another boss there.
   - In one campaign area a ladder could not be climbed, and a fall left the player
     stuck; that area is out of the runs for now. If a ladder ignores you anywhere else,
     please report the arena.
-  - Some campaign areas may still have spots where enemies get stuck; the mod moves
-    them after a while.
+  - An enemy that stands far away out of sight while nothing dies is moved nearer
+    after a while (never where you can see it). The last enemy of an arena is pulled
+    nearer twice at most; if it is still not found, it is finished and the arena ends.
   - The Play menu row only shows with Latin-alphabet game languages. With Japanese,
     Chinese or Russian text, go to The Mercenaries > Solo, press F7 and start the run there.
 

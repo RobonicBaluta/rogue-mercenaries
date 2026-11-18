@@ -35,6 +35,14 @@ DEFAULT_ARM = 0x70100
 TEMPLATE = {'search_type': 1, 'search_forward': 0.0, 'search_circle': 1000.0, 'armed': 1, 'mask': 0xFFFFFFFF}
 
 
+# Classes the survey saw spawn without catching one of their descriptors, with the fields of the
+# game's own placements (its rLayout set data): uEm21, the megaphone Majini (model em2100), wears
+# montage 0 in all of them (s100, s114, s400) and spawned headless without it (2026-11-18).
+KNOWN_PROFILES = {
+    'uEm21': [{'weight': 1, 'fields': {'montage': 0, 'armed': 1, 'attribute': 1048576}}],
+}
+
+
 def compact_profiles(profiles):
     merged = {}
     for p in profiles:
@@ -80,6 +88,8 @@ for stage_text, data in survey.items():
             entry['profiles'] = compact_profiles(info['profiles'])
         elif info['arms'] and info['arms'] != [DEFAULT_ARM]:
             entry['arms'] = sorted(info['arms'])
+        if cls in KNOWN_PROFILES and 'profiles' not in entry:
+            entry['profiles'] = KNOWN_PROFILES[cls]
         roster.append(entry)
     if not points or not roster:
         continue
