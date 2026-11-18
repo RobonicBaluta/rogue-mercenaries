@@ -83,3 +83,14 @@ if(RM_RE5_WITH_CORE)
 endif()
 # Keep the PDB for crash triage; it never ships inside the game folder.
 target_link_options(rm_re5 PRIVATE /DEBUG /OPT:REF /OPT:ICF)
+
+# Developer test only (never packaged): a dinput8.dll plugin loader like the ones RE5 players use
+# (plugins\*.dll, *.asi), to try the mod as another loader's plugin. Its own output folder, since
+# it is also named dinput8.dll.
+add_library(rm_test_plugin_loader SHARED
+    ${CMAKE_SOURCE_DIR}/tools/plugin_loader/plugin_loader.cpp
+    ${CMAKE_SOURCE_DIR}/tools/plugin_loader/plugin_loader.def)
+set_target_properties(rm_test_plugin_loader PROPERTIES
+    OUTPUT_NAME dinput8
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tools/plugin_loader)
+target_compile_definitions(rm_test_plugin_loader PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)

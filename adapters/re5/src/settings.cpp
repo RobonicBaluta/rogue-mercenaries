@@ -72,7 +72,11 @@ bool SaveElementLook(const Paths& paths, const std::vector<std::string>& kinds, 
 Paths ResolvePaths(void* module) {
     Paths paths;
     wchar_t buffer[MAX_PATH];
-    GetModuleFileNameW(static_cast<HMODULE>(module), buffer, MAX_PATH);
+    // The game's folder is the executable's: the mod's DLL may be the game's dinput8.dll or a
+    // plugin another loader loaded from a subfolder (plugins\, scripts\; 2026-11-18, a player:
+    // the RE5 input fixes need their own dinput8.dll).
+    (void)module;
+    GetModuleFileNameW(nullptr, buffer, MAX_PATH);
     paths.gameDir = std::filesystem::path(buffer).parent_path();
     paths.modDir = paths.gameDir / L"RogueMercenaries";
     paths.configDir = paths.modDir / L"configs";

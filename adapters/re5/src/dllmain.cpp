@@ -48,6 +48,15 @@ DWORD StartMod() {
     const Settings settings = LoadSettings(paths, &settingsError);
     LogOpen(paths.logDir / L"adapter.log", ParseLevel(settings.logLevel));
     RM_LOGI("Rogue Mercenaries %s (adapter re5 %s) starting", kModVersion, kAdapterVersion);
+    {
+        // How it was loaded: as the game's dinput8.dll, or as another loader's plugin (its
+        // plugins folder, an .asi), which keeps that loader's dinput8.dll and its fixes.
+        wchar_t self[MAX_PATH] = {};
+        GetModuleFileNameW(g_module, self, MAX_PATH);
+        const std::filesystem::path me(self);
+        const bool proxy = me.parent_path() == paths.gameDir && _wcsicmp(me.filename().c_str(), L"dinput8.dll") == 0;
+        RM_LOGI("loaded from %s (%s)", rm::PathText(me).c_str(), proxy ? "the game's dinput8.dll" : "a plugin of another loader");
+    }
     RM_LOGI("game dir: %s", rm::PathText(paths.gameDir).c_str());
     RM_LOGI("data dir: %s", rm::PathText(paths.dataDir).c_str());
     if (!settingsError.empty()) {
@@ -159,10 +168,21 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         g_module = module;
         DisableThreadLibraryCalls(module);
+        // One copy runs the mod: with this DLL both as the game's dinput8.dll and in another
+        // loader's plugins folder, the second one only forwards DirectInput (its exports).
+        wchar_t name[64];
+        swprintf_s(name, L"Local\\RogueMercenaries.%lu", GetCurrentProcessId());
+        HANDLE once = CreateMutexW(nullptr, FALSE, name);
+        if (once != nullptr && GetLastError() == ERROR_ALREADY_EXISTS) {
+            CloseHandle(once);
+            g_module = nullptr;  // not the running copy: no shutdown on detach either
+            return TRUE;
+        }
         if (HANDLE thread = CreateThread(nullptr, 0, &Worker, nullptr, 0, nullptr)) {
             CloseHandle(thread);
         }
     } else if (reason == DLL_PROCESS_DETACH) {
+        if (g_module == nullptr) return TRUE;  // the idle copy (DLL_PROCESS_ATTACH)
         // reserved != nullptr: the process is exiting (ExitProcess), not FreeLibrary.
         RM_LOGI("process detach (%s)", reserved ? "process exit" : "FreeLibrary");
         if (reserved == nullptr) {

@@ -34,6 +34,9 @@ INSTALL
   The installer also copies your RE5 save to %LOCALAPPDATA%\RogueMercenaries\save-backups
   before anything else. The mod is designed never to write your game save during a run.
   Installing over alpha.1 is fine, and your progress (Credits, unlocks) carries over.
+  If the game already has a dinput8.dll mod that loads a plugins folder (input fixes often
+  come that way), use the plugin package instead and keep that mod: Install.bat would set
+  its dinput8.dll aside, and its fixes with it.
 
 OPTIONAL: COSTUME MODS
   A few skins wear a costume mod made by someone else (Excella Experimenter, Jill

@@ -59,6 +59,15 @@ replaces an earlier install. `Uninstall.bat` (in the package or in the game's `R
 those files, puts the other `dinput8.dll` back, and asks before deleting progress and logs. A tester's progress starts
 empty: the mod's profile lives in `%LOCALAPPDATA%`, which the package never ships or touches.
 
+`-Manual` writes `RogueMercenaries-<version>[-unlocked]-manual.zip` with no script (a mod site's scan flagged the
+installer's): the ZIP's root is the game folder (`dinput8.dll`, `RogueMercenaries\`) and its README gives by-hand steps.
+`-Plugin` writes `...-plugin.zip`, the same with the DLL as `plugins\RogueMercenaries.dll`, for a game whose input fixes
+come with their own `dinput8.dll` plugin loader (a player, 2026-11-18: "it's practically impossible to play RE5 without
+these input fixes"). The DLL runs the mod however it is loaded (the game's `dinput8.dll`, a loader's `plugins` folder, an
+ASI loader's `.asi`): it finds the game folder from the executable, says in its log how it was loaded, and only one copy
+runs if two are present. `tools/plugin_loader` (built as `build\win32\tools\plugin_loader\Release\dinput8.dll`, never
+shipped) is a test loader that does what those loaders are documented to do (`plugins\*.dll`, `*.asi`).
+
 ## Playing
 
 1. Launch RE5 from Steam. Top right shows *Rogue Mercenaries – Play menu or F7*.
