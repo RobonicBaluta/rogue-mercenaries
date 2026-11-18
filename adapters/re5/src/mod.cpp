@@ -9454,12 +9454,18 @@ void PollDevCommand(double now) {
         SimulateTimeBonusPickup();  // goes through the same path as a real pickup
         RM_LOGW("dev chest: pickup simulated");
     } else if (command.rfind("spawn ", 0) == 0) {
-        // "spawn <class> [weapon hex] [count]": e.g. "spawn uEm10 70100 3" next to the player.
+        // "spawn <class> [weapon hex] [count] [distance] [field=value ...]": e.g. "spawn uEm10 70100 3"
+        // next to the player; the fields are a map profile's (maps.json "fields": "attribute=32768").
         std::istringstream words(command.substr(6));
         std::string cls, weaponText;
         int count = 1;
         float distance = 150.0f;
         words >> cls >> weaponText >> count >> distance;
+        std::vector<std::pair<std::string, double>> fields;
+        for (std::string token; words >> token;) {
+            const auto eq = token.find('=');
+            if (eq != std::string::npos && eq > 0) fields.emplace_back(token.substr(0, eq), std::atof(token.c_str() + eq + 1));
+        }
         const int weapon = weaponText.empty() ? -1 : static_cast<int>(std::strtoul(weaponText.c_str(), nullptr, 16));
         // A class whose archive this stage never loaded makes the game look for its model on disk
         // and stop with "Failed open file ... emXXXX_low.mod" (as the director, never spawn it).
@@ -9493,6 +9499,7 @@ void PollDevCommand(double now) {
             std::memcpy(spec.pos, spawnAt, sizeof(spec.pos));
             spec.facing = std::atan2(-fx, -fz);  // facing the player
             spec.weapon = weapon;
+            spec.fields = fields;
             const std::uintptr_t unit = player ? director::Spawn(spec) : 0;
             RM_LOGW("dev spawn %s (weapon %X) at %.0f %.0f %.0f -> %08X %s", cls.c_str(), weapon, spawnAt[0], spawnAt[1], spawnAt[2],
                     static_cast<unsigned>(unit), unit ? engine::ClassName(unit).c_str() : "failed");
