@@ -224,7 +224,10 @@ struct ModState {
     std::string selectedSkin;  // skin id for the selected character (empty = default)
     std::string selectedLength;  // the ladder length of the next run (empty = the first)
     int coopPlayers = 1;         // M10 local co-op: 1 solo, 2 split screen (the Play menu's PLAYERS)
-    std::string p2Skin;          // M10: player 2's chosen skin id (empty: the first other outfit)
+    std::string p2Skin;          // M10: player 2's chosen skin id (empty: their character's first outfit that fits)
+    int p2Character = -1;        // M10: player 2's chosen character (index in Characters(); -1: their outfit's)
+    int menuPlayer = 0;          // M10: whose choices CHARACTERS, SKINS and PERKS show and change (0 or 1)
+    std::string menuOtherSkin;   // M10: the other player's outfit while those screens run (clashes)
     int p2Costume = -1;          // M10: player 2's costume slot in the run's first match
     int p1Pad = -2;              // M10: player 1's XInput user (-1 the keyboard, -2 not known yet)
     int p2Pad = -1;              // M10: player 2's XInput user (-1 not known yet)
@@ -1120,13 +1123,25 @@ PlayerTwoPick PlayerTwoChoice(const std::vector<rm::CharacterAvailability>& char
     for (const auto& o : options) {
         if (o.skin->id == g->p2Skin && !SkinsClash(one, o.skin->id)) pick = &o;
     }
-    for (std::size_t i = 0; pick == nullptr && i < options.size(); ++i) {
-        const auto& o = options[i];
-        bool sameSlot = false;
-        for (const auto& c : characters) {
-            for (const auto& s : c.skins) sameSlot = sameSlot || (s.id == one && s.costume_index == o.skin->costume_index);
+    const std::string chosen = g->p2Character >= 0 && g->p2Character < static_cast<int>(characters.size())
+                                   ? characters[static_cast<std::size_t>(g->p2Character)].id
+                                   : std::string();
+    for (std::size_t i = 0; pick == nullptr && !chosen.empty() && i < options.size(); ++i) {
+        if (options[i].character->id == chosen && !SkinsClash(one, options[i].skin->id)) pick = &options[i];
+    }
+    const std::string oneCharacter = g->selectedCharacter >= 0 && g->selectedCharacter < static_cast<int>(characters.size())
+                                         ? characters[static_cast<std::size_t>(g->selectedCharacter)].id
+                                         : std::string();
+    for (int pass = 0; pass < 2; ++pass) {  // another character first, then any
+        for (std::size_t i = 0; pick == nullptr && i < options.size(); ++i) {
+            const auto& o = options[i];
+            if (pass == 0 && o.character->id == oneCharacter) continue;
+            bool sameSlot = false;
+            for (const auto& c : characters) {
+                for (const auto& s : c.skins) sameSlot = sameSlot || (s.id == one && s.costume_index == o.skin->costume_index);
+            }
+            if (!sameSlot) pick = &o;
         }
-        if (!sameSlot) pick = &o;
     }
     PlayerTwoPick out;
     if (pick == nullptr) return out;
@@ -1139,6 +1154,114 @@ PlayerTwoPick PlayerTwoChoice(const std::vector<rm::CharacterAvailability>& char
 }
 
 int PlayerTwoCostume() { return PlayerTwoChoice(g->run->Characters()).costume; }
+
+// Player 2's choice made explicit for the menu: the character of their outfit, and a skin of that
+// character that does not clash with player 1's (empty when none does).
+void SyncPlayerTwo(const std::vector<rm::CharacterAvailability>& characters) {
+    const auto open = [&](int i) {
+        return i >= 0 && i < static_cast<int>(characters.size()) && characters[static_cast<std::size_t>(i)].gate == rm::CharacterGate::Selectable;
+    };
+    const std::string one = PlayerOneSkin(characters);
+    // An outfit they can wear names their character.
+    for (std::size_t i = 0; i < characters.size(); ++i) {
+        if (!open(static_cast<int>(i))) continue;
+        for (const auto& s : characters[i].skins) {
+            if (s.id == g->p2Skin && s.gate == rm::CharacterGate::Selectable && !SkinsClash(one, s.id)) {
+                g->p2Character = static_cast<int>(i);
+                return;
+            }
+        }
+    }
+    // Else their character's first outfit that fits; without a character, what they would play.
+    if (!open(g->p2Character)) {
+        const PlayerTwoPick pick = PlayerTwoChoice(characters);
+        g->p2Character = -1;
+        for (std::size_t i = 0; i < characters.size(); ++i) {
+            if (characters[i].id == pick.character) g->p2Character = static_cast<int>(i);
+        }
+        g->p2Skin = pick.skin;
+        return;
+    }
+    const auto& c = characters[static_cast<std::size_t>(g->p2Character)];
+    g->p2Skin.clear();
+    for (const auto& s : c.skins) {
+        if (g->p2Skin.empty() && s.gate == rm::CharacterGate::Selectable && !SkinsClash(one, s.id)) g->p2Skin = s.id;
+    }
+}
+
+// M10: CHARACTERS, SKINS and PERKS show and change player 2's choice while g->menuPlayer is 1: for
+// the call, their character and skin take player 1's place in the menu's selection (so the screens'
+// code serves both). g->menuOtherSkin is the other player's outfit (a clash is red there).
+class MenuPlayerScope {
+public:
+    explicit MenuPlayerScope(nativemenu::ScreenId id) {
+        using S = nativemenu::ScreenId;
+        g->menuOtherSkin.clear();
+        if (g->coopPlayers != 2 || (id != S::Characters && id != S::Skins && id != S::Perks && id != S::PerkList)) return;
+        const auto characters = g->run->Characters();
+        if (g->menuPlayer != 1) {
+            g->menuOtherSkin = PlayerTwoChoice(characters).skin;
+            return;
+        }
+        g->menuOtherSkin = PlayerOneSkin(characters);
+        SyncPlayerTwo(characters);
+        Swap();
+        swapped_ = true;
+    }
+    ~MenuPlayerScope() {
+        if (swapped_) Swap();
+    }
+    MenuPlayerScope(const MenuPlayerScope&) = delete;
+    MenuPlayerScope& operator=(const MenuPlayerScope&) = delete;
+
+private:
+    static void Swap() {
+        std::swap(g->selectedCharacter, g->p2Character);
+        std::swap(g->selectedSkin, g->p2Skin);
+    }
+    bool swapped_ = false;
+};
+
+struct PlayerRow {
+    std::string label;  // "PLAYER 2   LEON"
+    std::string who;    // "Leon S. Kennedy, Jacket."
+    int portrait = -1;
+    bool none = true;
+};
+int SelectedPortrait(rm::RunController& run);
+std::string Upper(std::string s);
+PlayerRow PlayerRowOf(rm::RunController& run, int player) {
+    const auto characters = run.Characters();
+    PlayerRow out;
+    out.label = "PLAYER " + std::to_string(player + 1) + "   NONE";
+    out.who = "No character is open for this player.";
+    std::string id, name, skin;
+    if (player == 0) {
+        if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) return out;
+        const auto& c = characters[static_cast<std::size_t>(g->selectedCharacter)];
+        const rm::SkinAvailability* s = SelectedSkin(c);
+        id = c.id;
+        name = c.name;
+        skin = s != nullptr && c.skins.size() > 1 ? s->name : std::string();
+        out.portrait = SelectedPortrait(run);
+    } else {
+        const PlayerTwoPick p = PlayerTwoChoice(characters);
+        if (p.skin.empty()) return out;
+        for (const auto& c : characters) {
+            if (c.id != p.character) continue;
+            id = c.id;
+            name = c.name;
+            for (const auto& s : c.skins) {
+                if (s.id == p.skin && c.skins.size() > 1) skin = s.name;
+            }
+        }
+        out.portrait = p.portrait;
+    }
+    out.label = "PLAYER " + std::to_string(player + 1) + "   " + Upper(Plain(id));
+    out.who = Plain(name) + (skin.empty() ? std::string() : ", " + Plain(skin)) + ".";
+    out.none = false;
+    return out;
+}
 
 // The skins worn now: each seat's in a run, else the menu's (player 2's too with PLAYERS 2).
 std::vector<std::string> WornSkins() {
@@ -1650,16 +1773,19 @@ std::int64_t SellCell(int cell);
 std::int64_t SellStash(int index);
 
 // The mod menu's first screen, row by row (Build and Decide walk the same list).
-enum class MainRow { Continue, Start, Players, PlayerTwo, Characters, Perks, Credits };
+enum class MainRow { Continue, Start, Players, PlayerOne, PlayerTwo, Characters, Perks, Credits };
 std::vector<MainRow> MainRows(rm::RunController& run) {
     std::vector<MainRow> rows;
     if (run.CanResumeRun()) rows.push_back(MainRow::Continue);
     rows.push_back(MainRow::Start);
-    if (engine::Caps().splitScreen) {
-        rows.push_back(MainRow::Players);
-        if (g->coopPlayers == 2) rows.push_back(MainRow::PlayerTwo);
+    const bool two = engine::Caps().splitScreen && g->coopPlayers == 2;
+    if (engine::Caps().splitScreen) rows.push_back(MainRow::Players);
+    if (two) {
+        rows.push_back(MainRow::PlayerOne);
+        rows.push_back(MainRow::PlayerTwo);
+    } else {
+        rows.push_back(MainRow::Characters);
     }
-    rows.push_back(MainRow::Characters);
     rows.push_back(MainRow::Perks);
     rows.push_back(MainRow::Credits);
     return rows;
@@ -1690,7 +1816,11 @@ private:
     nativemenu::Screen BuildTurn(ScreenId id) {
         const int seat = UiSeat(*g->run);
         SeatTurn turn(seat);
+        MenuPlayerScope menuPlayer(id);
         nativemenu::Screen screen = BuildLocked(id);
+        if (g->coopPlayers == 2 && (id == ScreenId::Characters || id == ScreenId::Skins || id == ScreenId::Perks || id == ScreenId::PerkList)) {
+            screen.header = "PLAYER " + std::to_string(g->menuPlayer + 1) + "   " + screen.header;
+        }
         if (turn.seat() > 0 && (id == ScreenId::MatchRewards || id == ScreenId::MatchShop || id == ScreenId::MatchOrganize ||
                                 id == ScreenId::MatchElement)) {
             screen.header = "PLAYER " + std::to_string(turn.seat() + 1) + "   " + screen.header;
@@ -1700,7 +1830,12 @@ private:
 
     nativemenu::Decision DecideTurn(ScreenId id, int index) {
         SeatTurn turn(UiSeat(*g->run));
-        return DecideLocked(id, index);
+        MenuPlayerScope menuPlayer(id);
+        const nativemenu::Decision d = DecideLocked(id, index);
+        if (g->menuPlayer == 1 && id == ScreenId::Skins && d.outcome == Outcome::Refresh) {
+            RM_LOGI("menu: player 2 wears %s", g->selectedSkin.c_str());  // still swapped: player 2's
+        }
+        return d;
     }
 
     nativemenu::Screen BuildLocked(ScreenId id) {
@@ -1745,11 +1880,13 @@ private:
                                                         "Press to switch between one player and two\n(split screen, a controller for player 2).",
                                                         false, 0, "person"});
                             break;
+                        case MainRow::PlayerOne:
                         case MainRow::PlayerTwo: {
-                            const PlayerTwoPick p2 = PlayerTwoChoice(run.Characters());
-                            Item item{"PLAYER 2   " + (p2.skin.empty() ? std::string("NONE") : Upper(Plain(p2.label))),
-                                      "Player 2's character and outfit, with its build.\nPress to choose.", p2.skin.empty(), 0, "person"};
-                            item.portrait = p2.portrait;
+                            const PlayerRow p = PlayerRowOf(run, row == MainRow::PlayerTwo ? 1 : 0);
+                            Item item{p.label, p.who + "\nPlays on the " + (row == MainRow::PlayerTwo ? "bottom" : "top") +
+                                                   " half. Press to choose.",
+                                      p.none, 0, "person"};
+                            item.portrait = p.portrait;
                             screen.items.push_back(std::move(item));
                             break;
                         }
@@ -1767,23 +1904,14 @@ private:
                 }
                 break;
             }
-            case ScreenId::Player2: {
-                screen.header = "PLAYER 2";
-                const auto characters = run.Characters();
-                const PlayerTwoPick current = PlayerTwoChoice(characters);
-                const std::string one = PlayerOneSkin(characters);
-                for (const PlayerTwoOption& o : PlayerTwoOptions(characters)) {
-                    Item item;
-                    item.label = Upper(Plain(o.character->name + (o.character->skins.size() > 1 ? "  " + o.skin->name : std::string())));
-                    if (o.skin->id == current.skin) item.label += "   <";
-                    item.icon = "person";
-                    item.portrait = PortraitOf(o.skin->id, static_cast<int>(o.skin->costume_index));
-                    item.locked = SkinsClash(one, o.skin->id);
-                    item.help = item.locked ? std::string("Player 1's outfit takes this costume slot\n(a mod's outfit is one file of the game).")
-                                            : "Player 2 plays " + Plain(o.character->name) + " in this outfit,\nwith its build and perks.";
+            case ScreenId::WhichPlayer: {
+                screen.header = "PERKS   " + Upper(CreditsLine());
+                for (int player = 0; player < 2; ++player) {
+                    const PlayerRow p = PlayerRowOf(run, player);
+                    Item item{p.label, p.who + "\nPress to see the perks of player " + std::to_string(player + 1) + ".", p.none, 0, "medal"};
+                    item.portrait = p.portrait;
                     screen.items.push_back(std::move(item));
                 }
-                screen.empty_help = "No character is open yet.";
                 break;
             }
             case ScreenId::RunResults:
@@ -2143,6 +2271,11 @@ private:
                         const rm::SkinMod& mod = *skinDef->mod;
                         item.help = (mod.author.empty() ? std::string("A free mod on Nexus Mods.") : "A free mod by " + Plain(mod.author) + ".") +
                                     " Press to open its page,\nendorse it, and unzip it in RogueMercenaries, mods.";
+                    } else if (s.gate == rm::CharacterGate::Selectable && SkinsClash(g->menuOtherSkin, s.id)) {
+                        // M10: two outfits of one costume slot cannot be worn together when one is a mod's.
+                        item.locked = true;
+                        item.help = "Player " + std::string(g->menuPlayer == 1 ? "1" : "2") +
+                                    " wears this costume slot already.\nA mod outfit replaces the slot, one file of the game.";
                     } else if (s.gate == rm::CharacterGate::Selectable) {
                         const bool selected = current != nullptr && current->id == s.id;
                         if (selected) item.label += "   SELECTED";
@@ -2225,13 +2358,22 @@ private:
                 }
                 if (row == MainRow::Players) {
                     g->coopPlayers = g->coopPlayers == 2 ? 1 : 2;
+                    g->menuPlayer = 0;
                     RM_LOGI("menu: players %d", g->coopPlayers);
                     d.outcome = Outcome::Refresh;
                     break;
                 }
-                if (row == MainRow::PlayerTwo) {
+                if (row == MainRow::PlayerOne || row == MainRow::PlayerTwo || row == MainRow::Characters) {
+                    // M10: each player chooses on the same CHARACTERS and SKINS screens (MenuPlayerScope).
+                    g->menuPlayer = row == MainRow::PlayerTwo ? 1 : 0;
                     d.outcome = Outcome::Push;
-                    d.next = ScreenId::Player2;
+                    d.next = ScreenId::Characters;
+                    break;
+                }
+                if (row == MainRow::Perks) {
+                    g->menuPlayer = 0;
+                    d.outcome = Outcome::Push;
+                    d.next = g->coopPlayers == 2 && engine::Caps().splitScreen ? ScreenId::WhichPlayer : ScreenId::Perks;
                     break;
                 }
                 if (row == MainRow::Start && g->coopPlayers == 2 && PlayerTwoChoice(run.Characters()).skin.empty()) {
@@ -2253,22 +2395,15 @@ private:
                     d.outcome = Outcome::StartRun;
                 } else {
                     d.outcome = Outcome::Push;
-                    d.next = row == MainRow::Characters ? ScreenId::Characters : row == MainRow::Perks ? ScreenId::Perks : ScreenId::Credits;
+                    d.next = ScreenId::Credits;
                 }
                 break;
             }
-            case ScreenId::Player2: {
-                const auto characters = run.Characters();
-                const auto options = PlayerTwoOptions(characters);
-                if (index < 0 || index >= static_cast<int>(options.size())) break;
-                const PlayerTwoOption& o = options[static_cast<std::size_t>(index)];
-                if (SkinsClash(PlayerOneSkin(characters), o.skin->id)) {
-                    d.outcome = Outcome::Denied;
-                    break;
-                }
-                g->p2Skin = o.skin->id;
-                RM_LOGI("menu: player 2 wears %s (%s)", o.skin->id.c_str(), o.character->id.c_str());
-                d.outcome = Outcome::Back;
+            case ScreenId::WhichPlayer: {
+                if (index < 0 || index > 1) break;
+                g->menuPlayer = index;
+                d.outcome = Outcome::Push;
+                d.next = ScreenId::Perks;
                 break;
             }
             case ScreenId::RunLength: {
@@ -2563,7 +2698,9 @@ private:
                 if (g->selectedCharacter < 0 || g->selectedCharacter >= static_cast<int>(characters.size())) break;
                 const auto& skins = characters[g->selectedCharacter].skins;
                 if (index < 0 || index >= static_cast<int>(skins.size())) break;
-                if (skins[index].gate == rm::CharacterGate::Selectable) {
+                if (skins[index].gate == rm::CharacterGate::Selectable && SkinsClash(g->menuOtherSkin, skins[index].id)) {
+                    d.outcome = Outcome::Denied;  // the other player's outfit takes its costume slot
+                } else if (skins[index].gate == rm::CharacterGate::Selectable) {
                     g->selectedSkin = skins[index].id;
                     d.outcome = Outcome::Refresh;
                 } else if (skins[index].gate == rm::CharacterGate::NotInstalled) {

@@ -56,7 +56,8 @@ PLAY
                    left starts again.
     START RUN    - starts a run with the selected character.
     PLAYERS      - 1, or 2 on a split screen (see TWO PLAYERS below).
-    PLAYER 2     - with 2 players: player 2's character and outfit.
+    PLAYER 1     - with 2 players, in place of CHARACTERS: each player picks a character
+    PLAYER 2       and a skin on the same screens. PERKS then asks which player first.
     CHARACTERS   - pick a character and a skin. Most skins change how the run plays
                    (the line under each skin explains it).
     PERKS        - three slots: Style, Supply, Support. Locked perks are red and show
@@ -90,7 +91,9 @@ PLAY
 TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPHA.30
   Two players on one PC, the screen split in two: the game's own split screen. Player 2
   needs a controller; player 1 can use the keyboard or another controller.
-  In the mod's menu set PLAYERS to 2, choose PLAYER 2's character and outfit, then
+  In the mod's menu set PLAYERS to 2. PLAYER 1 and PLAYER 2 each open the CHARACTERS
+  and SKINS screens for that player (an outfit in red is the other player's costume
+  slot, which a mod outfit cannot share), and PERKS asks whose perks first. Then
   START RUN. The game's split-screen lobby appears: player 2 presses START on their
   controller to join, then both press Ready. Player 1 plays on the top half, player 2
   on the bottom half.

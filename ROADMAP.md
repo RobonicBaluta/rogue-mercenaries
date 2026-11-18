@@ -377,6 +377,10 @@ times the bosses' health (tuned with `rm_sim`); two mod skins on the same base s
    grid for the player whose turn it is (the native screen is the two-panel co-op one in a split
    match). alpha.30: selling and the run's storage in that screen (TO THE STORAGE, SELL, the
    storage's items listed to take out; the storage is shared).
+   alpha.31 (2026-11-18): the menus per player after the user's two-controller session ("selecting
+   the character and skin for the 2nd player is counter intuitive and a bit weird"): PLAYER 1 and
+   PLAYER 2 open the same CHARACTERS and SKINS screens (MenuPlayerScope puts player 2's choice in
+   the menu's selection for the call), PERKS asks whose, clashing outfits red on either side.
 6. F5, HUD and drawing per viewport. Done 2026-11-17 (alpha.29): the HUD texts on player 2's half
    (the overlay; the game's routine is clipped to the top view), each player's special rings and
    weapon card on their half, the element arcs in every view's region.
