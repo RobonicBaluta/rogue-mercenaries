@@ -8213,8 +8213,8 @@ void WatchLobbyPads(double now) {
     lastReady = ready;
 }
 
-// M10: the fight's HUD texts on player 2's half of the split screen (the game's text routine draws
-// only in the top view), laid out as the top half's, 360 lines lower.
+// M10: the enemies-left label on player 2's half of the split screen (the game's text routine draws
+// only in the top view), under the counter the game draws there, 360 lines lower than the top's.
 matchui::Hud g_splitHud;
 
 void DrawSplitHud() {
@@ -8232,10 +8232,11 @@ void DrawSplitHud() {
         list->AddText(font, size * k, ImVec2(at.x + 1.0f, at.y + 1.0f), IM_COL32(0, 0, 0, 200), s.c_str());
         list->AddText(font, size * k, at, colour, s.c_str());
     };
-    text(g_splitHud.notice, 640.0f, 36.0f, 17.0f, IM_COL32(255, 255, 255, 235));
-    text(g_splitHud.left, 224.0f, 128.0f, 19.0f, IM_COL32(255, 255, 255, 235));
+    // The arena, supplies, keys and notices are the players' together: shown once, at the top of
+    // the screen as in solo (the user, 2026-11-18: "if they both have the same ... why couldn't we
+    // just have it once like the SP has?"). Only the counter's label stays, under the counter the
+    // game itself draws in each half.
     text(g_splitHud.center, 640.0f, 176.0f, 15.0f, IM_COL32(220, 220, 220, 200));
-    text(g_splitHud.right, 1056.0f, 128.0f, 19.0f, IM_COL32(255, 255, 255, 235));
 }
 
 void DrawSpecialWidgets() {
@@ -10106,6 +10107,23 @@ void PollDevCommand(double now) {
                     w.players.empty() ? -1.0f : NearestWatcher(w, pos).second / 100.0f, inView ? "in a camera's view" : "out of view",
                     AnyoneMaySee(w, pos) ? "SEEN" : "unseen");
         }
+    } else if (command.rfind("face ", 0) == 0) {
+        // "face <class>": the local player turns to the first live enemy of the class (screenshots:
+        // aiming then puts the camera over the player's shoulder on it).
+        const std::string cls = command.substr(5);
+        const auto local = engine::LocalPlayer();
+        bool done = false;
+        for (const auto& e : engine::ReadEnemyStates()) {
+            if (done || e.hp <= 0 || !local || engine::ClassName(e.object) != cls) continue;
+            const float dx = ReadOr<float>(e.object + re5::off::kUnitPosition, 0.0f) - ReadOr<float>(local + re5::off::kUnitPosition, 0.0f);
+            const float dz = ReadOr<float>(e.object + re5::off::kUnitPosition + 8, 0.0f) - ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f);
+            const float yaw = std::atan2(dx, dz);  // forward = (sin, cos), as the spawn code reads it
+            const float q[4] = {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)};
+            for (int i = 0; i < 4; ++i) SafeStore<float>(local + re5::off::kUnitRotation + i * 4, q[i]);
+            RM_LOGW("dev face %s: %.0f degrees, %.1f m away", cls.c_str(), yaw * 57.29578f, std::sqrt(dx * dx + dz * dz) / 100.0f);
+            done = true;
+        }
+        if (!done) RM_LOGW("dev face %s: no such live enemy", cls.c_str());
     } else if (command == "killone") {
         // One real death: the first live enemy (to bring an arena down to its last enemy).
         for (const auto& e : engine::ReadEnemyStates()) {
@@ -10814,7 +10832,7 @@ void DrawHud(const rm::RunSnapshot& s) {
         ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.4f, 1.0f), "ROGUE MERCENARIES");
         ImGui::TextDisabled(autopilot::Armed() ? "Starting: Solo, random stage, your character"
                                                : "Solo, any stage, your character - the run starts with the match");
-    } else {
+    } else if (!(g->settings.developerMode && g->settings.devHideLabel)) {
         ImGui::TextDisabled(g->settings.everythingUnlocked ? "Rogue Mercenaries (everything unlocked) - Play menu or F7" : "Rogue Mercenaries - Play menu or F7");
     }
     for (const auto& toast : g->toasts.Active()) {

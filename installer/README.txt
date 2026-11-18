@@ -104,7 +104,8 @@ TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPH
       health. The supplies are shared.
     - An arena has half again as many enemies, and a boss has more health.
     - Each player's skin special is on their own controller (LB+RB, both sticks), with
-      its rings on their half; the arena, enemies left and supplies show on both halves.
+      its rings on their half. The arena, supplies and keys show once, at the top as in
+      solo; each half shows how many enemies are left.
     - A player who is dying (crawling) can still be helped up by the other, the game's
       way. A player who dies stays down until the next arena, which they start with half
       their health. The run ends when both have fallen.

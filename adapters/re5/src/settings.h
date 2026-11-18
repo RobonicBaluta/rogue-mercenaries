@@ -36,6 +36,7 @@ struct Settings {
     bool uiDemo = false;
     // Test aids for automated play: no damage taken, extra outgoing damage.
     bool devInvulnerable = false;
+    bool devHideLabel = false;  // dev "hide_label": no status line at the top right (screenshots for the mod page)
     float devOutgoingMultiplier = 1.0f;
     float devIncomingMultiplier = 1.0f;
     // Perks granted (under normal rules) right after a run starts.

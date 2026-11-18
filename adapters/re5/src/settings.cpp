@@ -158,6 +158,7 @@ Settings LoadAdapterSettings(const Paths& paths, std::string* error) {
             settings.disableOverlayDraw = dev.value("disable_overlay_draw", settings.disableOverlayDraw);
             settings.uiDemo = dev.value("ui_demo", settings.uiDemo);
             settings.devInvulnerable = dev.value("invulnerable", settings.devInvulnerable);
+            settings.devHideLabel = dev.value("hide_label", settings.devHideLabel);
             settings.devOutgoingMultiplier = dev.value("outgoing_multiplier", settings.devOutgoingMultiplier);
             settings.devIncomingMultiplier = dev.value("incoming_multiplier", settings.devIncomingMultiplier);
             settings.devGrantPerks = dev.value("grant_perks", settings.devGrantPerks);
