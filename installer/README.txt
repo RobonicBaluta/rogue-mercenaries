@@ -135,9 +135,9 @@ KNOWN ISSUES (ALPHA)
     controllers: please report what goes wrong.
   - Uroboros Mkono, one of the alternate bosses of arena 8, may not be beatable yet:
     pick another boss there.
-  - In one campaign area a ladder could not be climbed, and a fall left the player
-    stuck; that area is out of the runs for now. If a ladder ignores you anywhere else,
-    please report the arena.
+  - The campaign areas' ladders can be climbed since this version (before, they were
+    only scenery, and Factory Floor was left out of the runs for it). If a ladder still
+    ignores you, please report the arena.
   - An enemy that stands far away out of sight while nothing dies is moved nearer
     after a while (never where you can see it). The last enemy of an arena is pulled
     nearer twice at most; if it is still not found, it is finished and the arena ends.

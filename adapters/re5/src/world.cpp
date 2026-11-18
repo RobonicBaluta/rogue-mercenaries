@@ -9,9 +9,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdio>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "engine.h"
 #include "log.h"
@@ -145,12 +147,136 @@ std::string RecordClass(std::uintptr_t manager, int group, int id) {
     return holder ? ReadCString(holder + 8, 64) : std::string();
 }
 
+// A campaign area's own object layouts (2026-11-18, a player on the ship deck s500: "i cant use
+// any of the ladders"): in a Mercenaries match the area load's layout pass files only the
+// `scr\` and `soft\merce\` layouts (re5_layout.h kFnStageLayouts), so a campaign area hosted
+// there had no ladder objects, and the parts of it only ladders reach (container tops, decks)
+// were cut off for the player and for the enemies. The run's map names the layouts holding its
+// ladders (maps.json "layouts"); the pass files them too, before the area load queues the
+// archives of every record's class (list 4), and the set spawn builds only the ladders of them:
+// the same layouts can hold use-item spots, co-op jumps, models of the story.
+using StageLayoutsFn = void(__thiscall*)(std::uintptr_t self, std::uintptr_t archive);
+using RegisterLayoutFn = void(__stdcall*)(std::uintptr_t layout);
+using ExtensionFn = const char*(__thiscall*)(std::uintptr_t resource);
+StageLayoutsFn g_origStageLayouts = nullptr;
+std::mutex g_layoutMutex;
+std::vector<std::string> g_stageLayouts;  // lower case, as `s500_idf01_ins`
+struct AddedLayout {
+    int group;
+    std::uintptr_t layout;
+};
+std::vector<AddedLayout> g_addedLayouts;
+std::atomic<int> g_refusedRecords{0};
+constexpr const char* kLadderClasses[] = {"uOmf200", "uOmf201"};  // cSetInfoOmLadderV units
+constexpr std::size_t kArchiveResources = 0x60;                  // resource pointers
+constexpr std::size_t kArchiveResourceCount = 0x64;
+constexpr std::size_t kSetManagerGroups = 0x6C;      // layout per group
+constexpr std::size_t kSetManagerGroupCount = 0x60;  // size of that array
+
+bool IsLadderClass(const std::string& cls) {
+    for (const char* ladder : kLadderClasses) {
+        if (cls == ladder) return true;
+    }
+    return false;
+}
+
+// The resource's extension ("lot" for a layout), or nullptr.
+const char* ResourceExtension(std::uintptr_t resource) {
+    __try {
+        const auto vtable = *reinterpret_cast<std::uintptr_t*>(resource);
+        return reinterpret_cast<ExtensionFn>(*reinterpret_cast<std::uintptr_t*>(vtable + 0x18))(resource);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+bool RegisterLayout(std::uintptr_t layout) {
+    __try {
+        reinterpret_cast<RegisterLayoutFn>(re5::addr::kFnRegisterLayout)(layout);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+// The object group sObjModel filed `layout` at, or -1.
+int ObjectGroupOf(std::uintptr_t manager, std::uintptr_t layout) {
+    const auto groups = manager ? ReadOr<std::uintptr_t>(manager + kSetManagerGroups, 0) : 0;
+    const int count = groups ? std::min(ReadOr<std::int32_t>(manager + kSetManagerGroupCount, 0), 256) : 0;
+    for (int g = 0; g < count; ++g) {
+        if (ReadOr<std::uintptr_t>(groups + g * 4, 0) == layout) return g;
+    }
+    return -1;
+}
+
+std::string LowerName(const std::string& path) {
+    const auto slash = path.find_last_of("\\/");
+    std::string name = slash == std::string::npos ? path : path.substr(slash + 1);
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return name;
+}
+
+void __fastcall StageLayoutsDetour(std::uintptr_t self, void*, std::uintptr_t archive) {
+    g_origStageLayouts(self, archive);
+    std::vector<std::string> wanted;
+    {
+        std::lock_guard<std::mutex> lock(g_layoutMutex);
+        wanted = g_stageLayouts;
+    }
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kObjModelManager, 0);
+    if (wanted.empty() || !archive || !manager) return;
+    const auto list = ReadOr<std::uintptr_t>(archive + kArchiveResources, 0);
+    const int count = list ? std::min(ReadOr<std::int32_t>(archive + kArchiveResourceCount, 0), 8192) : 0;
+    for (int i = 0; i < count; ++i) {
+        const auto resource = ReadOr<std::uintptr_t>(list + i * 4, 0);
+        if (!resource) continue;
+        const std::string name = LowerName(ReadCString(resource + 4, 128));
+        if (std::find(wanted.begin(), wanted.end(), name) == wanted.end()) continue;
+        const char* extension = ResourceExtension(resource);
+        if (extension == nullptr || ReadCString(reinterpret_cast<std::uintptr_t>(extension), 8) != "lot") continue;
+        if (ObjectGroupOf(manager, resource) >= 0) continue;  // filed already (the campaign's own load)
+        if (!RegisterLayout(resource)) {
+            RM_LOGE("world: campaign layout %s could not be filed", name.c_str());
+            continue;
+        }
+        const int group = ObjectGroupOf(manager, resource);
+        RM_LOGI("world: campaign layout %s filed as object set %d (%d records; only its ladders are built)", name.c_str(), group,
+                group >= 0 ? RecordCount(manager, group) : 0);
+        if (group < 0) continue;
+        std::lock_guard<std::mutex> lock(g_layoutMutex);
+        g_addedLayouts.erase(std::remove_if(g_addedLayouts.begin(), g_addedLayouts.end(),
+                                            [&](const AddedLayout& a) { return a.group == group; }),
+                             g_addedLayouts.end());
+        g_addedLayouts.push_back({group, resource});
+    }
+}
+
+// Whether the object set `group` is one the mod filed (and still holds that layout).
+bool IsAddedGroup(std::uintptr_t manager, int group) {
+    const auto groups = ReadOr<std::uintptr_t>(manager + kSetManagerGroups, 0);
+    const auto current = groups && group >= 0 && group < 256 ? ReadOr<std::uintptr_t>(groups + group * 4, 0) : 0;
+    std::lock_guard<std::mutex> lock(g_layoutMutex);
+    for (const AddedLayout& a : g_addedLayouts) {
+        if (a.group == group) return current != 0 && current == a.layout;
+    }
+    return false;
+}
+
 template <int M>
 std::uintptr_t __fastcall SetSpawnDetour(std::uintptr_t self, void*, int group, int id) {
     if constexpr (M == 0) {
         if (g_blockChests.load() && RecordClass(self, group, id) == kChestClass) {
             if (g_blockedChests.fetch_add(1) < 2) RM_LOGI("world: the stage's own time bonus (set %d id %d) not created", group, id);
             return 0;
+        }
+        if (IsAddedGroup(self, group)) {
+            const std::string cls = RecordClass(self, group, id);
+            if (!IsLadderClass(cls)) {
+                if (g_refusedRecords.fetch_add(1) < 8) {
+                    RM_LOGI("world: %s (campaign layout, set %d id %d) not built: only its ladders are", cls.c_str(), group, id);
+                }
+                return 0;
+            }
         }
     }
     const std::uintptr_t unit = g_origSetSpawn[M](self, group, id);
@@ -304,6 +430,12 @@ bool Install() {
                           reinterpret_cast<void**>(&g_origHourGlassCtor), "uOmHourGlass constructor");
     g_available = ok;
     if (g_available) RM_LOGI("world: hooks on the set spawns and creates of sObjModel and sItem queued");
+    // A campaign area's ladders: only with the set spawn's filter (the layouts hold more than ladders).
+    if (ok && engine::Caps().stageLayouts &&
+        Queue(re5::addr::kFnStageLayouts, reinterpret_cast<void*>(&StageLayoutsDetour),
+              reinterpret_cast<void**>(&g_origStageLayouts), "the area load's layout pass")) {
+        RM_LOGI("world: hook on the area load's layout pass queued (campaign ladders)");
+    }
     if (engine::Caps().pickupItem && Queue(re5::addr::kFnPickUpItem, reinterpret_cast<void*>(&PickUpDetour),
                                            reinterpret_cast<void**>(&g_origPickUp), "item pickup")) {
         RM_LOGI("world: hook on the item pickup queued (a build's drops)");
@@ -332,6 +464,19 @@ void SetDropRules(const DropRules& rules) {
 }
 
 void SetSurvey(bool on) { g_survey = on; }
+
+void SetStageLayouts(const std::vector<std::string>& names) {
+    std::vector<std::string> lower;
+    for (const std::string& n : names) lower.push_back(LowerName(n));
+    std::lock_guard<std::mutex> lock(g_layoutMutex);
+    if (lower == g_stageLayouts) return;
+    g_stageLayouts = std::move(lower);
+    g_addedLayouts.clear();
+    g_refusedRecords = 0;
+    std::string line;
+    for (const std::string& n : g_stageLayouts) line += " " + n;
+    RM_LOGI("world: campaign layouts for the next loads:%s", line.empty() ? " none" : line.c_str());
+}
 
 void WatchCreated(const std::string& cls) {
     std::lock_guard<std::mutex> lock(g_watchMutex);

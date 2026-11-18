@@ -81,6 +81,9 @@ struct MapDef {
     /// roster's own stage loads for them (weapons they carry, plagas, effects), for maps whose
     /// stage does not load them itself (campaign areas).
     std::vector<std::string> preload;
+    /// A campaign area's own object layouts holding its ladders (`s500_IDf01_Ins`): a Mercenaries
+    /// match skips them, so the adapter files them and builds their ladders.
+    std::vector<std::string> layouts;
     int max_alive = 8;
     double min_player_distance = 800.0;  // engine units; points closer than this are avoided
     double max_player_distance = 0.0;    // > 0: points farther than this are avoided (large areas)

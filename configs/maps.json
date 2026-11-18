@@ -1432,6 +1432,7 @@
         [2793.0, -22.3, -10858.5]
       ],
       "preload": ["uEm10", "uOm1202", "uOm1203", "uWp50", "uWp51", "uWp55", "uWp5a", "uWp72", "uEm21", "uEm10Eff", "uWp75", "uEm11", "uEm0d", "uEm62", "uWp3c", "uWp3d", "uWp3e", "uWp59", "uWp6c", "uWp73", "uEm20", "uWp58", "uOm0100", "uWp52", "uWp53"],
+      "layouts": ["s104_IDf00_Ins"],
       "roster": [
         {
           "class": "uEm10",
@@ -2618,6 +2619,7 @@
         [-3734.9, -393.1, -3070.3]
       ],
       "preload": ["uEm10", "uOm1202", "uOm1203", "uWp50", "uWp51", "uWp55", "uWp5a", "uWp72", "uEm21", "uEm10Eff", "uWp75", "uEm11", "uEm0d", "uEm62", "uWp3c", "uWp3d", "uWp3e", "uWp59", "uWp6c", "uWp73", "uEm20", "uWp58", "uOm0100", "uWp52", "uWp53", "uWp71"],
+      "layouts": ["s113_IDf00_Ins"],
       "roster": [
         {
           "class": "uEm10",
@@ -3277,6 +3279,7 @@
         [2923.2, 50.0, -1353.7]
       ],
       "preload": ["uEm10", "uOm1202", "uOm1203", "uWp50", "uWp51", "uWp55", "uWp5a", "uWp72", "uEm21", "uEm10Eff", "uWp75", "uEm11", "uEm0d", "uEm62", "uWp3c", "uWp3d", "uWp3e", "uWp59", "uWp6c", "uWp73", "uEm20", "uWp58", "uOm0100"],
+      "layouts": ["s114_IDF00_Ins"],
       "roster": [
         {
           "class": "uEm10",
@@ -4044,6 +4047,7 @@
         [30081.2, 411.2, -88237.1]
       ],
       "preload": ["uEm10", "uOm1202", "uOm1203", "uWp50", "uWp52", "uWp81", "uWp6c", "uWp59", "uWp5a", "uEm22", "uWp5b", "uEm62", "uWp3c", "uWp3d", "uWp3e", "uWp73", "uEm0d", "uWp55", "uWp51", "uWp54", "uOm1206", "uWp72", "uOm0100", "uWp53"],
+      "layouts": ["s204_IDf03_Ins"],
       "roster": [
         {
           "class": "uEm10",
@@ -4702,6 +4706,7 @@
         [165.6, 250.0, 5729.1]
       ],
       "preload": ["uEm10", "uOm1202", "uOm1203", "uWp50", "uWp52", "uWp81", "uWp6c", "uWp59", "uWp5a", "uEm22", "uWp5b", "uEm62", "uWp3c", "uWp3d", "uWp3e", "uWp73", "uEm0d", "uWp55", "uWp51", "uWp54", "uOm1206", "uWp72", "uOm0100", "uWp61", "uWp65"],
+      "layouts": ["s500_IDf01_Ins"],
       "roster": [
         {
           "class": "uEm10",
@@ -6209,7 +6214,6 @@
       "id": "campaign_s505",
       "name": "Factory Floor",
       "stage": 505,
-      "rotation": false,
       "start": [-2253.9, 703.2, -723.6],
       "max_alive": 12,
       "min_player_distance": 800,
@@ -6708,6 +6712,7 @@
         [-2767.9, 369.0, 78.0]
       ],
       "preload": ["uEm10", "uOm1202", "uOm1203", "uWp73", "uEm0d", "uWp75", "uWp54", "uOm1206", "uWp5a", "uWp59", "uWp55", "uEm62", "uWp3c", "uWp3d", "uWp3e", "uWp50", "uWp6c", "uWp72", "uWp51", "uEm23", "uEm10Eff", "uWp5d", "uWp84", "uOm0100", "uWp65", "uWp68", "uWp6a"],
+      "layouts": ["s505_IDf00_Ins"],
       "roster": [
         {
           "class": "uEm10",
@@ -7023,6 +7028,7 @@
         [-573.9, -700.0, 555.7]
       ],
       "preload": [],
+      "layouts": ["s506_IDf00_Ins"],
       "boss": {
         "class": "uEm81",
         "name": "Wesker",
@@ -8534,6 +8540,7 @@
         [-2801.6, -21.8, -2682.4]
       ],
       "preload": [],
+      "layouts": ["s108_IDf02_Ins"],
       "boss": {
         "class": "uEm44",
         "name": "Popokarimu",
@@ -8638,6 +8645,7 @@
         [-10643.9, 0.0, -19184.8]
       ],
       "preload": ["uEm41Arm", "uEm41Core", "uOm0019"],
+      "layouts": ["s308_IDF00_Ins"],
       "boss": {
         "class": "uEm41",
         "name": "Uroboros Aheri",
@@ -8754,6 +8762,7 @@
         [1777.0, 2702.8, 23860.5]
       ],
       "preload": ["uEm42Core", "uEm42Slime", "uEm42Tentacle", "uOm0019"],
+      "layouts": ["s511_IDf00_ins"],
       "boss": {
         "class": "uEm42",
         "name": "Uroboros Mkono",
@@ -8995,6 +9004,7 @@
         [-738.9, 2880.0, 848.4]
       ],
       "preload": ["uEm10", "uOm1202", "uOm1203", "uWp73", "uEm0d", "uWp75", "uWp54", "uOm1206", "uWp5a", "uWp59", "uWp55", "uEm62", "uWp3c", "uWp3d", "uWp3e", "uWp50", "uWp6c", "uWp72", "uWp51", "uEm23", "uEm10Eff", "uWp5d", "uWp84", "uOm0100", "uEm14", "uWp6d", "uWp6e", "uWp65", "uEm0e", "uEm32", "uWp68", "uWp83", "uWp52", "uWp53", "uWp61", "uWp6a", "uWp71"],
+      "layouts": ["s704_IDf00_Ins"],
       "roster": [
         {
           "class": "uEm10",

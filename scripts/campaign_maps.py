@@ -24,7 +24,11 @@ import math
 import os
 import re
 import struct
+import sys
 import zlib
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from xfs_setinfo import parse_bytes  # noqa: E402
 
 ARCHIVES = 'G:/SteamLibrary/steamapps/common/Resident Evil 5/nativePC_MT/Image/Archive'
 WAYPOINT_TYPE = 0x5F36B659
@@ -125,11 +129,9 @@ NO_ROTATION = {
     # The campaign's opening area: the story keeps the inventory, weapon switching and the HUD off
     # there until an event a run never reaches (user playtest 2026-11-03).
     100: 'the story keeps the inventory, weapons and HUD off',
-    # The ground floor (y 0) leads up only by ladders (s505_IDf00_Ins: eight cSetInfoOmLadderV
-    # uOmf201, 2-4 m), and one could not be grabbed after a fall (user playtest 2026-11-08: "you
-    # can't ever continue and you are stuck there"). Back once ladders are checked in game.
-    505: 'a ladder up from the ground floor cannot be grabbed: a fall there strands the player',
-}  # 503 was out (its random upper-deck start); the start warp (M6.2) fixed that. 508 was out
+}  # 505 was out (2026-11-08, a ladder up from its ground floor could not be grabbed: a Mercenaries
+# match never built the area's ladders; since 2026-11-18 the adapter files its "layouts" and builds
+# them, all eight, one climbed in game). 503 was out (its random upper-deck start); the start warp (M6.2) fixed that. 508 was out
 # (2026-11-08: a camera zone held the view); a run's campaign area now keeps the player camera
 # (adapter area_cameras.cpp).
 # Short names from the areas' start views (vetting 2026-11-02); others get "Campaign sNNN".
@@ -175,6 +177,23 @@ def area_weapons(stage):
     return sorted(found)
 
 
+LADDER_CLASSES = {'uOmf200', 'uOmf201'}  # cSetInfoOmLadderV
+
+
+def ladder_layouts(stage):
+    """The area's own object layouts (soft\\sNNN_IDfNN_Ins) holding a ladder: a Mercenaries match
+    skips them, so the adapter files them and builds their ladders (maps.json "layouts")."""
+    names = []
+    for name, body in resources(stage, LAYOUT_TYPE):
+        path = name.replace('/', '\\').lower()
+        if '\\soft\\' not in path or '\\merce' in path or not path.endswith('_ins'):
+            continue
+        infos = parse_bytes(body)
+        if any(isinstance(si, dict) and si.get('mUnitClass') in LADDER_CLASSES for si in infos):
+            names.append(name.replace('/', '\\').split('\\')[-1])
+    return sorted(names)
+
+
 def spread(points, count):
     """Farthest-point sample: each next point is the one farthest from those already taken."""
     if not points:
@@ -191,9 +210,46 @@ parser.add_argument('stages', nargs='+', type=int)
 parser.add_argument('--template', default='0',
                     help='Mercenaries map (stage index) whose roster is copied; several, comma separated, are merged '
                          '(their classes, the first one\'s of a class shared, and every one\'s preloads)')
+parser.add_argument('--layouts-only', action='store_true',
+                    help='only (re)write the "layouts" of the existing entries of these stages')
 args = parser.parse_args()
 
 doc = json.load(open('configs/maps.json', encoding='utf-8'))
+
+
+def with_layouts(entry, layouts):
+    """The entry with "layouts" after "preload" (or "chests"), or without it when there are none."""
+    out = {}
+    for key, value in entry.items():
+        if key == 'layouts':
+            continue
+        out[key] = value
+        if key == ('preload' if 'preload' in entry else 'chests') and layouts:
+            out['layouts'] = layouts
+    if layouts and 'layouts' not in out:
+        out['layouts'] = layouts
+    return out
+
+
+def write_doc():
+    with open('configs/maps.json', 'w', encoding='utf-8', newline='\n') as f:
+        text = json.dumps(doc, indent=2)
+        text = re.sub(r'\[\s+(-?[\d.]+),\s+(-?[\d.]+),\s+(-?[\d.]+)\s+\]', r'[\1, \2, \3]', text)
+        text = re.sub(r'"(arms|preload|layouts)": \[([^\]]*)\]',
+                      lambda m: f'"{m.group(1)}": [' + ', '.join(x.strip() for x in m.group(2).split(',')) + ']', text)
+        text = re.sub(r'\{\s+"weight": (\d+),\s+"fields": \{([^}]*)\}\s+\}',
+                      lambda m: '{"weight": ' + m.group(1) + ', "fields": {' + ', '.join(x.strip() for x in m.group(2).split(',') if x.strip()) + '}}', text)
+        f.write(text + '\n')
+
+
+if args.layouts_only:
+    for stage in args.stages:
+        layouts = ladder_layouts(stage)
+        doc['maps'] = [with_layouts(m, layouts) if m['stage'] == stage else m for m in doc['maps']]
+        print(f's{stage}: layouts {layouts or "none"}')
+    write_doc()
+    raise SystemExit(0)
+
 template_ids = [int(t) for t in str(args.template).split(',')]
 templates = [next(m for m in doc['maps'] if m['stage'] == t) for t in template_ids]
 template = dict(templates[0])
@@ -251,6 +307,7 @@ for stage in args.stages:
         for key in ('facing', 'trigger', 'trigger_box', 'trigger_wait'):
             if key in boss:
                 entry['boss'][key] = boss[key]
+    entry = with_layouts(entry, ladder_layouts(stage))
     # An area made again keeps its place in the list (the run map draws from it in order).
     if any(m['stage'] == stage for m in doc['maps']):
         doc['maps'] = [entry if m['stage'] == stage else m for m in doc['maps']]
@@ -262,11 +319,4 @@ for stage in args.stages:
         print(f's{stage}: {len(points)} points, {len(entry["chests"])} chests, roster and {len(preload)} archives from '
               f'{template["name"]}, {len(entry["preload"]) - len(preload)} more weapons of the area')
 
-with open('configs/maps.json', 'w', encoding='utf-8', newline='\n') as f:
-    text = json.dumps(doc, indent=2)
-    text = re.sub(r'\[\s+(-?[\d.]+),\s+(-?[\d.]+),\s+(-?[\d.]+)\s+\]', r'[\1, \2, \3]', text)
-    text = re.sub(r'"(arms|preload)": \[([^\]]*)\]',
-                  lambda m: f'"{m.group(1)}": [' + ', '.join(x.strip() for x in m.group(2).split(',')) + ']', text)
-    text = re.sub(r'\{\s+"weight": (\d+),\s+"fields": \{([^}]*)\}\s+\}',
-                  lambda m: '{"weight": ' + m.group(1) + ', "fields": {' + ', '.join(x.strip() for x in m.group(2).split(',') if x.strip()) + '}}', text)
-    f.write(text + '\n')
+write_doc()

@@ -5234,6 +5234,7 @@ void UpdatePreloads() {
     lastBoss = bossArchive;
     lastPartner = partnerClass;
     resources::Extras extras;
+    std::vector<std::string> layouts;  // the campaign area's ladders (world::SetStageLayouts)
     if (runLoads) {
         // Every gun, and every other item perks, rewards and the shop hand out: a first aid
         // spray carried to a stage that does not load it ends the game ("Failed open file ...
@@ -5280,6 +5281,7 @@ void UpdatePreloads() {
             own == nullptr ? std::nullopt : planned ? g->run->ArenaMap(CurrentMapKey()) : std::optional<rm::MapDef>(*own);
         if (map) {
             extras.enemyArchives = map->preload;
+            layouts = map->layouts;
             if (map->boss) extras.enemyClasses.push_back(map->boss->unit_class);
             auto addClass = [&](const std::string& name) {
                 if (std::find(extras.enemyClasses.begin(), extras.enemyClasses.end(), name) == extras.enemyClasses.end()) {
@@ -5314,6 +5316,7 @@ void UpdatePreloads() {
         if (!guestLine.empty()) RM_LOGI("resources: stage %d brings the run's guests:%s", CurrentMapKey(), guestLine.c_str());
     }
     if (effects) extras.enemyArchives.push_back(rm::fx::kEffectsArchive);
+    world::SetStageLayouts(layouts);
     RM_LOGI("resources: %s, stage %d: %zu player items, %zu enemy classes, %zu enemy weapons and %zu archives go with every load",
             runLoads ? "run" : "no run", CurrentMapKey(), extras.playerItems.size(), extras.enemyClasses.size(),
             extras.enemyWeapons.size(), extras.enemyArchives.size());
@@ -10106,6 +10109,17 @@ void PollDevCommand(double now) {
             RM_LOGW("dev watchers: %s %s %.1f m from the nearest player, %s, %s", id.c_str(), engine::ClassName(unit).c_str(),
                     w.players.empty() ? -1.0f : NearestWatcher(w, pos).second / 100.0f, inView ? "in a camera's view" : "out of view",
                     AnyoneMaySee(w, pos) ? "SEEN" : "unseen");
+        }
+    } else if (command.rfind("facept ", 0) == 0) {
+        // "facept <x> <z>": the local player turns to a world point (a ladder, a door).
+        float tx = 0.0f, tz = 0.0f;
+        const auto local = engine::LocalPlayer();
+        if (local && std::sscanf(command.c_str() + 7, "%f %f", &tx, &tz) == 2) {
+            const float yaw = std::atan2(tx - ReadOr<float>(local + re5::off::kUnitPosition, 0.0f),
+                                         tz - ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f));
+            const float q[4] = {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)};
+            for (int i = 0; i < 4; ++i) SafeStore<float>(local + re5::off::kUnitRotation + i * 4, q[i]);
+            RM_LOGW("dev facept %.0f %.0f: %.0f degrees", tx, tz, yaw * 57.29578f);
         }
     } else if (command.rfind("face ", 0) == 0) {
         // "face <class>": the local player turns to the first live enemy of the class (screenshots:

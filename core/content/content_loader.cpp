@@ -1394,7 +1394,7 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
         MapDef map;
         if (!ReadId(d, e, map.id)) continue;
         d = file.Sub(": map " + Q(map.id));
-        CheckKeys(d, e, {"id", "name", "stage", "rotation", "start", "points", "chests", "preload", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
+        CheckKeys(d, e, {"id", "name", "stage", "rotation", "start", "points", "chests", "preload", "layouts", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
         if (const auto s = e.find("start"); s != e.end()) {
             if (!s->is_array() || s->size() != 3 || !(*s)[0].is_number() || !(*s)[1].is_number() || !(*s)[2].is_number()) {
                 d.Error("field 'start' must be [x, y, z]");
@@ -1442,6 +1442,18 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
                     continue;
                 }
                 map.preload.push_back(name);
+            }
+        }
+        if (const auto layouts = e.find("layouts"); layouts != e.end()) {
+            if (!layouts->is_array()) d.Error("field 'layouts' must be a list of layout names");
+            for (const json& p : layouts->is_array() ? *layouts : json::array()) {
+                const std::string name = p.is_string() ? p.get<std::string>() : std::string();
+                if (name.empty() || name.size() > 48 ||
+                    !std::all_of(name.begin(), name.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; })) {
+                    d.Error("every layouts entry must be a layout name (letters, digits, _)");
+                    continue;
+                }
+                map.layouts.push_back(name);
             }
         }
         if (const auto chests = e.find("chests"); chests != e.end()) {

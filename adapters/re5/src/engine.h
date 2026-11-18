@@ -60,6 +60,7 @@ struct Verified {
     bool itemBox = false;       // the campaign Organize/Buy screen can be created (M7, research)
     bool matchSetup = false;    // the Mercenaries match setup and the save's stage field
     bool worldObjects = false;  // the object manager: set spawn, create, set records
+    bool stageLayouts = false;  // the area load's layout pass and its register call (a campaign area's ladders)
     bool resources = false;     // the archive loader: list commit and the unit archive requests
     bool mercHud = false;       // the clock (cockpit) and score (Mercenaries HUD) draws, the kill cap
     bool slotClear = false;     // the game's inventory record clear (releases weapon models)

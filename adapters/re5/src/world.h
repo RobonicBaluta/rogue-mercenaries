@@ -51,6 +51,11 @@ int DumpSetRecords();
 /// fields the spawn sets, the descriptor's class and contents).
 void SetSurvey(bool on);
 
+/// A campaign area's own object layouts (maps.json "layouts", e.g. `s500_IDf01_Ins`) that the
+/// following loads file too: a Mercenaries match skips them, and with them the area's ladders.
+/// Only their ladders (uOmf200, uOmf201) are built. Empty: none.
+void SetStageLayouts(const std::vector<std::string>& names);
+
 /// Developer: units of class `cls` sItem creates from now on are collected (empty: none);
 /// TakeCreated returns them and starts over (the twin guns spike's shots).
 void WatchCreated(const std::string& cls);

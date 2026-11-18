@@ -285,6 +285,15 @@ constexpr std::uintptr_t kFnObjCreate = 0x007E2410;
 constexpr std::uintptr_t kFnObjSetSpawn = 0x007E2480;
 constexpr std::uintptr_t kFnSetRecord = 0x007F3D70;
 constexpr std::uintptr_t kFnSetRecordCount = 0x007F3DD0;  // RecordCount(this = set manager, group)
+// The area load's layout pass (FUN_0072B6B0, thiscall, one stack argument, ret 4: one of the
+// stage's four archives): each rLayout resource ("lot", archive +0x60 the resource array, +0x64
+// its count; resource +4 its path) goes to RegisterLayout, except that in a Mercenaries match
+// (game mode 2) only the ones under `scr\` or `soft\merce\` do: a campaign stage's own object
+// layouts (`soft\sNNN_IDfNN_Ins`: its ladders) are skipped. RegisterLayout (FUN_00728D20, one
+// stack argument, ret 4) files a `..._Ins` layout with sObjModel (FUN_007F3C60) at the group its
+// name gives (`_id` + s 0, m 1, o 2, f 3, times 20, plus the number: IDf01 is 61).
+constexpr std::uintptr_t kFnStageLayouts = 0x0072B6B0;
+constexpr std::uintptr_t kFnRegisterLayout = 0x00728D20;
 // Item manager sItem (instance [0x011B2200], vtable 0x00F63578): Create (slot 11) and set
 // spawn (slot 13), the same calls as sObjModel's.
 constexpr std::uintptr_t kItemManager = 0x011B2200;
@@ -936,6 +945,8 @@ inline constexpr Signature kSignatures[] = {
     {"obj_set_spawn", addr::kFnObjSetSpawn, "83 EC 6C 57 8B F9 8B 07 8B 50 40 FF D2 3C 01 75 09 33 C0 5F 83 C4 6C C2"},
     {"set_record_count", addr::kFnSetRecordCount, "8A 44 24 04 0F B6 D0 3B 51 60 73 1F 8B 49 6C 0F BE C0 83 3C"},
     {"set_record", addr::kFnSetRecord, "8A 44 24 04 0F B6 D0 3B 51 60 56 73 21 8B 49 6C 0F BE C0 83 3C 81 00 8D"},
+    {"stage_layouts", addr::kFnStageLayouts, "83 EC 14 53 89 4C 24 08 8B 4C 24 1C 33 DB 3B CB 0F 84 59 03 00 00 33 C0"},
+    {"register_layout", addr::kFnRegisterLayout, "81 EC 3C 01 00 00 53 55 8B AC 24 48 01 00 00 56 57 8D 5D 04 6A 5F 53 BE"},
     // sObjModel vtable slots 11..13: Create, the shared 0x007F3A80, the set spawn.
     {"obj_model_vtable", 0x00F6526C, "10 24 7E 00 80 3A 7F 00 80 24 7E 00"},
     {"item_create", addr::kFnItemCreate, "8B 44 24 10 8B 54 24 08 56 57 50 8B 44 24 10 8B F9 8B 4C 24 18 51 52 50"},

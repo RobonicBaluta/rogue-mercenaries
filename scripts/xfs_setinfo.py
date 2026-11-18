@@ -26,7 +26,11 @@ def cstr(d, o):
 
 
 def parse(path):
-    d = open(path, 'rb').read()
+    return parse_bytes(open(path, 'rb').read())
+
+
+def parse_bytes(d):
+    """The set infos (mSetInfos) of one layout's bytes; an empty pointer (tag 0xFFFE) is None."""
     if d[:4] != b'XFS\0':
         return []
     ncls = struct.unpack_from('<I', d, 8)[0]
@@ -45,6 +49,8 @@ def parse(path):
     out = []
 
     def read_obj(o):
+        if struct.unpack_from('<H', d, o)[0] == 0xFFFE:  # an empty pointer: tag and a u16, no size
+            return None, o + 4
         tag, _, size = struct.unpack_from('<HHI', d, o)
         ci = tag >> 1
         o += 8
@@ -82,24 +88,28 @@ def parse(path):
         return obj, o
 
     root, _ = read_obj(0x10 + defsize)
-    return root.get('mSetInfos', [])
+    infos = (root or {}).get('mSetInfos', [])
+    return infos if isinstance(infos, list) else [infos]
 
 
-wanted = set(sys.argv[2:])
-for path in sorted(glob.glob(os.path.join(sys.argv[1], '*.15302ef4'))):
-    try:
-        infos = parse(path)
-    except Exception as e:  # noqa: BLE001 - a layout of another shape: skip it
-        print(f'{os.path.basename(path)}: {e}')
-        continue
-    if not isinstance(infos, list):
-        infos = [infos]
-    for si in infos:
-        if not isinstance(si, dict):
+def main():
+    wanted = set(sys.argv[2:])
+    for path in sorted(glob.glob(os.path.join(sys.argv[1], '*.15302ef4'))):
+        try:
+            infos = parse(path)
+        except Exception as e:  # noqa: BLE001 - a layout of another shape: skip it
+            print(f'{os.path.basename(path)}: {e}')
             continue
-        unit = si.get('mUnitClass')
-        if unit in wanted:
-            info = si.get('mpInfo') or {}
-            keep = {k: info.get(k) for k in ('mModelType', 'mMontageNo', 'mMaskType', 'mAttribute', 'mArmId', 'mbArmed',
-                                              'mPlagaType', 'mIsActing', 'mIsExtra', 'mExtraNo', 'mLife', 'mSearchCircle')}
-            print(f"{os.path.basename(path)}  {unit}  {keep}")
+        for si in infos:
+            if not isinstance(si, dict):
+                continue
+            unit = si.get('mUnitClass')
+            if unit in wanted:
+                info = si.get('mpInfo') or {}
+                keep = {k: info.get(k) for k in ('mModelType', 'mMontageNo', 'mMaskType', 'mAttribute', 'mArmId', 'mbArmed',
+                                                  'mPlagaType', 'mIsActing', 'mIsExtra', 'mExtraNo', 'mLife', 'mSearchCircle')}
+                print(f"{os.path.basename(path)}  {unit}  {keep}")
+
+
+if __name__ == '__main__':
+    main()
