@@ -676,6 +676,7 @@ std::vector<int> RotationMaps() {
 }
 
 int g_forcedNextMap = -1;  // developer "nextmap": the next pick
+std::optional<std::vector<std::string>> g_devHiddenModels;  // developer "hidemodels": models not built
 
 // The first arena's enemy threat level (economy enemy_threat; 0 without levels).
 int FirstArenaLevel() {
@@ -5317,6 +5318,7 @@ void UpdatePreloads() {
     }
     if (effects) extras.enemyArchives.push_back(rm::fx::kEffectsArchive);
     world::SetStageLayouts(layouts);
+    world::SetHiddenModels(g_devHiddenModels ? *g_devHiddenModels : std::vector<std::string>{});
     RM_LOGI("resources: %s, stage %d: %zu player items, %zu enemy classes, %zu enemy weapons and %zu archives go with every load",
             runLoads ? "run" : "no run", CurrentMapKey(), extras.playerItems.size(), extras.enemyClasses.size(),
             extras.enemyWeapons.size(), extras.enemyArchives.size());
@@ -9600,6 +9602,28 @@ void PollDevCommand(double now) {
     } else if (command == "chest" && run.phase() == rm::Phase::ArenaActive) {
         SimulateTimeBonusPickup();  // goes through the same path as a real pickup
         RM_LOGW("dev chest: pickup simulated");
+    } else if (command.rfind("layoutclasses", 0) == 0) {
+        // "layoutclasses uOm08f0 ...": the filed campaign layouts also build these classes (next loads).
+        std::istringstream words(command.substr(13));
+        std::vector<std::string> names;
+        for (std::string w; words >> w;) names.push_back(w);
+        world::SetLayoutClasses(names);
+        RM_LOGW("dev layoutclasses: %zu classes (next loads)", names.size());
+    } else if (command.rfind("hidemodels", 0) == 0) {
+        // "hidemodels om020eL om020f ...": set records named so are not built on the next loads
+        // ("hidemodels map" or "hidemodels" alone: none). Research only: a model's collision can
+        // stay in the stage (the Spencer Mansion's doors still block with their models gone).
+        std::istringstream words(command.substr(10));
+        std::vector<std::string> names;
+        for (std::string w; words >> w;) names.push_back(w);
+        if (names.size() == 1 && names[0] == "map") names.clear();
+        if (names.empty()) {
+            g_devHiddenModels.reset();
+        } else {
+            g_devHiddenModels = names;
+        }
+        world::SetHiddenModels(names);
+        RM_LOGW("dev hidemodels: %zu names (next loads)", names.size());
     } else if (command.rfind("spawnat ", 0) == 0) {
         // "spawnat <x> <y> <z> <class> [weapon hex]": one unit at a map position (does a spawn point
         // reach the player?).

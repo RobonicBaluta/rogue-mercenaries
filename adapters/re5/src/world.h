@@ -56,6 +56,14 @@ void SetSurvey(bool on);
 /// Only their ladders (uOmf200, uOmf201) are built. Empty: none.
 void SetStageLayouts(const std::vector<std::string>& names);
 
+/// Developer: classes those layouts build besides their ladders (empty: ladders only).
+void SetLayoutClasses(const std::vector<std::string>& classes);
+
+/// Developer: set records whose name (cSetInfo mName, as `om020eL_IDo00_U006`) starts with one of
+/// these prefixes (any case) are not built on the following loads. Empty: none. A model's
+/// collision can stay in the stage without it (the Spencer Mansion's doors).
+void SetHiddenModels(const std::vector<std::string>& prefixes);
+
 /// Developer: units of class `cls` sItem creates from now on are collected (empty: none);
 /// TakeCreated returns them and starts over (the twin guns spike's shots).
 void WatchCreated(const std::string& cls);

@@ -173,11 +173,15 @@ constexpr std::size_t kArchiveResourceCount = 0x64;
 constexpr std::size_t kSetManagerGroups = 0x6C;      // layout per group
 constexpr std::size_t kSetManagerGroupCount = 0x60;  // size of that array
 
+// More classes those layouts build (developer "layoutclasses"; tried for s114's uOm08f0).
+std::vector<std::string> g_layoutClasses;
+
 bool IsLadderClass(const std::string& cls) {
     for (const char* ladder : kLadderClasses) {
         if (cls == ladder) return true;
     }
-    return false;
+    std::lock_guard<std::mutex> lock(g_layoutMutex);
+    return std::find(g_layoutClasses.begin(), g_layoutClasses.end(), cls) != g_layoutClasses.end();
 }
 
 // The resource's extension ("lot" for a layout), or nullptr.
@@ -251,6 +255,36 @@ void __fastcall StageLayoutsDetour(std::uintptr_t self, void*, std::uintptr_t ar
     }
 }
 
+// A set record's own name (cSetInfo +0x04 mName, an MtString: its text at +8), as
+// `om020eL_IDo00_U006` (an instance model: its model, its layout, its number).
+std::string RecordName(std::uintptr_t manager, int group, int id) {
+    const std::uintptr_t record = Record(manager, group, id);
+    const auto descriptor = record ? ReadOr<std::uintptr_t>(record + 0x10, 0) : 0;
+    const auto name = descriptor ? ReadOr<std::uintptr_t>(descriptor + 0x04, 0) : 0;
+    return name ? ReadCString(name + 8, 64) : std::string();
+}
+
+// Models not built (developer "hidemodels", name prefixes in lower case). Research only: hiding
+// the Spencer Mansion's doors (om020x, om0210) removed their models but not their collision (the
+// player and the Majini still stop at the doorways, 2026-11-18).
+std::vector<std::string> g_hiddenModels;
+std::atomic<int> g_hiddenRecords{0};
+
+bool IsHiddenModel(std::uintptr_t manager, int group, int id) {
+    std::vector<std::string> hidden;
+    {
+        std::lock_guard<std::mutex> lock(g_layoutMutex);
+        if (g_hiddenModels.empty()) return false;
+        hidden = g_hiddenModels;
+    }
+    std::string name = RecordName(manager, group, id);
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    for (const std::string& prefix : hidden) {
+        if (!name.empty() && name.rfind(prefix, 0) == 0) return true;
+    }
+    return false;
+}
+
 // Whether the object set `group` is one the mod filed (and still holds that layout).
 bool IsAddedGroup(std::uintptr_t manager, int group) {
     const auto groups = ReadOr<std::uintptr_t>(manager + kSetManagerGroups, 0);
@@ -267,6 +301,12 @@ std::uintptr_t __fastcall SetSpawnDetour(std::uintptr_t self, void*, int group, 
     if constexpr (M == 0) {
         if (g_blockChests.load() && RecordClass(self, group, id) == kChestClass) {
             if (g_blockedChests.fetch_add(1) < 2) RM_LOGI("world: the stage's own time bonus (set %d id %d) not created", group, id);
+            return 0;
+        }
+        if (IsHiddenModel(self, group, id)) {
+            if (g_hiddenRecords.fetch_add(1) < 64) {
+                RM_LOGI("world: %s (set %d id %d) not built: the map hides it", RecordName(self, group, id).c_str(), group, id);
+            }
             return 0;
         }
         if (IsAddedGroup(self, group)) {
@@ -465,6 +505,30 @@ void SetDropRules(const DropRules& rules) {
 
 void SetSurvey(bool on) { g_survey = on; }
 
+void SetLayoutClasses(const std::vector<std::string>& classes) {
+    std::lock_guard<std::mutex> lock(g_layoutMutex);
+    if (classes == g_layoutClasses) return;
+    g_layoutClasses = classes;
+    std::string line;
+    for (const std::string& n : g_layoutClasses) line += " " + n;
+    RM_LOGI("world: campaign layouts also build:%s", line.empty() ? " nothing more" : line.c_str());
+}
+
+void SetHiddenModels(const std::vector<std::string>& prefixes) {
+    std::vector<std::string> lower;
+    for (std::string p : prefixes) {
+        std::transform(p.begin(), p.end(), p.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (!p.empty()) lower.push_back(p);
+    }
+    std::lock_guard<std::mutex> lock(g_layoutMutex);
+    if (lower == g_hiddenModels) return;
+    g_hiddenModels = std::move(lower);
+    g_hiddenRecords = 0;
+    std::string line;
+    for (const std::string& n : g_hiddenModels) line += " " + n;
+    RM_LOGI("world: models hidden on the next loads:%s", line.empty() ? " none" : line.c_str());
+}
+
 void SetStageLayouts(const std::vector<std::string>& names) {
     std::vector<std::string> lower;
     for (const std::string& n : names) lower.push_back(LowerName(n));
@@ -510,8 +574,8 @@ int DumpSetRecords() {
                 if (!record) continue;
                 const auto holder = ReadOr<std::uintptr_t>(record + 0xC, 0);
                 const auto descriptor = ReadOr<std::uintptr_t>(record + 0x10, 0);
-                RM_LOGI("setdump: %s set %d id %d %s (%s) at %.1f %.1f %.1f", m.name, group, id,
-                        holder ? ReadCString(holder + 8, 64).c_str() : "?",
+                RM_LOGI("setdump: %s set %d id %d %s %s (%s) at %.1f %.1f %.1f", m.name, group, id,
+                        holder ? ReadCString(holder + 8, 64).c_str() : "?", RecordName(manager, group, id).c_str(),
                         descriptor ? engine::ClassName(descriptor).c_str() : "no descriptor",
                         descriptor ? ReadOr<float>(descriptor + re5::off::kSetInfoPosition, 0.0f) : 0.0f,
                         descriptor ? ReadOr<float>(descriptor + re5::off::kSetInfoPosition + 4, 0.0f) : 0.0f,

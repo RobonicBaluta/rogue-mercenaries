@@ -134,6 +134,16 @@ NO_ROTATION = {
     # enemies cannot follow there (a player 2026-11-18: "had no pathing to follow me anywhere in the
     # stage except for the wide open area in the middle").
     503: 'the enemies can only walk the middle of the deck',
+    # The campaign's Public Assembly (its sets hold the Executioner uEm20 and the helicopter
+    # uOm1316): a fence the Executioner breaks and a door the helicopter bursts stay in the level as
+    # walls the player cannot see, and enemies got stuck behind one (a player 2026-11-18). The user:
+    # "else, if broken, take out of rotation"; the spot was not found in game.
+    114: 'an invisible wall where the story breaks a fence; enemies stuck behind it',
+    # Lost in Nightmares' mansion: the Majini stop at its doors (the stuck rule moved one three times
+    # at om020eL, 1228 0 730). Not building the door models (dev "hidemodels om020 om0210") removes
+    # only their look: the player and the Majini still stop at the doorways (2026-11-18), so the
+    # doors cannot be taken away (the user's request); out at the user's choice.
+    700: 'the Majini stop at its doors, and the doors cannot be removed',
 }  # 505 was out (2026-11-08, a ladder up from its ground floor could not be grabbed: a Mercenaries
 # match never built the area's ladders; since 2026-11-18 the adapter files its "layouts" and builds
 # them, all eight, one climbed in game). 503 was out (its random upper-deck start); the start warp (M6.2) fixed that. 508 was out
