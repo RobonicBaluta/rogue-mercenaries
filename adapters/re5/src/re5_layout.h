@@ -599,6 +599,11 @@ constexpr std::size_t kPlayerInventory = 0x21A0;
 constexpr int kInventorySlots = 0x18;
 constexpr std::size_t kInventoryFirstSlot = 0x4;
 constexpr std::size_t kInventorySlotSize = 0x30;
+// The record of the gun carried on the back, cached by the inventory's lookup 0x00C4B700(0x10) (a
+// gatling or longbow first; else kept while the gun in hand is not a back gun). 0x00C4DFF0 attaches
+// that record's gun to the back joint after every re-attach (Chris's 0x75, Sheva's 2). Nothing clears
+// it when the record is discarded (2026-11-19, research/re5-engine-map.md "The back gun").
+constexpr std::size_t kInventoryBackGun = 0x484;
 constexpr std::size_t kSlotItemId = 0x4;   // int32
 constexpr std::size_t kSlotCount = 0x8;    // int32
 constexpr std::size_t kSlotMax = 0xC;      // int32 stack capacity

@@ -1,6 +1,7 @@
 #include <windows.h>
 
 #include <MinHook.h>
+#include <intrin.h>
 
 #include <atomic>
 #include <cmath>
@@ -402,6 +403,28 @@ void __fastcall Wp21FireDetour(std::uintptr_t self, void*, std::uintptr_t attack
     }
 }
 
+// Developer: a unit's attach (uCoord vtable +0x34, 0x00489860: parent +0x18, joint +0x1C) to the
+// probed parent (the local player), logged when its joint or parent changes, with the caller (dev
+// "attachprobe"; 2026-11-19, a gun drawn nowhere: its joint 2 instead of the hand's).
+using AttachFn = void(__fastcall*)(std::uintptr_t self, void* edx, std::uintptr_t parent, std::uint32_t joint);
+AttachFn g_origAttach = nullptr;
+std::atomic<std::uintptr_t> g_attachProbe{0};
+std::atomic<int> g_attachProbeLines{0};
+
+void __fastcall AttachDetour(std::uintptr_t self, void* edx, std::uintptr_t parent, std::uint32_t joint) {
+    const std::uintptr_t probe = g_attachProbe.load(std::memory_order_relaxed);
+    if (probe != 0 && parent == probe && self != 0) {
+        const auto oldParent = *reinterpret_cast<std::uintptr_t*>(self + 0x18);
+        const auto oldJoint = *reinterpret_cast<std::uint32_t*>(self + 0x1C);
+        if ((oldParent != parent || oldJoint != joint) && g_attachProbeLines.fetch_add(1) < 300) {
+            RM_LOGI("attach probe: %08X (vtable %08X) to joint %u (was %u, parent %s) from %08X", static_cast<unsigned>(self),
+                    static_cast<unsigned>(*reinterpret_cast<std::uintptr_t*>(self)), joint, oldJoint,
+                    oldParent == parent ? "same" : "new", static_cast<unsigned>(reinterpret_cast<std::uintptr_t>(_ReturnAddress())));
+        }
+    }
+    g_origAttach(self, edx, parent, joint);
+}
+
 bool Hook(std::uintptr_t target, void* detour, void** original, const char* name) {
     auto* fn = reinterpret_cast<void*>(target);
     MH_STATUS status = MH_CreateHook(fn, detour, original);
@@ -527,6 +550,18 @@ void SetBossTakesGunfire(std::uintptr_t unit) {
         g_gunfireLogged = 0;
         g_em41Logged = 0;
     }
+}
+
+bool InstallAttachProbe() {
+    if (!engine::Caps().twinGuns) return false;  // the unit_attach signature with the others
+    return Hook(re5::addr::kFnUnitAttach, reinterpret_cast<void*>(&AttachDetour), reinterpret_cast<void**>(&g_origAttach),
+                "unit attach (developer probe)");
+}
+
+bool SetAttachProbe(std::uintptr_t parent) {
+    g_attachProbeLines = 0;
+    g_attachProbe = g_origAttach != nullptr ? parent : 0;
+    return g_origAttach != nullptr;
 }
 
 void SetHitProbe(std::uintptr_t unit) {

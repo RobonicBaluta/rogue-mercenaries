@@ -116,6 +116,7 @@ DWORD StartMod() {
     } else if (engine::Caps().buildIdentity) {
         InstallCombatHooks();
         InstallMercHooks();
+        if (settings.developerMode) InstallAttachProbe();
     }
     if (settings.nativeMenu && engine::Caps().buildIdentity) {
         nativemenu::Install();

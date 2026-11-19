@@ -165,6 +165,10 @@ bool InstallCombatHooks();
 /// Developer: every call of the enemy hit check for `unit` (0: off) with a hit pending is logged
 /// with what the check reads (block, flags, cooldowns) and its answer.
 void SetHitProbe(std::uintptr_t unit);
+/// Developer: queues the attach probe's hook (developer mode only). SetAttachProbe(parent) logs the
+/// joint and parent changes of units attached to `parent` (0: off); false without the hook.
+bool InstallAttachProbe();
+bool SetAttachProbe(std::uintptr_t parent);
 /// The run's boss (0: none): when its class's own "may this hit hurt" says no (Uroboros Wesker:
 /// anything but his open core), the hit hurts anyway, the game's own damage then (2026-11-08).
 void SetBossTakesGunfire(std::uintptr_t unit);

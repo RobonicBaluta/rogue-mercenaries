@@ -138,9 +138,6 @@ KNOWN ISSUES (ALPHA)
     controllers: please report what goes wrong.
   - Uroboros Aheri (Excella, on the Bridge Deck), one of the alternate bosses of arena 8,
     may not be beatable yet: pick another boss there.
-  - The first gun the mod hands you in an arena can be invisible in your hands (it still
-    fires): a skin's own starting gun such as Ada's Px4, or the first gun bought. Being
-    looked into.
   - The campaign areas' ladders can be climbed since this version (before, they were
     only scenery, and Factory Floor was left out of the runs for it). If a ladder still
     ignores you, please report the arena.

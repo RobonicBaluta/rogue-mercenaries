@@ -3048,6 +3048,8 @@ void RefreshPlaceableWeapons() {
     g->run->SetPlaceableWeapons(std::move(placeable));
 }
 
+void ForgetBackGun(std::uintptr_t record, const char* why);  // the inventory's stale back gun, below
+
 // Returns the units placed (stacked or in new slots); 0 when nothing fit or no player.
 int GiveItem(const char* source, std::int64_t gameItem, int count) {
     const auto player = engine::LocalPlayer();
@@ -3098,6 +3100,8 @@ int GiveItem(const char* source, std::int64_t gameItem, int count) {
         const int magazine = std::max(1, ReadOr<std::int32_t>(record + 8, 1));
         const auto made = create(inventory, id, magazine, -1, -1, -1, 0xD, 0, 0, 0, 0, 0, 0, 0, 0, 0, player, 0, 0);
         RM_LOGI("%s: weapon %04X created with %d rounds -> %s", source, id, magazine, made ? "ok" : "no slot");
+        // A new record cannot be the back gun yet: a cache pointing at it is a discarded record's.
+        ForgetBackGun(made, "a new gun took a discarded record");
         if (made) {
             const int cell = ReadOr<std::int32_t>(made + kSlotCell, -1);
             if (cell < 0 || cell >= kGridCells) {
@@ -3181,7 +3185,28 @@ bool ClearSlotNative(std::uintptr_t slot) {
     }
 }
 
+// The inventory's back gun (kInventoryBackGun) is a cached record that the game never forgets: a
+// record the mod discards stays cached, and the next item made in it was taken for the gun on the
+// back. A gun made there was attached to the back joint every frame, so the hands held nothing
+// (2026-11-19, a player's "ada's px4 was bugged": the first gun the mod made in a match took the
+// record of the costume's long gun the loadout cut had discarded; build/runs/20261119-100849-invisible-gun).
+// Any player whose cache holds `record` forgets it; the game then picks its back gun again.
+void ForgetBackGun(std::uintptr_t record, const char* why) {
+    if (record == 0) return;
+    const engine::PlayersSnapshot players = engine::ReadPlayers();
+    for (int i = 0; i < players.count && i < static_cast<int>(players.players.size()); ++i) {
+        const std::uintptr_t player = players.players[static_cast<std::size_t>(i)].object;
+        if (!player) continue;
+        const std::uintptr_t cache = player + re5::off::kPlayerInventory + re5::off::kInventoryBackGun;
+        if (ReadOr<std::uintptr_t>(cache, 0) != record) continue;
+        SafeStore<std::uintptr_t>(cache, 0);
+        RM_LOGI("inventory: player %08X's back gun forgotten (%s, record %08X)", static_cast<unsigned>(player), why,
+                static_cast<unsigned>(record));
+    }
+}
+
 void ClearSlot(std::uintptr_t slot) {
+    ForgetBackGun(slot, "the record was discarded");
     if (engine::Caps().slotClear && ClearSlotNative(slot)) return;
     SafeStore<std::int32_t>(slot + re5::off::kSlotCount, 0);
     SafeStore<std::uint8_t>(slot + re5::off::kSlotValid, 0);
@@ -3549,8 +3574,10 @@ std::uintptr_t MakeStackRecord(std::uintptr_t player, std::uint32_t id) {
     using CreateFn = std::uintptr_t(__thiscall*)(std::uintptr_t inventory, int item, int count, int a, int b, int c,
                                                  int flags, int a1, int a2, int a3, int a4, int a5, int a6, int a7,
                                                  int a8, int a9, std::uintptr_t player, int position, int zero);
-    return reinterpret_cast<CreateFn>(re5::addr::kFnInventoryCreate)(player + re5::off::kPlayerInventory, static_cast<int>(MakeItemId(id)), 1, -1, -1, -1,
-                                                                     0xD, 0, 0, 0, 0, 0, 0, 0, 0, 0, player, 0, 0);
+    const std::uintptr_t made = reinterpret_cast<CreateFn>(re5::addr::kFnInventoryCreate)(
+        player + re5::off::kPlayerInventory, static_cast<int>(MakeItemId(id)), 1, -1, -1, -1, 0xD, 0, 0, 0, 0, 0, 0, 0, 0, 0, player, 0, 0);
+    ForgetBackGun(made, "a new stack took a discarded record");
+    return made;
 }
 
 std::uintptr_t FindRecord(std::uintptr_t player, std::uint32_t id) {
@@ -9757,6 +9784,11 @@ void PollDevCommand(double now) {
         std::sscanf(command.c_str() + 7, "%d %d", &character, &costume);
         const std::uintptr_t unit = AddPartner(character, costume, "dev");
         RM_LOGW("dev partner %d %d -> %08X", character, costume, static_cast<unsigned>(unit));
+    } else if (command.rfind("attachprobe ", 0) == 0) {
+        // "attachprobe on|off": the joint and parent changes of what is attached to the local player.
+        const bool on = command.substr(12) == "on";
+        const bool ok = SetAttachProbe(on ? engine::LocalPlayer() : 0);
+        RM_LOGW("dev attachprobe %s%s", on ? "on" : "off", ok ? "" : " (no hook: developer mode and the signature)");
     } else if (command.rfind("hitprobe ", 0) == 0) {
         // "hitprobe <class>|off": the enemy hit check's calls for the first enemy of the class
         // with a hit pending, logged with what it reads and answers.
