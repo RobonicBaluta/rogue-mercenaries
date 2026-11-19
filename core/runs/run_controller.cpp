@@ -208,8 +208,19 @@ Status RunController::GrantPerk(std::string_view perk_id, std::string_view sourc
         for (const EffectDef& ef : def->effects) {
             if (ef.kind != EffectKind::ItemOnRunStart) continue;
             const EffectParams p = ef.AtStacks(stacks);
-            run_.item_grants.push_back(ItemGrant{static_cast<std::int64_t>(std::lround(p.game_item)),
-                                                 std::max(1, static_cast<int>(std::lround(p.amount))), def->id});
+            const auto game_item = static_cast<std::int64_t>(std::lround(p.game_item));
+            run_.item_grants.push_back(ItemGrant{game_item, std::max(1, static_cast<int>(std::lround(p.amount))), def->id});
+            // A gun is one of the run's guns too, as the build's starting gun is: its level, the
+            // upgrades and refines, the build's elements and its stats (2026-11-19, the user: "the
+            // extra weapons that come from perks are not upgradeable", Excella's Dragunov without
+            // Field Trials' element). One the run holds already (the build's) keeps its instance.
+            const auto& weapons = content_->weapons();
+            const auto base = std::find_if(weapons.begin(), weapons.end(),
+                                           [game_item](const WeaponBaseDef& w) { return w.game_item >= 0 && w.game_item == game_item; });
+            if (base != weapons.end() &&
+                std::none_of(run_.weapons.begin(), run_.weapons.end(), [&base](const WeaponInstance& w) { return w.base_id == base->id; })) {
+                GrantWeapon(MakeStartingWeapon(base->id, NextInstanceId()), def->id);
+            }
         }
     }
     return Status::Success();

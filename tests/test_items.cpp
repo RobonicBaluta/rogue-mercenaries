@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <string>
 
 #include <catch_amalgamated.hpp>
@@ -397,4 +398,61 @@ TEST_CASE("rewards never offer a gun the run already holds", "[items]") {
             for (const WeaponInstance& w : h.rc.state().weapons) CHECK(c.weapon.base_id != w.base_id);
         }
     }
+}
+
+// A supply perk's gun is one of the run's guns (2026-11-19, the user: "the extra weapons that come
+// from perks are not upgradeable", Experimenter Excella's Dragunov without her arena element).
+TEST_CASE("a supply perk's gun is one of the run's guns", "[items]") {
+    const auto content = test::Load(test::EditFixture([](json& perks, json& weapons, json& characters, json&, json&) {
+        for (json& w : weapons["weapons"]) {
+            if (w["id"] == "shotgun") w["game_item"] = 260;
+        }
+        perks["perks"].push_back(json{{"id", "shotgun_licence"},
+                                      {"name", "Shotgun Licence"},
+                                      {"description", "Start with a shotgun."},
+                                      {"category", "supply"},
+                                      {"rarity", "rare"},
+                                      {"max_stacks", 1},
+                                      {"effects", json::array({json{{"kind", "item_on_start"}, {"game_item", 260}, {"amount", 1}},
+                                                               json{{"kind", "item_on_start"}, {"game_item", 262}, {"amount", 2}}})}});
+        characters["characters"][0]["starting_passive"] = "shotgun_licence";
+    }));
+    test::Harness h(content);
+    REQUIRE(h.rc.StartRun("alpha", 5).ok());
+    const auto& guns = h.rc.state().weapons;
+    const auto shotgun = std::find_if(guns.begin(), guns.end(), [](const WeaponInstance& w) { return w.base_id == "shotgun"; });
+    REQUIRE(shotgun != guns.end());
+    CHECK(shotgun->level == 1);
+    CHECK(shotgun->rarity == Rarity::Common);
+    // The grenades (no gun) are only items; the gun's item is still queued for the inventory.
+    CHECK(std::count_if(guns.begin(), guns.end(), [](const WeaponInstance& w) { return w.base_id == "shotgun"; }) == 1);
+    const auto grants = h.rc.ConsumeItemGrants();
+    CHECK(std::any_of(grants.begin(), grants.end(), [](const ItemGrant& g) { return g.game_item == 260 && g.source == "shotgun_licence"; }));
+}
+
+TEST_CASE("a supply perk's gun the build already gives keeps the build's", "[items]") {
+    const auto content = test::Load(test::EditFixture([](json& perks, json& weapons, json& characters, json&, json&) {
+        for (json& w : weapons["weapons"]) {
+            if (w["id"] == "shotgun") w["game_item"] = 260;
+        }
+        perks["perks"].push_back(json{{"id", "shotgun_licence"},
+                                      {"name", "Shotgun Licence"},
+                                      {"description", "Start with a shotgun."},
+                                      {"category", "supply"},
+                                      {"rarity", "rare"},
+                                      {"max_stacks", 1},
+                                      {"effects", json::array({json{{"kind", "item_on_start"}, {"game_item", 260}, {"amount", 1}}})}});
+        json& alpha = characters["characters"][0];
+        alpha["starting_passive"] = "shotgun_licence";
+        alpha["skins"] = json::array({json{{"id", "alpha_build"},
+                                           {"name", "Build"},
+                                           {"costume_index", 0},
+                                           {"build", json{{"starting_weapon", "shotgun"}, {"starting_weapon_rarity", "epic"}}}}});
+    }));
+    test::Harness h(content);
+    REQUIRE(h.rc.StartRun("alpha", 5, "alpha_build").ok());
+    const auto& guns = h.rc.state().weapons;
+    REQUIRE(std::count_if(guns.begin(), guns.end(), [](const WeaponInstance& w) { return w.base_id == "shotgun"; }) == 1);
+    const auto shotgun = std::find_if(guns.begin(), guns.end(), [](const WeaponInstance& w) { return w.base_id == "shotgun"; });
+    CHECK(shotgun->rarity == Rarity::Epic);
 }
