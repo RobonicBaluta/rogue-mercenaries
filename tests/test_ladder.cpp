@@ -302,8 +302,9 @@ TEST_CASE("the finale's arena only follows a run that beat the needs_hard bosses
 }
 
 TEST_CASE("the shipped 12-arena run: bosses on 4, 8 and 12, then the 13th arena's", "[ladder]") {
-    // The user's ladder (2026-11-08): 4 Uroboros / Giant Uroboros, 8 Aheri / Mkono or Jill, 12
-    // Uroboros Wesker, 13 Midnight Wesker.
+    // The user's ladder (2026-11-08; the game's names since 2026-11-19): 4 Uroboros / U-8 or
+    // Popokarimu (2026-11-19), 8 Uroboros Mkono / Uroboros Aheri or Jill, 12 Uroboros Wesker, 13
+    // Midnight Wesker.
     ContentLoadResult loaded = Content::LoadFromDirectory(test::ConfigDir());
     for (const std::string& e : loaded.errors) UNSCOPED_INFO(e);
     REQUIRE(loaded.ok());
@@ -324,7 +325,7 @@ TEST_CASE("the shipped 12-arena run: bosses on 4, 8 and 12, then the 13th arena'
         for (const RunMapNode& n : map.layers[layer]) out.push_back(n.map_key);
         return out;
     };
-    CHECK(keys(3) == std::vector<int>{103, 304});
+    CHECK(keys(3) == std::vector<int>{103, 304, 108});
     CHECK(keys(7) == std::vector<int>{308, 511, 309});
     CHECK(keys(11) == std::vector<int>{508});
     CHECK(keys(12) == std::vector<int>{506});
@@ -457,4 +458,126 @@ TEST_CASE("a character whose every skin a boss locks is locked until one opens",
     CHECK(after.skins[0].gate == CharacterGate::Locked);
     CHECK(after.skins[1].gate == CharacterGate::Selectable);
     CHECK(h.rc.StartRun("alpha", 1, "alpha_star").ok());
+}
+
+namespace {
+
+// Endless (the user, 2026-11-19: "add endless mode"): LadderSources with an endless length opened by
+// the short easy boss, a boss every 3 arenas, 50 percent stronger each round, paced as long.
+ContentSources EndlessSources() {
+    ContentSources src = LadderSources();
+    nlohmann::json eco = nlohmann::json::parse(src.economy);
+    eco["ladder"]["endless"] = {{"id", "endless"}, {"name", "Endless"}, {"unlocked_by", "short:easy"},
+                                {"boss_every", 3},  {"boss_hp_per_round", 0.5}, {"paced_as", "long"}};
+    src.economy = eco.dump();
+    return src;
+}
+
+std::vector<int> LayerKeys(const RunMap& map, std::size_t layer) {
+    std::vector<int> out;
+    for (const RunMapNode& n : map.layers[layer]) out.push_back(n.map_key);
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("endless is locked until its key, and listed last", "[ladder][endless]") {
+    test::Harness fresh(test::Load(EndlessSources()));
+    const auto lengths = fresh.rc.LadderLengths();
+    REQUIRE(lengths.size() == 3);
+    CHECK(lengths.back().endless);
+    CHECK(lengths.back().id == "endless");
+    CHECK_FALSE(lengths.back().open);
+    CHECK(lengths.back().unlocked_by == "short:easy");
+    CHECK(lengths.back().boss_every == 3);
+    CHECK(fresh.rc.StartRun("alpha", 1, "", "endless").code == ErrorCode::Locked);
+
+    Profile opened;
+    opened.stats.bosses_beaten = {"short:easy"};
+    test::Harness h(test::Load(EndlessSources()), opened);
+    CHECK(h.rc.LadderLengths().back().open);
+    CHECK(h.rc.StartRun("alpha", 1, "", "endless").ok());
+}
+
+TEST_CASE("an endless run's map grows past each boss, the bosses stronger each round", "[ladder][endless]") {
+    Profile opened;
+    opened.stats.bosses_beaten = {"short:easy"};  // the short length's choices only: Beast or Giant
+    test::Harness h(test::Load(EndlessSources()), opened);
+    h.rc.SetArenaPool({0, 1, 2, 103, 200, 201, 202}, 0);
+    REQUIRE(h.rc.StartRun("alpha", 7, "", "endless").ok());
+    CHECK(h.rc.EndlessRun());
+    CHECK(h.rc.state().arena_count == 3);
+    REQUIRE(h.rc.state().run_map.layers.size() == 3);
+    CHECK(LayerKeys(h.rc.state().run_map, 2) == std::vector<int>{200, 201});
+    CHECK(h.rc.Snapshot(0.0).endless);
+    double t = 0.0;
+    // Arenas 1 and 2, then the Giant (the second choice) at arena 3.
+    CHECK(PlayPlanned(h, t).boss.empty());
+    REQUIRE(NextArena(h, 0));
+    CHECK(PlayPlanned(h, t).boss.empty());
+    REQUIRE(NextArena(h, 1));
+    const Played first = PlayPlanned(h, t);
+    CHECK(first.boss == "uEm43@201");
+    CHECK(first.hp == 8000);  // round 0
+    // Its boss down, the map reaches 3 more arenas and the run goes on.
+    CHECK(h.rc.state().arena_count == 6);
+    REQUIRE(h.rc.state().run_map.layers.size() == 6);
+    for (const RunMapNode& n : h.rc.state().run_map.layers[2]) CHECK(n.next.size() == h.rc.state().run_map.layers[3].size());
+    CHECK(LayerKeys(h.rc.state().run_map, 5) == std::vector<int>{200, 201});
+    for (const int key : LayerKeys(h.rc.state().run_map, 3)) CHECK_FALSE(h.rc.content().FindMapByStage(key)->boss.has_value());
+    // A boss beaten in endless counts as beaten, not for the ladder.
+    CHECK(h.rc.profile().stats.bosses_beaten.count("boss:uEm43") == 1);
+    CHECK(h.rc.profile().stats.bosses_beaten.count("short:hard") == 0);
+    REQUIRE(NextArena(h, 0));
+    CHECK(PlayPlanned(h, t).boss.empty());
+    REQUIRE(NextArena(h, 0));
+    CHECK(PlayPlanned(h, t).boss.empty());
+    REQUIRE(NextArena(h, 0));
+    const Played second = PlayPlanned(h, t);
+    CHECK(second.boss == "uEm40@200");
+    CHECK(second.hp == 7500);  // Beast 5000, round 1: x1.5
+    CHECK(h.rc.state().arena_count == 9);
+    REQUIRE(NextArena(h, 0));  // never complete
+    CHECK(h.rc.state().phase != Phase::RunComplete);
+}
+
+TEST_CASE("endless bosses: the open lengths in turn, then the finale's once won", "[ladder][endless]") {
+    Profile opened;
+    opened.stats.bosses_beaten = {"short:easy", "short:hard"};  // long open, its easy boss only
+    test::Harness h(test::Load(EndlessSources()), opened);
+    REQUIRE(h.rc.StartRun("alpha", 3, "", "endless").ok());
+    CHECK(h.rc.EndlessBossesAt(3) == std::vector<int>{200, 201});
+    CHECK(h.rc.EndlessBossesAt(6) == std::vector<int>{200});
+    CHECK(h.rc.EndlessBossesAt(9) == std::vector<int>{200, 201});
+    CHECK(h.rc.EndlessBossesAt(4).empty());
+    CHECK(h.rc.EndlessBossHpMult(3) == Catch::Approx(1.0));
+    CHECK(h.rc.EndlessBossHpMult(6) == Catch::Approx(1.5));   // long's
+    CHECK(h.rc.EndlessBossHpMult(9) == Catch::Approx(1.5));   // short's, round 1
+    CHECK(h.rc.EndlessBossHpMult(12) == Catch::Approx(2.25));  // long's, round 1
+    CHECK(h.rc.EndlessBossHpMult(5) == Catch::Approx(1.0));
+
+    Profile won;
+    won.stats.bosses_beaten = {"short:easy", "short:hard", "long:easy", "finale"};
+    test::Harness w(test::Load(EndlessSources()), won);
+    REQUIRE(w.rc.StartRun("alpha", 3, "", "endless").ok());
+    CHECK(w.rc.EndlessBossesAt(6) == std::vector<int>{200, 201});
+    CHECK(w.rc.EndlessBossesAt(9) == std::vector<int>{202});
+    CHECK(w.rc.EndlessBossHpMult(9) == Catch::Approx(2.0));
+    CHECK(w.rc.EndlessBossesAt(12) == std::vector<int>{200, 201});
+}
+
+TEST_CASE("the shipped endless: opened by the 8-arena run, its bosses those of the open lengths", "[ladder][endless]") {
+    ContentLoadResult loaded = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(loaded.ok());
+    const auto& endless = loaded.content->economy().ladder.endless;
+    CHECK(endless.id == "endless");
+    CHECK(endless.unlocked_by == "long:easy");
+    CHECK(endless.boss_every == 4);
+    Profile climbed;
+    climbed.stats.bosses_beaten = {"short:easy", "short:hard", "long:easy"};
+    test::Harness h(loaded.content, climbed);
+    REQUIRE(h.rc.StartRun("chris", 5, "", "endless").ok());
+    CHECK(h.rc.EndlessBossesAt(4) == std::vector<int>{103, 304, 108});
+    CHECK(h.rc.EndlessBossesAt(8) == std::vector<int>{308, 511, 309});
+    CHECK(h.rc.EndlessBossesAt(12) == std::vector<int>{103, 304, 108});  // marathon not open yet
 }

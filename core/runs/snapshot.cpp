@@ -129,6 +129,7 @@ RunSnapshot RunController::Snapshot(double now) const {
     if (const RouteDef* r = Route()) s.route_name = r->name;
     s.arena = run_.arena_index;
     s.arena_count = run_.arena_count;
+    s.endless = EndlessRun();
     if (const ArenaMetrics* a = CurrentArena()) {
         s.kills = a->player_kills;
         s.budget = a->budget;
@@ -357,7 +358,8 @@ RunSnapshot RunController::Snapshot(double now) const {
                 if (!then.empty()) then += i + 1 == node.next.size() ? " or " : ", ";
                 then += !name.empty() ? name : ar != nullptr ? "tier " + std::to_string(ar->difficulty_tier) : after.route_id;
             }
-            v.detail += then.empty() ? "\nThe last arena of the run." : "\nThen " + then + ".";
+            // Endless: its map grows past its last boss once that boss falls.
+            v.detail += !then.empty() ? "\nThen " + then + "." : EndlessRun() ? "\nMore arenas after it." : "\nThe last arena of the run.";
             // The arena's guests (M3.3), on whichever line of the help box has room.
             const std::string from = GuestHomes(c, node.guests);
             if (!from.empty()) {

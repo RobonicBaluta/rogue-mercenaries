@@ -307,6 +307,7 @@ const EconomyConfig::Ladder::Length* BossTier(const EconomyConfig::Ladder& ladde
 }  // namespace
 
 double RunController::BossHpMult(int map_key) const {
+    if (EndlessRun()) return EndlessBossHpMult(run_.arena_index);
     const EconomyConfig::Ladder& ladder = content_->economy().ladder;
     const auto* length = ladder.enabled ? ladder.Find(run_.length_id) : nullptr;
     if (length == nullptr) return 1.0;
@@ -341,6 +342,93 @@ void RunController::RecordBossBeaten(int map_key) {
     }
 }
 
+bool RunController::EndlessRun() const {
+    const EconomyConfig::Ladder& ladder = content_->economy().ladder;
+    return ladder.enabled && ladder.endless.Is(run_.length_id);
+}
+
+bool RunController::EndlessOpen() const {
+    const EconomyConfig::Ladder::Endless& e = content_->economy().ladder.endless;
+    return content_->economy().ladder.enabled && !e.id.empty() && (e.unlocked_by.empty() || Beaten(e.unlocked_by));
+}
+
+std::vector<RunController::EndlessTier> RunController::EndlessTiers() const {
+    const EconomyConfig::Ladder& ladder = content_->economy().ladder;
+    std::vector<EndlessTier> out;
+    for (const auto& length : ladder.lengths) {
+        if (LengthOpen(length)) out.push_back({BossChoices(length), length.boss_hp_mult});
+    }
+    if (ladder.finale.boss >= 0 && Beaten("finale")) out.push_back({{ladder.finale.boss}, ladder.finale.boss_hp_mult});
+    return out;
+}
+
+std::vector<int> RunController::EndlessBossesAt(int arena) const {
+    const int every = content_->economy().ladder.endless.boss_every;
+    const std::vector<EndlessTier> tiers = EndlessTiers();
+    if (tiers.empty() || every <= 0 || arena <= 0 || arena % every != 0) return {};
+    return tiers[static_cast<std::size_t>(arena / every - 1) % tiers.size()].bosses;
+}
+
+double RunController::EndlessBossHpMult(int arena) const {
+    const EconomyConfig::Ladder::Endless& e = content_->economy().ladder.endless;
+    const std::vector<EndlessTier> tiers = EndlessTiers();
+    if (tiers.empty() || e.boss_every <= 0 || arena <= 0 || arena % e.boss_every != 0) return 1.0;
+    const std::size_t k = static_cast<std::size_t>(arena / e.boss_every - 1);
+    const double round = static_cast<double>(k / tiers.size());
+    return tiers[k % tiers.size()].hp_mult * (1.0 + e.boss_hp_per_round * round);
+}
+
+RunMap RunController::EndlessMap(int layers, Rng& rng) const {
+    const int every = std::max(1, content_->economy().ladder.endless.boss_every);
+    RunMapPlan plan;
+    plan.layers = layers;
+    for (int a = every; a < layers; a += every) plan.earlier_bosses[a] = EndlessBossesAt(a);
+    plan.bosses = EndlessBossesAt(layers);
+    return GenerateRunMap(*content_, rng, arena_pool_, first_arena_, plan);
+}
+
+void RunController::ExtendEndless() {
+    const int from = run_.arena_count;
+    const int to = from + content_->economy().ladder.endless.boss_every;
+    // The whole map to `to` from its own stream (the same for a seed), of which the new arenas are
+    // kept: their tiers and boss turns are those of their depth.
+    Rng rng = Rng::Derive(run_.seed, "endless_map_" + std::to_string(to));
+    RunMap grown = EndlessMap(to, rng);
+    std::vector<std::vector<RunMapNode>>& layers = run_.run_map.layers;
+    if (layers.empty() || layers.size() != static_cast<std::size_t>(from) || grown.layers.size() != static_cast<std::size_t>(to)) {
+        Event e = MakeEvent(EventType::Error);
+        e.Add("op", "endless").Add("reason", "run map shape").Add("arenas", from);
+        Emit(std::move(e));
+        return;
+    }
+    // The boss that ended the map leads to every node of the first new arena.
+    for (RunMapNode& p : layers.back()) {
+        p.next.clear();
+        for (std::size_t k = 0; k < grown.layers[static_cast<std::size_t>(from)].size(); ++k) p.next.push_back(static_cast<int>(k));
+    }
+    for (int d = from; d < to; ++d) layers.push_back(std::move(grown.layers[static_cast<std::size_t>(d)]));
+    run_.arena_count = to;
+    // The guests again from the start of their own stream: the arenas already planned keep theirs.
+    Rng rosters = Rng::Derive(run_.seed, streams::kRoster);
+    PlanRunRosters(*content_, rosters, run_.run_map);
+    Event e = MakeEvent(EventType::PerkTriggered);
+    e.Add("source", "ladder").Add("trigger", "endless_grown").Add("arenas", to);
+    Emit(std::move(e));
+}
+
+std::string RunController::PacingLengthId() const {
+    const EconomyConfig::Ladder& ladder = content_->economy().ladder;
+    if (!EndlessRun()) return run_.length_id;
+    if (!ladder.endless.paced_as.empty()) return ladder.endless.paced_as;
+    return ladder.lengths.empty() ? run_.length_id : ladder.lengths.back().id;
+}
+
+int RunController::PacingArenas() const {
+    if (!EndlessRun()) return run_.arena_count;
+    const auto* length = content_->economy().ladder.Find(PacingLengthId());
+    return length != nullptr ? length->arenas : run_.arena_count;
+}
+
 std::vector<LadderUnlock> RunController::LadderUnlocksFor(const std::vector<std::string>& fresh_keys) const {
     std::vector<LadderUnlock> out;
     const EconomyConfig::Ladder& ladder = content_->economy().ladder;
@@ -358,6 +446,10 @@ std::vector<LadderUnlock> RunController::LadderUnlocksFor(const std::vector<std:
             // The length that can go on to the finale: how to earn it.
             if (FinalePossible(length)) out.push_back({LadderUnlock::Kind::Finale, length.id, length.arenas, ladder.finale.boss});
         }
+    }
+    // Endless opened by this run's win.
+    if (!ladder.endless.id.empty() && !ladder.endless.unlocked_by.empty() && fresh(ladder.endless.unlocked_by) && EndlessOpen()) {
+        out.push_back({LadderUnlock::Kind::Length, ladder.endless.id, 0, -1});
     }
     const std::string& exotic = content_->economy().refine.exotic_unlocked_by;
     if (!exotic.empty() && fresh(exotic) && MaxRefineRarity() == Rarity::Exotic) {
@@ -429,7 +521,7 @@ void RunController::AddRefineReward(bool sure) {
     const EconomyConfig::Refine& refine = content_->economy().refine;
     if (!refine.enabled || run_.reward_offer.empty()) return;
     if (RefineTarget(std::nullopt) == nullptr) return;  // no gun can go up
-    const double chance = RefineChance(refine, refine.reward_chance, run_.arena_count);
+    const double chance = RefineChance(refine, refine.reward_chance, PacingArenas());
     if (!sure && !(chance > 0.0 && streams_->reward.NextDouble() < chance)) return;
     const WeaponInstance* target = RandomRefineTarget(streams_->reward);
     if (target == nullptr) return;
@@ -446,7 +538,7 @@ void RunController::AddRefineOffer() {
     if (!refine.enabled) return;
     const SkinBuild& build = run_.character.build;
     if (RefineTarget(std::nullopt) == nullptr) return;  // no gun can go up
-    const double chance = RefineShopChance(refine, run_.length_id, run_.arena_count);
+    const double chance = RefineShopChance(refine, PacingLengthId(), PacingArenas());
     if (!build.refine_every_shop && !(chance > 0.0 && streams_->shop.NextDouble() < chance)) return;
     const WeaponInstance* target = RandomRefineTarget(streams_->shop);
     if (target == nullptr) return;
@@ -491,6 +583,17 @@ std::vector<RunController::LadderLengthView> RunController::LadderLengths() cons
         v.hard_open = !length.hard_bosses.empty() && v.easy_beaten;
         v.finale_possible = FinalePossible(length);
         v.arenas = length.arenas;
+        v.unlocked_by = length.unlocked_by;
+        out.push_back(std::move(v));
+    }
+    if (!ladder.endless.id.empty()) {
+        LadderLengthView v;
+        v.id = ladder.endless.id;
+        v.name = ladder.endless.name;
+        v.open = EndlessOpen();
+        v.endless = true;
+        v.boss_every = ladder.endless.boss_every;
+        v.unlocked_by = ladder.endless.unlocked_by;
         out.push_back(std::move(v));
     }
     return out;
@@ -808,7 +911,10 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     const EconomyConfig& eco = content_->economy();
     // The ladder's length (EconomyConfig::Ladder): the first one unless named.
     const EconomyConfig::Ladder::Length* length = nullptr;
-    if (eco.ladder.enabled) {
+    const bool endless = eco.ladder.enabled && eco.ladder.endless.Is(length_id);
+    if (endless) {
+        if (!EndlessOpen()) return Fail(op, ErrorCode::Locked, "run length '" + eco.ladder.endless.id + "' is locked");
+    } else if (eco.ladder.enabled) {
         length = length_id.empty() ? &eco.ladder.lengths.front() : eco.ladder.Find(length_id);
         if (length == nullptr) return Fail(op, ErrorCode::UnknownId, "unknown run length '" + std::string(length_id) + "'");
         if (!LengthOpen(*length)) return Fail(op, ErrorCode::Locked, "run length '" + length->id + "' is locked");
@@ -825,8 +931,9 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     fresh.seed = seed;
     fresh.phase = Phase::Idle;
     // The finale's arena is added when the run earns it (CompleteArena).
-    fresh.arena_count = length != nullptr ? length->arenas : eco.run.arena_count;
-    fresh.length_id = length != nullptr ? length->id : std::string();
+    // Endless: its map reaches its first boss; it grows as the run goes (ExtendEndless).
+    fresh.arena_count = endless ? std::max(1, eco.ladder.endless.boss_every) : length != nullptr ? length->arenas : eco.run.arena_count;
+    fresh.length_id = endless ? eco.ladder.endless.id : length != nullptr ? length->id : std::string();
     fresh.route_id = start->id;
     fresh.route_chosen = true;  // the first arena uses the starting route
     run_ = std::move(fresh);
@@ -841,7 +948,9 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
     });
     SetUpSeat(*ch, *skin);
     run_.keys = eco.keys.enabled ? eco.keys.start : 0;
-    if (length != nullptr) {
+    if (endless) {
+        run_.run_map = EndlessMap(run_.arena_count, streams_->route);
+    } else if (length != nullptr) {
         // Every shorter length's bosses at their arenas, its own at its end (each its easy boss,
         // then its alternates too once the easy one is beaten); the finale's arena after them,
         // played only when the run earns it.
@@ -1601,11 +1710,13 @@ Result<ArenaResult> RunController::CompleteArena(double now) {
         f.Add("source", "ladder").Add("trigger", "finale_earned").Add("map", ladder.finale.boss);
         Emit(std::move(f));
     }
+    // Endless: its last arena (a boss) cleared, the map reaches boss_every arenas further.
+    if (EndlessRun() && run_.arena_index >= run_.arena_count) ExtendEndless();
     run_.results.push_back(result);
 
     // Each seat's own offer (its perks, weapons and build decide what it may get).
     const auto sure_rating = ParseRating(eco.refine.reward_rating);
-    const double rated_chance = RefineChance(eco.refine, eco.refine.reward_rated_chance, run_.arena_count);
+    const double rated_chance = RefineChance(eco.refine, eco.refine.reward_rated_chance, PacingArenas());
     ForEachSeat([&](int) {
         run_.reward_rarity_shift = route.rarity_bonus + eco.rewards.rating_rarity_bonus[RatingIndex(rating)];
         // A refine among the rewards now and then; likelier after a top-rated arena. Decided here,
@@ -1793,7 +1904,7 @@ void RunController::ApplyBuildKill(const KillEvent& kill, KillOutcome& out) {
     if (kill.was_melee.value_or(false) && !build.melee_kill_stats.empty()) {
         // The run length's pace, when the build names one: a stat fills its cap in that many gains
         // (Excella, the user 2026-11-11: full by mid arena 3 of a short run, arena 7 of a long one).
-        const auto pace = build.melee_kill_gains_by_length.find(run_.length_id);
+        const auto pace = build.melee_kill_gains_by_length.find(PacingLengthId());
         const auto step = [&](const std::string& stat, double amount) {
             if (pace == build.melee_kill_gains_by_length.end()) return amount;
             const auto gains = pace->second.find(stat);
@@ -2177,7 +2288,7 @@ Result<ChestReward> RunController::OpenChest(double now, std::optional<std::stri
 
     const OfferContext ctx = MakeOfferContext(0.0);
     // Sometimes a chest refines the gun in hand one tier (the rarity remake): on top of the rest.
-    const double chest_refine = RefineChance(eco.refine, eco.refine.chest_chance, run_.arena_count);
+    const double chest_refine = RefineChance(eco.refine, eco.refine.chest_chance, PacingArenas());
     if (eco.refine.enabled && chest_refine > 0.0 && rng.NextDouble() < chest_refine) {
         if (const WeaponInstance* target = RefineTarget(held_weapon)) {
             const WeaponInstance refined = RefineWeapon(rng, *content_, caps_, *target, BuildElements());
@@ -2460,6 +2571,7 @@ Result<RunSummary> RunController::EndRun() {
     for (const ArenaMetrics& a : run_.arenas) s.time_seconds += std::max(0.0, a.end_time - a.start_time);
     s.previous_best_arena = static_cast<int>(profile_.stats.best_arena);
     if (const MapDef* map = content_->FindMapByStage(map_stage_)) s.final_arena = map->name;
+    s.endless = EndlessRun();
 
     const TxResult r = BankRunCredits(profile_, run_.run_id, amount);
     s.already_banked = r == TxResult::AlreadyApplied;

@@ -487,7 +487,7 @@ CHARACTER_UNLOCKS = {
     'barry': _stat('total_kills', 500, 'Kill 500 enemies in total'),
     'rebecca': _stat('no_damage_arenas', 5, 'Clear 5 arenas without taking damage'),
     'excella': _stat('credits_earned', 1500, 'Earn 1500 credits in total'),
-    'leon': _boss('boss:uEm41', 'Beat Uroboros Aheri'),
+    'leon': _boss('boss:uEm41', 'Beat Uroboros Mkono'),
     'ada': _boss('boss:uEm84', 'Beat Jill'),
 }
 SKIN_UNLOCKS = {
@@ -501,7 +501,7 @@ SKIN_UNLOCKS = {
     'sheva_fairy_tale': _runs_as('sheva', 'Sheva', 5),
     'sheva_hound_wolf': _stat('best_arena', 8, 'Clear 8 arenas in one run'),
     'jill_battle_suit': _runs_as('jill', 'Jill', 1),
-    'jill_classic': _boss('boss:uEm43', 'Beat the Giant Uroboros'),
+    'jill_classic': _boss('boss:uEm43', 'Beat U-8'),
     'excella_experimenter': _runs_as('excella', 'Excella', 3),
     'leon_jacket': _runs_as('leon', 'Leon', 3),
     'rebecca_winter': _runs_as('rebecca', 'Rebecca', 3),
@@ -722,17 +722,21 @@ open('configs/weapons.json', 'a').write('\n')
 # kills: at 15 two sessions dropped 50 keys for 17 chests (the user, 2026-11-07: too many).
 e = json.load(open('configs/economy.json'))
 e['keys'] = {'enabled': True, 'drop_chance': 0.08, 'classes': ['uEm1'], 'start': 0, 'max': 9}
-# The ladder (the user, 2026-11-07): 4 arenas ending on Uroboros; beating him adds Giant Uroboros
-# as a choice; beating that opens 8 arenas, then 12, then the 13th arena against Wesker; later
-# arenas harder a step each from the fifth.
+# The ladder (the user, 2026-11-07): 4 arenas ending on Uroboros; beating him adds U-8 (s304) and
+# Popokarimu (s108, the user 2026-11-19: "popokarimu as option for 4 stage boss") as a choice;
+# beating one of them opens 8 arenas, then 12, then the 13th arena against Wesker; later arenas
+# harder a step each from the fifth. The names are the game's (2026-11-19, its creature list
+# mes_system 1478-1484 runs in class order uEm40..uEm46: Uroboros, Mkono, Aheri, U-8, Popokarimu,
+# Ndesu, Irving); before that s308's boss was called Aheri, s511's Mkono and s304's a giant Uroboros.
 e['ladder'] = {
-    '_comment': 'Run lengths (EconomyConfig::Ladder, written by scripts/write_perks.py). A length ends on its easy boss until it is beaten, then on a choice of easy or hard; beating a hard one opens the length whose unlocked_by names it. A run also fights every shorter length\'s boss at that length\'s arena. The finale is one more arena after its after length\'s boss in a run that beat a hard boss of every length in needs_hard. From growth_from_arena on, each arena adds budget_per_arena enemies, incoming_per_arena damage taken and toughness_per_arena (the player\'s damage divided by 1 + it) per step.',
+    '_comment': 'Run lengths (EconomyConfig::Ladder, written by scripts/write_perks.py). A length ends on its easy boss until it is beaten, then on a choice of easy or hard; beating a hard one opens the length whose unlocked_by names it. Endless has no last arena: a boss every boss_every arenas, the bosses of the open lengths in turn, boss_hp_per_round stronger each time round. A run also fights every shorter length\'s boss at that length\'s arena. The finale is one more arena after its after length\'s boss in a run that beat a hard boss of every length in needs_hard. From growth_from_arena on, each arena adds budget_per_arena enemies, incoming_per_arena damage taken and toughness_per_arena (the player\'s damage divided by 1 + it) per step.',
     'enabled': True,
     'lengths': [
-        {'id': 'short', 'name': 'Short', 'arenas': 4, 'easy_boss': 103, 'hard_boss': 304},
+        {'id': 'short', 'name': 'Short', 'arenas': 4, 'easy_boss': 103, 'hard_boss': [304, 108]},
         # The user's ladder (2026-11-08: "4 - uroboros, 4 alternate giant uroboros, 8 - Aheri, 8
         # alternate - Mkono, 12 - uroboros wesker, 13 midnight wesker"; then Jill as the 8's other
-        # alternate: "8: Mkono or Jill"). Popokarimu (s108) stays a boss map outside the ladder.
+        # alternate: "8: Mkono or Jill"), said with the mod's names of then: the 8's easy boss is
+        # s308's (the game's Uroboros Mkono), its alternates s511's (Uroboros Aheri) and Jill.
         {'id': 'long', 'name': 'Long', 'arenas': 8, 'easy_boss': 308, 'hard_boss': [511, 309],
          'unlocked_by': 'short:hard', 'boss_hp_mult': 1.3},
         {'id': 'marathon', 'name': 'Marathon', 'arenas': 12, 'easy_boss': 508,
@@ -743,6 +747,12 @@ e['ladder'] = {
     # took the alternates on 4 and 8 ("except if you take both alternate routes, then you get 13th
     # stage").
     'finale': {'boss': 506, 'after': 'marathon', 'needs_hard': ['short', 'long'], 'boss_hp_mult': 1.0},
+    # Endless (the user, 2026-11-19: "add endless mode"; a player's "arenas will go on until death"):
+    # opened by an 8-arena run's boss; a boss every 4 arenas, the open lengths' in turn (then the
+    # finale's once won), 25 percent stronger each time round; rewards and refines paced as the
+    # 12-arena run's.
+    'endless': {'id': 'endless', 'name': 'Endless', 'unlocked_by': 'long:easy', 'boss_every': 4,
+                'boss_hp_per_round': 0.25, 'paced_as': 'marathon'},
     'growth_from_arena': 5,
     'incoming_per_arena': 0.08,
     'toughness_per_arena': 0.05,

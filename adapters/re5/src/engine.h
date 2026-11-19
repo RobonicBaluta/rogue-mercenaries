@@ -69,7 +69,7 @@ struct Verified {
     bool areaCameras = false;   // the player camera's zone cameras (a run's campaign areas keep its own)
     bool hitCheckProbe = false; // developer: the enemy hit check, logged (dev "hitprobe")
     bool bossGunfire = false;   // Uroboros Wesker as a run's boss takes gunfire anywhere (his own check: only his open core)
-    bool bossNoRefill = false;  // Uroboros Aheri as a run's boss keeps its damage (its update refills its health)
+    bool bossNoRefill = false;  // Uroboros Mkono as a run's boss keeps its damage (its update refills its health)
     bool bossBrain = false;     // the Uroboros' own brain can be released from the story's waiting mode
     bool faderState = false;    // developer: the fader's state, logged (dev "screenwatch")
     bool stage308Setup = false; // s308's setup can be kept from its null read (stage_fixes.cpp)

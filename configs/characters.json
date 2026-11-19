@@ -361,7 +361,7 @@
           "unlock_kind": "boss_beaten",
           "unlock_boss": "boss:uEm43",
           "unlock_count": 1,
-          "unlock_text": "Beat the Giant Uroboros"
+          "unlock_text": "Beat U-8"
         }
       ],
       "unlock_kind": "runs_completed_as",
@@ -866,7 +866,7 @@
       "unlock_kind": "boss_beaten",
       "unlock_boss": "boss:uEm41",
       "unlock_count": 1,
-      "unlock_text": "Beat Uroboros Aheri"
+      "unlock_text": "Beat Uroboros Mkono"
     },
     {
       "id": "ada",

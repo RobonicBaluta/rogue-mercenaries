@@ -15,8 +15,11 @@ THE LADDER
   Your first runs are 4 arenas long and end on a boss. Beating bosses opens harder
   alternate bosses and longer runs (8 and 12 arenas, with a boss on every fourth arena).
   A 12-arena run that takes the alternate boss on both arena 4 and arena 8 gets a 13th
-  arena. START RUN asks for the run length once a longer run is open, and the results
-  screen after a run says what a boss win opened.
+  arena. Beating an 8-arena run also opens ENDLESS: no last arena, the run ends when you
+  fall, with a boss every 4 arenas, stronger each time round. START RUN asks for the run
+  length once a longer run is open, and the results screen after a run says what a boss
+  win opened. The bosses and campaign areas carry the game's own names (until this
+  version two Uroboros had each other's names, and U-8 was called a giant Uroboros).
 
 REQUIREMENTS
   - Resident Evil 5 on Steam, the current build (Steam build 11465250, re5dx9.exe 1.0.0.129).
@@ -133,8 +136,11 @@ KNOWN ISSUES (ALPHA)
     and the 13th arena.
   - Two players (split screen) is new and has had one short session with two real
     controllers: please report what goes wrong.
-  - Uroboros Mkono, one of the alternate bosses of arena 8, may not be beatable yet:
-    pick another boss there.
+  - Uroboros Aheri (Excella, on the Bridge Deck), one of the alternate bosses of arena 8,
+    may not be beatable yet: pick another boss there.
+  - The first gun the mod hands you in an arena can be invisible in your hands (it still
+    fires): a skin's own starting gun such as Ada's Px4, or the first gun bought. Being
+    looked into.
   - The campaign areas' ladders can be climbed since this version (before, they were
     only scenery, and Factory Floor was left out of the runs for it). If a ladder still
     ignores you, please report the arena.

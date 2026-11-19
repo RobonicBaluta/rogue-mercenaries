@@ -139,6 +139,7 @@ struct RunSummary {
     std::vector<std::string> unlocked;  // characters and skins whose challenge this run met
     std::vector<LadderUnlock> ladder_unlocks;  // what the run's boss wins opened, in ladder order
     std::string final_arena;  // the map the run ended on (where the player died), empty when unknown
+    bool endless = false;     // the endless length's run (no last arena: arena_count is its map's)
 };
 
 /// Stats a run gains as it goes (a build's melee_kill_stats): additive fractions.
@@ -379,6 +380,7 @@ struct RunSnapshot {
     std::vector<std::vector<RunMapNodeView>> run_map;
     int arena = 0;  // current arena number (1-based), 0 before the first
     int arena_count = 0;
+    bool endless = false;  // the endless length's run: arena_count is only how far its map reaches
     int kills = 0;
     int budget = 0;
     int remaining = 0;  // enemies still needed to clear the arena

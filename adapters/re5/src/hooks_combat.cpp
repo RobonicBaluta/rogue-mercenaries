@@ -76,7 +76,7 @@ std::uint32_t __fastcall Em82MayHurtDetour(std::uintptr_t self, void*, std::uint
     return 1;
 }
 
-// Uroboros Aheri (uEm41) as a run's boss: its update (0x008B6040) runs the Uroboros' (0x008AE2B0)
+// Uroboros Mkono (uEm41) as a run's boss: its update (0x008B6040) runs the Uroboros' (0x008AE2B0)
 // and then sets its health back to its maximum (vtable +0x10C, the same call its grab kills the
 // player with), so gunfire never wears it down (2026-11-08: 15000 -> 14920, then 15000 again; its
 // end in the story is the flamethrower room's). The run's boss runs the update without that.

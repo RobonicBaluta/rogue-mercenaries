@@ -1591,6 +1591,20 @@ std::string FinaleHowTo(const rm::EconomyConfig::Ladder& ladder) {
 
 // RUN LENGTH (the ladder): every length, the open ones to choose; a locked one says which boss
 // opens it.
+// "Beat the hard boss of a 4 arena run to open it.", "Beat an 8 arena run to open it.": what opens a
+// locked run length (its unlocked_by key).
+std::string LadderOpenHelp(const std::string& key) {
+    const rm::EconomyConfig::Ladder& ladder = g->content->economy().ladder;
+    if (key == "finale") return "Win the arena after the last boss to open it.";
+    const auto colon = key.find(':');
+    const auto* by = colon == std::string::npos ? nullptr : ladder.Find(key.substr(0, colon));
+    if (by == nullptr) return "Locked.";
+    const std::string n = std::to_string(by->arenas);
+    const std::string a = n.front() == '8' || n == "11" || n == "18" ? "an " : "a ";
+    return key.substr(colon + 1) == "hard" ? "Beat the hard boss of " + a + n + " arena run to open it."
+                                           : "Beat " + a + n + " arena run to open it.";
+}
+
 nativemenu::Screen RunLengthScreen(rm::RunController& run) {
     nativemenu::Screen screen;
     screen.header = "RUN LENGTH";
@@ -1598,17 +1612,22 @@ nativemenu::Screen RunLengthScreen(rm::RunController& run) {
     for (const auto& v : run.LadderLengths()) {
         const auto* def = ladder.Find(v.id);
         nativemenu::Item item;
-        item.label = std::to_string(v.arenas) + " ARENAS   " + Upper(Plain(v.name));
+        item.label = v.endless ? Upper(Plain(v.name)) : std::to_string(v.arenas) + " ARENAS   " + Upper(Plain(v.name));
         item.icon = "flag";
-        if (!v.open || def == nullptr) {
+        if (v.endless) {
+            // Endless (the user, 2026-11-19): no last arena; the bosses of the lengths open, in turn.
+            item.locked = !v.open;
+            // Two lines of at most 44 (the box shows two; a longer line wraps and pushes the second out).
+            item.help = v.open ? "No last arena, it ends when you fall.\nA boss every " + std::to_string(v.boss_every) +
+                                     " arenas, stronger each round."
+                               : LadderOpenHelp(v.unlocked_by);
+        } else if (!v.open || def == nullptr) {
             item.locked = true;
-            const auto colon = def ? def->unlocked_by.find(':') : std::string::npos;
-            const auto* by = colon == std::string::npos ? nullptr : ladder.Find(def->unlocked_by.substr(0, colon));
-            item.help = by ? "Beat the hard boss of a " + std::to_string(by->arenas) + " arena run to open it." : "Locked.";
+            item.help = def != nullptr ? LadderOpenHelp(def->unlocked_by) : "Locked.";
         } else {
-            // "Ends on the Uroboros", "... or the Giant Uroboros"; a longer run fights the shorter
-            // lengths' bosses on the way: "Bosses on arenas 4 and 8, the last Uroboros Aheri,
-            // Uroboros Mkono or Jill."
+            // "Ends on the Uroboros", "... or U-8"; a longer run fights the shorter
+            // lengths' bosses on the way: "Bosses on arenas 4 and 8, the last Uroboros Mkono,
+            // Uroboros Aheri or Jill."
             std::vector<int> ends{def->easy_boss};
             if (v.hard_open) ends.insert(ends.end(), def->hard_bosses.begin(), def->hard_bosses.end());
             const auto tiers = ladder.BossTiers(def->id);
@@ -1676,14 +1695,15 @@ nativemenu::Screen RunResultsScreen(rm::RunController& run) {
                                                         : "Every arena of the run cleared.",
             "trophy");
     } else {
-        add(std::to_string(s.arenas_cleared) + " OF " + std::to_string(s.arena_count) + " ARENAS CLEARED",
+        add(s.endless ? Upper(Plural(s.arenas_cleared, "arena")) + " CLEARED"
+                      : std::to_string(s.arenas_cleared) + " OF " + std::to_string(s.arena_count) + " ARENAS CLEARED",
             std::string(s.end_reason == "died" ? "Killed" : "Ended") + " in arena " + std::to_string(reached) +
                 (s.final_arena.empty() ? "." : ", " + Plain(s.final_arena) + "."),
             "last_stand");
     }
     // What the run's boss wins opened on the ladder: right under the first row, seen without scrolling.
     for (const rm::LadderUnlock& u : s.ladder_unlocks) {
-        const std::string boss = LadderBossName(u.boss);  // in a sentence: "the Giant Uroboros"
+        const std::string boss = LadderBossName(u.boss);  // in a sentence: "the Uroboros", "U-8"
         const rm::MapDef* map = g->content->FindMapByStage(u.boss);
         const std::string name = map && map->boss ? Upper(Plain(map->boss->name)) : std::string("A BOSS");
         const std::string arenas = std::to_string(u.arenas);
@@ -1693,6 +1713,13 @@ nativemenu::Screen RunResultsScreen(rm::RunController& run) {
                     "explosion");
                 break;
             case rm::LadderUnlock::Kind::Length: {
+                if (g->content->economy().ladder.endless.Is(u.length_id)) {
+                    add("ENDLESS OPEN", "Arenas until you fall, a boss every " +
+                                            std::to_string(g->content->economy().ladder.endless.boss_every) +
+                                            ".\nPick ENDLESS when START RUN asks how long.",
+                        "flag");
+                    break;
+                }
                 const auto tiers = g->content->economy().ladder.BossTiers(u.length_id);
                 add(arenas + " ARENAS OPEN",
                     (tiers.size() > 1 ? arenas + " arenas, bosses on " + ArenaList(tiers) + ", the last " + boss
@@ -4112,9 +4139,9 @@ void TraceDirectorArena(double now, const std::optional<std::array<double, 3>>& 
     }
 }
 
-// Bosses that fight from where they are and move themselves (the giant Uroboros of the capsule
+// Bosses that fight from where they are and move themselves (U-8 of the capsule
 // dome: its Shift takes it around the dome); the mod never moves them.
-// Uroboros Mkono (uEm42) is a mass that rises beside the tanker's deck from its story spot (its
+// Uroboros Aheri (uEm42) is a mass that rises beside the tanker's deck from its story spot (its
 // map's boss "spawn", s511 set Uro3_Battle) and never walks: moved, it hung in the air or sank into
 // the deck (2026-11-08: the user, "it spawned incorrectly ... you were hitting it from below").
 bool BossHoldsGround(const std::string& cls) { return cls == "uEm43" || cls == "uEm42"; }
@@ -4381,7 +4408,7 @@ void RescueStuckEnemies(double now, const std::optional<std::array<double, 3>>& 
                         pos[0], pos[1], pos[2], away / 100.0f, (pos[1] - static_cast<float>(nearest[1])) / 100.0f,
                         engine::CurrentActionName(unit).c_str());
             }
-            // The giant Uroboros holds its dome and moves around it itself (cEm43ActShift); moved
+            // U-8 holds its dome and moves around it itself (cEm43ActShift); moved
             // every 8 s it did not close in, it seemed to teleport all around (user playtest
             // 2026-11-04). It is never moved. Other bosses only when they stand stuck, like any
             // enemy.
@@ -4522,7 +4549,7 @@ constexpr ScriptedFall kScriptedFalls[] = {
     {"uEm84", "cEm84ActDieNormal", 0.3}, {"uEm83", "cEm83ActDieNormal", 0.3},
     // Uroboros Wesker fights on at zero health too (his end is the story's): his last pinned fall.
     {"uEm82", "cEm82DmgLastPinionDie", 0.0},
-    // Uroboros Aheri (uEm41) has the Uroboros' deaths; its own health is 32767 (its end in the story
+    // Uroboros Mkono (uEm41) has the Uroboros' deaths; its own health is 32767 (its end in the story
     // is the flamethrower room's), so one is given if it has not begun its own.
     {"uEm41", "cEm40ActDead", 0.3},
 };
@@ -4548,7 +4575,7 @@ constexpr ScriptedKill kScriptedKills[] = {
     {"uEm80", "cEm80ActAtkSyutoStart", "cEm80ActAtkKick"},
 };
 
-// A boss's hold that ends in a kill. The Uroboros' near grab and Uroboros Aheri's share one hold
+// A boss's hold that ends in a kill. The Uroboros' near grab and Uroboros Mkono's share one hold
 // (cEm40ActNearCatchOk, cEm41ActNearCatchOk: update 0x008ABF90): it loops, then plays its kill and
 // sets the player's health to 0, past the run's health and the developer invulnerability (2026-11-08,
 // build/runs/20261108-174744-bossarena-uEm41-s308: caught at full health, dead 11 s later). The
@@ -4909,11 +4936,11 @@ void WatchWeapons() {
     RM_LOGW("wpwatch:%s", line.c_str());
 }
 
-// Uroboros Mkono's four cores (uEm42Core, at uEm42 +0x2104..+0x2110, made by its init 0x008C0450):
+// Uroboros Aheri's four cores (uEm42Core, at uEm42 +0x2104..+0x2110, made by its init 0x008C0450):
 // each one's action and health logged on every change while it is a boss, so a playtest shows what
 // shooting them does (they open and close on their own timer; damage, break and regrow are their
-// actions). research/re5-engine-map.md "Uroboros Mkono".
-void WatchMkonoCores() {
+// actions). research/re5-engine-map.md "Uroboros Aheri".
+void WatchAheriCores() {
     static std::string last[4];
     const std::uintptr_t boss = g->boss.unit;
     if (!boss || engine::ClassName(boss) != "uEm42") {
@@ -4930,12 +4957,12 @@ void WatchMkonoCores() {
         if (last[i] == line) continue;
         last[i] = line;
         const auto bossHp = engine::ReadHp(boss);
-        RM_LOGI("mkono: core %d %s (Mkono %s, hp %d)", i, line, engine::CurrentActionName(boss).c_str(), bossHp ? bossHp->hp : -1);
+        RM_LOGI("aheri: core %d %s (Aheri %s, hp %d)", i, line, engine::CurrentActionName(boss).c_str(), bossHp ? bossHp->hp : -1);
     }
 }
 
 void WatchUnit(double now) {
-    WatchMkonoCores();
+    WatchAheriCores();
     if (g_pin.unit && now < g_pin.until) {
         engine::WarpUnit(g_pin.unit, g_pin.dest);
         if (g_pin.turn) engine::TurnTo(g_pin.unit, g_pin.yaw, 0);
@@ -5062,7 +5089,7 @@ void DriveDirector(double now) {
     const rm::MapDef* arenaMap = CurrentMap();
     const bool bossArena = arenaMap != nullptr && arenaMap->boss.has_value();
     const double grace = bossArena ? kBossGraceSeconds : kDirectorGraceSeconds;
-    // A boss waiting at its story spot for the player (Uroboros Aheri in its room) is found, not
+    // A boss waiting at its story spot for the player (Uroboros Mkono in its room) is found, not
     // counted down to.
     const bool bossWaits = bossArena && arenaMap->boss->spawn && arenaMap->boss->trigger > 0.0;
     const bool noBossYet = bossArena && run.director() != nullptr && run.director()->alive() + run.director()->pending() == 0 &&
@@ -5172,11 +5199,16 @@ void DriveArena(double now) {
         return;
     }
     if (run.IsArenaComplete()) {
+        const int reach = run.state().arena_count;
         const auto result = run.CompleteArena(bossDown ? g->boss.diedAt : now);
         if (result.ok()) {
             SetStatus("arena cleared in " + std::to_string(static_cast<int>(result->time_seconds)) + " s");
             RM_LOGI("arena %d cleared in %.0f s, rating %s, damage taken %.0f", result->arena, result->time_seconds,
                     std::string(rm::RatingName(result->rating)).c_str(), result->damage_taken);
+            if (run.state().arena_count > reach) {
+                RM_LOGI("endless: the run map now reaches arena %d", run.state().arena_count);
+                LogRunMap();
+            }
             if (g->settings.endMatchOnClear && g->match.inMatch) {
                 RequestMercMatchEnd();
                 g->arenaEndRequested = true;
@@ -8286,7 +8318,8 @@ void UpdateMatchStatus() {
             // the number goes into the label.
             const bool digits = engine::Caps().mercHud && !g->settings.mercHud;
             counter = digits ? s.remaining : -1;
-            hud.left = "ARENA " + std::to_string(s.arena) + " OF " + std::to_string(s.arena_count);
+            hud.left = "ARENA " + std::to_string(s.arena) +
+                       (run.EndlessRun() ? std::string() : " OF " + std::to_string(s.arena_count));  // endless: no last arena
             hud.center = (digits ? std::string() : std::to_string(s.remaining) + " ") +
                          (s.remaining == 1 ? "ENEMY LEFT" : "ENEMIES LEFT");
             // A boss arena (M6): the digits are the boss's health in percent, the label its name.

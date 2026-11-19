@@ -663,7 +663,7 @@
     },
     {
       "id": "campaign_s100",
-      "name": "Kijuju Town",
+      "name": "Civilian Checkpoint",
       "stage": 100,
       "rotation": false,
       "start": [10492.5, 0.0, 7927.8],
@@ -1171,7 +1171,7 @@
     },
     {
       "id": "campaign_s104",
-      "name": "Waterfront",
+      "name": "The Bridge",
       "stage": 104,
       "start": [2123.6, -350.0, -10882.3],
       "max_alive": 12,
@@ -1490,7 +1490,7 @@
     },
     {
       "id": "campaign_s105",
-      "name": "Back Alleys",
+      "name": "Shanty Town",
       "stage": 105,
       "start": [44.0, -99.8, -1147.4],
       "max_alive": 12,
@@ -1984,7 +1984,7 @@
     },
     {
       "id": "campaign_s113",
-      "name": "Warehouse",
+      "name": "The Port",
       "stage": 113,
       "start": [-92.9, 16.7, -4678.2],
       "max_alive": 12,
@@ -2677,7 +2677,7 @@
     },
     {
       "id": "campaign_s114",
-      "name": "Slums",
+      "name": "Public Assembly (Campaign)",
       "stage": 114,
       "rotation": false,
       "start": [1266.0, 50.0, 1598.8],
@@ -3338,7 +3338,7 @@
     },
     {
       "id": "campaign_s202",
-      "name": "Marsh Village",
+      "name": "Village (Campaign)",
       "stage": 202,
       "start": [-3969.7, 301.2, 7726.8],
       "max_alive": 12,
@@ -3890,7 +3890,7 @@
     },
     {
       "id": "campaign_s204",
-      "name": "Port",
+      "name": "Drilling Facilities",
       "stage": 204,
       "start": [33856.2, 112.7, -87173.7],
       "max_alive": 12,
@@ -4084,7 +4084,7 @@
     },
     {
       "id": "campaign_s500",
-      "name": "Cargo Hold",
+      "name": "Ship Deck (Campaign)",
       "stage": 500,
       "start": [529.4, 0.0, 2613.4],
       "max_alive": 12,
@@ -4743,7 +4743,7 @@
     },
     {
       "id": "campaign_s503",
-      "name": "Freighter Deck",
+      "name": "Main Deck",
       "stage": 503,
       "rotation": false,
       "start": [1718.5, 0.0, 19263.3],
@@ -4857,7 +4857,7 @@
     },
     {
       "id": "campaign_s300",
-      "name": "Cave Shrine",
+      "name": "Ancient Village",
       "stage": 300,
       "start": [-3314.4, 2996.6, 46320.6],
       "max_alive": 12,
@@ -5187,7 +5187,7 @@
     },
     {
       "id": "campaign_s302",
-      "name": "Ruin Passages",
+      "name": "Worship Area",
       "stage": 302,
       "start": [1696.9, 950.0, 14451.7],
       "max_alive": 12,
@@ -5650,7 +5650,7 @@
     },
     {
       "id": "campaign_s314",
-      "name": "Mine Scaffolds",
+      "name": "Missile Area 2nd Floor",
       "stage": 314,
       "start": [-2455.7, 900.0, -22567.5],
       "max_alive": 12,
@@ -5884,7 +5884,7 @@
     },
     {
       "id": "campaign_s310",
-      "name": "Underground Facility",
+      "name": "Power Station",
       "stage": 310,
       "start": [342.5, -1299.5, -23565.0],
       "max_alive": 9,
@@ -6214,7 +6214,7 @@
     },
     {
       "id": "campaign_s505",
-      "name": "Factory Floor",
+      "name": "Engine Room",
       "stage": 505,
       "start": [-2253.9, 703.2, -723.6],
       "max_alive": 12,
@@ -6765,7 +6765,7 @@
     },
     {
       "id": "campaign_s506",
-      "name": "Steel Docks",
+      "name": "Hangar",
       "stage": 506,
       "start": [-137.7, -700.0, 821.5],
       "min_player_distance": 1000,
@@ -7630,7 +7630,7 @@
     },
     {
       "id": "campaign_s103",
-      "name": "Pump Rooms",
+      "name": "Furnace Facility",
       "stage": 103,
       "start": [-810.0, -1200.0, -1140.0],
       "min_player_distance": 1000,
@@ -7772,7 +7772,7 @@
     },
     {
       "id": "campaign_s304",
-      "name": "Capsule Dome",
+      "name": "Experimental Facility (Campaign)",
       "stage": 304,
       "start": [470.0, -10900.0, 524.0],
       "min_player_distance": 1000,
@@ -7935,13 +7935,14 @@
       "preload": [],
       "boss": {
         "class": "uEm43",
-        "name": "Giant Uroboros",
+        "name": "U-8",
+        "article": "",
         "hp": 15000
       }
     },
     {
       "id": "campaign_s309",
-      "name": "Temple Hall",
+      "name": "Monarch Room",
       "stage": 309,
       "start": [-55.0, 1.0, 932.0],
       "min_player_distance": 1000,
@@ -8203,7 +8204,7 @@
     },
     {
       "id": "campaign_s108",
-      "name": "Field Office",
+      "name": "Mining Area",
       "stage": 108,
       "start": [-1753.0, 366.0, -1727.0],
       "min_player_distance": 1000,
@@ -8547,12 +8548,13 @@
       "boss": {
         "class": "uEm44",
         "name": "Popokarimu",
+        "article": "",
         "hp": 12000
       }
     },
     {
       "id": "campaign_s308",
-      "name": "Tiled Labs",
+      "name": "Uroboros Research Facility",
       "stage": 308,
       "start": [-9952.8, -10.0, -17960.7],
       "min_player_distance": 1000,
@@ -8651,7 +8653,8 @@
       "layouts": ["s308_IDF00_Ins"],
       "boss": {
         "class": "uEm41",
-        "name": "Uroboros Aheri",
+        "name": "Uroboros Mkono",
+        "article": "",
         "hp": 10000,
         "spawn": [-11691.4, 0.0, -18013.9],
         "facing": 1.4286,
@@ -8661,7 +8664,7 @@
     },
     {
       "id": "campaign_s511",
-      "name": "Upper Deck",
+      "name": "Bridge Deck",
       "stage": 511,
       "min_player_distance": 1000,
       "max_player_distance": 2500,
@@ -8768,7 +8771,8 @@
       "layouts": ["s511_IDf00_ins"],
       "boss": {
         "class": "uEm42",
-        "name": "Uroboros Mkono",
+        "name": "Uroboros Aheri",
+        "article": "",
         "hp": 28000,
         "spawn": [1248.0, 0.0, 21800.0],
         "facing": 0.0

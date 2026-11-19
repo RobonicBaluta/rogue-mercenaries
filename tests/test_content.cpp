@@ -127,7 +127,8 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
         CHECK_FALSE(u.text.empty());
         CHECK(u.text.back() != '.');
         CHECK(u.text.size() <= 44);
-        for (const char ch : u.text) CHECK((std::isalnum(static_cast<unsigned char>(ch)) || ch == ' ' || ch == ',' || ch == '.'));
+        // The font has the hyphen too ("Beat U-8").
+        for (const char ch : u.text) CHECK((std::isalnum(static_cast<unsigned char>(ch)) || ch == ' ' || ch == ',' || ch == '.' || ch == '-'));
         if (u.kind == ChallengeKind::RunsCompletedAs) CHECK(c.FindCharacter(u.character) != nullptr);
         if (u.kind == ChallengeKind::BossBeaten) {
             // A boss of the ladder, one a run really fights; Uroboros Mkono's end is not known yet.

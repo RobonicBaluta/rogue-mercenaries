@@ -287,7 +287,7 @@
     }
   },
   "ladder": {
-    "_comment": "Run lengths (EconomyConfig::Ladder, written by scripts/write_perks.py). A length ends on its easy boss until it is beaten, then on a choice of easy or hard; beating a hard one opens the length whose unlocked_by names it. A run also fights every shorter length's boss at that length's arena. The finale is one more arena after its after length's boss in a run that beat a hard boss of every length in needs_hard. From growth_from_arena on, each arena adds budget_per_arena enemies, incoming_per_arena damage taken and toughness_per_arena (the player's damage divided by 1 + it) per step.",
+    "_comment": "Run lengths (EconomyConfig::Ladder, written by scripts/write_perks.py). A length ends on its easy boss until it is beaten, then on a choice of easy or hard; beating a hard one opens the length whose unlocked_by names it. Endless has no last arena: a boss every boss_every arenas, the bosses of the open lengths in turn, boss_hp_per_round stronger each time round. A run also fights every shorter length's boss at that length's arena. The finale is one more arena after its after length's boss in a run that beat a hard boss of every length in needs_hard. From growth_from_arena on, each arena adds budget_per_arena enemies, incoming_per_arena damage taken and toughness_per_arena (the player's damage divided by 1 + it) per step.",
     "enabled": true,
     "lengths": [
       {
@@ -295,7 +295,10 @@
         "name": "Short",
         "arenas": 4,
         "easy_boss": 103,
-        "hard_boss": 304
+        "hard_boss": [
+          304,
+          108
+        ]
       },
       {
         "id": "long",
@@ -326,6 +329,14 @@
         "long"
       ],
       "boss_hp_mult": 1.0
+    },
+    "endless": {
+      "id": "endless",
+      "name": "Endless",
+      "unlocked_by": "long:easy",
+      "boss_every": 4,
+      "boss_hp_per_round": 0.25,
+      "paced_as": "marathon"
     },
     "growth_from_arena": 5,
     "incoming_per_arena": 0.08,

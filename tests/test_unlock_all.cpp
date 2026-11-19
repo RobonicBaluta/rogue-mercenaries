@@ -59,6 +59,7 @@ TEST_CASE("the unlocked profile opens everything the shipped game locks", "[unlo
     test::Harness h(r.content, open);
     for (const auto& length : h.rc.LadderLengths()) {
         CHECK(length.open);
+        if (length.endless) continue;  // no bosses of its own
         CHECK(length.easy_beaten);
         CHECK(length.hard_beaten);
     }

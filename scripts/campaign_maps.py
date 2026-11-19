@@ -52,7 +52,7 @@ STARTS = {
     304: (470.0, -10900.0, 524.0),
     # Boss areas (2026-11-08): where a match on the stage put the player, the same in two runs each.
     309: (-55.0, 1.0, 932.0), 108: (-1753.0, 366.0, -1727.0),
-    # Uroboros Aheri's lair (2026-11-09). A match puts the player at one of the area's entrances, behind
+    # Uroboros Mkono's lair (2026-11-09). A match puts the player at one of the area's entrances, behind
     # the door the story opens when the area is finished, so there was no way in (the user: "you can't
     # arrive to his lair in any capacity"; the boss test had warped there, which hid it). On the lair's
     # floor, on the line the boss itself ran in build/runs/20261108-181644-bossarena-uEm41-s308, 17.4 m
@@ -87,7 +87,8 @@ BOSSES = {
     103: {'class': 'uEm40', 'name': 'Uroboros', 'hp': 15000, 'preload': ['uEm40Dummy', 'uEm40Parts'],
           'spawn': (-3404.9, -1000.0, 962.0), 'facing': 0.0559,
           'trigger_box': [-4162.4, -1023.2, 61.1, -3263.7, -695.9, 1149.5], 'trigger_wait': 120},
-    304: {'class': 'uEm43', 'name': 'Giant Uroboros', 'hp': 15000, 'preload': []},
+    # U-8 (uEm43, the game's name; called a giant Uroboros before 2026-11-19): its flying critters (uEmc5) come with it.
+    304: {'class': 'uEm43', 'name': 'U-8', 'article': '', 'hp': 15000, 'preload': []},
     # Wesker in his black coat (the user's Midnight Wesker): gunfire hurts him only while he winds
     # up an attack (his knee dash: 150, 100 a pistol hit), otherwise he shrugs it off (DmgNot); at
     # zero health he fights on, so the mod counts him dead and plays his own Shrink as his fall
@@ -99,7 +100,7 @@ BOSSES = {
     # The flying creature of s108 (Popokarimu, by its looks and moves: walks, flies, dives, dashes,
     # strikes with its arm); a killing shot plays its own Die (build/runs/20261108-010801-hits-uEm44-s108).
     # 19200 its own, 50 a pistol hit on it: 12000.
-    108: {'class': 'uEm44', 'name': 'Popokarimu', 'hp': 12000, 'preload': []},
+    108: {'class': 'uEm44', 'name': 'Popokarimu', 'article': '', 'hp': 12000, 'preload': []},
     # Uroboros Wesker on the Volcano (2026-11-08, the ladder's 12): his own check lets only his open
     # core be hurt (the story opens it with the partner); in a run his body takes gunfire too
     # (adapter hooks_combat.cpp), and at zero health, where he fights on, the mod plays his last
@@ -107,7 +108,8 @@ BOSSES = {
     # 25 a pistol hit on his body (build/runs/20261108-153415-bossarena-uEm82-s508): 3000, about 120
     # pistol hits (180 at the 12-arena run's 1.5).
     508: {'class': 'uEm82', 'name': 'Uroboros Wesker', 'article': '', 'hp': 3000, 'preload': ['uEm8c', 'uEm8e']},
-    # The stronger Uroboros of the flamethrower room (uEm41, 2026-11-08): it walks, runs, beats down
+    # Uroboros Mkono, the stronger Uroboros of the flamethrower room (uEm41, 2026-11-08; called Aheri
+    # before 2026-11-19: the game's chapter 5-2 boss): it walks, runs, beats down
     # and grabs on its own; its arm and core parts come with it. The room's own setup is skipped in a
     # run (adapter stage_fixes.cpp: it crashed with no flamethrower). It waits in its room where the
     # story sets it (the s308 set's position and turn, its story health 15000) and appears once the
@@ -115,12 +117,13 @@ BOSSES = {
     # supposed to be, right now it spawns in the corridor if you don't move"). 80 a pistol hit on its
     # body, 200 on a weak spot (build/runs/20261108-181644-bossarena-uEm41-s308): 10000, 125 body
     # hits (160 at the 8-arena run's 1.3; the first Uroboros is 150 at 100 a hit).
-    308: {'class': 'uEm41', 'name': 'Uroboros Aheri', 'hp': 10000, 'preload': ['uEm41Arm', 'uEm41Core', 'uOm0019'],
+    308: {'class': 'uEm41', 'name': 'Uroboros Mkono', 'article': '', 'hp': 10000, 'preload': ['uEm41Arm', 'uEm41Core', 'uOm0019'],
           'spawn': (-11691.4, 0.0, -18013.9), 'facing': 1.4286, 'trigger': 1500, 'trigger_wait': 90},
-    # Excella's Uroboros (uEm42, 2026-11-08): its body, four cores, slime and tentacles. A mass that
+    # Uroboros Aheri, Excella's Uroboros (uEm42, 2026-11-08; called Mkono before 2026-11-19: the game's
+    # chapter 6-2 boss): its body, four cores, slime and tentacles. A mass that
     # rises beside the deck: it appears where the story sets it (the s511 set Uro3_Battle's position
     # and turn; at a waypoint it hung 33 m up, the user: "it spawned incorrectly") and never moves.
-    511: {'class': 'uEm42', 'name': 'Uroboros Mkono', 'hp': 28000, 'preload': ['uEm42Core', 'uEm42Slime', 'uEm42Tentacle', 'uOm0019'],
+    511: {'class': 'uEm42', 'name': 'Uroboros Aheri', 'article': '', 'hp': 28000, 'preload': ['uEm42Core', 'uEm42Slime', 'uEm42Tentacle', 'uOm0019'],
           'spawn': (1248.0, 0.0, 21800.0), 'facing': 0.0},
 }
 BOSS_PLAYER_DISTANCE = (1000, 2500)  # the boss appears within sight, not on top of the player
@@ -149,13 +152,19 @@ NO_ROTATION = {
 # them, all eight, one climbed in game). 503 was out (its random upper-deck start); the start warp (M6.2) fixed that. 508 was out
 # (2026-11-08: a camera zone held the view); a run's campaign area now keeps the player camera
 # (adapter area_cameras.cpp).
-# Short names from the areas' start views (vetting 2026-11-02); others get "Campaign sNNN".
+# The game's own area names (2026-11-19: its stage table at 0x0112B748, stage -> mes_system message,
+# the save screen's "Area"); before, short names from the areas' start views (vetting 2026-11-02).
+# "(Campaign)" where a Mercenaries stage has the same name; "Oil Field - Drilling Facilities" without
+# its "Oil Field - " for the menus' help lines. Not in the game's table (DLC): s700, s704. Others get
+# "Campaign sNNN".
 NAMES = {
-    100: 'Kijuju Town', 104: 'Waterfront', 105: 'Back Alleys', 113: 'Warehouse', 114: 'Slums',
-    202: 'Marsh Village', 204: 'Port', 300: 'Cave Shrine', 302: 'Ruin Passages', 310: 'Underground Facility',
-    314: 'Mine Scaffolds', 500: 'Cargo Hold', 503: 'Freighter Deck', 505: 'Factory Floor', 506: 'Steel Docks',
-    508: 'Volcano', 700: 'Spencer Mansion', 103: 'Pump Rooms', 304: 'Capsule Dome', 309: 'Temple Hall',
-    108: 'Field Office', 308: 'Tiled Labs', 511: 'Upper Deck', 704: 'Last Platform',
+    100: 'Civilian Checkpoint', 104: 'The Bridge', 105: 'Shanty Town', 113: 'The Port',
+    114: 'Public Assembly (Campaign)', 202: 'Village (Campaign)', 204: 'Drilling Facilities',
+    300: 'Ancient Village', 302: 'Worship Area', 310: 'Power Station', 314: 'Missile Area 2nd Floor',
+    500: 'Ship Deck (Campaign)', 503: 'Main Deck', 505: 'Engine Room', 506: 'Hangar', 508: 'Volcano',
+    700: 'Spencer Mansion', 103: 'Furnace Facility', 304: 'Experimental Facility (Campaign)',
+    309: 'Monarch Room', 108: 'Mining Area', 308: 'Uroboros Research Facility', 511: 'Bridge Deck',
+    704: 'Last Platform',
 }
 
 

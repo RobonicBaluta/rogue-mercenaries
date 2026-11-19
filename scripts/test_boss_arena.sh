@@ -11,7 +11,7 @@
 #   PRELOAD (archives loaded with the stage too)  STAGE  CLASS  SIDE (default 60)  DISTANCE (default 400)  SHOTS (default 6)  KILLSHOTS (default 20)
 #   FREE (seconds the boss fights the invulnerable player first, a capture every 5 s; default 0)
 #   ACTS (its own actions by id, one per free-fight capture)  PARTS (dev enemies and actions)  NOBRING (shots where the
-#   player aims: the boss is never moved; Uroboros Mkono stays at its story spot)
+#   player aims: the boss is never moved; Uroboros Aheri stays at its story spot)
 cd "$(dirname "$0")/.."
 D="$LOCALAPPDATA/RogueMercenaries"
 LOG="$D/logs/adapter.log"

@@ -79,7 +79,7 @@ constexpr std::uintptr_t kFnEnemyHitCheck = 0x009E0700;
 // region of 0x3C and up hurts while his core part (+0x1F50) is open (its type 2, its +0x1E24
 // clear); any other drains his gauges (+0x1F9C, +0x1FA0) and does not (research/re5-engine-map.md).
 constexpr std::uintptr_t kFnEm82MayHurt = 0x009217E0;
-// Uroboros Aheri's (uEm41, vtable 0x00F7D160 slot +0x18) update: `byte [esi+0x2118] = 0`, the
+// Uroboros Mkono's (uEm41, vtable 0x00F7D160 slot +0x18) update: `byte [esi+0x2118] = 0`, the
 // Uroboros' update 0x008AE2B0, then its health set to its maximum (+0x1366) through vtable +0x10C
 // (hooks_combat.cpp: a run's boss skips that).
 constexpr std::uintptr_t kFnEm41Update = 0x008B6040;
@@ -531,7 +531,7 @@ constexpr std::size_t kEm40HeadLife = 0x1F84;
 // uEm40 on s103: the room (0..5, -1 none) of player 0 and player 1, set by its update.
 constexpr std::size_t kEm40RoomPlayer1 = 0x20D8;
 constexpr std::size_t kEm40RoomPlayer2 = 0x20DC;
-constexpr std::size_t kEm41UpdateFlag = 0x2118;  // cleared first by Aheri's update
+constexpr std::size_t kEm41UpdateFlag = 0x2118;  // cleared first by Mkono's update
 constexpr std::size_t kPlayerThreatPoint = 0x2E10;  // float x, y, z: what a dodge is relative to
 constexpr std::size_t kPlayerDodgeOwner = 0x2D64;   // the dodge prep's object (+0x220)
 constexpr std::size_t kDodgePrepOffset = 0x220;
@@ -992,8 +992,8 @@ inline constexpr Signature kSignatures[] = {
     // Uroboros Wesker's "may this hit hurt": `cmp ax, 0x3C`, `mov ecx, [esi+0x1F50]`; his getDTI.
     {"em82_may_hurt", addr::kFnEm82MayHurt, "8B 44 24 04 53 33 DB 66 3D 3C 00 56 8B F1 72 38 8B 8E 50 1F 00 00 83 C0 C4 0F B7 C0"},
     {"uem82_get_dti", 0x0092F860, "B8 60 12 1F 01 C3"},
-    // Uroboros Aheri's update (its refill: `movzx ecx, word [esi+0x1366]`, `call [eax+0x10C]`), the
-    // Uroboros' update and Aheri's getDTI.
+    // Uroboros Mkono's update (its refill: `movzx ecx, word [esi+0x1366]`, `call [eax+0x10C]`), the
+    // Uroboros' update and Mkono's getDTI.
     {"em41_update", addr::kFnEm41Update, "56 8B F1 C6 86 18 21 00 00 00 E8 61 82 FF FF 0F B7 8E 66 13 00 00 8B 06 8B 90 0C 01 00 00 51 8B"},
     {"em40_update", addr::kFnEm40Update, "55 8B EC 83 E4 F0 83 EC 24 53 56 8B F1 8B 86 A4 1B 00 00 33"},
     {"uem41_get_dti", 0x008BA110, "B8 38 D4 1E 01 C3"},

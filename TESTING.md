@@ -80,7 +80,7 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | Run start, the character's guns | `inventory: stripped to the pistol PPPP (in hand HHHH, N record(s) removed)`; with a knife in hand `(in hand 0123, no gun, ...)` and the pistol kept or `, pistol created` (S.T.A.R.S. Wesker keeps his Samurai Edge `0129`) |
 | Wesker's moves | `special: boss motion pawn\em\em80\motion\em80 20` (the dash's arrival), `... 24` (the lunge's knee), `... C9` (the burst's kick), each `N of N body tracks ...` then `boss motion NN done: N frames in N s` |
 | last arena | `phase arena_results -> run_complete` (no `reward_selection` after the boss) |
-| bosses | the Uroboros: `boss drive: uEm40 actions walk N, near grab N (of N), far grab N (lookup N, N actions)` with ids found (not -1), then `near grab (action N)` lines; the giant Uroboros (uEm43): no `director: uEm43 stuck ... moved to` lines (only its own `cEm43ActShift`) |
+| bosses | the Uroboros: `boss drive: uEm40 actions walk N, near grab N (of N), far grab N (lookup N, N actions)` with ids found (not -1), then `near grab (action N)` lines; U-8 (uEm43): no `director: uEm43 stuck ... moved to` lines (only its own `cEm43ActShift`) |
 | Heavy Metal | every shop lists the Gatling gun (`0115`) at 100 supplies until it is bought |
 | quitting a run | from the pause menu: `autopilot: the match's quit state begins (run match 1, ..., Mercenaries phase N)` then `a run's match quits; Mercenaries phase N cleared`; `savedata.bin` must not change (a quit on 2026-11-04 wrote it) |
 | Iron Grip (Chris) | `iron grip: cEm10ActNeckHang_PL by uEm10 thrown off (cEm10ActDmgFlyoff)`; another grabber: `... kept its grab (no known reaction)` or `no grabber found` |

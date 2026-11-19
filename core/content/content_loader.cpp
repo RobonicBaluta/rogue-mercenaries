@@ -1981,7 +1981,7 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     if (Get(doc, "ladder") != nullptr) {
         if (const json* s = Section(d, doc, "ladder")) {
             const Diag ld = d.Sub(": ladder");
-            CheckKeys(ld, *s, {"enabled", "lengths", "finale", "growth_from_arena", "incoming_per_arena", "toughness_per_arena",
+            CheckKeys(ld, *s, {"enabled", "lengths", "finale", "endless", "growth_from_arena", "incoming_per_arena", "toughness_per_arena",
                                "budget_per_arena"});
             EconomyConfig::Ladder& l = eco.ladder;
             GetBool(ld, *s, "enabled", l.enabled, false);
@@ -2025,6 +2025,28 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
                 GetString(fd, *f, "after", l.finale.after, false);
                 GetStringList(fd, *f, "needs_hard", l.finale.needs_hard, false);
                 if (GetNumber(fd, *f, "boss_hp_mult", l.finale.boss_hp_mult, false)) CheckRange(fd, "boss_hp_mult", l.finale.boss_hp_mult, 0.1, 10.0);
+            }
+            if (const json* en = Get(*s, "endless")) {
+                const Diag nd = ld.Sub(": endless");
+                CheckKeys(nd, *en, {"id", "name", "unlocked_by", "boss_every", "boss_hp_per_round", "paced_as"});
+                GetString(nd, *en, "id", l.endless.id, true);
+                GetString(nd, *en, "name", l.endless.name, false);
+                GetString(nd, *en, "unlocked_by", l.endless.unlocked_by, false);
+                GetIntRange(nd, *en, "boss_every", l.endless.boss_every, false, 2, 10);
+                if (GetNumber(nd, *en, "boss_hp_per_round", l.endless.boss_hp_per_round, false)) {
+                    CheckRange(nd, "boss_hp_per_round", l.endless.boss_hp_per_round, 0.0, 5.0);
+                }
+                GetString(nd, *en, "paced_as", l.endless.paced_as, false);
+                if (l.Find(l.endless.id) != nullptr) nd.Error("endless id " + Q(l.endless.id) + " is also a length");
+                if (!l.endless.paced_as.empty() && l.Find(l.endless.paced_as) == nullptr) {
+                    nd.Error("paced_as names unknown length " + Q(l.endless.paced_as));
+                }
+                if (!l.endless.unlocked_by.empty() && l.endless.unlocked_by != "finale") {
+                    const auto colon = l.endless.unlocked_by.find(':');
+                    if (colon == std::string::npos || l.Find(l.endless.unlocked_by.substr(0, colon)) == nullptr) {
+                        nd.Error("unlocked by unknown key " + Q(l.endless.unlocked_by));
+                    }
+                }
             }
             if (l.enabled && l.lengths.empty()) ld.Error("an enabled ladder needs at least one length");
             if (!l.lengths.empty() && !l.lengths.front().unlocked_by.empty()) ld.Error("the first length must be open from the start (no unlocked_by)");

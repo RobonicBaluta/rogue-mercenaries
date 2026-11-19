@@ -376,8 +376,17 @@ public:
         bool finale_possible = false;  // the finale can follow its boss (in a run beating the needs_hard bosses)
         bool easy_beaten = false;
         bool hard_beaten = false;
+        bool endless = false;     // the endless length (EconomyConfig::Ladder::Endless; arenas 0), last
+        int boss_every = 0;       // endless: a boss every this many arenas
+        std::string unlocked_by;  // what opens it (a beaten key; empty: open)
     };
     [[nodiscard]] std::vector<LadderLengthView> LadderLengths() const;
+    /// The active run is the endless length's.
+    [[nodiscard]] bool EndlessRun() const;
+    /// Endless: the boss arena choices at `arena` (a multiple of boss_every; 1-based), in the order
+    /// the run map offers them, and their health multiplier there.
+    [[nodiscard]] std::vector<int> EndlessBossesAt(int arena) const;
+    [[nodiscard]] double EndlessBossHpMult(int arena) const;
     /// Marks the active run failed ("abandoned"); call EndRun afterwards to bank.
     Status AbandonRun(double now);
 
@@ -573,6 +582,20 @@ private:
     [[nodiscard]] double BossHpMult(int map_key) const;
     /// A boss arena cleared: its ladder key, and its class, into the profile's bosses beaten.
     void RecordBossBeaten(int map_key);
+    // Endless (EconomyConfig::Ladder::Endless): its turn of bosses (each open length's choices and
+    // health, then the finale's once beaten), its run map `layers` arenas long, and the map grown
+    // by boss_every arenas once its last boss falls.
+    struct EndlessTier {
+        std::vector<int> bosses;
+        double hp_mult = 1.0;
+    };
+    [[nodiscard]] bool EndlessOpen() const;
+    [[nodiscard]] std::vector<EndlessTier> EndlessTiers() const;
+    [[nodiscard]] RunMap EndlessMap(int layers, Rng& rng) const;
+    void ExtendEndless();
+    /// The run length rewards, refines and builds are paced by (endless: its paced_as length).
+    [[nodiscard]] std::string PacingLengthId() const;
+    [[nodiscard]] int PacingArenas() const;
     struct Streams {
         Rng reward;
         Rng route;

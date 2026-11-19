@@ -245,6 +245,23 @@ struct EconomyConfig {
             std::vector<std::string> needs_hard;  // lengths whose hard boss the run itself beat
             double boss_hp_mult = 1.0;
         } finale;
+        /// Endless (the user, 2026-11-19: "add endless mode"; a player's "arenas will go on until
+        /// death"): a run with no last arena. Its map reaches `boss_every` arenas ahead, the last of
+        /// them a boss, and grows by `boss_every` more each time that boss falls; it ends when the
+        /// players fall (or quit). Its bosses take the open lengths in turn, shortest first, each with
+        /// the choices and boss_hp_mult a run of that length has (the easy boss, the hard ones once
+        /// it is beaten), then the finale's boss once "finale" is beaten; each time round they have
+        /// boss_hp_per_round more health. Rewards, refines and builds are paced as in a run of
+        /// `paced_as`. A boss beaten here counts as beaten ("boss:<class>"), not for the ladder.
+        struct Endless {
+            std::string id;  // empty: no endless length
+            std::string name = "Endless";
+            std::string unlocked_by;  // a beaten key; empty: open from the start
+            int boss_every = 4;
+            double boss_hp_per_round = 0.25;
+            std::string paced_as;  // a length id; empty: the longest length
+            [[nodiscard]] bool Is(std::string_view length_id) const { return !id.empty() && length_id == id; }
+        } endless;
         int growth_from_arena = 5;
         double incoming_per_arena = 0.0;   // enemies hit harder by this much a step
         double toughness_per_arena = 0.0;  // the player's damage is divided by 1 + this a step
