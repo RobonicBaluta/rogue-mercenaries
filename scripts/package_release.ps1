@@ -117,16 +117,21 @@ $keptProgress = @(
     '  game folder, so it carries over to a new version.')
 if ($Plugin) {
     $install = @('', 'INSTALL (WITH ANOTHER dinput8.dll MOD)',
-        '  This package is for a game that already has a dinput8.dll mod which loads plugins: a',
-        '  plugin loader that came with other fixes (a dinput8.dll and a plugins folder). Keep that',
-        '  dinput8.dll; Rogue Mercenaries runs as one of its plugins.') + $saveSteps + @(
-        '  4. Copy everything in this ZIP into the game folder: RogueMercenaries.dll goes into the',
-        '     plugins folder, and the RogueMercenaries folder next to re5dx9.exe. When updating,',
-        '     replace the files.',
-        '  5. If the game folder also has Rogue Mercenaries'' own dinput8.dll from an earlier',
-        '     install, put the other mod''s dinput8.dll back in its place.',
-        '  With an ASI loader instead (it loads .asi files), copy RogueMercenaries.dll into the folder',
-        '  it loads them from and rename it RogueMercenaries.asi.') + $keptProgress + @('') -join "`n"
+        '  Only one dinput8.dll can be in the game folder, and two cannot be merged into one. Many',
+        '  RE5 mods (input fixes, Enhanced Movement) come as a dinput8.dll that also loads other mods',
+        '  from a plugins folder. This package runs Rogue Mercenaries as one of those plugins, so',
+        '  that mod keeps its dinput8.dll.') + $saveSteps + @(
+        '  4. Look next to dinput8.dll in that folder:',
+        '     - There is a plugins folder: copy everything in this ZIP into the game folder.',
+        '       RogueMercenaries.dll goes into the plugins folder, and the RogueMercenaries folder',
+        '       next to re5dx9.exe. Do not copy any dinput8.dll. When updating, replace the files.',
+        '     - There are .asi files instead (an ASI loader): put RogueMercenaries.dll next to them',
+        '       and rename it RogueMercenaries.asi. The RogueMercenaries folder still goes next to',
+        '       re5dx9.exe.',
+        '     - Neither: that dinput8.dll may not load other mods, and this package will not run.',
+        '       Post which mod it is on the Rogue Mercenaries page.',
+        '  5. If you copied Rogue Mercenaries'' own dinput8.dll over the other mod''s earlier, that',
+        '     mod is off: install it again the way you did the first time.') + $keptProgress + @('') -join "`n"
     $uninstall = @('', 'UNINSTALL',
         '  Close the game, then delete plugins\RogueMercenaries.dll (or RogueMercenaries.asi) and the',
         '  RogueMercenaries folder from the game folder. Costume mods you put in',
@@ -138,10 +143,12 @@ if ($Plugin) {
     $gone = 'If it is gone, allow it and copy RogueMercenaries.dll back into the plugins folder.'
 } else {
     $install = @('', 'INSTALL (BY HAND)') + $saveSteps + @(
-        '  4. If that folder already has a dinput8.dll from another mod, move it out first: only',
-        '     one dinput8.dll mod can be active. If that dinput8.dll loads a plugins folder (input',
-        '     fixes often come that way), use the plugin package of Rogue Mercenaries instead and',
-        '     keep it.',
+        '  4. If that folder already has a dinput8.dll from another mod: only one dinput8.dll can be',
+        '     there, and two cannot be merged into one. If there is a plugins folder next to it',
+        '     (input fixes and Enhanced Movement come that way), stop here and use the Plugin',
+        '     version of Rogue Mercenaries instead (the download with plugins\RogueMercenaries.dll',
+        '     in it): it keeps that mod. Otherwise move that dinput8.dll out first; that mod is',
+        '     then off.',
         '  5. Copy everything in this ZIP into the game folder: dinput8.dll goes next to',
         '     re5dx9.exe, and the RogueMercenaries folder beside it. When updating, replace the',
         '     files.') + $keptProgress + @('') -join "`n"

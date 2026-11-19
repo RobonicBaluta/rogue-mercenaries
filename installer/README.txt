@@ -37,9 +37,12 @@ INSTALL
   The installer also copies your RE5 save to %LOCALAPPDATA%\RogueMercenaries\save-backups
   before anything else. The mod is designed never to write your game save during a run.
   Installing over an earlier version is fine, and your progress (Credits, unlocks) carries over.
-  If the game already has a dinput8.dll mod that loads a plugins folder (input fixes often
-  come that way), use the plugin package instead and keep that mod: Install.bat would set
-  its dinput8.dll aside, and its fixes with it.
+  If the game folder already has a dinput8.dll from another mod with a plugins folder next
+  to it (input fixes and Enhanced Movement come that way), do not run Install.bat: use the
+  Plugin version of Rogue Mercenaries instead (the download with plugins\RogueMercenaries.dll
+  in it), which keeps that mod. Only one dinput8.dll can be in the game folder, and two
+  cannot be merged into one; Install.bat would set the other mod's aside, and that mod
+  with it.
 
 OPTIONAL: COSTUME MODS
   A few skins wear a costume mod made by someone else (Excella Experimenter, Jill
