@@ -51,7 +51,13 @@ STARTS = {
     508: (-897.9, -4.2, 798.2), 700: (0.0, 0.0, 0.0), 103: (-810.0, -1200.0, -1140.0),
     304: (470.0, -10900.0, 524.0),
     # Boss areas (2026-11-08): where a match on the stage put the player, the same in two runs each.
-    309: (-55.0, 1.0, 932.0), 108: (-1753.0, 366.0, -1727.0),
+    309: (-55.0, 1.0, 932.0),
+    # Popokarimu's ground (2026-11-19). A match put the player in the Field Office (-1753 366 -1727),
+    # 3.7 m above the yard and 120 m from where the story fights it, and the boss came at a waypoint near
+    # the player: under the office (build/runs/20261108-011728-bossarena-uEm44-s108: 5.4 m away, 3.6 m
+    # below), and a player's "popped through the house, I had to use no collision to defeat it". The
+    # start is the waypoint on the story's fight floor 15.7 m in front of where it lands (BOSSES).
+    108: (-6140.2, 764.3, -12366.2),
     # Uroboros Mkono's lair (2026-11-09). A match puts the player at one of the area's entrances, behind
     # the door the story opens when the area is finished, so there was no way in (the user: "you can't
     # arrive to his lair in any capacity"; the boss test had warped there, which hid it). On the lair's
@@ -74,14 +80,17 @@ STARTS = {
 BELOW = {204: 90.0}
 # Points above a height are left out. s308: the lair's floor only (its 78 points are one linked floor);
 # the corridors above it are past the doors the story keeps closed, so a chest there could not be reached.
-ABOVE = {308: 50.0}
+# s108: Popokarimu's fight floor (its waypoints within 30 m of the landing are 6 to 13.4 m up); a chest
+# went on a ledge 21.5 m up.
+ABOVE = {108: 1400.0, 308: 50.0}
 # Boxes (x0, z0, x1, z1) whose points and chests are left out. s204: the western walkway (x 27700 to
 # 31300, 3 to 4.5 m up) ends 17 m short of the floor the player fights on and 3.4 m above it, with no
 # waypoint between: of 7 Majini spawned there in a player's arena (2026-11-19, alpha.33, adapter.log
 # 11:27-11:32) 6 stood at its end 64 to 165 s until the mod moved them ("enemies spawning where they
 # shouldn't and they need much time to appear near"). And the ledge 3.6 m up at x 35800 to 36200: a
 # Majini spawned on it stood there in that arena (47 s) and in the 2026-11-19 test (30 s).
-LEFT_OUT = {204: [(-1.0e6, -1.0e6, 32000.0, 1.0e6), (35700.0, -87800.0, 36300.0, -87400.0)]}
+# s108: the way back north to the office (z above -115 m): the fight floor's points and chests only.
+LEFT_OUT = {108: [(-1.0e6, -11500.0, 1.0e6, 1.0e6)], 204: [(-1.0e6, -1.0e6, 32000.0, 1.0e6), (35700.0, -87800.0, 36300.0, -87400.0)]}
 
 # Boss arenas (ROADMAP M6, scripts/test_boss_spawn.sh): the area the boss is fought in, the boss
 # (its class, a name for the menus, its health: the Uroboros's own 15000; 6000 fell in under a
@@ -106,8 +115,10 @@ BOSSES = {
     309: {'class': 'uEm84', 'name': 'Jill', 'article': '', 'hp': 6000, 'preload': []},
     # The flying creature of s108 (Popokarimu, by its looks and moves: walks, flies, dives, dashes,
     # strikes with its arm); a killing shot plays its own Die (build/runs/20261108-010801-hits-uEm44-s108).
-    # 19200 its own, 50 a pistol hit on it: 12000.
-    108: {'class': 'uEm44', 'name': 'Popokarimu', 'article': '', 'hp': 12000, 'preload': []},
+    # 19200 its own, 50 a pistol hit on it: 12000. It appears at once where the story lands it (s108_em00:
+    # it flies in from -4045.5 1629.2 -14310.0 to its mGotoPos, turned -0.733), facing the player's start.
+    108: {'class': 'uEm44', 'name': 'Popokarimu', 'article': '', 'hp': 12000, 'preload': [],
+          'spawn': (-5069.0, 886.1, -13514.2), 'facing': -0.733},
     # Uroboros Wesker on the Volcano (2026-11-08, the ladder's 12): his own check lets only his open
     # core be hurt (the story opens it with the partner); in a run his body takes gunfire too
     # (adapter hooks_combat.cpp), and at zero health, where he fights on, the mod plays his last
