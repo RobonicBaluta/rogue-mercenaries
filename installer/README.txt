@@ -149,6 +149,10 @@ KNOWN ISSUES (ALPHA)
     nearer twice at most; if it is still not found, it is finished and the arena ends.
   - The Play menu row only shows with Latin-alphabet game languages. With Japanese,
     Chinese or Russian text, go to The Mercenaries > Solo, press F7 and start the run there.
+  - Trainers: cheats that freeze or change the character, the stage, the Mercenaries
+    timer, kills or score, health or the inventory fight the mod, which sets those itself
+    during a run. Turn them off before a run (a trainer's saved settings come back when it
+    starts), and use the mod's skins instead of a character swap.
 
 WHEN SOMETHING BREAKS
   If "Rogue Mercenaries" never shows at the top right of the game, check that dinput8.dll
