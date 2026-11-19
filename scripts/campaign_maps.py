@@ -75,6 +75,13 @@ BELOW = {204: 90.0}
 # Points above a height are left out. s308: the lair's floor only (its 78 points are one linked floor);
 # the corridors above it are past the doors the story keeps closed, so a chest there could not be reached.
 ABOVE = {308: 50.0}
+# Boxes (x0, z0, x1, z1) whose points and chests are left out. s204: the western walkway (x 27700 to
+# 31300, 3 to 4.5 m up) ends 17 m short of the floor the player fights on and 3.4 m above it, with no
+# waypoint between: of 7 Majini spawned there in a player's arena (2026-11-19, alpha.33, adapter.log
+# 11:27-11:32) 6 stood at its end 64 to 165 s until the mod moved them ("enemies spawning where they
+# shouldn't and they need much time to appear near"). And the ledge 3.6 m up at x 35800 to 36200: a
+# Majini spawned on it stood there in that arena (47 s) and in the 2026-11-19 test (30 s).
+LEFT_OUT = {204: [(-1.0e6, -1.0e6, 32000.0, 1.0e6), (35700.0, -87800.0, 36300.0, -87400.0)]}
 
 # Boss arenas (ROADMAP M6, scripts/test_boss_spawn.sh): the area the boss is fought in, the boss
 # (its class, a name for the menus, its health: the Uroboros's own 15000; 6000 fell in under a
@@ -299,6 +306,8 @@ for stage in args.stages:
         points = [p for p in points if p[1] >= BELOW[stage]]
     if stage in ABOVE:
         points = [p for p in points if p[1] <= ABOVE[stage]]
+    for x0, z0, x1, z1 in LEFT_OUT.get(stage, []):
+        points = [p for p in points if not (x0 <= p[0] <= x1 and z0 <= p[2] <= z1)]
     chest_points = points
     if stage in STARTS:
         sx, sy, sz = STARTS[stage]
