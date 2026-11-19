@@ -132,7 +132,7 @@ KNOWN ISSUES (ALPHA)
   - The mod does not need the Extra Content DLC or The Mercenaries unlocked, but it has
     only been played on one full save, with those simulated for the rest. If "Rogue
     Mercenaries" shows at the top right but something is missing, send your logs.
-  - New in 0.2.1: ENDLESS (it has had one short test run: please report what goes wrong
+  - New in 0.2.2: ENDLESS (it has had one short test run: please report what goes wrong
     deep into one) and Popokarimu as an alternate boss of arena 4.
   - Two players (split screen) is new and has had one short session with two real
     controllers: please report what goes wrong.
