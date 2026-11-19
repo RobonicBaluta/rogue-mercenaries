@@ -36,7 +36,7 @@ INSTALL
      check them first.
   The installer also copies your RE5 save to %LOCALAPPDATA%\RogueMercenaries\save-backups
   before anything else. The mod is designed never to write your game save during a run.
-  Installing over alpha.1 is fine, and your progress (Credits, unlocks) carries over.
+  Installing over an earlier version is fine, and your progress (Credits, unlocks) carries over.
   If the game already has a dinput8.dll mod that loads a plugins folder (input fixes often
   come that way), use the plugin package instead and keep that mod: Install.bat would set
   its dinput8.dll aside, and its fixes with it.
@@ -132,8 +132,8 @@ KNOWN ISSUES (ALPHA)
   - The mod does not need the Extra Content DLC or The Mercenaries unlocked, but it has
     only been played on one full save, with those simulated for the rest. If "Rogue
     Mercenaries" shows at the top right but something is missing, send your logs.
-  - New in this version and not played yet: the bosses on arenas 4 and 8 of longer runs
-    and the 13th arena.
+  - New in 0.2.1: ENDLESS (it has had one short test run: please report what goes wrong
+    deep into one) and Popokarimu as an alternate boss of arena 4.
   - Two players (split screen) is new and has had one short session with two real
     controllers: please report what goes wrong.
   - Uroboros Aheri (Excella, on the Bridge Deck), one of the alternate bosses of arena 8,
