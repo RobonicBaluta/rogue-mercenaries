@@ -24,6 +24,9 @@ namespace {
 std::mutex g_mutex;  // ImGui state is shared by the render, input and window threads
 DrawCallback g_draw = nullptr;
 std::atomic<int> g_toggleKey{VK_F7};
+std::atomic<int> g_editorKey{0};
+std::atomic<unsigned> g_editorPresses{0};
+std::atomic<DWORD> g_lastEditorPress{0};
 std::atomic<bool> g_focused{false};
 std::atomic<DWORD> g_lastToggle{0};
 std::atomic<DWORD> g_lastDirectInputKeys{0};
@@ -58,6 +61,14 @@ void Toggle() {
     SetFocused(!g_focused.load());
 }
 
+// Both the WndProc and DirectInput paths can see the same press.
+void EditorPress() {
+    const DWORD now = GetTickCount();
+    if (now - g_lastEditorPress.load() < 250) return;
+    g_lastEditorPress = now;
+    g_editorPresses.fetch_add(1);
+}
+
 bool DirectInputDrivesKeys() { return GetTickCount() - g_lastDirectInputKeys.load() < 500; }
 
 bool IsInputMessage(UINT msg) {
@@ -71,6 +82,10 @@ LRESULT CALLBACK WndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
     if (msg == WM_KEYDOWN && static_cast<int>(wParam) == g_toggleKey.load() && !(lParam & (1 << 30))) {
         Toggle();
+        return 0;
+    }
+    if (msg == WM_KEYDOWN && g_editorKey.load() != 0 && static_cast<int>(wParam) == g_editorKey.load() && !(lParam & (1 << 30))) {
+        EditorPress();
         return 0;
     }
     if (g_initialized && g_focused.load() && !DirectInputDrivesKeys()) {
@@ -153,8 +168,12 @@ bool Initialize(IDirect3DDevice9* device) {
 void SetDrawCallback(DrawCallback callback) { g_draw = callback; }
 unsigned TakeHotkeys() { return g_hotkeys.exchange(0); }
 void SetToggleKey(int virtualKey) { g_toggleKey = virtualKey; }
+void SetEditorKey(int virtualKey) { g_editorKey = virtualKey; }
+unsigned TakeEditorPresses() { return g_editorPresses.exchange(0); }
+void PressEditorKey() { EditorPress(); }
 bool IsFocused() { return g_focused.load(); }
 bool IsInitialized() { return g_initialized; }
+void* WindowHandle() { return g_window; }
 IDirect3DDevice9* FrameDevice() { return g_frameDevice; }
 
 void SetFocused(bool focused) {
@@ -172,6 +191,10 @@ void FeedKeyboard(const unsigned char* keys) {
     const int toggle = ToggleScancode();
     if (toggle > 0 && toggle < 256 && (keys[toggle] & 0x80) && !(g_prevKeys[toggle] & 0x80)) {
         Toggle();
+    }
+    if (const int editor = g_editorKey.load(); editor != 0) {
+        const int scan = static_cast<int>(MapVirtualKeyW(static_cast<UINT>(editor), MAPVK_VK_TO_VSC));
+        if (scan > 0 && scan < 256 && (keys[scan] & 0x80) && !(g_prevKeys[scan] & 0x80)) EditorPress();
     }
     if (g_focused.load()) {
         auto pressed = [&](int dik) { return (keys[dik] & 0x80) && !(g_prevKeys[dik] & 0x80); };

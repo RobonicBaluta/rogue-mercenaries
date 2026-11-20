@@ -92,6 +92,8 @@ struct Settings {
     // The everything-unlocked package: everything open, on a profile file of its own; the normal
     // progress is not read or written (rm::ProfileFileName, scripts/package_release.ps1 -Unlocked).
     bool everythingUnlocked = false;
+    // The map editor (F8 in an arena, MAP EDITOR in the mod menu): adapter.json "map_editor".
+    bool mapEditor = false;
     int scopeKey = 0x2C;
     // The elements' looks (2026-11-11): an effect list started on each enemy an element's proc
     // reaches, by proc kind ("burn", "ignite_around", "poison", "poison_cloud", "freeze", "shock",

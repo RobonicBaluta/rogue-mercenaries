@@ -50,6 +50,8 @@ set(RM_RE5_SOURCES
     src/probe.cpp
     src/menu_probe.cpp
     src/native_menu.cpp
+    src/menu_mouse.cpp
+    src/map_editor.cpp
     src/autopilot.cpp
     src/match_ui.cpp
     src/itembox_guard.cpp

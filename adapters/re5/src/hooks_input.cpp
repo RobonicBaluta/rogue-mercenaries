@@ -13,6 +13,7 @@
 
 #include "hooks.h"
 #include "log.h"
+#include "menu_mouse.h"
 #include "overlay.h"
 
 namespace rmre5 {
@@ -281,7 +282,10 @@ HRESULT STDMETHODCALLTYPE GetDeviceStateDetour(void* self, DWORD size, LPVOID da
     } else if (kind == Kind::Mouse && (size == sizeof(DIMOUSESTATE) || size == sizeof(DIMOUSESTATE2))) {
         const auto* mouse = static_cast<const DIMOUSESTATE*>(data);
         overlay::FeedMouse(mouse->lX, mouse->lY, mouse->lZ, mouse->rgbButtons);
-        FilterMouse(data, size, blocking);
+        menumouse::Feed(mouse->lX, mouse->lY, mouse->lZ, mouse->rgbButtons);
+        // An in-match mod screen has the mouse: like the overlay's block, buttons held then stay
+        // hidden from the game until released.
+        FilterMouse(data, size, blocking || menumouse::CaptureGameMouse());
         if (Holding()) {
             // Its buttons and wheel; the movement (the camera) stays.
             if (size == sizeof(DIMOUSESTATE2)) {
@@ -314,6 +318,8 @@ void FilterBuffered(Kind kind, DWORD objectSize, LPDIDEVICEOBJECTDATA data, LPDW
     long dx = 0, dy = 0, wheel = 0;
     bool mouseEvents = false;
     DWORD kept = 0;
+    // An in-match mod screen has the mouse (menu_mouse): its records count as blocked.
+    if (kind == Kind::Mouse && menumouse::CaptureGameMouse()) blocking = true;
     for (DWORD i = 0; i < *inOut; ++i) {
         auto* record = reinterpret_cast<DIDEVICEOBJECTDATA*>(base + i * objectSize);
         const DWORD ofs = record->dwOfs;
@@ -354,6 +360,7 @@ void FilterBuffered(Kind kind, DWORD objectSize, LPDIDEVICEOBJECTDATA data, LPDW
         unsigned char buttons[4];
         for (int i = 0; i < 4; ++i) buttons[i] = g_bufferedButtons[i] ? 0x80 : 0;
         overlay::FeedMouse(dx, dy, wheel, buttons);
+        menumouse::Feed(dx, dy, wheel, buttons);
     }
 }
 

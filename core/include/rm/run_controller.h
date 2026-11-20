@@ -11,6 +11,7 @@
 #include "rm/capabilities.h"
 #include "rm/content.h"
 #include "rm/events.h"
+#include "rm/map_edits.h"
 #include "rm/profile.h"
 #include "rm/rng.h"
 #include "rm/run_state.h"
@@ -481,6 +482,14 @@ public:
     /// The map an arena on `stage` is fought on: its maps.json entry with the planned guests when
     /// `stage` is PlannedMapKey(), as it is otherwise (a dev pick); empty for an unknown stage.
     [[nodiscard]] std::optional<MapDef> ArenaMap(int stage) const;
+    /// The map editor's changes (map_edits.json): ArenaMap and every arena after this call use
+    /// them, and the arena being played takes its map's points at once (Director::ReplacePoints).
+    void SetMapEdits(MapEdits edits);
+    /// The map editor's jump to another map: the arena being played is taken back (its number
+    /// and metrics, the director) and the run waits with its route chosen, so the adapter's stage
+    /// change and BeginArena play the same arena again on the map it loads.
+    Status EditorRestartArena();
+    [[nodiscard]] const MapEdits& map_edits() const { return map_edits_; }
 
     /// From RunComplete/RunFailed: banks credits into the profile exactly once per run id and
     /// saves. Calling again returns the same summary with already_banked = true.
@@ -690,6 +699,7 @@ private:
     std::vector<int> arena_pool_;
     int first_arena_ = -1;
     std::optional<Director> director_;
+    MapEdits map_edits_;
     std::optional<StringSet> placeable_weapons_;
     StringSet installed_mod_skins_;
     int dev_supply_grants_ = 0;

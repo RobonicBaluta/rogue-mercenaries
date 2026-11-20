@@ -11,6 +11,12 @@ using DrawCallback = void (*)();
 
 void SetDrawCallback(DrawCallback callback);
 void SetToggleKey(int virtualKey);
+// A second key (the map editor's F8; 0: none): its presses are counted for the draw callback,
+// which decides the focus itself. The game does not see the key.
+void SetEditorKey(int virtualKey);
+unsigned TakeEditorPresses();
+// The editor's pad combo was pressed (counted like its key).
+void PressEditorKey();
 
 // While focused the overlay shows a cursor, takes keyboard/mouse and the game
 // receives neutral input (see HookSink::BlockGameInput).
@@ -18,6 +24,9 @@ bool IsFocused();
 void SetFocused(bool focused);
 
 bool IsInitialized();
+
+// The game window (an HWND) the overlay draws over; null until the first frame.
+void* WindowHandle();
 
 // The device being drawn on, inside the draw callback only (else nullptr).
 IDirect3DDevice9* FrameDevice();

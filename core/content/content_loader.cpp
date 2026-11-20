@@ -1394,7 +1394,7 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
         MapDef map;
         if (!ReadId(d, e, map.id)) continue;
         d = file.Sub(": map " + Q(map.id));
-        CheckKeys(d, e, {"id", "name", "stage", "rotation", "start", "points", "chests", "preload", "layouts", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
+        CheckKeys(d, e, {"id", "name", "stage", "rotation", "start", "points", "chests", "preload", "layouts", "hide_models", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
         if (const auto s = e.find("start"); s != e.end()) {
             if (!s->is_array() || s->size() != 3 || !(*s)[0].is_number() || !(*s)[1].is_number() || !(*s)[2].is_number()) {
                 d.Error("field 'start' must be [x, y, z]");
@@ -1454,6 +1454,18 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
                     continue;
                 }
                 map.layouts.push_back(name);
+            }
+        }
+        if (const auto hide = e.find("hide_models"); hide != e.end()) {
+            if (!hide->is_array()) d.Error("field 'hide_models' must be a list of model names");
+            for (const json& p : hide->is_array() ? *hide : json::array()) {
+                const std::string name = p.is_string() ? p.get<std::string>() : std::string();
+                if (name.size() < 4 || name.size() > 64 ||
+                    !std::all_of(name.begin(), name.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; })) {
+                    d.Error("every hide_models entry must be a set record name or its start (letters, digits, _; 4 or more)");
+                    continue;
+                }
+                map.hide_models.push_back(name);
             }
         }
         if (const auto chests = e.find("chests"); chests != e.end()) {

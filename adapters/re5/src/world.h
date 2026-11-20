@@ -47,6 +47,17 @@ void SetDropRules(const DropRules& rules);
 /// class and position), whether or not it was ever spawned. Returns the records logged.
 int DumpSetRecords();
 
+/// One object set record of the stage (sObjModel: instance models, doors, levers, ladders).
+struct NearObject {
+    std::string name;       // its record name (`OM0955_IDo00_U005`)
+    std::string infoClass;  // its descriptor's class (cSetInfoInsModel)
+    float pos[3]{};
+    float distance = 0.0f;
+};
+/// The stage's named object records within `radius` of `pos`, nearest first (at most `max`),
+/// built or not (the map editor's list; MapDef::hide_models takes them out by name).
+std::vector<NearObject> ObjectsNear(const float pos[3], float radius, std::size_t max);
+
 /// Developer survey: logs every object the stage creates (class, set record, position, the
 /// fields the spawn sets, the descriptor's class and contents).
 void SetSurvey(bool on);

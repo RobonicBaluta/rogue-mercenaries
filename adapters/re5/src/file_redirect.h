@@ -27,5 +27,7 @@ std::vector<Redirect> Redirects();
 void SetLogOpens(bool on);
 /// Normalises a path tail for Redirect::tail.
 std::wstring NormaliseTail(const std::wstring& tail);
+/// The archives the game opened last, newest first (at most 16), as opened (a redirect's file).
+std::vector<std::wstring> RecentArchives();
 
 }  // namespace rmre5::fileredirect

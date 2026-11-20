@@ -60,6 +60,7 @@ add_library(rm_core STATIC
     core/runs/run_controller.cpp
     core/runs/run_resume.cpp
     core/director/director.cpp
+    core/director/map_edits.cpp
     core/runs/combat.cpp
     core/runs/snapshot.cpp
     core/runs/inventory_plan.cpp
@@ -99,6 +100,7 @@ if(RM_BUILD_TESTS)
         tests/test_skins.cpp
         tests/test_items.cpp
         tests/test_director.cpp
+        tests/test_map_edits.cpp
         tests/test_inventory_plan.cpp
         tests/test_gun_levels.cpp
         tests/test_unlock_all.cpp

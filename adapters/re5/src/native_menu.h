@@ -13,7 +13,7 @@ namespace rmre5::nativemenu {
 enum class ScreenId {
     Main = 0, Characters, Perks, Credits, Skins, PerkList,
     MatchResults, MatchRewards, MatchShop, MatchRoute, MatchRunOver, MatchOrganize,
-    RunResults, RunLength, MatchElement, WhichPlayer
+    RunResults, RunLength, MatchElement, WhichPlayer, MapEditor
 };
 
 struct Item {
@@ -81,9 +81,16 @@ void DrawSlot(std::uintptr_t self, int slot, int x, int y, float scale, std::uin
 std::uint32_t InputBits();
 std::uint32_t PadBits(std::size_t offset);
 int Navigate(std::uintptr_t self, int cursor, int count);
-enum class SoundKind { Decide, Cancel, Deny };
+/// Move: the cursor-move tick (silent when its signature is missing).
+enum class SoundKind { Decide, Cancel, Deny, Move };
 void Sound(SoundKind kind, std::uintptr_t self);
 std::string WrapText(const std::string& text, std::size_t width);
+/// A label's width in canvas units is scale x (kGlyphUnit x its glyph widths + kGlyphSpacing per
+/// glyph): fitted to the perk lists at 1920x1080 (cursor rows exact, the others about 4 % wide).
+constexpr float kGlyphUnit = 0.1907f;
+constexpr float kGlyphSpacing = 5.64f;
+/// Half the drawn width of a slot's first line at `scale` (canvas units); labels are centred on x.
+float SlotHalfWidth(int slot, float scale);
 /// A visible mod-menu row with an icon, as its label was drawn last frame: the label's centre in
 /// the game's 1280x720 layout, its scale (1 on the cursor row, 0.8 on the others), the sum of its
 /// glyph widths (font units, unscaled), its glyph count and colour.

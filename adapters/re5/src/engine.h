@@ -46,6 +46,7 @@ struct Verified {
     bool mercCountdown = false;
     bool mercIntro = false;      // the match's intro can be skipped (main state 6, kFnMercStartState)
     bool playMenu = false;  // native "Rogue Mercenaries" entry in the Play menu
+    bool menuMoveSound = false;  // the menus' cursor-move tick (the mod's lists, mouse or keys)
     bool setupScreens = false;  // Mercenaries setup screens (direct start)
     bool fader = false;         // the game's screen fader (black-out while the autopilot runs)
     bool flowScript = false;    // title-flow script steps (direct start without screens)

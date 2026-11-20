@@ -22,6 +22,7 @@
 #include "engine.h"
 #include "log.h"
 #include "memory.h"
+#include "menu_mouse.h"
 #include "re5_layout.h"
 
 namespace rmre5::matchui {
@@ -125,15 +126,60 @@ void Draw(std::uintptr_t self, int slot, int x, int y, float scale, std::uint32_
     nativemenu::DrawSlot(self, slot, x, y, scale, argb);
 }
 
+// A row's hit box (canvas units): its label at the cursor row's scale with some room either side,
+// at least kMinRowHalfWidth wide each way, and the row pitch high.
+constexpr float kRowHitMargin = 24.0f;
+constexpr float kMinRowHalfWidth = 120.0f;
+
+// The visible row under the pointer (0..visible-1), or -1. The row slots hold last frame's labels,
+// the ones on screen.
+int RowUnderPointer(const menumouse::Input& mouse, const Layout& layout, int visible) {
+    const float scale = layout.rowScale * 1.12f;
+    for (int r = 0; r < visible; ++r) {
+        const float half = std::max(nativemenu::SlotHalfWidth(r, scale) + kRowHitMargin, kMinRowHalfWidth);
+        if (mouse.Over(640.0f, static_cast<float>(layout.firstRowY + r * layout.rowPitch), half,
+                       static_cast<float>(layout.rowPitch) * 0.5f)) {
+            return r;
+        }
+    }
+    return -1;
+}
+
+void MoveCursorTo(std::uintptr_t self, Level& level, int index) {
+    if (index == level.cursor) return;
+    level.cursor = index;
+    g_dirty = true;
+    nativemenu::Sound(nativemenu::SoundKind::Move, self);
+}
+
 // One frame of the open screen: input, then text.
 void Frame(std::uintptr_t self) {
     if (g_pausedByUs.load()) HoldWorldPause("the mod's screen");  // the world stays still under it
     Level* level = &g_stack.back();
     int n = static_cast<int>(g_screen.items.size());
+    // The mouse: the row under a moving pointer takes the cursor, the wheel steps through the list,
+    // a click on a row chooses it and the right button goes back.
+    const Layout& rows = g_hud.split ? kSplitLayout : kFullLayout;
+    const menumouse::Input mouse = menumouse::Take(menumouse::Host::Match, true);
+    const int over = RowUnderPointer(mouse, rows, std::min(n, rows.maxRows));
+    if (mouse.moved && over >= 0) MoveCursorTo(self, *level, level->offset + over);
+    if (mouse.wheelSteps != 0 && n > 0) MoveCursorTo(self, *level, std::clamp(level->cursor - mouse.wheelSteps, 0, n - 1));
+    const bool click = mouse.leftPresses > 0 && over >= 0;
+    if (click) {
+        MoveCursorTo(self, *level, level->offset + over);
+        static int logs = 0;
+        if (logs < 60) {
+            ++logs;
+            RM_LOGI("match ui: mouse click on row %d of screen %d", level->cursor, static_cast<int>(level->id));
+        }
+    }
     const std::uint32_t input = nativemenu::InputBits();
-    const bool decide = (input & nativemenu::PadBits(re5::off::kPadDecideMask)) != 0;
-    const bool cancel = (input & nativemenu::PadBits(re5::off::kPadCancelMask)) != 0;
-    if (!decide && !cancel) g_latch = false;
+    const bool keyDecide = (input & nativemenu::PadBits(re5::off::kPadDecideMask)) != 0;
+    const bool keyCancel = (input & nativemenu::PadBits(re5::off::kPadCancelMask)) != 0;
+    const bool decide = keyDecide || click;
+    const bool cancel = keyCancel || mouse.rightPresses > 0;
+    // One action per press, whichever device: the latch opens once nothing is held.
+    if (!decide && !cancel && !mouse.leftHeld && !mouse.rightHeld) g_latch = false;
     Model* model = g_model.load();
     if ((decide || cancel) && !g_latch && model) {
         g_latch = true;
@@ -173,8 +219,8 @@ void Frame(std::uintptr_t self) {
         const int before = level->cursor;
         const int after = nativemenu::Navigate(self, before, n);
         if (after != before && after >= 0 && after < n) {
-            level->cursor = after;
-            g_dirty = true;
+            MoveCursorTo(self, *level, after);
+            menumouse::KeyNavigated();
         }
     }
     // Visible window and texts.

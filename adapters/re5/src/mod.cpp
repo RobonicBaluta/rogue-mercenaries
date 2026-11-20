@@ -39,6 +39,8 @@
 #include "imgui_internal.h"
 #include "log.h"
 #include "memory.h"
+#include "map_editor.h"
+#include "menu_mouse.h"
 #include "menu_probe.h"
 #include "autopilot.h"
 #include "native_menu.h"
@@ -1801,7 +1803,15 @@ std::int64_t SellCell(int cell);
 std::int64_t SellStash(int index);
 
 // The mod menu's first screen, row by row (Build and Decide walk the same list).
-enum class MainRow { Continue, Start, Players, PlayerOne, PlayerTwo, Characters, Perks, Credits };
+// The map editor's list: the Mercenaries stages, then the campaign areas, as maps.json has them.
+std::vector<const rm::MapDef*> EditorMaps() {
+    std::vector<const rm::MapDef*> out;
+    for (const rm::MapDef& m : g->content->maps()) out.push_back(&m);
+    std::stable_sort(out.begin(), out.end(), [](const rm::MapDef* a, const rm::MapDef* b) { return (a->stage >= 100) < (b->stage >= 100); });
+    return out;
+}
+
+enum class MainRow { Continue, Start, Players, PlayerOne, PlayerTwo, Characters, Perks, MapEditor, Credits };
 std::vector<MainRow> MainRows(rm::RunController& run) {
     std::vector<MainRow> rows;
     if (run.CanResumeRun()) rows.push_back(MainRow::Continue);
@@ -1815,6 +1825,7 @@ std::vector<MainRow> MainRows(rm::RunController& run) {
         rows.push_back(MainRow::Characters);
     }
     rows.push_back(MainRow::Perks);
+    if (g->settings.mapEditor) rows.push_back(MainRow::MapEditor);
     rows.push_back(MainRow::Credits);
     return rows;
 }
@@ -1925,10 +1936,33 @@ private:
                         case MainRow::Perks:
                             screen.items.push_back(Item{"PERKS", "Permanent perks. Locked ones are bought with credits.", false, 0, "medal"});
                             break;
+                        case MainRow::MapEditor:
+                            screen.items.push_back(Item{"MAP EDITOR", "Start a run on any map, then F8 in the arena:\nadd or take out spawn points where you stand.",
+                                                        false, 0, "flag"});
+                            break;
                         case MainRow::Credits:
                             screen.items.push_back(Item{"CREDITS", "Your credits, lifetime records and weapon unlocks.", false, 0, "credits"});
                             break;
                     }
+                }
+                break;
+            }
+            case ScreenId::MapEditor: {
+                // Every map of the mod (the rotation's, the bosses' and those kept out of it).
+                screen.header = "MAP EDITOR   CHOOSE A MAP";
+                for (const rm::MapDef* m : EditorMaps()) {
+                    const auto edit = run.map_edits().find(m->stage);
+                    const bool edited = edit != run.map_edits().end() && !edit->second.empty();
+                    Item item;
+                    item.label = Upper(m->name) + (m->boss ? "   BOSS" : "") + (edited ? "   EDITED" : "");
+                    item.icon = "flag";
+                    item.help = "Stage " + std::to_string(m->stage) + ", " + std::to_string(run.ArenaMap(m->stage)->points.size()) +
+                                " spawn points" +
+                                (edited ? " (yours " + std::to_string(edit->second.added.size()) + ", taken out " +
+                                              std::to_string(edit->second.removed.size()) + ")"
+                                        : std::string()) +
+                                ".\nA run starts here; F8 in the arena opens the editor.";
+                    screen.items.push_back(std::move(item));
                 }
                 break;
             }
@@ -2408,6 +2442,11 @@ private:
                     d.outcome = Outcome::Denied;  // no outfit player 2 can wear
                     break;
                 }
+                if (row == MainRow::MapEditor) {
+                    d.outcome = Outcome::Push;
+                    d.next = ScreenId::MapEditor;
+                    break;
+                }
                 if (row == MainRow::Start) {
                     // The ladder: with more than one length open, RUN LENGTH picks it.
                     const auto lengths = run.LadderLengths();
@@ -2425,6 +2464,20 @@ private:
                     d.outcome = Outcome::Push;
                     d.next = ScreenId::Credits;
                 }
+                break;
+            }
+            case ScreenId::MapEditor: {
+                // A run whose first arena is the chosen map (its shortest open length).
+                const auto maps = EditorMaps();
+                if (index < 0 || index >= static_cast<int>(maps.size())) break;
+                const auto lengths = run.LadderLengths();
+                const auto first = std::find_if(lengths.begin(), lengths.end(), [](const auto& l) { return l.open && !l.endless; });
+                g->selectedLength = first == lengths.end() ? std::string() : first->id;
+                g_forcedNextMap = maps[static_cast<std::size_t>(index)]->stage;
+                mapeditor::EditorRunStarting();
+                RM_LOGI("map editor: a run on map %d (%s)", g_forcedNextMap, maps[static_cast<std::size_t>(index)]->name.c_str());
+                ArmFirstArena(run);
+                d.outcome = Outcome::StartRun;
                 break;
             }
             case ScreenId::WhichPlayer: {
@@ -3860,11 +3913,16 @@ void BuildKillNotice(const rm::KillOutcome& outcome, double now) {
 // begins. True when there is nothing more to do.
 bool MoveToMapStart(const char* when) {
     const rm::MapDef* map = CurrentMap();
-    if (map == nullptr || !map->start) return true;
+    if (map == nullptr) return true;
+    std::optional<std::array<double, 3>> start = map->start;
+    // The map editor's start for the map, when it set one.
+    if (const auto edit = g->run->map_edits().find(CurrentMapKey()); edit != g->run->map_edits().end() && edit->second.start) {
+        start = edit->second.start;
+    }
+    if (!start) return true;
     const auto local = engine::LocalPlayer();
     if (!local) return false;
-    const float to[3] = {static_cast<float>((*map->start)[0]), static_cast<float>((*map->start)[1]),
-                         static_cast<float>((*map->start)[2])};
+    const float to[3] = {static_cast<float>((*start)[0]), static_cast<float>((*start)[1]), static_cast<float>((*start)[2])};
     const float dx = ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) - to[0];
     const float dy = ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f) - to[1];
     const float dz = ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) - to[2];
@@ -5089,7 +5147,7 @@ void DriveDirector(double now) {
     rm::RunController& run = *g->run;
     const bool directorStage = g->match.inMatch && run.HasActiveRun() && run.capabilities().Has(rm::cap::kDirector) &&
                                CurrentMap() != nullptr;
-    director::BlockNativeSpawns(directorStage || g->devQuiet);
+    director::BlockNativeSpawns(directorStage || g->devQuiet || mapeditor::HoldWaves());
     run.SetMapStage(g->match.inMatch ? CurrentMapKey() : -1);
     if (!g->match.inMatch) {
         g->directorUnits.clear();
@@ -5099,7 +5157,7 @@ void DriveDirector(double now) {
         g_trapSpots.clear();
         g_stuckRemaining = -1;
     }
-    if (!run.DirectorActive() || run.phase() != rm::Phase::ArenaActive || g->devQuiet) return;
+    if (!run.DirectorActive() || run.phase() != rm::Phase::ArenaActive || g->devQuiet || mapeditor::HoldWaves()) return;
     // M6: a boss's health is the arena's, not the story's. Set while it settles (its first
     // updates may still write its own).
     if (g->boss.unit && g->boss.hp > 0 && now - g->boss.spawnedAt < 3.0) {
@@ -5281,12 +5339,14 @@ void UpdatePreloads() {
     static const char* lastBoss = nullptr;
     static const char* lastPartner = nullptr;
     static bool lastEffects = false;
+    static int lastEdits = -1;
     // The mod's own effects with a run's loads, once built and redirected (UpdateModRedirects).
     const bool effects = runLoads && !effectspack::Ready().empty();
     if (runLoads == lastRun && CurrentMapKey() == lastStage && guests == lastGuests && bossArchive == lastBoss &&
-        partnerClass == lastPartner && effects == lastEffects) {
+        partnerClass == lastPartner && effects == lastEffects && mapeditor::Serial() == lastEdits) {
         return;
     }
+    lastEdits = mapeditor::Serial();
     lastEffects = effects;
     lastRun = runLoads;
     lastStage = CurrentMapKey();
@@ -5377,7 +5437,12 @@ void UpdatePreloads() {
     }
     if (effects) extras.enemyArchives.push_back(rm::fx::kEffectsArchive);
     world::SetStageLayouts(layouts);
-    world::SetHiddenModels(g_devHiddenModels ? *g_devHiddenModels : std::vector<std::string>{});
+    // The map's objects a run does not build (maps.json "hide_models" and the map editor's).
+    std::vector<std::string> hidden;
+    if (runLoads) {
+        if (const std::optional<rm::MapDef> arena = g->run->ArenaMap(CurrentMapKey())) hidden = arena->hide_models;
+    }
+    world::SetHiddenModels(g_devHiddenModels ? *g_devHiddenModels : hidden);
     RM_LOGI("resources: %s, stage %d: %zu player items, %zu enemy classes, %zu enemy weapons and %zu archives go with every load",
             runLoads ? "run" : "no run", CurrentMapKey(), extras.playerItems.size(), extras.enemyClasses.size(),
             extras.enemyWeapons.size(), extras.enemyArchives.size());
@@ -7918,6 +7983,8 @@ void DriveSpecial(double now) {
             if (build.Special(slot).Any()) owned.push_back(OwnedFor(slot));
         }
     }
+    // The map editor's L3 + R3 (the game never sees them together in a match).
+    if (g->match.inMatch && mapeditor::PadCombo() != 0) owned.push_back(OwnedInput{-1, mapeditor::PadCombo(), 0});
     if (run.ActiveSeat() == 0) {
         SetOwnedInputs(owned);
         if (run.SeatCount() < 2) {
@@ -10725,7 +10792,8 @@ private:
         ctx.hp_max = hit.maxHp;
         const auto result = g->run->ComputeIncoming(ctx);
         IncomingDecision decision;
-        const bool invulnerable = g->settings.devInvulnerable && (g_devMortalSeats & (1u << turn.seat())) == 0;
+        const bool invulnerable =
+            (g->settings.devInvulnerable || mapeditor::Invulnerable()) && (g_devMortalSeats & (1u << turn.seat())) == 0;
         decision.multiplier = invulnerable
                                   ? 0.0f
                                   : static_cast<float>(result.multiplier) * g->settings.devIncomingMultiplier;
@@ -10850,6 +10918,22 @@ private:
         { ProfileScope p("tick:DriveScope"); ForEachSeatTurn([&] { DriveScope(now); }); ApplyScopes(); }
         if (g->settings.developerMode) ProbeScene();
         PollDevCommand(now);
+        mapeditor::Tick({g->run.get(), CurrentMapKey(), g->match.inMatch});
+        if (const int travel = mapeditor::TakeTravelRequest(); travel >= 0) {
+            // The editor's jump: this arena is taken back and played again on that map, through the
+            // same stage change a chosen route makes.
+            const bool canChange = g->settings.stagePerArena && autopilot::CanChangeStage() && engine::Caps().inventory;
+            const rm::Status taken = canChange ? g->run->EditorRestartArena()
+                                               : rm::Status::Error(rm::ErrorCode::WrongPhase, "the stage cannot change now");
+            if (taken.ok()) {
+                g_forcedNextMap = travel;
+                RM_LOGI("map editor: arena %d starts again on map %d", g->run->state().arena_index + 1, travel);
+                StartStageTransition(now);
+            } else {
+                RM_LOGW("map editor: no jump to map %d: %s", travel, taken.message.c_str());
+                g->toasts.Push("Map editor: " + taken.message);
+            }
+        }
         { ProfileScope p("tick:PollItemBox"); PollItemBox(); }
         { ProfileScope p("tick:SettleFinishedRun"); SettleFinishedRun(); }
         { ProfileScope p("tick:UpdateTimerPolicy"); UpdateTimerPolicy(); }
@@ -11258,6 +11342,10 @@ void ModInit(const Paths& paths, const Settings& settings) {
         const auto recovered = g->run->RecoverInterruptedRun();
         RM_LOGI("interrupted run settled: %s", recovered.ok() ? recovered->run_id.c_str() : "failed");
     }
+    // The map editor's changes play on any install that has the file; the editor itself only
+    // with adapter.json "map_editor".
+    mapeditor::Load(g->paths.dataDir, *g->run);
+    mapeditor::SetEnabled(g->settings.mapEditor);
 }
 
 void ModCapabilitiesReady() {
@@ -11286,11 +11374,10 @@ void DrawDisabled() {
 // The icons of the Play menu's mod rows, left of each label: drawn over the finished frame in the
 // label's colour and alpha. The game fits its 1280x720 canvas into the back buffer at one scale,
 // centred (3440x1440: x 2.0 from 440, rows centred on x 1720).
-// A label's width in layout units is scale x (kGlyphUnit x its glyph widths + kGlyphSpacing per
-// glyph): fitted to the perk lists at 1920x1080 (cursor rows exact, the others about 4 % wide).
-// Labels are centred on their x and y.
-constexpr float kGlyphUnit = 0.1907f;
-constexpr float kGlyphSpacing = 5.64f;
+// A label's width in layout units: nativemenu::kGlyphUnit and kGlyphSpacing. Labels are centred on
+// their x and y.
+using nativemenu::kGlyphSpacing;
+using nativemenu::kGlyphUnit;
 constexpr float kIconSize = 34.0f;  // layout units at scale 1
 constexpr float kIconGap = 10.0f;
 
@@ -11501,10 +11588,12 @@ void DrawUnguarded() {
         ImGui::End();
         return;
     }
+    menumouse::OnDraw();  // the mouse on the mod's screens: this frame's pointer
     DrawMenuPortrait();
     DrawMenuIcons();
     std::lock_guard lock(g->mutex);
     { ProfileScope p("draw:DrawElementArcs"); DrawElementArcs(); }
+    mapeditor::Draw({g->run.get(), CurrentMapKey(), g->match.inMatch});
     { ProfileScope p("draw:DrawSplitHud"); DrawSplitHud(); }
     { ProfileScope p("draw:DrawSpecialWidgets"); DrawSpecialWidgets(); }
     if (g->run->SeatCount() > 1) {
@@ -11523,6 +11612,7 @@ void DrawUnguarded() {
     const rm::RunSnapshot snapshot = g->run->Snapshot(Now());
     if (overlayHud) DrawHud(snapshot);
     if (!overlay::IsFocused()) return;
+    if (mapeditor::Open()) return;  // the editor's window stands in for this one
     g_hotkeys = overlay::TakeHotkeys();
 
     const ImGuiViewport* vp = ImGui::GetMainViewport();

@@ -157,6 +157,15 @@ const std::vector<std::array<double, 3>>& Director::PickChests(int count) {
     return chests_;
 }
 
+void Director::ReplacePoints(std::vector<std::array<double, 3>> points) {
+    if (points.empty()) return;
+    map_.points = std::move(points);
+    point_failures_.assign(map_.points.size(), 0);
+    last_point_ = -1;
+    for (auto& entry : pending_) entry.second = -1;
+    for (auto& entry : ticket_point_) entry.second = -1;
+}
+
 int Director::PickPoint(const std::optional<std::array<double, 3>>& player, const PointFilter& accept, bool nearest) {
     std::vector<int> usable;
     std::vector<int> far;      // neither too close nor too far, not the last point used

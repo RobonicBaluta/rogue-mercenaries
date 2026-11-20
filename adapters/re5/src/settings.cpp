@@ -131,6 +131,7 @@ Settings LoadAdapterSettings(const Paths& paths, std::string* error) {
         settings.special2Key = json.value("special2_key_scancode", settings.special2Key);
         settings.sniperNormalAim = json.value("sniper_normal_aim", settings.sniperNormalAim);
         settings.everythingUnlocked = json.value("everything_unlocked", settings.everythingUnlocked);
+        settings.mapEditor = json.value("map_editor", settings.mapEditor);
         settings.scopeKey = json.value("scope_key_scancode", settings.scopeKey);
         settings.effectGallery = json.value("effect_gallery", settings.effectGallery);
         settings.customEffects = json.value("custom_effects", settings.customEffects);

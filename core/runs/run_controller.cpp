@@ -2207,10 +2207,32 @@ std::vector<std::string> RunController::PlannedGuests() const {
 }
 
 std::optional<MapDef> RunController::ArenaMap(int stage) const {
-    const MapDef* map = content_->FindMapByStage(stage);
-    if (map == nullptr) return std::nullopt;
-    if (stage != PlannedMapKey()) return *map;
-    return WithGuests(*content_, *map, PlannedGuests());
+    const MapDef* found = content_->FindMapByStage(stage);
+    if (found == nullptr) return std::nullopt;
+    const auto edit = map_edits_.find(stage);
+    const MapDef map = edit != map_edits_.end() ? ApplyMapEdit(*found, edit->second) : *found;
+    if (stage != PlannedMapKey()) return map;
+    return WithGuests(*content_, map, PlannedGuests());
+}
+
+Status RunController::EditorRestartArena() {
+    constexpr std::string_view op = "editor_restart_arena";
+    if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    if (run_.phase != Phase::ArenaActive || run_.arenas.empty() || run_.arena_index <= 0) {
+        return Fail(op, ErrorCode::WrongPhase, "only during an arena (phase " + std::string(PhaseName(run_.phase)) + ")");
+    }
+    run_.arenas.pop_back();
+    --run_.arena_index;
+    director_.reset();
+    run_.phase = Phase::RouteSelection;
+    run_.route_chosen = true;
+    return Status::Success();
+}
+
+void RunController::SetMapEdits(MapEdits edits) {
+    map_edits_ = std::move(edits);
+    if (!director_ || map_stage_ < 0) return;
+    if (const std::optional<MapDef> map = ArenaMap(map_stage_)) director_->ReplacePoints(map->points);
 }
 
 Status RunController::ChooseRoute(std::size_t index) {

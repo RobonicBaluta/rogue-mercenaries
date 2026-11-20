@@ -100,8 +100,10 @@ While the menu is open the game receives no input. The mouse works too, and so d
 
 About the Play menu row:
 - it appears only with Latin-alphabet game languages; with Japanese, Chinese or Russian text use F7;
-- reach it with the keyboard or a gamepad, because mouse hover does not select it;
+- point at it with the mouse and click, or reach it with the keyboard or a gamepad;
 - set `"native_menu": false` in `adapter.json` to turn it off.
+
+The mouse works on the mod's own screens (the mod menu, and the reward, SHOP, NEXT ROUTE and ORGANIZE screens in a run): pointing at a row moves the cursor there, a click chooses it, the right button goes back and the wheel scrolls a long list. While a screen is up in a match, the game gets no mouse (no camera turn, no shot under it).
 
 ### Two players (split screen)
 

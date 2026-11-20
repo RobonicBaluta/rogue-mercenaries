@@ -334,6 +334,9 @@ constexpr std::uintptr_t kFnMenuRowColor = 0x00A17350;
 constexpr std::uintptr_t kFnMenuSoundDecide = 0x009E4A70;
 constexpr std::uintptr_t kFnMenuSoundCancel = 0x009E4A50;
 constexpr std::uintptr_t kFnMenuSoundDeny = 0x009E4AC0;
+// The cursor-move tick (sound id 0x42): the Play menu's move plays it when its cursor changes
+// (after Navigate and the sId mouse hit test, 0x00A397DF).
+constexpr std::uintptr_t kFnMenuSoundMove = 0x009E4AA0;
 // void uIdTopMenu00::SetBallIndex(int item): the planet's highlighted node.
 constexpr std::uintptr_t kFnMenuSetBallIndex = 0x00A58170;
 // Mercenaries setup screens (move() = vtable slot 6), in play order:
@@ -889,6 +892,7 @@ inline constexpr Signature kSignatures[] = {
     {"menu_sound_decide", addr::kFnMenuSoundDecide, "51 8B 0D 0C 1D 1B 01 6A 45 E8"},
     {"menu_sound_cancel", addr::kFnMenuSoundCancel, "51 8B 0D 0C 1D 1B 01 6A 4E E8"},
     {"menu_sound_deny", addr::kFnMenuSoundDeny, "51 8B 0D 0C 1D 1B 01 6A 47 E8"},
+    {"menu_sound_move", addr::kFnMenuSoundMove, "51 8B 0D 0C 1D 1B 01 6A 42 E8"},
     {"menu_ball_index", addr::kFnMenuSetBallIndex, "8B 41 5C 85 C0 74 0A 8B 4C 24 04 89 88 58 0D 00 00"},
     // Play menu move: `test [edx+0x5B8], edi` is the cancel check after decide.
     {"playmenu_cancel_mask", 0x00A39774, "85 BA B8 05 00 00 75 6A"},

@@ -36,6 +36,7 @@
 #include "engine.h"
 #include "log.h"
 #include "memory.h"
+#include "menu_mouse.h"
 #include "re5_layout.h"
 
 namespace rmre5::nativemenu {
@@ -352,6 +353,11 @@ std::uint32_t PadMask(std::size_t offset) {
 
 void PlaySound(std::uintptr_t fn, std::uintptr_t self) { reinterpret_cast<SoundFn>(fn)(self); }
 
+// The tick the game's own lists make when their cursor moves.
+void PlayMoveSound(std::uintptr_t self) {
+    if (engine::Caps().menuMoveSound) PlaySound(re5::addr::kFnMenuSoundMove, self);
+}
+
 void SetBallIndex(std::uintptr_t self, int item) {
     const auto topMenu = ReadOr<std::uintptr_t>(self + re5::off::kMenuTopMenu, 0);
     if (topMenu) reinterpret_cast<BallIndexFn>(re5::addr::kFnMenuSetBallIndex)(topMenu, item);
@@ -394,6 +400,10 @@ std::vector<Level> g_stack;
 Screen g_screen;
 bool g_dirty = false;
 bool g_buttonLatch = false;  // decide/cancel acted on; wait for a release
+// The mod menu was just left by a press (back, a BACK or CLOSE row): the Play menu is drawn but
+// not moved until that press is over, so the game does not take it as its own (a second back,
+// out of the Play menu, or a decide that reopened the mod menu).
+bool g_holdVanilla = false;
 
 void Rebuild() {
     Model* model = g_model.load();
@@ -469,7 +479,70 @@ void SyncRows(std::uintptr_t self) {
     Encode(kSlotHeader, g_screen.header);
 }
 
+// ---- the mouse (menu_mouse) ------------------------------------------------------------
+
+// The first line of a slot's text: the sum of its glyph widths and its glyph count.
+void SlotMetrics(int slot, int& width, int& glyphs) {
+    width = 0;
+    glyphs = 0;
+    const auto& buf = g_buffers[static_cast<std::size_t>(slot)];
+    for (std::size_t i = 0; i + 1 < buf.size() && !(buf[i] == 0 && (buf[i + 1] == 0x0401 || buf[i + 1] == 0x0403)); i += 2) {
+        width += buf[i + 1];
+        ++glyphs;
+    }
+}
+
+float HalfWidth(int slot, float scale) {
+    int width = 0;
+    int glyphs = 0;
+    SlotMetrics(slot, width, glyphs);
+    return (static_cast<float>(width) * kGlyphUnit + static_cast<float>(glyphs) * kGlyphSpacing) * scale * 0.5f;
+}
+
+// A row's hit box (canvas units): its label at the cursor row's scale with some room either side,
+// at least kMinRowHalfWidth wide each way, and the row pitch high.
+constexpr float kRowHitMargin = 24.0f;
+constexpr float kMinRowHalfWidth = 120.0f;
+bool PointerOnRow(const menumouse::Input& mouse, int slot, int y) {
+    const float half = std::max(HalfWidth(slot, 1.0f) + kRowHitMargin, kMinRowHalfWidth);
+    return mouse.Over(640.0f, static_cast<float>(y), half, static_cast<float>(re5::addr::kPlayMenuRowPitch) * 0.5f);
+}
+
+// The visible mod-menu row under the pointer (0..visible-1), or -1.
+int ModRowUnderPointer(const menumouse::Input& mouse, int visible) {
+    for (int r = 0; r < visible; ++r) {
+        if (PointerOnRow(mouse, r, re5::addr::kPlayMenuFirstRowY + r * re5::addr::kPlayMenuRowPitch)) return r;
+    }
+    return -1;
+}
+
+// The cursor to `index`, as Navigate's moves are shown: the planet node and the tick.
+void MoveCursor(std::uintptr_t self, Level& level, int index) {
+    if (index == level.cursor) return;
+    level.cursor = index;
+    g_dirty = true;
+    SetBallIndex(self, std::min(index, kMaxRows - 1));
+    PlayMoveSound(self);
+}
+
+void LogClick(const char* what, int row) {
+    static int logs = 0;
+    if (logs < 60) {
+        ++logs;
+        RM_LOGI("native menu: mouse %s on row %d", what, row);
+    }
+}
+
 void __fastcall PlayMenuDrawDetour(std::uintptr_t self, void*);
+
+// Leaves the mod menu on a press and draws the Play menu for this frame without its move (the
+// press is still visible to it); PlayMenuMoveDetour keeps it so while the press lasts.
+bool LeaveByPress(std::uintptr_t self) {
+    LeaveModMenu(self, RogueItem(self));
+    g_holdVanilla = true;
+    PlayMenuDrawDetour(self, nullptr);
+    return true;
+}
 
 // Returns true when the frame was fully handled (including the draw).
 bool ModMenuFrame(std::uintptr_t self, bool readInput) {
@@ -481,10 +554,24 @@ bool ModMenuFrame(std::uintptr_t self, bool readInput) {
     Level* level = &g_stack.back();
     const int n = static_cast<int>(g_screen.items.size());
     if (readInput) {
+        // The mouse: the row under a moving pointer takes the cursor, the wheel steps through the
+        // list, a click on a row chooses it and the right button goes back.
+        const menumouse::Input mouse = menumouse::Take(menumouse::Host::PlayMenu, true);
+        const int over = ModRowUnderPointer(mouse, std::min(n, kMaxRows));
+        if (mouse.moved && over >= 0) MoveCursor(self, *level, level->offset + over);
+        if (mouse.wheelSteps != 0 && n > 0) MoveCursor(self, *level, std::clamp(level->cursor - mouse.wheelSteps, 0, n - 1));
+        const bool click = mouse.leftPresses > 0 && over >= 0;
+        if (click) {
+            MoveCursor(self, *level, level->offset + over);
+            LogClick("click", level->cursor);
+        }
         const std::uint32_t input = MenuInputBits();
-        const bool decide = (input & PadMask(re5::off::kPadDecideMask)) != 0;
-        const bool cancel = (input & PadMask(re5::off::kPadCancelMask)) != 0;
-        if (!decide && !cancel) g_buttonLatch = false;
+        const bool keyDecide = (input & PadMask(re5::off::kPadDecideMask)) != 0;
+        const bool keyCancel = (input & PadMask(re5::off::kPadCancelMask)) != 0;
+        const bool decide = keyDecide || click;
+        const bool cancel = keyCancel || mouse.rightPresses > 0;
+        // One action per press, whichever device: the latch opens once nothing is held.
+        if (!decide && !cancel && !mouse.leftHeld && !mouse.rightHeld) g_buttonLatch = false;
         if (decide && !g_buttonLatch) {
             g_buttonLatch = true;
             Model* model = g_model.load();
@@ -509,8 +596,7 @@ bool ModMenuFrame(std::uintptr_t self, bool readInput) {
                         g_stack.pop_back();
                         Rebuild();
                     } else {
-                        LeaveModMenu(self, RogueItem(self));
-                        return false;
+                        return LeaveByPress(self);
                     }
                     break;
                 case Outcome::StartRun:
@@ -524,8 +610,7 @@ bool ModMenuFrame(std::uintptr_t self, bool readInput) {
                 case Outcome::Denied: PlaySound(re5::addr::kFnMenuSoundDeny, self); break;
                 case Outcome::Close:
                     PlaySound(re5::addr::kFnMenuSoundCancel, self);
-                    LeaveModMenu(self, RogueItem(self));
-                    return false;
+                    return LeaveByPress(self);
             }
             level = &g_stack.back();
         } else if (cancel && !g_buttonLatch) {
@@ -537,16 +622,14 @@ bool ModMenuFrame(std::uintptr_t self, bool readInput) {
                 level = &g_stack.back();
                 SetBallIndex(self, std::min(level->cursor, kMaxRows - 1));
             } else {
-                LeaveModMenu(self, RogueItem(self));
-                return false;
+                return LeaveByPress(self);
             }
         } else if (n > 0) {
             const int before = level->cursor;
             const int after = reinterpret_cast<NavigateFn>(re5::addr::kFnMenuNavigate)(self, before, n);
             if (after != before && after >= 0 && after < n) {
-                level->cursor = after;
-                g_dirty = true;
-                SetBallIndex(self, std::min(after, kMaxRows - 1));
+                MoveCursor(self, *level, after);
+                menumouse::KeyNavigated();
             }
         }
     }
@@ -570,6 +653,18 @@ void __fastcall PlayMenuMoveDetour(std::uintptr_t self, void*) {
             g_atInput = ReadOr<std::uint8_t>(self + re5::off::kMenuState, 0) == kStateInput;
             return;
         }
+    }
+    if (g_holdVanilla) {
+        // The press that left the mod menu, until it is over (keys, pad or mouse buttons).
+        const menumouse::Input mouse = menumouse::Take(menumouse::Host::PlayMenu, false);
+        const std::uint32_t bits = MenuInputBits() & (PadMask(re5::off::kPadDecideMask) | PadMask(re5::off::kPadCancelMask));
+        if (bits != 0 || mouse.leftHeld || mouse.rightHeld) {
+            PlayMenuDrawDetour(self, nullptr);
+            g_atInput = true;
+            return;
+        }
+        g_holdVanilla = false;
+        g_buttonLatch = false;
     }
     if (g_devMercenariesLocked.load()) {
         const auto work = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
@@ -621,6 +716,25 @@ void __fastcall PlayMenuMoveDetour(std::uintptr_t self, void*) {
         MoveWithMercenariesOpen(self);
         autopilot::InjectMenuBits(0);
         return;
+    }
+    // The game's own menu mouse has areas for its rows only. The Windows cursor (the one the game's
+    // menu mouse follows) over ours moves the cursor there, and a click on it opens the mod menu.
+    if (state == kStateInput && Extended(self)) {
+        const menumouse::Input mouse = menumouse::Take(menumouse::Host::PlayMenu, false);
+        const bool over = mouse.windowsCursor && PointerOnRow(mouse, 0, RogueRowY(self));
+        if (over && (mouse.moved || mouse.leftPresses > 0) && cursor != RogueItem(self)) {
+            SafeStore<std::int32_t>(self + re5::off::kMenuCursor, RogueItem(self));
+            SetBallIndex(self, RogueItem(self));
+            PlayMoveSound(self);
+        }
+        if (over && mouse.leftPresses > 0) {
+            LogClick("click", RogueItem(self));
+            EnterModMenu(self);
+            g_buttonLatch = true;  // this click opened the menu
+            ModMenuFrame(self, false);
+            g_atInput = true;
+            return;
+        }
     }
     // move() handles decide before navigation, so the cursor here is the
     // row drawn highlighted last frame.
@@ -678,11 +792,7 @@ void ProbeDraw(const char* kind, std::uintptr_t self, int message, int x, int y,
 void RecordRowDraw(int row, int x, int y, float scale, std::uint32_t argb) {
     int width = 0;
     int glyphs = 0;
-    const auto& buf = g_buffers[static_cast<std::size_t>(row)];
-    for (std::size_t i = 0; i + 1 < buf.size() && !(buf[i] == 0 && (buf[i + 1] == 0x0401 || buf[i + 1] == 0x0403)); i += 2) {
-        width += buf[i + 1];
-        ++glyphs;
-    }
+    SlotMetrics(row, width, glyphs);
     std::lock_guard lock(g_rowMutex);
     RowDraw& d = g_rowDraws[static_cast<std::size_t>(row)];
     static std::set<std::tuple<int, int, int>> logged;
@@ -791,10 +901,15 @@ int Navigate(std::uintptr_t self, int cursor, int count) {
     return reinterpret_cast<NavigateFn>(re5::addr::kFnMenuNavigate)(self, cursor, count);
 }
 void Sound(SoundKind kind, std::uintptr_t self) {
+    if (kind == SoundKind::Move) {
+        PlayMoveSound(self);
+        return;
+    }
     PlaySound(kind == SoundKind::Decide ? re5::addr::kFnMenuSoundDecide
               : kind == SoundKind::Cancel ? re5::addr::kFnMenuSoundCancel : re5::addr::kFnMenuSoundDeny, self);
 }
 std::string WrapText(const std::string& text, std::size_t width) { return Wrap(text, width); }
+float SlotHalfWidth(int slot, float scale) { return slot >= 0 && slot < kSlots ? HalfWidth(slot, scale) : 0.0f; }
 
 std::vector<RowIcon> VisibleRowIcons() {
     std::vector<RowIcon> out;

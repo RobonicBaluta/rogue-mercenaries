@@ -12,13 +12,20 @@
 #include <iterator>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <string>
+#include <vector>
 
 #include "engine.h"
+#include "file_redirect.h"
 #include "hooks.h"
 #include "log.h"
 #include "memory.h"
 #include "re5_layout.h"
+#include "rm/common.h"
+#include "rm/inflate.h"
 
 namespace rmre5 {
 namespace {
@@ -163,6 +170,53 @@ DWORD WINAPI HangWatchdog(LPVOID) {
 using FatalFn = void(__cdecl*)(void* context, const char* format, ...);
 FatalFn g_origFatal = nullptr;
 
+// An archive (MT Framework ARC: "ARC" and a zero byte, version, entry count, 80-byte entries of a 64-byte
+// name, type, packed size, size and flags, offset; zlib entries) unpacked entry by entry, as
+// the game's loader does: the first entry that does not unpack, or that every one does.
+std::string CheckArchive(const std::wstring& path) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return "cannot be read";
+    std::vector<std::uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (data.size() < 8 || data[0] != 'A' || data[1] != 'R' || data[2] != 'C' || data[3] != 0) return "no ARC header";
+    const auto u16 = [&](std::size_t at) { return static_cast<unsigned>(data[at] | (data[at + 1] << 8)); };
+    const auto u32 = [&](std::size_t at) {
+        return static_cast<std::uint32_t>(data[at]) | (static_cast<std::uint32_t>(data[at + 1]) << 8) |
+               (static_cast<std::uint32_t>(data[at + 2]) << 16) | (static_cast<std::uint32_t>(data[at + 3]) << 24);
+    };
+    const unsigned count = u16(6);
+    std::vector<std::uint8_t> out;
+    for (unsigned i = 0; i < count; ++i) {
+        const std::size_t entry = 8 + static_cast<std::size_t>(i) * 80;
+        if (entry + 80 > data.size()) return "its entry table is cut short";
+        char name[65] = {};
+        std::memcpy(name, &data[entry], 64);
+        const std::uint32_t packed = u32(entry + 68);
+        const std::uint32_t size = u32(entry + 72) & 0x1FFFFFFFu;  // the top bits are flags
+        const std::uint32_t offset = u32(entry + 76);
+        if (static_cast<std::size_t>(offset) + packed > data.size()) return std::string("entry ") + name + " lies past the end of the file";
+        if (packed == size && (packed < 2 || data[offset] != 0x78)) continue;  // stored as is
+        if (!rm::ZlibInflate(&data[offset], packed, out, size + 16u) || out.size() != size) {
+            return std::string("entry ") + name + " does not unpack (the file on disk is damaged)";
+        }
+    }
+    return "all " + std::to_string(count) + " entries unpack";
+}
+
+void LogRecentArchives(bool check) {
+    const std::vector<std::wstring> recent = fileredirect::RecentArchives();
+    if (recent.empty()) return;
+    std::string names;
+    for (const std::wstring& path : recent) names += " " + rm::PathText(std::filesystem::path(path).filename());
+    RM_LOGE("game fatal error: archives opened last (newest first):%s", names.c_str());
+    if (!check) return;
+    // "inflate: ..." names no file: the newest few are unpacked again from the disk. A damaged one
+    // is the player's copy (Steam's "Verify integrity of game files" restores it); all whole means
+    // the bytes went wrong in memory.
+    for (std::size_t i = 0; i < recent.size() && i < 6; ++i) {
+        RM_LOGE("game fatal error: %s: %s", rm::PathText(recent[i]).c_str(), CheckArchive(recent[i]).c_str());
+    }
+}
+
 void __cdecl FatalDetour(void* context, const char* format, ...) {
     char text[1024] = "(no message)";
     if (format) {
@@ -186,6 +240,10 @@ void __cdecl FatalDetour(void* context, const char* format, ...) {
         }
     }
     RM_LOGE("game fatal error: stack code:%s", code.c_str());
+    try {
+        LogRecentArchives(std::strncmp(text, "inflate", 7) == 0);
+    } catch (...) {
+    }
     g_origFatal(context, "%s", text);
 }
 

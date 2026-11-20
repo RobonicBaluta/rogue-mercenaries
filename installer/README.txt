@@ -25,7 +25,7 @@ REQUIREMENTS
   - Resident Evil 5 on Steam, the current build (Steam build 11465250, re5dx9.exe 1.0.0.129).
     On any other build the mod switches itself off and the game runs as usual.
   - Windows 10 or 11.
-  - A keyboard or a controller. Mouse hover does not work in the game's menus.
+  - A keyboard, a controller or a mouse (the mouse works on the mod's menus and screens).
 
 INSTALL
   1. Close Resident Evil 5.
@@ -158,6 +158,10 @@ WHEN SOMETHING BREAKS
   If "Rogue Mercenaries" never shows at the top right of the game, check that dinput8.dll
   is still in the game folder: an antivirus may have removed it (it hooks the game, which
   looks suspicious). If it is gone, allow it and run Install.bat again.
+  If the game stops with "inflate: incorrect data check", one of the game's files is
+  damaged: in Steam, right-click Resident Evil 5, Properties, Installed Files, "Verify
+  integrity of game files". If it happens again, send your logs: they list the archives
+  the game was reading and check each one.
   Please send:
     - what you were doing, the character and skin, and the stage;
     - the folder %LOCALAPPDATA%\RogueMercenaries\logs (paste that path into Explorer's

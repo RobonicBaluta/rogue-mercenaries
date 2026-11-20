@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <mutex>
 #include <string>
@@ -586,6 +587,33 @@ int DumpSetRecords() {
     }
     RM_LOGI("setdump: %d records", logged);
     return logged;
+}
+
+std::vector<NearObject> ObjectsNear(const float pos[3], float radius, std::size_t max) {
+    std::vector<NearObject> out;
+    if (!g_available.load()) return out;
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kObjModelManager, 0);
+    const int groups = manager ? std::min(ReadOr<std::int32_t>(manager + kSetManagerGroupCount, 0), 256) : 0;
+    for (int group = 0; group < groups; ++group) {
+        const int count = std::min(RecordCount(manager, group), 2048);
+        for (int id = 0; id < count; ++id) {
+            const std::uintptr_t record = Record(manager, group, id);
+            const auto descriptor = record ? ReadOr<std::uintptr_t>(record + 0x10, 0) : 0;
+            if (!descriptor) continue;
+            NearObject o;
+            o.name = RecordName(manager, group, id);
+            if (o.name.empty()) continue;
+            for (int k = 0; k < 3; ++k) o.pos[k] = ReadOr<float>(descriptor + re5::off::kSetInfoPosition + 4 * k, 0.0f);
+            const float dx = o.pos[0] - pos[0], dy = o.pos[1] - pos[1], dz = o.pos[2] - pos[2];
+            o.distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (o.distance > radius) continue;
+            o.infoClass = engine::ClassName(descriptor);
+            out.push_back(std::move(o));
+        }
+    }
+    std::sort(out.begin(), out.end(), [](const NearObject& a, const NearObject& b) { return a.distance < b.distance; });
+    if (out.size() > max) out.resize(max);
+    return out;
 }
 
 void BlockNativeChests(bool blocked) {

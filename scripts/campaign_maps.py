@@ -146,6 +146,16 @@ BOSSES = {
 }
 BOSS_PLAYER_DISTANCE = (1000, 2500)  # the boss appears within sight, not on top of the player
 # Kept for developer tests but out of the run rotation ("rotation": false), with the reason.
+# Objects of an area a run does not build (maps.json "hide_models", set record names or their
+# start). Since 2026-11-20 the user sets them, the points and the starts of many campaign areas
+# with the map editor (adapter.json "map_editor"); scripts/fold_map_edits.py writes those into
+# maps.json and research/map_edits/ keeps each map_edits.json folded. Regenerating an entry here
+# loses that hand work: fold the kept files again afterwards. (The Engine Room's big doors,
+# om0955/om0959, were tried hidden; the user put them back and hid the lever om08BC_IDo00_U001.)
+HIDE_MODELS = {
+    505: ['OM08BC_IDo00_U001'],
+}
+
 NO_ROTATION = {
     # The campaign's opening area: the story keeps the inventory, weapon switching and the HUD off
     # there until an event a run never reaches (user playtest 2026-11-03).
@@ -352,6 +362,8 @@ for stage in args.stages:
             if key in boss:
                 entry['boss'][key] = boss[key]
     entry = with_layouts(entry, ladder_layouts(stage))
+    if stage in HIDE_MODELS:
+        entry['hide_models'] = HIDE_MODELS[stage]
     # An area made again keeps its place in the list (the run map draws from it in order).
     if any(m['stage'] == stage for m in doc['maps']):
         doc['maps'] = [entry if m['stage'] == stage else m for m in doc['maps']]

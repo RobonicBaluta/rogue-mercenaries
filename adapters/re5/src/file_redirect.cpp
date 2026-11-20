@@ -35,6 +35,22 @@ std::atomic<bool> g_logOpens{false};
 std::atomic<int> g_logged{0};
 thread_local bool t_inside = false;  // our own CreateFile calls (the log) pass straight through
 
+// The last archives the game opened (any thread), newest last: a fatal "inflate" error names no
+// file, so the crash log lists these and checks them (crash.cpp).
+constexpr std::size_t kRecentArchives = 16;
+std::mutex g_recentMutex;
+std::wstring g_recent[kRecentArchives];
+std::size_t g_recentCount = 0;
+
+void NoteOpened(LPCWSTR path) {
+    if (path == nullptr) return;
+    const std::size_t n = wcslen(path);
+    if (n < 4 || _wcsicmp(path + n - 4, L".arc") != 0) return;
+    std::lock_guard lock(g_recentMutex);
+    g_recent[g_recentCount % kRecentArchives] = path;
+    ++g_recentCount;
+}
+
 std::shared_ptr<const std::vector<Redirect>> Current() {
     std::lock_guard lock(g_mutex);
     return g_redirects;
@@ -107,7 +123,11 @@ HANDLE WINAPI CreateFileWDetour(LPCWSTR name, DWORD access, DWORD share, LPSECUR
                                 HANDLE templ) {
     if (name != nullptr) {
         const std::wstring target = Lookup(name, access);
-        if (!target.empty()) return g_origW(target.c_str(), access, share, sa, disposition, flags, templ);
+        if (!target.empty()) {
+            NoteOpened(target.c_str());
+            return g_origW(target.c_str(), access, share, sa, disposition, flags, templ);
+        }
+        if (!t_inside) NoteOpened(name);
     }
     return g_origW(name, access, share, sa, disposition, flags, templ);
 }
@@ -121,7 +141,11 @@ HANDLE WINAPI CreateFileADetour(LPCSTR name, DWORD access, DWORD share, LPSECURI
             MultiByteToWideChar(CP_ACP, 0, name, -1, wide.data(), n);
             wide.resize(static_cast<std::size_t>(n - 1));
             const std::wstring target = Lookup(wide, access);
-            if (!target.empty()) return g_origW(target.c_str(), access, share, sa, disposition, flags, templ);
+            if (!target.empty()) {
+                NoteOpened(target.c_str());
+                return g_origW(target.c_str(), access, share, sa, disposition, flags, templ);
+            }
+            if (!t_inside) NoteOpened(wide.c_str());
         }
     }
     return g_origA(name, access, share, sa, disposition, flags, templ);
@@ -208,5 +232,13 @@ void SetLogOpens(bool on) {
 }
 
 std::wstring NormaliseTail(const std::wstring& tail) { return Lower(tail); }
+
+std::vector<std::wstring> RecentArchives() {
+    std::lock_guard lock(g_recentMutex);
+    std::vector<std::wstring> out;
+    const std::size_t n = std::min(g_recentCount, kRecentArchives);
+    for (std::size_t i = 0; i < n; ++i) out.push_back(g_recent[(g_recentCount - 1 - i) % kRecentArchives]);
+    return out;
+}
 
 }  // namespace rmre5::fileredirect

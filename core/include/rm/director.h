@@ -84,6 +84,9 @@ struct MapDef {
     /// A campaign area's own object layouts holding its ladders (`s500_IDf01_Ins`): a Mercenaries
     /// match skips them, so the adapter files them and builds their ladders.
     std::vector<std::string> layouts;
+    /// Objects of the area not built (set record names or their start, any case: the Engine
+    /// Room's `om0955_ido00`): a door its campaign opens with a lever that a run never pulls.
+    std::vector<std::string> hide_models;
     int max_alive = 8;
     double min_player_distance = 800.0;  // engine units; points closer than this are avoided
     double max_player_distance = 0.0;    // > 0: points farther than this are avoided (large areas)
@@ -172,6 +175,10 @@ public:
                                                   const std::optional<std::array<double, 3>>& player,
                                                   const PointFilter& accept = {}, bool nearest = false);
     [[nodiscard]] int relocations() const { return relocations_; }
+    /// The map editor changed this map's points during the arena: the spawns from now on use
+    /// `points` (empty: unchanged). Units already out keep where they are; the points' failures
+    /// and the points units came from are forgotten.
+    void ReplacePoints(std::vector<std::array<double, 3>> points);
     /// Picks `count` distinct chest positions of the map for this arena (all of them when the
     /// map has fewer); they stay available as chests().
     const std::vector<std::array<double, 3>>& PickChests(int count);

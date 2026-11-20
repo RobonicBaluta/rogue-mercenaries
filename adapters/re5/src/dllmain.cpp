@@ -13,6 +13,7 @@
 #include "stage_fixes.h"
 #include "hooks.h"
 #include "log.h"
+#include "menu_mouse.h"
 #include "menu_probe.h"
 #include "autopilot.h"
 #include "native_menu.h"
@@ -120,6 +121,7 @@ DWORD StartMod() {
     }
     if (settings.nativeMenu && engine::Caps().buildIdentity) {
         nativemenu::Install();
+        menumouse::Install();
         if (settings.developerMode) nativemenu::EnableDrawProbe();
         if (settings.nativeMatchUi) matchui::Install();
         itemboxguard::Install();

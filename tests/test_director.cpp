@@ -97,7 +97,9 @@ TEST_CASE("shipped maps load and every map can spawn at tier 1", "[director]") {
     REQUIRE(r.ok());
     for (const MapDef& m : r.content->maps()) {
         INFO(m.id);
-        CHECK(m.points.size() >= 4);
+        // A boss arena needs one point for a boss without a story spot (the user's Volcano: one
+        // chosen in the map editor, 2026-11-20); an arena of waves needs a few.
+        CHECK(m.points.size() >= (m.boss ? 1u : 4u));
         if (m.start) {  // the player is moved there: it must be where the map's points are
             const auto& s = *m.start;
             CHECK(std::any_of(m.points.begin(), m.points.end(), [&](const std::array<double, 3>& p) {
