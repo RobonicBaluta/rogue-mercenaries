@@ -126,10 +126,22 @@ std::uintptr_t CockpitSprite(std::uintptr_t cockpit, int index) {
     return ReadOr<std::uintptr_t>(cockpit + kCockpitSprites + static_cast<std::size_t>(index) * 4, 0);
 }
 
+// The two newest cockpits the timer draw has seen (a split screen has two; a stage change makes
+// new ones), for the developer's hudprobe.
+std::atomic<std::uintptr_t> g_cockpits[2];
+
+void NoteCockpit(std::uintptr_t self) {
+    if (g_cockpits[0].load() == self || g_cockpits[1].load() == self) return;
+    g_cockpits[0] = g_cockpits[1].load();
+    g_cockpits[1] = self;
+}
+
 // The cockpit's move clears its sprites' draw bytes every frame, so a skipped timer draw
 // leaves the clock off screen. In a run the same two digits show the mod's counter instead,
 // under the conditions the timer draw itself checks (a match with a timer, nothing paused).
+
 void __fastcall CockpitTimerDetour(std::uintptr_t self, void*) {
+    NoteCockpit(self);
     if (!g_hideHud.load()) {
         g_origCockpitTimer(self);
         return;
@@ -238,6 +250,8 @@ bool MercIntroShotsPlaying() {
     const DWORD seen = g_shotsSeen.load();
     return seen != 0 && GetTickCount() - seen < 300;
 }
+
+std::uintptr_t CockpitObject(int index) { return index == 0 || index == 1 ? g_cockpits[index].load() : 0; }
 
 MercTimerView ReadMercTimer() {
     MercTimerView view;

@@ -52,6 +52,13 @@ struct Verified {
     bool flowScript = false;    // title-flow script steps (direct start without screens)
     bool splitScreen = false;   // M10: the split-screen setup script (a co-op run's matches)
     bool gameOverCheck = false; // M10: the match's game-over check (a co-op run's fallen player)
+    bool mercEndEvent = false;  // M10: the match's end message (a co-op fall must not end it)
+    bool appRequestWord = false;  // M10: the application's request words (a co-op fall's input lock)
+    bool playerDeathChecks = false;  // M10: uPlayer's dead and dying checks (a co-op fall stays the fallen one's)
+    bool cockpitRings = false;  // M10: the cockpit's weapon rings check (a co-op fall keeps the other's)
+    bool playerMayAct = false;  // M10: uPlayer's may-act check (a co-op fall keeps the other's inventory)
+    bool playerGameOver = false;  // M10: uPlayer's own game over (a co-op fall does not set it)
+    bool wpSlotUiVisible = false;  // M10: the inventory grid's visibility (a co-op fall keeps the other's)
     bool inventory = false;     // uPlayer inventory layout and add helpers
     bool resultsScreen = false; // Mercenaries results screen move (auto-accept between stages)
     bool gameoverScreen = false; // game-over screen move and its decide (a run's death answers "no")
@@ -226,6 +233,9 @@ bool DeleteUnit(std::uintptr_t unit);
 /// Fixes of the game's own code for what Mercenaries mode 2 never met before the mod (in memory,
 /// each behind its signature): Excella's finisher on a Majini (re5::addr::kDeadBombModeJump).
 void ApplyCodeFixes();
+/// Writes `size` code bytes at `address` when the bytes there are `expectedHex` ("75 0B"); false,
+/// nothing written, when they differ.
+bool WriteCode(std::uintptr_t address, const char* expectedHex, const unsigned char* bytes, std::size_t size);
 /// Moves a unit: every copy of its position in the object (the first 16 KB: transform, previous
 /// and movement positions) gets `pos`; writing +0x30 alone is undone by its movement. Returns
 /// the copies written (0: not moved). Verified on the player (s304: stays, walks on the floor).

@@ -134,6 +134,13 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.resultsScreen = g_caps.flowScript && SignatureOk("merce_results_move");
     g_caps.splitScreen = g_caps.flowScript && SignatureOk("flow_split_setup");
     g_caps.gameOverCheck = SignatureOk("app_request") && SignatureOk("game_over_check");
+    g_caps.mercEndEvent = g_caps.gameOverCheck && SignatureOk("merc_end_event");
+    g_caps.appRequestWord = g_caps.gameOverCheck && SignatureOk("app_request_word");
+    g_caps.playerDeathChecks = g_caps.gameOverCheck && SignatureOk("player_dead_or_frozen") && SignatureOk("player_in_death");
+    g_caps.cockpitRings = g_caps.playerDeathChecks && SignatureOk("cockpit_rings_check");
+    g_caps.playerMayAct = g_caps.playerDeathChecks && SignatureOk("player_may_act");
+    g_caps.playerGameOver = g_caps.playerDeathChecks && SignatureOk("player_game_over");
+    g_caps.wpSlotUiVisible = g_caps.playerDeathChecks && SignatureOk("wpslot_ui_visible");
     g_caps.gameoverScreen = g_caps.resultsScreen && SignatureOk("gameover_move") && SignatureOk("gameover_move_slot") &&
                             SignatureOk("gameover_decide") && SignatureOk("gameover_decide_block");
     g_caps.pauseScreen = g_caps.playMenu && SignatureOk("pause_move");
@@ -491,8 +498,6 @@ bool CallTurnTo(std::uintptr_t fn, std::uintptr_t character, unsigned frames) {
 
 }  // namespace
 
-namespace {
-
 // Writes code bytes over the ones expected there; false (nothing written) when they differ.
 bool WriteCode(std::uintptr_t address, const char* expectedHex, const unsigned char* bytes, std::size_t size) {
     if (!BytesMatch(address, expectedHex)) return false;
@@ -504,8 +509,6 @@ bool WriteCode(std::uintptr_t address, const char* expectedHex, const unsigned c
     FlushInstructionCache(GetCurrentProcess(), p, size);
     return ok;
 }
-
-}  // namespace
 
 void ApplyCodeFixes() {
     // Excella's finisher ends a Majini in its bomb death, whose effect in mode 2 is a file the PC

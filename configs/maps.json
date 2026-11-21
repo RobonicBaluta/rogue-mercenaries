@@ -665,7 +665,6 @@
       "id": "campaign_s100",
       "name": "Civilian Checkpoint",
       "stage": 100,
-      "rotation": false,
       "start": [5576.6, -0.0, 991.6],
       "max_alive": 12,
       "min_player_distance": 800,

@@ -1855,8 +1855,9 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     if (Get(doc, "coop") != nullptr) {
         if (const json* s = Section(d, doc, "coop")) {
             const Diag cd = d.Sub(": coop");
-            CheckKeys(cd, *s, {"enemy_mult", "boss_hp_mult", "revive_health", "max_players", "_comment"});
+            CheckKeys(cd, *s, {"enemy_mult", "alive_mult", "boss_hp_mult", "revive_health", "max_players", "_comment"});
             if (GetNumber(cd, *s, "enemy_mult", eco.coop.enemy_mult, false)) CheckRange(cd, "enemy_mult", eco.coop.enemy_mult, 1.0, 4.0);
+            if (GetNumber(cd, *s, "alive_mult", eco.coop.alive_mult, false)) CheckRange(cd, "alive_mult", eco.coop.alive_mult, 1.0, 3.0);
             if (GetNumber(cd, *s, "boss_hp_mult", eco.coop.boss_hp_mult, false)) CheckRange(cd, "boss_hp_mult", eco.coop.boss_hp_mult, 1.0, 4.0);
             if (GetNumber(cd, *s, "revive_health", eco.coop.revive_health, false)) CheckRange(cd, "revive_health", eco.coop.revive_health, 0.05, 1.0);
             std::int64_t players = eco.coop.max_players;

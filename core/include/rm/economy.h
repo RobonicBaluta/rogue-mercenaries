@@ -207,6 +207,9 @@ struct EconomyConfig {
     /// with revive_health of their health. max_players: the seats a run takes.
     struct Coop {
         double enemy_mult = 1.5;
+        /// How many may be alive at once, times this (the map's max_alive and the arena's threat
+        /// cap; the user, 2026-11-21: "up a bit the amount of enemies at 1 time for the coop").
+        double alive_mult = 1.3;
         double boss_hp_mult = 1.6;
         double revive_health = 0.5;
         int max_players = 2;

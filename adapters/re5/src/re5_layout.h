@@ -194,6 +194,71 @@ constexpr std::uintptr_t kFnPlayerDeathEvent = 0x0076D9F0;
 // app +0x10438 & 0x8000000 set it switches the main state to 9, the game over (M10 F6: the flag is
 // set by more than the death camera; in a split-screen match one player's death sets it).
 constexpr std::uintptr_t kFnGameOverCheck = 0x00719F10;
+// A message handler of the match (thiscall (sender, message), ret 8; one of the dispatch table's
+// thunks at 0x00792D61, and called with sender -1 from 0x00792ADA): in a split-screen match (game
+// work +0x58 mode 2 or 5) it checks the players (0x007E6220, 0x007E6370, 0x00B6B330), then writes
+// the Mercenaries phase 2 (game work +0x67C) with message +8 and +0xC into +0x680/+0x690 and asks
+// the application for 0x80000000: the match's end. Suspected (2026-11-21, not yet seen) to be what
+// one player's fall sends, freezing the other (the user: "the other player's hud weapons and
+// movement are disabled, basically is a softlock").
+constexpr std::uintptr_t kFnMercEndEvent = 0x00792830;
+// The application's request words (thiscall (flags, index), ret 8): ORs `flags` into +0x1043C +
+// 4 x index (index 1..3; +0x1043C itself is their OR, rebuilt each frame at 0x0077E380). Word 1's
+// 0x400000 stops every player's input (sBioPad's lock bytes); a split-screen fall asks for it from
+// the game-over check (0x00719F8B) and from the UI right after the execution event (0x009E1754).
+constexpr std::uintptr_t kFnAppRequestWord = 0x00726170;
+// uPlayer (thiscall, bool): "dead or frozen" - its virtual +0x15C, or +0x1364 == 1 with +0x1BAC at
+// or under 0, or bit 1 of the action flags (+0x2D7C) or of +0x2D98, else the application's freeze
+// flag 0x20000000 - and "in the death sequence" (the same without the freeze flag). Some 45 places
+// ask them; in a split-screen match a "dead" player freezes the other (the game-over check, the UI
+// at 0x009E16A0).
+constexpr std::uintptr_t kFnPlayerDeadOrFrozen = 0x00B6B380;
+constexpr std::uintptr_t kFnPlayerInDeath = 0x00B6B330;
+// aGame (the match's game task: [kLinkUnitRoot] + 0x382C, DTI name "aGame") keeps a byte per player
+// at [+0x348][player]: the player is "off" (its read, 0x007162D0, has some 20 callers; the cockpit
+// draws no weapon rings for a player that is off). Its setter 0x00719590 (thiscall (player, on,
+// every view), ret 0xC) also sets the player's +0x2D64 -> +0x624 byte (0x00B5C470), its views
+// (virtual +0xCC) and bit 0x800 of +0x2640 -> +4. A co-op fall does not call it (2026-11-21).
+constexpr std::uintptr_t kGameTaskOffset = 0x382C;
+constexpr std::uintptr_t kGamePlayerOffBytes = 0x348;
+// uIdCockpit00 (the in-match HUD of one view, the weapon rings): its move (0x009F8FC0) first sets
+// its player (+0x1A0) and that player's partner (+0x1A4, a live player or null; SetPlayer
+// 0x009ED920), then asks its rings decision (thiscall, only the move calls it): it clears +0xC3,
+// then sets it to 1 unless the stage is 109, the application is in a menu or frozen (+0x1043C &
+// 0x8000, flags & 0x60000600), aGame +0x138 or the player's off byte is set, its player is not a
+// live player or is dead (its virtual +0x15C, bit 1 of its action flags), and in a split-screen
+// match (game work +0x58 not 1) the same for its partner (null skips it), its player's +0x2DA8,
+// game work +0x79C or 0x0076C740 says no. With +0xC3 at 0 the move draws no weapon rings. (The
+// inventory grid is another object, uIdWpSlot00 below.)
+constexpr std::uintptr_t kFnCockpitRingsCheck = 0x009F1020;
+constexpr std::uintptr_t kCockpitPlayer = 0x1A0;
+constexpr std::uintptr_t kCockpitPartner = 0x1A4;
+constexpr std::uintptr_t kCockpitRingsOn = 0xC3;
+// cOpeWpSlot (a player's inventory grid, player +0x2654; vtable 0x010435B0) update, thiscall
+// (player, pad), ret 8, from the player's move (0x00B83533, 0x00B8CD65, 0x00B8CE1B): the grid opens
+// only off stages 100, 109 and 111, without application flags 0x600 or 0x08001000 (the game over
+// among them), aGame +0x138 or the player's aGame bytes (+0x348, +0x34C).
+constexpr std::uintptr_t kFnWpSlotUpdate = 0x00C6C420;
+// uPlayer's "may act" check (thiscall, bool): no when +0x1364 is 1, when it is dead (virtual +0x15C,
+// health at or under 0) or +0x1BCC is above 0, and in a split-screen match (game work +0x58 not 1)
+// when its partner (0x00B5BED0 (1)) is dead. The inventory grid's open check (0x00C698B0, also
+// application flags 0x60000000, action flags bits 1, 6 and 8, 0x00B5AB30) asks it, and so do five
+// of the player's moves (0x00764895, 0x00B828D7, 0x00B840D3, 0x00B898BE, 0x00B89BDE).
+constexpr std::uintptr_t kFnPlayerMayAct = 0x00B6A820;
+// uIdWpSlot00 (the inventory grid on screen; vtable 0x00FACED4, move 0x00A741B0): its player at
+// +0x2C and that player's partner at +0x30 (the move sets it right after this check). Its
+// visibility check (thiscall, bool; only the move calls it) says no with request word 0x8000 or
+// application flags 0x60000600, aGame +0x138 or the player's aGame byte, on stage 100, when its
+// player is not a live player or is dead (virtual +0x15C, bit 1 of the action flags), and in a
+// split-screen match (game work +0x58 not 1) when its partner is dead.
+constexpr std::uintptr_t kFnWpSlotUiVisible = 0x00A70BE0;
+constexpr std::uintptr_t kWpSlotUiPlayer = 0x2C;
+constexpr std::uintptr_t kWpSlotUiPartner = 0x30;
+// uPlayer's game over (virtual +0x1C4, thiscall): with bit 4 of the action flags it first calls its
+// virtual +0x1B4, then, unless +0x2DA8 is 2, sets the application's game over flag 0x08000000
+// itself under the application's lock (no request through 0x00726120). A fallen player calls it
+// every frame once its death has played out (some 5 s after the fall).
+constexpr std::uintptr_t kFnPlayerGameOver = 0x00B64B90;
 // uPlayer: the hands take the item of a cell, thiscall (cell, 1), what the game's weapon_change
 // action calls at its swap (research/re5-engine-map.md).
 constexpr std::uintptr_t kFnPlayerEquipCell = 0x00B73B50;
@@ -825,6 +890,17 @@ inline constexpr Signature kSignatures[] = {
     // cmp [edi+esi*4+0x24], 0; jz; pop edi; xor eax, eax`.
     {"player_death_event", addr::kFnPlayerDeathEvent, "51 55 8B E9 89 6C 24 04 E8 A3 E2 FF FF 8B 0D DC 27 1B 01 E8 48 90 07 00"},
     {"game_over_check", addr::kFnGameOverCheck, "51 A1 A4 40 23 01 53 55 8B D9 8B 88 2C 04 01 00 83 79 58 01 56 57 89 5C"},
+    {"merc_end_event", addr::kFnMercEndEvent, "8B 54 24 04 53 55 8B E9 8B 0D A4 40 23 01 8B 81 2C 04 01 00"},
+    {"player_dead_or_frozen", addr::kFnPlayerDeadOrFrozen, "56 8B F1 8B 06 8B 90 5C 01 00 00 FF D2 84 C0 75 2F 66 83 BE 64 13 00 00 01"},
+    {"player_game_over", addr::kFnPlayerGameOver, "56 8B F1 8B 86 7C 2D 00 00 C1 E8 04 A8 01 74 0A 8B 16 8B 82 B4 01 00 00 FF D0 83 BE A8 2D 00 00 02"},
+    {"wpslot_ui_visible", addr::kFnWpSlotUiVisible, "A1 A4 40 23 01 F7 80 3C 04 01 00 00 80 00 00 53 56 8B F1 8B 5E 30 57 8B 7E 2C 74 06"},
+    {"player_may_act", addr::kFnPlayerMayAct,
+     "56 8B F1 66 83 BE 64 13 00 00 01 75 04 32 C0 5E C3 8B 06 8B 90 5C 01 00 00 FF D2 3C 01 74 EE 80 BE CC 1B 00 00 00 7F E5 A1 A4 40 23 01"},
+    {"wpslot_update", addr::kFnWpSlotUpdate, "51 56 8B F1 C6 46 7E 00 A1 58 21 1B 01 8B 48 20 69 C9 40 59 00 00 8B 84 01 D8 73 02 00 83 F8 64"},
+    {"cockpit_rings_check", addr::kFnCockpitRingsCheck, "56 8B F1 C6 86 C3 00 00 00 00 A1 58 21 1B 01 8B 48 20 69 C9 40 59 00 00"},
+    {"player_in_death", addr::kFnPlayerInDeath, "56 8B F1 8B 06 8B 90 5C 01 00 00 FF D2 84 C0 74 04 B0 01 5E C3 66 83 BE 64 13 00 00 01"},
+    {"app_request_word", addr::kFnAppRequestWord,
+     "56 8B F1 80 7E 1C 00 75 09 80 3D 2E 9C 24 01 00 74 0A 8D 46 04 50 FF 15 F8 A0 F4 00 0F B6 4C 24 0C 8B 54 24 08 09 94 8E 3C 04 01 00"},
     {"player_equip_cell", addr::kFnPlayerEquipCell, "56 57 8B 7C 24 0C 83 FF 0F 8B F1 75 13 57 8D 8E A0 21 00 00 E8 97 7F 0D 00"},
     {"weapon_record", 0x00770380, "8B 44 24 04 8B C8 81 E1 00 FF 00 00 81 F9 00 01 00 00 74 03 33 C0 C3 25 FF 00 00 00 8D 04 80 C1 E0 06 05 70 51 1B 01 C3"},
     {"weapon_scope_read", 0x00B699E2, "83 B8 98 00 00 00 00 75 24 A1 58 21 1B 01"},

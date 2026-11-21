@@ -287,3 +287,29 @@ TEST_CASE("co-op: a suspended run goes on with both players, the fallen one back
     CHECK_FALSE(h.rc.SeatDown(1));
     CHECK(h.rc.ConsumeRevivedSeats() == std::vector<int>{1});
 }
+
+TEST_CASE("co-op: more enemies at once", "[run]") {
+    ContentSources src = test::FixtureSources();
+    src.maps = R"({"schema_version": 1, "maps": [
+      {"id": "alive_map", "name": "Alive Map", "stage": 4, "max_alive": 8, "min_player_distance": 500,
+       "points": [[0, 0, 0], [1000, 0, 0], [0, 0, 1000], [2000, 0, 2000]],
+       "roster": [{"class": "uEm10", "weight": 1}]}]})";
+    const auto content = test::Load(src);
+
+    test::Harness solo(content);
+    solo.rc.SetMapStage(4);
+    REQUIRE(solo.rc.StartRun("alpha", 9).ok());
+    REQUIRE(solo.rc.BeginArena(0.0).ok());
+    REQUIRE(solo.rc.director() != nullptr);
+    CHECK(solo.rc.director()->map().max_alive == 8);
+
+    test::Harness duo(content);
+    duo.rc.SetMapStage(4);
+    REQUIRE(duo.rc.StartRun("alpha", 9).ok());
+    REQUIRE(duo.rc.AddSeat("beta", "").ok());
+    REQUIRE(duo.rc.BeginArena(0.0).ok());
+    REQUIRE(duo.rc.director() != nullptr);
+    const double mult = duo.rc.content().economy().coop.alive_mult;
+    CHECK(duo.rc.director()->map().max_alive == std::clamp(static_cast<int>(std::lround(8 * mult)), 1, 40));
+    CHECK(duo.rc.director()->map().max_alive > 8);
+}

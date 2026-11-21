@@ -157,9 +157,8 @@ HIDE_MODELS = {
 }
 
 NO_ROTATION = {
-    # The campaign's opening area: the story keeps the inventory, weapon switching and the HUD off
-    # there until an event a run never reaches (user playtest 2026-11-03).
-    100: 'the story keeps the inventory, weapons and HUD off',
+    # (Civilian Checkpoint, s100, was out from 2026-11-03 to 0.2.5: the story kept the inventory,
+    # the weapon and the HUD off there; a run now turns those stage-100 checks off, stage_fixes.h.)
     # Every AI waypoint of the area (276) lies in one 35 x 18 m box in the middle of the deck (y 0 to
     # 2 m); the rest of the deck the player can walk (the upper deck, 50 m off) has none, so the
     # enemies cannot follow there (a player 2026-11-18: "had no pathing to follow me anywhere in the

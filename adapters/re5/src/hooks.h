@@ -118,6 +118,15 @@ unsigned long XInputPolls(int user);
 /// M10 local co-op: while on, a human player's death (the death camera that ends the match) is held
 /// back as long as another human player has health left.
 void SetCoopDeathHold(bool on);
+/// Developer: let the execution event through even while a co-op player stands (M10 fall tests).
+void SetDeathEventPass(bool pass);
+/// M10: the human players standing (hp above 0) as the game tick last saw them; a co-op player who
+/// falls while one of them stands is not "dead" to the game's own checks (no split-screen freeze).
+void SetCoopStanding(std::uintptr_t first, std::uintptr_t second);
+/// M10: the match's game task (aGame), or 0.
+std::uintptr_t GameTask();
+/// M10: aGame's "off" byte of a player (-1 without the task).
+int GamePlayerOff(int player);
 
 void SetHookSink(HookSink* sink);
 
@@ -146,6 +155,9 @@ void SetMercHudHidden(bool hidden);     // clock and score panels off screen
 void SetMercHudCounter(int value);      // hidden HUD: 0..99 in the clock's big digits, < 0 none
 void RequestMercMatchEnd();
 void ClearMercMatchEnd();  // drop a pending request (a new match must not inherit it)
+/// M10: the mod itself is ending the match now (a route's stage change, the run's end): the
+/// match's end message then goes through even while a co-op player is down.
+void SetCoopMatchEndWanted(bool wanted);
 void SuppressMercAddTime(bool suppress);  // countdown bonuses ignored (a run holds the countdown)
 void SkipMercIntro(bool skip);  // the match's intro (its camera shots, controls locked) ends at once
 bool MercStartRunning();        // the Mercenaries start (main state 6) ran in the last 300 ms
@@ -154,6 +166,8 @@ int TakeTimeBonusPickups();               // time-bonus pickups collected since 
 bool TakeTimeBonusPosition(float pos[3]);  // where an opened statue stood, oldest first (false: none left)
 void SimulateTimeBonusPickup();           // developer: count one pickup
 MercTimerView ReadMercTimer();
+/// Developer: the in-match cockpit HUD objects the timer draw has seen (0 and 1 in a split screen).
+std::uintptr_t CockpitObject(int index);
 bool InstallMercHooks();
 
 // Drives HookSink::GameTick from the game's main thread.

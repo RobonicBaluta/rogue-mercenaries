@@ -108,13 +108,15 @@ TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPH
   on the bottom half.
     - Each player has their own character, skin build, perks, weapons, inventory and
       health. The supplies are shared.
-    - An arena has half again as many enemies, and a boss has more health.
+    - An arena has half again as many enemies, more of them at once, and a boss has more
+      health.
     - Each player's skin special is on their own controller (LB+RB, both sticks), with
       its rings on their half. The arena, supplies and keys show once, at the top as in
       solo; each half shows how many enemies are left.
     - A player who is dying (crawling) can still be helped up by the other, the game's
       way. A player who dies stays down until the next arena, which they start with half
-      their health. The run ends when both have fallen.
+      their health; the other plays on (moving, aiming, weapon rings and inventory). The
+      run ends when both have fallen.
     - A chest is the nearest player's. Enemies come for both players.
     - Between arenas player 1 picks a reward and shops first; then the screens say
       PLAYER 2 and player 2 does. The screens sit in the top half of the split screen.

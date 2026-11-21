@@ -110,13 +110,17 @@ DeathEventFn g_origDeathEvent = nullptr;
 std::atomic<std::uintptr_t> g_partnerUnit{0};
 std::atomic<int> g_partnerDeathLogged{0};
 std::atomic<bool> g_coopDeathHold{false};  // SetCoopDeathHold
+std::atomic<bool> g_coopEndWanted{false};  // SetCoopMatchEndWanted
+std::atomic<bool> g_deathEventPass{false};  // SetDeathEventPass (developer)
+
+bool MarkedDead(std::uintptr_t player, int hp);
 
 // Human players with health left (M10: a co-op match goes on while one stands).
 int StandingHumans() {
     const auto snap = engine::ReadPlayers();
     int standing = 0;
     for (const auto& p : snap.players) {
-        if (p.object && p.control == 0 && p.hp.hp > 0) ++standing;
+        if (p.object && p.control == 0 && !MarkedDead(p.object, p.hp.hp)) ++standing;
     }
     return standing;
 }
@@ -130,10 +134,207 @@ constexpr std::uint32_t kAppGameOver = 0x08000000;
 
 // The match's game-over check (re5::addr::kFnGameOverCheck) reads the game over flag each frame; in
 // a co-op run it finds it cleared while a human player stands, whoever set it.
+//
+// It also freezes a split-screen match (game work +0x58 not 1) the moment any player is dead: it
+// loops over sPlayer's four players (0x007E6220, valid 0x007E6340, dead 0x00B6B380) and asks the
+// application for 0x20000000 (0x00726120) and for 0x400000 in its request word 1 (0x00726170:
+// +0x1043C + 4) - every player's input stops and the HUD goes (the sBioPad lock bytes +0x600,
+// +0x678, +0x6E0 follow it). It lifts them (0x0031A020, 0x0031A062) only once no player is still in
+// the death sequence (0x00B6B330); a co-op run keeps the fallen one there, so the other player was
+// frozen for good (2026-11-21, the user: "if any of the playes dire, be it first or seconds player,
+// the other player's hud weapons and movement are disabled, basically is a softlock"; found live
+// with a virtual player 2: app flags 0x00020000 -> 0x20020000 and +0x1043C/+0x10440 0x400000 at
+// the fall, player 1 still at the same spot with W held). While one player is down, one stands and
+// the mod is not ending the match itself, the check is not run and the freeze is taken back.
 using GameOverCheckFn = std::uint32_t(__fastcall*)(std::uintptr_t self, void* edx);
 GameOverCheckFn g_origGameOverCheck = nullptr;
+using LockFn = void(__stdcall*)(void* cs);
+constexpr std::uint32_t kAppCoopFreeze = 0x20000000;   // app flags: the split screen's fall freeze
+constexpr std::size_t kAppRequestWord1 = 0x10440;      // the request words (+0x1043C + 4 x index)
+constexpr std::uint32_t kAppInputLock = 0x00400000;    // request word 1: no player input
+
+bool HumanDown();
+
+// The freeze bits off, under the application's lock as the game writes them.
+void ReleaseCoopFreeze() {
+    const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+    if (!app) return;
+    const std::uint32_t flags = ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0);
+    const std::uint32_t word = ReadOr<std::uint32_t>(app + kAppRequestWord1, 0);
+    if ((flags & (kAppCoopFreeze | kAppGameOver)) == 0 && (word & kAppInputLock) == 0) return;
+    const bool threaded = ReadOr<std::uint8_t>(app + re5::off::kAppThreadedFlag, 0) != 0 ||
+                          ReadOr<std::uint8_t>(re5::addr::kAppForceLock, 0) != 0;
+    const auto enter = ReadOr<std::uintptr_t>(re5::addr::kImportEnterCriticalSection, 0);
+    const auto leave = ReadOr<std::uintptr_t>(re5::addr::kImportLeaveCriticalSection, 0);
+    void* cs = reinterpret_cast<void*>(app + re5::off::kAppLock);
+    if (threaded && enter && leave) reinterpret_cast<LockFn>(enter)(cs);
+    SafeStore<std::uint32_t>(app + re5::off::kAppFlags, ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) & ~(kAppCoopFreeze | kAppGameOver));
+    SafeStore<std::uint32_t>(app + kAppRequestWord1, ReadOr<std::uint32_t>(app + kAppRequestWord1, 0) & ~kAppInputLock);
+    if (threaded && enter && leave) reinterpret_cast<LockFn>(leave)(cs);
+    static std::atomic<int> logged{0};
+    if (logged.fetch_add(1) < 8) {
+        RM_LOGI("co-op: the game's freeze on a fall taken back (flags %08X, request word %08X): the other player fights on", flags, word);
+    }
+}
+
+// uPlayer's "dead or frozen" and "in the death sequence" checks (re5::addr::kFnPlayerDeadOrFrozen,
+// kFnPlayerInDeath). In a split-screen match the game freezes everyone as soon as one player is dead
+// by them (the game-over check, the UI's 0x009E16A0, and more). While a co-op player who fell has a
+// partner standing (as the game tick last saw it: SetCoopStanding) and the mod is not ending the
+// match, the fallen one is neither to them: the other fights on. The fallen one still lies there (its
+// execution event stays blocked) until the next arena; once the last one falls the checks answer
+// as the game's own, and its game over ends the run.
+using PlayerCheckFn = bool(__fastcall*)(std::uintptr_t self, void* edx);
+PlayerCheckFn g_origDeadOrFrozen = nullptr;
+PlayerCheckFn g_origInDeath = nullptr;
+std::atomic<std::uintptr_t> g_standing[2];
+
+bool HiddenFall(std::uintptr_t self) {
+    if (!g_coopDeathHold.load(std::memory_order_relaxed) || g_coopEndWanted.load(std::memory_order_relaxed) || !self) return false;
+    const std::uintptr_t a = g_standing[0].load(std::memory_order_relaxed);
+    const std::uintptr_t b = g_standing[1].load(std::memory_order_relaxed);
+    const bool partner = (a != 0 && a != self) || (b != 0 && b != self);
+    if (!partner || ReadOr<std::int32_t>(self + re5::off::kPlayerControl, -1) != 0) return false;
+    const auto hp = engine::ReadHp(self);
+    if (!hp || !MarkedDead(self, hp->hp)) return false;
+    // A partner standing as of the last tick must still stand now (both may fall in one frame).
+    const std::uintptr_t other = a != 0 && a != self ? a : b;
+    const auto otherHp = engine::ReadHp(other);
+    return otherHp && !MarkedDead(other, otherHp->hp);
+}
+
+bool __fastcall DeadOrFrozenDetour(std::uintptr_t self, void* edx) {
+    if (HiddenFall(self)) return false;
+    return g_origDeadOrFrozen(self, edx);
+}
+
+bool __fastcall InDeathDetour(std::uintptr_t self, void* edx) {
+    if (HiddenFall(self)) return false;
+    return g_origInDeath(self, edx);
+}
+
+// The cockpit's weapon rings check (re5::addr::kFnCockpitRingsCheck). In a split-screen match it
+// also wants the cockpit's partner alive, so a co-op fall took the weapon rings from the player
+// still standing too (2026-11-21, the user: "you need to fix the ring and inventory"). While that
+// partner is a hidden fall and the cockpit's own player stands, the check runs without the partner:
+// its field is null for the call (the game's own helpers take a null partner as none) and put back
+// right after, so the partner's ring still shows, dimmed.
+using CockpitCheckFn = void(__fastcall*)(std::uintptr_t cockpit, void* edx);
+CockpitCheckFn g_origCockpitRings = nullptr;
+
+void __fastcall CockpitRingsDetour(std::uintptr_t cockpit, void* edx) {
+    const std::uintptr_t partner = ReadOr<std::uintptr_t>(cockpit + re5::addr::kCockpitPartner, 0);
+    const std::uintptr_t player = ReadOr<std::uintptr_t>(cockpit + re5::addr::kCockpitPlayer, 0);
+    if (partner == 0 || player == 0 || partner == player || !HiddenFall(partner) || HiddenFall(player)) {
+        g_origCockpitRings(cockpit, edx);
+        return;
+    }
+    static std::atomic<int> logged{0};
+    if (logged.fetch_add(1) < 2) {
+        RM_LOGI("co-op: cockpit %08X keeps its rings; its partner %08X is down", static_cast<unsigned>(cockpit), static_cast<unsigned>(partner));
+    }
+    SafeStore<std::uintptr_t>(cockpit + re5::addr::kCockpitPartner, 0);
+    g_origCockpitRings(cockpit, edx);
+    SafeStore<std::uintptr_t>(cockpit + re5::addr::kCockpitPartner, partner);
+}
+
+// uPlayer's own game over (re5::addr::kFnPlayerGameOver). A fallen co-op player sets the game over
+// flag itself every frame once its death has played out; the game-over check took it back once a
+// frame, but in between the other player's inventory grid saw it and stayed shut. For a hidden fall
+// only its first part runs (virtual +0x1B4 with bit 4 of the action flags), not the flag.
+using PlayerGameOverFn = void(__fastcall*)(std::uintptr_t self, void* edx);
+PlayerGameOverFn g_origPlayerGameOver = nullptr;
+
+void __fastcall PlayerGameOverDetour(std::uintptr_t self, void* edx) {
+    if (!HiddenFall(self)) {
+        g_origPlayerGameOver(self, edx);
+        return;
+    }
+    static std::atomic<int> logged{0};
+    if (logged.fetch_add(1) < 2) RM_LOGI("co-op: %08X fell; its game over is not set while the other player stands", static_cast<unsigned>(self));
+    if ((ReadOr<std::uint32_t>(self + re5::off::kPlayerActionFlags, 0) & 0x10u) != 0) {
+        const auto vtable = ReadOr<std::uintptr_t>(self, 0);
+        const auto fn = vtable ? ReadOr<std::uintptr_t>(vtable + 0x1B4, 0) : 0;
+        if (fn) reinterpret_cast<void(__fastcall*)(std::uintptr_t, void*)>(fn)(self, nullptr);
+    }
+}
+
+// The inventory grid's visibility (re5::addr::kFnWpSlotUiVisible). In a split-screen match the
+// grid shows only while the partner lives, so after a co-op fall the player still standing opened
+// the inventory and saw nothing. While that partner is a hidden fall and the grid's own player
+// stands, the check runs without the partner (null for the call; the grid's move sets it again
+// right after).
+using WpSlotUiVisibleFn = bool(__fastcall*)(std::uintptr_t self, void* edx);
+WpSlotUiVisibleFn g_origWpSlotUiVisible = nullptr;
+
+bool __fastcall WpSlotUiVisibleDetour(std::uintptr_t self, void* edx) {
+    const std::uintptr_t partner = ReadOr<std::uintptr_t>(self + re5::addr::kWpSlotUiPartner, 0);
+    const std::uintptr_t player = ReadOr<std::uintptr_t>(self + re5::addr::kWpSlotUiPlayer, 0);
+    if (partner == 0 || player == 0 || partner == player || !HiddenFall(partner) || HiddenFall(player)) {
+        return g_origWpSlotUiVisible(self, edx);
+    }
+    static std::atomic<int> logged{0};
+    if (logged.fetch_add(1) < 2) RM_LOGI("co-op: inventory grid of %08X shown with its partner down", static_cast<unsigned>(player));
+    SafeStore<std::uintptr_t>(self + re5::addr::kWpSlotUiPartner, 0);
+    const bool shown = g_origWpSlotUiVisible(self, edx);
+    SafeStore<std::uintptr_t>(self + re5::addr::kWpSlotUiPartner, partner);
+    return shown;
+}
+
+// uPlayer's may-act check (re5::addr::kFnPlayerMayAct). In a split-screen match it says no while
+// the partner is dead, so after a co-op fall the player still standing could not open the
+// inventory (the grid asks it first). While that player is the only one standing and the mod is
+// not ending the match, its own part of the check decides.
+using PlayerMayActFn = bool(__fastcall*)(std::uintptr_t self, void* edx);
+PlayerMayActFn g_origPlayerMayAct = nullptr;
+
+bool OnlyOneStanding(std::uintptr_t self) {
+    if (!self || !g_coopDeathHold.load(std::memory_order_relaxed) || g_coopEndWanted.load(std::memory_order_relaxed)) return false;
+    const std::uintptr_t a = g_standing[0].load(std::memory_order_relaxed);
+    const std::uintptr_t b = g_standing[1].load(std::memory_order_relaxed);
+    return (a == self && b == 0) || (b == self && a == 0);  // the tick fills g_standing in a co-op match only
+}
+
+bool __fastcall PlayerMayActDetour(std::uintptr_t self, void* edx) {
+    if (g_origPlayerMayAct(self, edx)) return true;
+    if (!OnlyOneStanding(self)) return false;
+    const auto hp = engine::ReadHp(self);
+    if (!hp || MarkedDead(self, hp->hp) || ReadOr<std::int16_t>(self + 0x1364, 0) == 1 || ReadOr<std::int8_t>(self + 0x1BCC, 0) > 0) return false;
+    static std::atomic<int> logged{0};
+    if (logged.fetch_add(1) < 2) RM_LOGI("co-op: %08X may act (inventory and moves) with its partner down", static_cast<unsigned>(self));
+    return true;
+}
+
+// The request words (re5::addr::kFnAppRequestWord). While one co-op player is down and the other
+// stands, word 1's 0x400000 (no player input) is dropped, whoever asks for it; each such request is
+// logged with its caller (a few), and so are the others made meanwhile.
+using AppRequestWordFn = void(__fastcall*)(std::uintptr_t app, void* edx, std::uint32_t flags, int index);
+AppRequestWordFn g_origAppRequestWord = nullptr;
+
+void __fastcall AppRequestWordDetour(std::uintptr_t app, void* edx, std::uint32_t flags, int index) {
+    if (g_coopDeathHold.load(std::memory_order_relaxed) && !g_coopEndWanted.load(std::memory_order_relaxed) && StandingHumans() > 0 &&
+        HumanDown()) {
+        static std::atomic<int> logged{0};
+        const auto caller = reinterpret_cast<std::uintptr_t>(_ReturnAddress());
+        const bool lock = index == 1 && (flags & kAppInputLock) != 0;
+        if (logged.fetch_add(1) < 16) {
+            RM_LOGI("co-op: request word %d %08X from %08X while a player is down%s", index, flags, static_cast<unsigned>(caller),
+                    lock ? ": the input lock dropped" : "");
+        }
+        if (lock) {
+            flags &= ~kAppInputLock;
+            if (flags == 0) return;
+        }
+    }
+    g_origAppRequestWord(app, edx, flags, index);
+}
 
 std::uint32_t __fastcall GameOverCheckDetour(std::uintptr_t self, void* edx) {
+    if (g_coopDeathHold.load(std::memory_order_relaxed) && !g_coopEndWanted.load(std::memory_order_relaxed) &&
+        StandingHumans() > 0 && HumanDown()) {
+        ReleaseCoopFreeze();
+        return 0;
+    }
     if (g_coopDeathHold.load(std::memory_order_relaxed)) {
         const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
         const auto flags = app ? ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) : 0;
@@ -161,10 +362,51 @@ void __fastcall AppRequestDetour(std::uintptr_t app, void* edx, std::uint32_t fl
     g_origAppRequest(app, edx, flags);
 }
 
+// A human player at zero health (a co-op fall).
+// A player the game counts as dead: no health, or the death mark (bit 1 of the action flags, which
+// the die actions carry; 0x00B6B380 reads it).
+bool MarkedDead(std::uintptr_t player, int hp) {
+    return hp <= 0 || (ReadOr<std::uint32_t>(player + re5::off::kPlayerActionFlags, 0) & 0x2u) != 0;
+}
+
+bool HumanDown() {
+    const auto snap = engine::ReadPlayers();
+    for (const auto& p : snap.players) {
+        if (p.object && p.control == 0 && MarkedDead(p.object, p.hp.hp)) return true;
+    }
+    return false;
+}
+
+// The match's end message (re5::addr::kFnMercEndEvent). In a co-op run one player's fall must
+// not end the match for the other; the mod's own ends (time-up for a stage change, the run over)
+// pass. Every call is logged (a few), with what the message holds.
+using MercEndFn = void(__fastcall*)(std::uintptr_t self, void* edx, int sender, std::uintptr_t message);
+MercEndFn g_origMercEnd = nullptr;
+
+void __fastcall MercEndDetour(std::uintptr_t self, void* edx, int sender, std::uintptr_t message) {
+    const bool hold = g_coopDeathHold.load(std::memory_order_relaxed) && !g_coopEndWanted.load(std::memory_order_relaxed);
+    const int standing = hold ? StandingHumans() : 0;
+    const bool down = hold && HumanDown();
+    const bool block = hold && standing > 0 && down;
+    static std::atomic<int> logged{0};
+    if (logged.fetch_add(1) < 24) {
+        const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+        const auto work = app ? ReadOr<std::uintptr_t>(app + re5::off::kGameWork, 0) : 0;
+        RM_LOGI("co-op: the match's end message (sender %d, +4 %d, +8 %.2f, +C %d; mode %d, Mercenaries phase %d; hold %d, "
+                "standing %d, a player down %d): %s",
+                sender, message ? ReadOr<std::int32_t>(message + 4, -1) : -1, message ? ReadOr<float>(message + 8, 0.0f) : 0.0f,
+                message ? ReadOr<std::int32_t>(message + 0xC, -1) : -1, work ? ReadOr<std::int32_t>(work + 0x58, -1) : -1,
+                work ? ReadOr<std::int32_t>(work + re5::off::kGameWorkMercPhase, -1) : -1, hold ? 1 : 0, standing, down ? 1 : 0,
+                block ? "held back (the other player fights on)" : "passed");
+    }
+    if (block) return;
+    g_origMercEnd(self, edx, sender, message);
+}
+
 void __fastcall DeathEventDetour(std::uintptr_t self, void* edx, int player) {
     // M10: a co-op run goes on while a human player stands; the fallen one lies where they fell
     // until the next arena (the game would end the match for both).
-    if (g_coopDeathHold.load(std::memory_order_relaxed)) {
+    if (g_coopDeathHold.load(std::memory_order_relaxed) && !g_deathEventPass.load(std::memory_order_relaxed)) {
         const int standing = StandingHumans();
         if (standing > 0) {
             static std::atomic<int> logged{0};
@@ -477,6 +719,36 @@ bool InstallCombatHooks() {
         Hook(re5::addr::kFnAppRequest, reinterpret_cast<void*>(&AppRequestDetour), reinterpret_cast<void**>(&g_origAppRequest),
              "application request (a co-op run's game over waits for the last player standing)");
     }
+    if (ok && caps.wpSlotUiVisible) {
+        Hook(re5::addr::kFnWpSlotUiVisible, reinterpret_cast<void*>(&WpSlotUiVisibleDetour), reinterpret_cast<void**>(&g_origWpSlotUiVisible),
+             "inventory grid visibility (a co-op fall keeps the other player's inventory)");
+    }
+    if (ok && caps.playerGameOver) {
+        Hook(re5::addr::kFnPlayerGameOver, reinterpret_cast<void*>(&PlayerGameOverDetour), reinterpret_cast<void**>(&g_origPlayerGameOver),
+             "player's own game over (a co-op fall does not end the match for the other player)");
+    }
+    if (ok && caps.playerMayAct) {
+        Hook(re5::addr::kFnPlayerMayAct, reinterpret_cast<void*>(&PlayerMayActDetour), reinterpret_cast<void**>(&g_origPlayerMayAct),
+             "player may-act check (a co-op fall keeps the other player's inventory)");
+    }
+    if (ok && caps.cockpitRings) {
+        Hook(re5::addr::kFnCockpitRingsCheck, reinterpret_cast<void*>(&CockpitRingsDetour), reinterpret_cast<void**>(&g_origCockpitRings),
+             "cockpit weapon rings check (a co-op fall keeps the other player's rings)");
+    }
+    if (ok && caps.playerDeathChecks) {
+        Hook(re5::addr::kFnPlayerDeadOrFrozen, reinterpret_cast<void*>(&DeadOrFrozenDetour), reinterpret_cast<void**>(&g_origDeadOrFrozen),
+             "player dead-or-frozen check (a co-op fall does not freeze the other player)");
+        Hook(re5::addr::kFnPlayerInDeath, reinterpret_cast<void*>(&InDeathDetour), reinterpret_cast<void**>(&g_origInDeath),
+             "player death-sequence check (a co-op fall does not freeze the other player)");
+    }
+    if (ok && caps.appRequestWord) {
+        Hook(re5::addr::kFnAppRequestWord, reinterpret_cast<void*>(&AppRequestWordDetour), reinterpret_cast<void**>(&g_origAppRequestWord),
+             "application request words (a co-op fall does not stop the other player's input)");
+    }
+    if (ok && caps.mercEndEvent) {
+        Hook(re5::addr::kFnMercEndEvent, reinterpret_cast<void*>(&MercEndDetour), reinterpret_cast<void**>(&g_origMercEnd),
+             "match end message (a co-op player's fall does not end the match for the other)");
+    }
     if (ok && caps.bossBrain) {
         Hook(re5::addr::kFnEm40CanDive, reinterpret_cast<void*>(&Em40CanDiveDetour), reinterpret_cast<void**>(&g_origEm40CanDive),
              "uEm40 may-dive (a run has one player)");
@@ -495,6 +767,25 @@ bool InstallCombatHooks() {
 
 void SetCoopDeathHold(bool on) {
     if (g_coopDeathHold.exchange(on) != on) RM_LOGI("co-op: a fallen player %s the match", on ? "no longer ends" : "ends");
+}
+
+void SetCoopMatchEndWanted(bool wanted) { g_coopEndWanted = wanted; }
+void SetDeathEventPass(bool pass) { g_deathEventPass = pass; }
+std::uintptr_t GameTask() {
+    const auto root = ReadOr<std::uintptr_t>(re5::addr::kLinkUnitRoot, 0);
+    const auto game = root ? ReadOr<std::uintptr_t>(root + re5::addr::kGameTaskOffset, 0) : 0;
+    return game && engine::ClassName(game) == "aGame" ? game : 0;
+}
+
+int GamePlayerOff(int player) {
+    const auto game = GameTask();
+    const auto bytes = game && player >= 0 && player < 4 ? ReadOr<std::uintptr_t>(game + re5::addr::kGamePlayerOffBytes, 0) : 0;
+    return bytes ? ReadOr<std::uint8_t>(bytes + static_cast<std::uintptr_t>(player), 0) : -1;
+}
+
+void SetCoopStanding(std::uintptr_t first, std::uintptr_t second) {
+    g_standing[0] = first;
+    g_standing[1] = second;
 }
 
 void SetFlameStream(int seat, std::uintptr_t unit, const std::string& path, const std::string& companion, bool loops, float scale) {

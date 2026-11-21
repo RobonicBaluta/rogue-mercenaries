@@ -46,6 +46,9 @@ constexpr int kSideY = 128;
 constexpr int kLeftX = 224;
 constexpr int kRightX = 1056;
 constexpr int kCenterY = 176;
+// M10: in a split screen the game draws its counter small at the top of each view (about 28..57 on
+// the canvas, dist/media-0.2.1/24-two-players-split-screen.jpg), so the label goes just under it.
+constexpr int kSplitCenterY = 70;
 constexpr float kHeaderScale = 0.55f;
 constexpr float kRowScale = 0.5f;
 constexpr float kHelpScale = 0.42f;
@@ -281,7 +284,7 @@ void __fastcall PauseMoveDetour(std::uintptr_t self, void*) {
         } texts[] = {
             {g_hud.notice, nativemenu::kHelpSlot, 640, kNoticeY, kNoticeScale, kWhite},
             {g_hud.left, 0, kLeftX, kSideY, kSideScale, kWhite},
-            {g_hud.center, 1, 640, kCenterY, kCenterScale, kDim},
+            {g_hud.center, 1, 640, g_hud.split ? kSplitCenterY : kCenterY, kCenterScale, kDim},
             {g_hud.right, 2, kRightX, kSideY, kSideScale, kWhite},
         };
         for (const auto& t : texts) {

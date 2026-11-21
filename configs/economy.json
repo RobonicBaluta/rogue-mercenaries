@@ -162,8 +162,9 @@
     "weapon_chance": 0.12
   },
   "coop": {
-    "_comment": "Local co-op (ROADMAP M10): with two players an arena has enemy_mult times the enemies and a boss boss_hp_mult times the health; a player down comes back in the next arena with revive_health of their health.",
+    "_comment": "Local co-op (ROADMAP M10): with two players an arena has enemy_mult times the enemies, alive_mult times as many at once, and a boss boss_hp_mult times the health; a player down comes back in the next arena with revive_health of their health.",
     "enemy_mult": 1.5,
+    "alive_mult": 1.3,
     "boss_hp_mult": 1.6,
     "revive_health": 0.5,
     "max_players": 2

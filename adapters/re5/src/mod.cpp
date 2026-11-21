@@ -5253,6 +5253,61 @@ void DriveDirector(double now) {
     WakeUroboros();
 }
 
+// M10 diagnostics (2026-11-21, the user: when either player falls, the other's HUD, weapons and
+// movement stop): for 20 s after a co-op player first reaches zero health, once a second, the
+// Mercenaries phase, the application flags, the camera and both players' actions and health.
+void LogCoopState(const char* tag) {
+    const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+    const auto work = app ? ReadOr<std::uintptr_t>(app + re5::off::kGameWork, 0) : 0;
+    const auto cam = areacams::LastCamera();
+    const auto current = cam ? ReadOr<std::uintptr_t>(cam + re5::off::kCamCtrlCurrent, 0) : 0;
+    std::string seats;
+    for (int seat = 0; seat < 2; ++seat) {
+        const auto unit = engine::HumanPlayerInSlot(seat);
+        const auto hp = unit ? engine::ReadHp(unit) : std::nullopt;
+        char where[64] = "-";
+        if (unit) {
+            std::snprintf(where, sizeof(where), "%.0f %.0f %.0f", ReadOr<float>(unit + re5::off::kUnitPosition, 0.0f),
+                          ReadOr<float>(unit + re5::off::kUnitPosition + 4, 0.0f), ReadOr<float>(unit + re5::off::kUnitPosition + 8, 0.0f));
+        }
+        char line[256];
+        std::snprintf(line, sizeof(line), " | P%d %08X %s hp %d flags %08X at %s", seat + 1, static_cast<unsigned>(unit),
+                      unit ? engine::CurrentActionName(unit).c_str() : "-", hp ? hp->hp : -1,
+                      unit ? ReadOr<std::uint32_t>(unit + re5::off::kPlayerActionFlags, 0) : 0u, where);
+        seats += line;
+    }
+    RM_LOGI("co-op %s: Mercenaries phase %d, app flags %08X, screen flags %08X, camera %08X %s, timer state %d%s", tag,
+            work ? ReadOr<std::int32_t>(work + re5::off::kGameWorkMercPhase, -1) : -1,
+            app ? ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) : 0u, app ? ReadOr<std::uint32_t>(app + re5::off::kAppScreenFlags, 0) : 0u,
+            static_cast<unsigned>(cam), !current ? "-" : current == cam + 0xDF0 ? "own" : current == cam + 0x2DE0 ? "event" : "other",
+            ReadMercTimer().state, seats.c_str());
+}
+
+void WatchCoopFall(double now) {
+    static double started = -1.0;
+    static double next = 0.0;
+    static int generation = -1;
+    if (!g->match.inMatch || !g->run->HasActiveRun() || g->run->SeatCount() < 2) {
+        started = -1.0;
+        return;
+    }
+    if (generation != g->matchGeneration) {
+        generation = g->matchGeneration;
+        started = -1.0;
+    }
+    const bool fallen = g->match.seatZeroHpSince[0] >= 0 || g->match.seatZeroHpSince[1] >= 0;
+    if (started < 0.0) {
+        if (!fallen) return;
+        started = now;
+        next = now;
+    }
+    if (now - started > 20.0 || now < next) return;
+    next = now + 1.0;
+    char tag[32];
+    std::snprintf(tag, sizeof(tag), "fall +%.0f s", now - started);
+    LogCoopState(tag);
+}
+
 void DriveArena(double now) {
     rm::RunController& run = *g->run;
     if (run.phase() != rm::Phase::ArenaActive) return;
@@ -8367,7 +8422,9 @@ void DrawSplitHud() {
     // the screen as in solo (the user, 2026-11-18: "if they both have the same ... why couldn't we
     // just have it once like the SP has?"). Only the counter's label stays, under the counter the
     // game itself draws in each half.
-    text(g_splitHud.center, 640.0f, 176.0f, 15.0f, IM_COL32(220, 220, 220, 200));
+    // The counter's label just under the game's small counter at the top of player 2's half (the
+    // user, 2026-11-21: "player 2 still has enemies left in the middle"; match_ui's kSplitCenterY).
+    text(g_splitHud.center, 640.0f, 70.0f, 15.0f, IM_COL32(220, 220, 220, 200));
 }
 
 void DrawSpecialWidgets() {
@@ -9615,43 +9672,65 @@ void PollDevCommand(double now) {
             FlushInstructionCache(GetCurrentProcess(), p, 3);
             RM_LOGW("dev %s %08X -> %02X %02X %02X", patch ? "patch_ret" : "unpatch", static_cast<unsigned>(address), p[0], p[1], p[2]);
         }
-    } else if (command.rfind("snap ", 0) == 0 || command == "diff") {
-        // "snap <hex addr|gw> <bytes>" copies a block (gw = game work); "diff" logs
-        // the dwords that changed since, then keeps the new values. Finds the
-        // fields a menu screen writes when the player makes a choice.
-        static std::uintptr_t snapAddress = 0;
-        static std::vector<std::uint32_t> snapData;
-        if (command[0] == 's') {
-            std::istringstream words(command.substr(5));
-            std::string addressText, sizeText;
-            words >> addressText >> sizeText;
+    } else if (command.rfind("snap ", 0) == 0 || command == "diff" || command == "snapclear") {
+        // "snap <where>[+hex offset] <bytes>" keeps a copy under that name (gw, app, p0, p1, cam,
+        // splayer, devent, pad, or a hex address); "diff" logs, for every copy, the dwords that
+        // changed since (60 at most each) and keeps the new values; "snapclear" drops them all.
+        struct Snap {
             std::uintptr_t address = 0;
-            if (addressText == "gw") {
-                address = ReadOr<std::uintptr_t>(ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0) + re5::off::kGameWork, 0);
-            } else {
-                address = static_cast<std::uintptr_t>(std::strtoul(addressText.c_str(), nullptr, 16));
+            std::vector<std::uint32_t> data;
+        };
+        static std::map<std::string, Snap> snaps;
+        if (command == "snapclear") {
+            snaps.clear();
+            RM_LOGW("dev snapclear");
+        } else if (command[0] == 's') {
+            std::istringstream words(command.substr(5));
+            std::string where, sizeText;
+            words >> where >> sizeText;
+            std::string token = where;
+            std::uintptr_t offset = 0;
+            if (const auto plus = where.find('+'); plus != std::string::npos) {
+                token = where.substr(0, plus);
+                offset = static_cast<std::uintptr_t>(std::strtoul(where.c_str() + plus + 1, nullptr, 16));
             }
+            const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+            std::uintptr_t address = 0;
+            if (token == "gw") address = app ? ReadOr<std::uintptr_t>(app + re5::off::kGameWork, 0) : 0;
+            else if (token == "app") address = app;
+            else if (token == "p0" || token == "p1") address = engine::HumanPlayerInSlot(token[1] - '0');
+            else if (token == "cam") address = areacams::LastCamera();
+            else if (token == "splayer") address = ReadOr<std::uintptr_t>(0x011B27DC, 0);
+            else if (token == "devent") address = ReadOr<std::uintptr_t>(0x0123457C, 0);
+            else if (token == "pad") address = ReadOr<std::uintptr_t>(re5::addr::kPadInstance, 0);
+            else if (token == "ck0" || token == "ck1") address = CockpitObject(token[2] - '0');
+            else address = static_cast<std::uintptr_t>(std::strtoul(token.c_str(), nullptr, 16));
+            if (address) address += offset;
             const auto bytes = std::min<std::size_t>(std::strtoul(sizeText.c_str(), nullptr, 0), 1 << 20);
-            snapData.assign(bytes / 4, 0);
-            snapAddress = address;
-            const bool ok = address && !snapData.empty() && SafeCopy(snapData.data(), address, snapData.size() * 4);
-            if (!ok) snapData.clear();
-            RM_LOGW("dev snap %08X %zu bytes -> %s", static_cast<unsigned>(address), bytes, ok ? "ok" : "failed");
+            Snap snap;
+            snap.address = address;
+            snap.data.assign(bytes / 4, 0);
+            const bool ok = address && !snap.data.empty() && SafeCopy(snap.data.data(), address, snap.data.size() * 4);
+            RM_LOGW("dev snap %s %08X %zu bytes -> %s", where.c_str(), static_cast<unsigned>(address), bytes, ok ? "ok" : "failed");
+            if (ok) snaps[where] = std::move(snap);
         } else {
-            std::vector<std::uint32_t> current(snapData.size());
-            if (snapData.empty() || !SafeCopy(current.data(), snapAddress, current.size() * 4)) {
-                RM_LOGW("dev diff: no snapshot or unreadable");
-            } else {
+            if (snaps.empty()) RM_LOGW("dev diff: no snapshot");
+            for (auto& [name, snap] : snaps) {
+                std::vector<std::uint32_t> current(snap.data.size());
+                if (!SafeCopy(current.data(), snap.address, current.size() * 4)) {
+                    RM_LOGW("dev diff %s: unreadable", name.c_str());
+                    continue;
+                }
                 int changes = 0;
-                for (std::size_t i = 0; i < current.size(); ++i) {
-                    if (current[i] == snapData[i]) continue;
-                    if (changes < 120) {
-                        RM_LOGW("dev diff +%05X: %08X -> %08X", static_cast<unsigned>(i * 4), snapData[i], current[i]);
+                for (std::size_t k = 0; k < current.size(); ++k) {
+                    if (current[k] == snap.data[k]) continue;
+                    if (changes < 60) {
+                        RM_LOGW("dev diff %s +%05X: %08X -> %08X", name.c_str(), static_cast<unsigned>(k * 4), snap.data[k], current[k]);
                     }
                     ++changes;
                 }
-                RM_LOGW("dev diff %08X: %d dwords changed", static_cast<unsigned>(snapAddress), changes);
-                snapData = std::move(current);
+                RM_LOGW("dev diff %s %08X: %d dwords changed", name.c_str(), static_cast<unsigned>(snap.address), changes);
+                snap.data = std::move(current);
             }
         }
     } else if (command.rfind("scene ", 0) == 0) {
@@ -9918,6 +9997,118 @@ void PollDevCommand(double now) {
         autopilot::SetDevMercenariesMode(command == "mercenaries split" ? 2 : command == "mercenaries duo" ? 1 : 0);
         nativemenu::DecideMercenariesOnPlayMenu();
         RM_LOGW("dev %s: the game's Mercenaries menu at the next Play menu (no run)", command.c_str());
+    } else if (command.rfind("pact ", 0) == 0) {
+        // "pact <seat> <action class name>": that human player's action by name (M10 fall tests:
+        // a fallen player stood up again), with StartAction's checks (at zero health too).
+        std::istringstream words(command.substr(5));
+        int seat = 0;
+        std::string wanted;
+        words >> seat >> wanted;
+        const auto unit = engine::HumanPlayerInSlot(seat);
+        const auto names = unit ? engine::ActionNames(unit) : std::vector<std::string>{};
+        int id = -1;
+        for (int k = 0; k < static_cast<int>(names.size()); ++k) {
+            if (names[static_cast<std::size_t>(k)] == wanted) {
+                id = k;
+                break;
+            }
+        }
+        const bool started = id >= 0 && engine::StartAction(unit, id, wanted.c_str(), true);
+        RM_LOGW("dev pact %d %s (id %d of %zu): %s", seat, wanted.c_str(), id, names.size(), started ? "started" : "refused");
+    } else if (command == "deathevent pass" || command == "deathevent block") {
+        SetDeathEventPass(command == "deathevent pass");
+        RM_LOGW("dev %s", command.c_str());
+    } else if (command.rfind("spritebits ", 0) == 0) {
+        // "spritebits <hex cockpit>": the cockpit's sprites (0x291 at +0x12D0) drawn this frame, as
+        // index ranges (M10: which ones the inventory grid uses).
+        const auto cockpit = static_cast<std::uintptr_t>(std::strtoul(command.c_str() + 11, nullptr, 16));
+        std::string ranges;
+        int count = 0, runStart = -1;
+        for (int i = 0; i <= 0x291; ++i) {
+            const auto sprite = i < 0x291 ? ReadOr<std::uintptr_t>(cockpit + 0x12D0 + static_cast<std::uintptr_t>(i) * 4, 0) : 0;
+            const bool on = sprite && ReadOr<std::uint8_t>(sprite + 8, 0) != 0;
+            if (on) ++count;
+            if (on && runStart < 0) runStart = i;
+            if (!on && runStart >= 0) {
+                char part[24];
+                std::snprintf(part, sizeof(part), runStart == i - 1 ? "%X " : "%X-%X ", runStart, i - 1);
+                ranges += part;
+                runStart = -1;
+            }
+        }
+        RM_LOGW("spritebits %08X: %d drawn: %s", static_cast<unsigned>(cockpit), count, ranges.c_str());
+    } else if (command == "invprobe") {
+        // M10: the inventory grid's open check for each human player, the game's own answers:
+        // 0x00C698B0 (stdcall (player)), its may-act part 0x00B6A820 (through the mod's hook) and its
+        // flags part 0x00B5AB30 (thiscall); each called only when its bytes are the known ones.
+        const bool canOpenOk = BytesMatch(0x00C698B0, "A1 A4 40 23 01 8B 80 38 04 01 00 A9 00 00 00 40 74 05 32 C0 C2 04 00 A9 00 00 00 20");
+        const bool flagsOk = BytesMatch(0x00B5AB30, "8B 81 8C 2D 00 00 C1 E8 05 A8 01 74 03 32 C0 C3 8A 81 84 2D 00 00 F6 D0 24 01 C3");
+        const bool mayActOk = engine::Caps().playerMayAct;
+        const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+        const auto appFlags = app ? ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) : 0u;
+        for (int seat = 0; seat < 2; ++seat) {
+            const auto unit = engine::HumanPlayerInSlot(seat);
+            if (!unit) continue;
+            const int canOpen = canOpenOk ? (reinterpret_cast<bool(__stdcall*)(std::uintptr_t)>(0x00C698B0)(unit) ? 1 : 0) : -1;
+            const int mayAct = mayActOk ? (reinterpret_cast<bool(__fastcall*)(std::uintptr_t, void*)>(re5::addr::kFnPlayerMayAct)(unit, nullptr) ? 1 : 0) : -1;
+            const int flags = flagsOk ? (reinterpret_cast<bool(__fastcall*)(std::uintptr_t, void*)>(0x00B5AB30)(unit, nullptr) ? 1 : 0) : -1;
+            const auto action = ReadOr<std::uint32_t>(unit + re5::off::kPlayerActionFlags, 0);
+            RM_LOGW("invprobe: player %d %08X: can open %d (may act %d, flags part %d, action bits 1/6/8 %u%u%u, app 0x60000000 %u) | "
+                    "+2D8C %08X +2D84 %02X", seat, static_cast<unsigned>(unit), canOpen, mayAct, flags, (action >> 1) & 1u, (action >> 6) & 1u,
+                    (action >> 8) & 1u, (appFlags & 0x60000000u) != 0 ? 1u : 0u, ReadOr<std::uint32_t>(unit + 0x2D8C, 0),
+                    ReadOr<std::uint8_t>(unit + 0x2D84, 0));
+        }
+    } else if (command == "hudprobe") {
+        // M10: what the cockpit HUD decides with (its move 0x009F8FC0): the view table of the object
+        // at [0x0123457C] (+0x2F68, four player indexes; a cockpit whose player is not there draws no
+        // rings), its +0x2FF8, each cockpit's player (+0x1A8), slot (+0x198, +0x19C) and flags (+0x18,
+        // +0xC3), and the mode the cockpit compares with 0x6F ([0x011B2158]: +0x20 x 0x5940 + 0x273D8).
+        const auto devent = ReadOr<std::uintptr_t>(0x0123457C, 0);
+        const auto save = ReadOr<std::uintptr_t>(0x011B2158, 0);
+        const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+        const int index = save ? ReadOr<std::int32_t>(save + 0x20, 0) : 0;
+        const auto game = GameTask();
+        const auto work = app ? ReadOr<std::uintptr_t>(app + re5::off::kGameWork, 0) : 0;
+        const auto slotData = save ? save + static_cast<std::uintptr_t>(index) * 0x5940 : 0;
+        RM_LOGW("hudprobe: aGame %08X off %d %d %d %d, +138 %u | stage %d, progress %X | work mode %d, +79C %u", static_cast<unsigned>(game),
+                GamePlayerOff(0), GamePlayerOff(1), GamePlayerOff(2), GamePlayerOff(3), game ? ReadOr<std::uint8_t>(game + 0x138, 0) : 0u,
+                slotData ? ReadOr<std::int32_t>(slotData + 0x273D8, -1) : -1, slotData ? ReadOr<std::uint32_t>(slotData + 0x273E0, 0) : 0u,
+                work ? ReadOr<std::int32_t>(work + 0x58, -1) : -1, work ? ReadOr<std::uint8_t>(work + 0x79C, 0) : 0u);
+        const int stage = slotData ? ReadOr<std::int32_t>(slotData + 0x273D8, -1) : -1;
+        const auto progress = slotData ? ReadOr<std::uint32_t>(slotData + 0x273E0, 0) : 0u;
+        const auto appFlags = app ? ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) : 0u;
+        const auto offBytes2 = game ? ReadOr<std::uintptr_t>(game + 0x34C, 0) : 0;
+        for (int seat = 0; seat < 2; ++seat) {
+            const auto unit = engine::HumanPlayerInSlot(seat);
+            if (!unit) continue;
+            const int number = ReadOr<std::uint8_t>(unit + re5::off::kPlayerNumber, 0xFF);
+            RM_LOGW("hudprobe: player %d %08X (number %d): action flags %08X, hp %d, +1BCC %d, +2DA8 %d, +2D98 %08X | weapons held by the story %d,"
+                    " item 9 held %d | inventory: stage gate %d, app gate %d, aGame bytes %d/%d",
+                    seat, static_cast<unsigned>(unit), number, ReadOr<std::uint32_t>(unit + re5::off::kPlayerActionFlags, 0),
+                    ReadOr<std::int16_t>(unit + 0x1364, 0), ReadOr<std::int8_t>(unit + 0x1BCC, 0), ReadOr<std::int32_t>(unit + 0x2DA8, 0),
+                    ReadOr<std::uint32_t>(unit + 0x2D98, 0), stage >= 100 && progress < 0x488 ? 1 : 0, stage >= 100 && progress < 0x499 ? 1 : 0,
+                    stage == 100 || stage == 109 || stage == 111 ? 1 : 0, (appFlags & 0x600u) != 0 || (appFlags & 0x08001000u) != 0 ? 1 : 0,
+                    GamePlayerOff(number), offBytes2 && number < 4 ? ReadOr<std::uint8_t>(offBytes2 + static_cast<std::uintptr_t>(number), 0) : -1);
+        }
+        RM_LOGW("hudprobe: views %d %d %d %d, +2FF8 %u, mode %X, app flags %08X | words %08X %08X", devent ? ReadOr<std::int32_t>(devent + 0x2F68, -9) : -9,
+                devent ? ReadOr<std::int32_t>(devent + 0x2F6C, -9) : -9, devent ? ReadOr<std::int32_t>(devent + 0x2F70, -9) : -9,
+                devent ? ReadOr<std::int32_t>(devent + 0x2F74, -9) : -9, devent ? ReadOr<std::uint8_t>(devent + 0x2FF8, 0) : 0u,
+                save ? ReadOr<std::uint32_t>(save + static_cast<std::uintptr_t>(index) * 0x5940 + 0x273D8, 0) : 0u,
+                app ? ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) : 0u, app ? ReadOr<std::uint32_t>(app + 0x1043C, 0) : 0u,
+                app ? ReadOr<std::uint32_t>(app + 0x10440, 0) : 0u);
+        for (int k = 0; k < 2; ++k) {
+            const auto ck = CockpitObject(k);
+            if (!ck) continue;
+            RM_LOGW("hudprobe: cockpit %d %08X %s: player %u (%08X, partner %08X), slot %d / %d, +18 %u, +C3 %u, +230 %d, +344 %u", k,
+                    static_cast<unsigned>(ck), engine::ClassName(ck).c_str(), ReadOr<std::uint8_t>(ck + 0x1A8, 0xFF),
+                    ReadOr<std::uint32_t>(ck + re5::addr::kCockpitPlayer, 0), ReadOr<std::uint32_t>(ck + re5::addr::kCockpitPartner, 0),
+                    ReadOr<std::int32_t>(ck + 0x198, -9), ReadOr<std::int32_t>(ck + 0x19C, -9), ReadOr<std::uint8_t>(ck + 0x18, 0),
+                    ReadOr<std::uint8_t>(ck + re5::addr::kCockpitRingsOn, 0), ReadOr<std::int32_t>(ck + 0x230, -9),
+                    ReadOr<std::uint8_t>(ck + 0x344, 0));
+        }
+    } else if (command == "coopprobe") {
+        // One line of the co-op state (M10 fall tests): phase, flags, camera, both players.
+        LogCoopState("probe");
     } else if (command.rfind("seathp ", 0) == 0) {
         // "seathp <seat> <hp>": a co-op player's health (M10 tests: a player down).
         int seat = 0, hp = 0;
@@ -10890,7 +11081,14 @@ private:
         // A run's campaign area keeps the player camera: its camera zones and scripted zone
         // cameras are off (user playtest 2026-11-08, the Volcano).
         areacams::SetRunWantsOff(g->run->HasActiveRun() && CurrentMapKey() >= kFirstCampaignStage);
-        stagefix::SetInRun(g->run->HasActiveRun());
+        {
+            // From the moment a run's start is armed until that run is over (a start the autopilot
+            // gave up on lets go after 90 s): stage 100's story checks are off (stage_fixes.h).
+            static double runStartArmedAt = -1.0e9;
+            if (autopilot::Armed()) runStartArmedAt = now;
+            const bool runWanted = g->run->HasActiveRun() || now - runStartArmedAt < 90.0;
+            stagefix::SetInRun(g->run->HasActiveRun(), runWanted, g->match.inMatch);
+        }
         // The run's boss takes gunfire where its own check would refuse it (Uroboros Wesker).
         SetBossTakesGunfire(g->boss.unit);
         // A match a run played in stays a run's match until it is gone, so quitting it writes no
@@ -10907,6 +11105,21 @@ private:
         autopilot::SetSaveGuard(g_devSaveGuard || now - runMatchSeenAt < kSaveGuardAfterMatch);
         LogProfile(now);
         SetCoopDeathHold(g->run->HasActiveRun() && g->run->SeatCount() > 1);
+        SetCoopMatchEndWanted(g->arenaEndRequested || g->transition.pending || g->run->phase() != rm::Phase::ArenaActive);
+        {
+            // M10: who stands, for the game's own death checks (hooks_combat HiddenFall).
+            std::uintptr_t standing[2] = {0, 0};
+            if (g->match.inMatch && g->run->HasActiveRun() && g->run->SeatCount() > 1) {
+                for (int seat = 0; seat < 2; ++seat) {
+                    const auto unit = engine::HumanPlayerInSlot(seat);
+                    const auto hp = unit ? engine::ReadHp(unit) : std::nullopt;
+                    // Alive and without the game's death mark (bit 1 of the action flags).
+                    if (hp && hp->hp > 0 && (ReadOr<std::uint32_t>(unit + re5::off::kPlayerActionFlags, 0) & 0x2u) == 0) standing[seat] = unit;
+                }
+            }
+            SetCoopStanding(standing[0], standing[1]);
+        }
+        WatchCoopFall(now);
         ForEachSeatTurn([&] {
             if (g->run->phase() == rm::Phase::ArenaActive && g->match.inMatch) ApplyBuildHealth();  // gains mid-arena
             // Items earned by perks, rewards and the shop wait until the player is in a match.
