@@ -105,11 +105,29 @@ PLAY
     - A weapon upgrade adds damage, and more rounds and a faster reload as far as that gun
       has levels left (a few guns, like the Px4 and the launchers, have none). Upgrades are
       only offered for guns you still have.
+    - New in 0.2.7: the guns the game gives no levels get their own with each upgrade (the
+      SHOP's upgrade line says what): the Px4 and Samurai Edge more crits, a headshot now
+      and then giving its round back, supplies a kill and more rounds; the Gatling more
+      damage the longer it fires, staggers and crits; the longbow hits the one behind the
+      target and every few hits an arrow explodes; the stun rod's stun lasts longer, jumps
+      to those around and stunned enemies take more; the grenade launcher a free round now
+      and then, a wider blast, burns or poison and more rounds; the rocket launcher a wider
+      blast and a second rocket an arena at level 3, a third at level 5; the flamethrower
+      more fuel, a faster refill and a longer flame (10 m at level 5).
+    - New in 0.2.7: the flamethrower burns everything in its flame, bosses and big enemies
+      too, whatever its element, and its damage shows on the panel. Incendiary sets a fast
+      burn, Toxic a poison that stacks once a second and lasts until the enemy dies, and
+      Plague's victims let out a green cloud. Burns and poison hurt bosses as well (they
+      end when a boss goes down for its next phase), and Jill and Wesker flinch when the
+      flame takes a share of their health in one go.
     - A rocket launcher, once bought, comes back at the start of every arena (into the
       storage if your grid is full). Selling it gives it up for good.
     - What does not fit in your nine cells waits in the storage of ORGANIZE INVENTORY.
       A gun that went there stays named at the top of the SHOP until you open ORGANIZE,
       and a gun offered while your grid is full says TO STORAGE.
+    - New in 0.2.7: every arena plays another of the game's battle tracks; the Mercenaries
+      theme comes round now and then. "music_rotation": false in adapter.json keeps the
+      theme in every arena. The arena's time no longer runs while the game is paused.
     - Dying or beating the run's last boss ends the run and banks your Credits.
 
 TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPHA.30
@@ -136,6 +154,8 @@ TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPH
     - A chest is the nearest player's. The enemies are shared evenly between the two of
       you (new in 0.2.6): each comes for the player who has fewer, from near them.
     - Leon and Ada have their own names on the weapon rings and in the inventory.
+    - New in 0.2.7: each player's rewards and SHOP offer other guns, perks and items than
+      the other player's (the heal, the reroll and an upgrade of your own gun aside).
     - Between arenas each player has their own screens at once (new in 0.2.6): player 1's
       in the top half, player 2's in the bottom half, each on their own controller (the
       keyboard works player 1's). Without a controller for player 2 the screens take turns
