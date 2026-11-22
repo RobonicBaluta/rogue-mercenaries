@@ -33,6 +33,20 @@ rm::music::Rotation g_rotation{(static_cast<std::uint64_t>(std::random_device{}(
 int g_opensLogged = 0;
 double g_armedAt = -1.0e9;  // when the last arena's track was chosen
 
+// The next arena's track waits until no track plays: the swap is made between matches (the user's
+// crash, 2026-11-22 21:16: armed as the match was ending, the playing b_bgm011, 94 s in, got b_bgm005's
+// shorter length and loop points under it; both sound threads faulted, in the game's decoders
+// 0x00455DC0 and 0x00670500, 0.4 s later). Made at the first tick 2 s after the match is
+// over; given up (the theme then plays) if the next match is on first.
+struct Pending {
+    bool on = false;
+    std::string pick;   // the theme's own path: the theme
+    bool sawEnd = false; // the match it was armed in is over
+};
+Pending g_pending;
+bool g_inMatch = false;
+double g_matchOverAt = -1.0e9;
+
 // The track in the theme's place (none while the theme is its own).
 struct Patch {
     bool on = false;
@@ -308,6 +322,8 @@ bool Apply(const Found& theme, const Found& track) {
 
 }  // namespace
 
+void ApplyPick(const std::string& pick);  // below, with NextArena
+
 void Tick(const Context& c) {
     if (!c.dataDir.empty()) g_dataDir = c.dataDir;
     const auto opens = fileredirect::TakeStreamOpens();
@@ -326,6 +342,25 @@ void Tick(const Context& c) {
                     g_patch.on && f && f->list == g_patch.list && f->index == g_patch.index ? (", read as " + g_patch.track).c_str() : "");
         }
     }
+    // Between matches only: the armed track once the match is over, the theme's own numbers back once
+    // no run is on (two minutes after the last arena was armed).
+    if (c.inMatch && !g_inMatch) {
+        if (g_pending.on && g_pending.sawEnd) {
+            RM_LOGW("music: the match began before %s could be swapped in; the theme as it is", g_pending.pick.c_str());
+            g_pending = {};
+        }
+    }
+    if (!c.inMatch && g_inMatch) {
+        g_matchOverAt = c.now;
+        if (g_pending.on) g_pending.sawEnd = true;
+    }
+    g_inMatch = c.inMatch;
+    if (c.inMatch) return;
+    if (g_pending.on && c.now - g_matchOverAt >= 2.0) {
+        const std::string pick = g_pending.pick;
+        g_pending = {};
+        ApplyPick(pick);
+    }
     if (g_patch.on && (!c.enabled || (!c.inRun && c.now - g_armedAt > 120.0))) Restore();
 }
 
@@ -334,13 +369,12 @@ void NextArena(bool enabled, double now) {
     LoadLists();
     ReadTheme();
     if (!enabled || g_theme.empty()) {
-        Restore();
+        g_pending = {true, g_theme, false};
         return;
     }
-    const auto theme = FindEntry(g_theme);
-    if (!theme) {
+    if (!FindEntry(g_theme)) {
         RM_LOGW("music: the theme %s is in no list; the music stays", g_theme.c_str());
-        Restore();
+        g_pending = {true, g_theme, false};
         return;
     }
     std::vector<std::string> pool = {g_theme};
@@ -350,10 +384,23 @@ void NextArena(bool enabled, double now) {
         }
     }
     g_rotation.SetPool(pool);
-    const std::string pick = g_rotation.Next();
-    if (pick == g_theme) {
+    g_pending = {true, g_rotation.Next(), false};
+    RM_LOGI("music: the next arena plays %s (%zu tracks take turns; swapped once no track plays)",
+            g_pending.pick == g_theme ? "the Mercenaries theme" : FindEntry(g_pending.pick) ? FindEntry(g_pending.pick)->entry().Leaf().c_str() : "?",
+            pool.size());
+    if (!g_inMatch) {
+        // From the menus: nothing of the theme plays.
+        const std::string pick = g_pending.pick;
+        g_pending = {};
+        ApplyPick(pick);
+    }
+}
+
+void ApplyPick(const std::string& pick) {
+    const auto theme = FindEntry(g_theme);
+    if (!theme || pick == g_theme) {
         Restore();
-        RM_LOGI("music: this arena plays the Mercenaries theme (%zu tracks take turns)", pool.size());
+        if (theme) RM_LOGI("music: this arena plays the Mercenaries theme");
         return;
     }
     const auto track = FindEntry(pick);
@@ -362,8 +409,8 @@ void NextArena(bool enabled, double now) {
         RM_LOGW("music: %s could not take the theme's place; the theme plays", pick.c_str());
         return;
     }
-    RM_LOGI("music: this arena plays %s in the theme's place (%.0f s; %zu list copies and %zu info blocks; %zu tracks take turns)",
-            track->entry().Leaf().c_str(), track->entry().length / 48000.0, g_copies.lists.size(), g_copies.infos.size(), pool.size());
+    RM_LOGI("music: this arena plays %s in the theme's place (%.0f s; %zu list copies and %zu info blocks)", track->entry().Leaf().c_str(),
+            track->entry().length / 48000.0, g_copies.lists.size(), g_copies.infos.size());
 }
 
 std::vector<fileredirect::Redirect> Redirects() {

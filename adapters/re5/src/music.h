@@ -18,6 +18,7 @@ namespace rmre5::music {
 struct Context {
     bool enabled = true;         // settings music_rotation
     bool inRun = false;          // a run is active
+    bool inMatch = false;        // a match is on (its track may be playing: no swap then)
     std::filesystem::path dataDir;
     double now = 0.0;
 };
@@ -25,7 +26,8 @@ struct Context {
 /// Each tick: the streams the game opened (logged), the theme's entry put back once no run is on (two
 /// minutes after the last arena was armed: a run's first match starts its run).
 void Tick(const Context& c);
-/// The next arena's track (the match about to load): call when it is armed.
+/// The next arena's track (the match about to load): call when it is armed. The swap itself is made once
+/// no match is on (Tick), never under a playing track.
 void NextArena(bool enabled, double now);
 /// The file redirect of the track playing in the theme's place (none while the theme is its own),
 /// and a key that changes with it.

@@ -14105,6 +14105,7 @@ private:
             music::Context mc;
             mc.enabled = g->settings.musicRotation;
             mc.inRun = g->run->HasActiveRun();
+            mc.inMatch = g->match.inMatch;
             mc.dataDir = g->paths.dataDir;
             mc.now = now;
             music::Tick(mc);
