@@ -13947,9 +13947,6 @@ private:
             music::Context mc;
             mc.enabled = g->settings.musicRotation;
             mc.inRun = g->run->HasActiveRun();
-            mc.inMatch = g->match.inMatch;
-            mc.arenaOn = g->run->phase() == rm::Phase::ArenaActive;
-            mc.mercenariesMap = CurrentMapKey() < kFirstCampaignStage;
             mc.dataDir = g->paths.dataDir;
             mc.now = now;
             music::Tick(mc);

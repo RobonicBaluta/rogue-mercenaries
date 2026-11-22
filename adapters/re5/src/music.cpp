@@ -93,16 +93,23 @@ void LoadLists() {
     }
 }
 
+// The Mercenaries theme: s_bgm020, opened as every match starts, on its maps and the campaign areas
+// alike (the user's run, 2026-11-22: bgm008 at the results screen, bgm007 at the stage screen,
+// s_bgm020 0.2 s after the match was detected and 2 s before its arena began). <data>\music_theme.txt
+// names another (its stream's path, no extension).
+constexpr const char* kDefaultTheme = "sound\\bgm\\oto\\bgm\\s_bgm\\s_bgm020";
+
 void ReadTheme() {
     if (g_themeRead || g_dataDir.empty()) return;
     g_themeRead = true;
+    g_theme = kDefaultTheme;
     std::ifstream in(g_dataDir / L"music_theme.txt");
     std::string line;
     if (in && std::getline(in, line)) {
         while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
-        g_theme = Lower(line);
-        RM_LOGI("music: the Mercenaries theme is %s (music_theme.txt)", g_theme.c_str());
+        if (!line.empty()) g_theme = Lower(line);
     }
+    RM_LOGI("music: the Mercenaries theme is %s%s", g_theme.c_str(), g_theme == kDefaultTheme ? "" : " (music_theme.txt)");
 }
 
 struct Found {
@@ -190,12 +197,18 @@ bool Locate(List& l) {
     if (l.layout.found && l.searchedIn == res && ReadOr<std::uint32_t>(l.layout.first + 4, 0) == e[0].length) return true;
     l.searchedIn = res;
     l.layout = {};
+    // The resource, what it points to, and what those point to (their first 0x100 bytes).
     std::vector<std::uintptr_t> starts = {res};
     const auto head = ReadRegion(res, 0x200);
-    for (std::size_t o = 0; o + 4 <= head.size(); o += 4) {
-        const std::uint32_t d = U32(head, o);
-        if (d >= 0x10000 && d < 0x7FFF0000 && (d & 3) == 0 && d != res) starts.push_back(d);
-    }
+    const auto addPointers = [&starts](const std::vector<std::uint8_t>& bytes, std::size_t upTo) {
+        for (std::size_t o = 0; o + 4 <= std::min(bytes.size(), upTo); o += 4) {
+            const std::uint32_t d = U32(bytes, o);
+            if (d >= 0x10000 && d < 0x7FFF0000 && (d & 3) == 0 && std::find(starts.begin(), starts.end(), d) == starts.end()) starts.push_back(d);
+        }
+    };
+    addPointers(head, 0x200);
+    const std::size_t direct = starts.size();
+    for (std::size_t k = 1; k < direct && starts.size() < 2048; ++k) addPointers(ReadRegion(starts[k], 0x100), 0x100);
     const std::size_t span = std::min<std::size_t>(e.size() * 0x40 + 0x200, 0x20000);
     for (const std::uintptr_t s : starts) {
         const auto buf = ReadRegion(s, span);
@@ -316,14 +329,8 @@ void Tick(const Context& c) {
             RM_LOGI("music: the game opens %s (%s%s)", path.c_str(), !f ? "in no list" : f->entry().Loops() ? "loops" : "once",
                     g_patch.on && f && f->list == g_patch.list && f->index == g_patch.index ? (", read as " + g_patch.track).c_str() : "");
         }
-        if (g_theme.empty() && f && f->entry().Loops() && c.inRun && c.inMatch && c.arenaOn && c.mercenariesMap && !g_patch.on) {
-            g_theme = path;
-            std::ofstream out(g_dataDir / L"music_theme.txt");
-            out << path << "\n";
-            RM_LOGI("music: the Mercenaries theme is %s; from the next arena it takes turns with the battle tracks", path.c_str());
-        }
     }
-    if (g_patch.on && (!c.enabled || (!c.inRun && c.now - g_armedAt > 60.0))) Restore();
+    if (g_patch.on && (!c.enabled || (!c.inRun && c.now - g_armedAt > 120.0))) Restore();
 }
 
 void NextArena(bool enabled, double now) {
