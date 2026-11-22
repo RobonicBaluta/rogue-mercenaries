@@ -5309,6 +5309,12 @@ struct ScriptedKill {
 constexpr ScriptedKill kScriptedKills[] = {
     {"uEm81", "cEm80ActAtkSyutoStart", "cEm80ActAtkKick"},
     {"uEm80", "cEm80ActAtkSyutoStart", "cEm80ActAtkKick"},
+    // Its later parts, should one begin on its own (2026-11-22: at zero health, after his fall, he went
+    // straight into AtkSyutoDie and the player took the story's death in a won arena).
+    {"uEm81", "cEm80ActAtkSyuto", "cEm80ActAtkKick"},
+    {"uEm80", "cEm80ActAtkSyuto", "cEm80ActAtkKick"},
+    {"uEm81", "cEm80ActAtkSyutoDie", "cEm80ActAtkKick"},
+    {"uEm80", "cEm80ActAtkSyutoDie", "cEm80ActAtkKick"},
     // The user, 2026-11-22 (Midnight Wesker): "he uses the rocket launching but has no animation so he
     // just tps there so take that out". AtkMissile is the hangar story's (8 s, then he stood 24 m away
     // on another level); his gun instead. RokeUke, his stand after a rocket hits him, held him 6 s at 1
@@ -5456,12 +5462,33 @@ void WatchEventCamera(double now) {
 
 void DriveBossFall(double now) {
     const std::uintptr_t unit = g->boss.fallen;
-    if (!g->boss.dead || !unit || unit == g_fallDone || now - g->boss.diedAt > kBossFallSeconds) return;
+    if (!g->boss.dead || !unit || !g->match.inMatch) return;
     const std::string cls = engine::ClassName(unit);
     const ScriptedFall* fall = nullptr;
     for (const ScriptedFall& f : kScriptedFalls) {
         if (cls == f.cls) fall = &f;
     }
+    if (unit == g_fallDone) {
+        // Fallen, one that fights on at zero health attacks no more (the user, 2026-11-22: "when you kill
+        // wesker, he played the taking chris heart animation and said I died yet I won": after his
+        // Shrink, cEm80ActAtkSyutoDie, the knife-hand's kill): an attack gives way to his fall again.
+        static std::uintptr_t refallUnit = 0;
+        static int refalls = 0;
+        if (refallUnit != unit) {
+            refallUnit = unit;
+            refalls = 0;
+        }
+        const std::string now_ = fall ? engine::CurrentActionName(unit) : std::string();
+        if (fall && now_.find("Atk") != std::string::npos && refalls < 20) {
+            const auto ids = engine::ActionIdsOf(unit, fall->action);
+            if (!ids.empty() && engine::StartAction(unit, ids.front(), fall->action, true)) {
+                ++refalls;
+                RM_LOGI("boss fall: %s began %s after its fall; %s again", cls.c_str(), now_.c_str(), fall->action);
+            }
+        }
+        return;
+    }
+    if (now - g->boss.diedAt > kBossFallSeconds) return;
     if (!fall) {
         g_fallDone = unit;  // falls by itself (the Uroboros' death sequence)
         return;
@@ -5654,6 +5681,8 @@ void ClearTransformFlags(const char* why) {
     RM_LOGW("boss: the transformation's application flags were still set (%s): %08X %08X, cleared", why, events, flags);
 }
 
+void ClearElementStatus(std::uintptr_t enemy);  // with the elements, below
+
 bool BossGoesDown(std::uintptr_t unit, double now) {
     if (!unit || unit != g->boss.unit) return false;
     if (BossIsDown(unit)) {
@@ -5673,6 +5702,9 @@ bool BossGoesDown(std::uintptr_t unit, double now) {
     d.index = start->index;
     d.count = start->count;
     d.phase = start->phase;
+    // Its burns and poisons (the flamethrower's stacks too) end with the phase (the user, 2026-11-22:
+    // "poison stacks should clear on bosses when they pass a phase").
+    ClearElementStatus(unit);
     SafeStore<std::int16_t>(unit + re5::off::kHp, 1);
     const bool down = StartActionSpec(unit, d.phase.down_action);
     if (d.phase.transform && !down) TakeSecondForm(unit, "its down action was refused");
@@ -7953,6 +7985,16 @@ bool StatusActive(std::uintptr_t enemy, double now, double ElementStatus::*until
     return it != g_elementStatus.end() && now < it->second.*until;
 }
 
+// Every status of it ends (a boss passing a phase): burns, poisons, the flamethrower's stacks, a chill.
+void ClearElementStatus(std::uintptr_t enemy) {
+    const auto it = g_elementStatus.find(enemy);
+    if (it == g_elementStatus.end()) return;
+    const ElementStatus& st = it->second;
+    RM_LOGI("elements: %s's statuses end (%d poison stacks%s%s)", engine::ClassName(enemy).c_str(), st.stacks,
+            st.burnUntil > 0.0 || st.flameBurnLeft > 0.0 ? ", a burn" : "", st.poisonUntil > 0.0 ? ", a poison" : "");
+    g_elementStatus.erase(it);
+}
+
 // Poisoned: by a hit's poison, or by the flamethrower's stacks (they never end).
 bool PoisonedNow(std::uintptr_t enemy, double now) {
     const auto it = g_elementStatus.find(enemy);
@@ -8662,6 +8704,50 @@ bool BossFlameDamage(std::uintptr_t boss, double amount, double now) {
     return done;
 }
 
+// Uroboros Aheri (uEm42): the flame on her is her own hits (engine::EnemyMayHurt, her hit check: the
+// user, 2026-11-22, "excella (uroboros aheri) doesn't get damaged by flamethrower so you can't get the
+// smaller things to explode and neither does the main core receive any damage"). A core in the flame
+// takes a core hit (region (core + 1) * 0x3C): its health goes down and it breaks as to gunfire; while
+// her main core is out (+0x18DC bit 2) those hits are the main core's; her body in the flame a body hit
+// (region 0), which takes her health (BossFlameDamage). The game's own flame is off while an element's
+// look is in its place (Wp21FireDetour: no flame hits), and her cores are no enemies of the list.
+constexpr float kAheriPartHeight = 600.0f;  // her cores stand on her mass, above or below the deck
+constexpr int kAheriBones = 128;
+
+std::uintptr_t AheriBoss() {
+    const std::uintptr_t boss = g->boss.unit;
+    if (!boss || g->boss.dead || BossIsDown(boss) || engine::ClassName(boss) != "uEm42") return 0;
+    return boss;
+}
+
+void AheriFlameHit(std::uintptr_t boss, int region, double amount, double now) {
+    const int dmg = std::max(1, static_cast<int>(std::lround(amount)));
+    const auto answer = engine::EnemyMayHurt(boss, region, dmg);
+    const bool mainCore = (ReadOr<std::uint8_t>(boss + 0x18DC, 0) & 4) != 0;
+    if (region < 0x3C) {
+        if (answer && *answer != 0) BossFlameDamage(boss, amount, now);
+    } else {
+        PanelHit(dmg, false, now);  // the panel's DAMAGE counts a core's
+    }
+    static std::map<int, int> logged;
+    if (logged.size() > 16) logged.clear();
+    int& n = logged[region / 0x3C + (mainCore ? 8 : 0)];
+    if (n++ % 25 == 0) {
+        const int core = region / 0x3C - 1;
+        char part[96];
+        if (region < 0x3C) {
+            std::snprintf(part, sizeof(part), "her body (health %d)", engine::ReadHp(boss) ? engine::ReadHp(boss)->hp : -1);
+        } else if (mainCore) {
+            std::snprintf(part, sizeof(part), "her main core (%d of 2000)", ReadOr<std::int32_t>(boss + 0x2154, 0));
+        } else {
+            std::snprintf(part, sizeof(part), "core %d (health %d of %d)", core, ReadOr<std::int16_t>(boss + 0x1FC4 + core * 8, 0),
+                          ReadOr<std::int16_t>(boss + 0x1FC6 + core * 8, 0));
+        }
+        RM_LOGI("flamethrower: Aheri's %s takes %d (%s; flags %08X; %d such hits)", part, dmg,
+                !answer ? "her check faulted" : *answer ? "it hurts" : "no health", ReadOr<std::uint32_t>(boss + 0x1E2C, 0), n);
+    }
+}
+
 constexpr int kBigBones = 48;           // a big one's bones the flame is tested against
 constexpr int kBigEnemyHp = 6000;       // big: the boss, and one of this much health or more
 constexpr float kFlameReach = 500.0f;             // 5 m at level 1; per_level reach_m more a level
@@ -8717,14 +8803,30 @@ void DriveFlameStream(double now) {
     UnitPosition(player, at);
     std::vector<std::pair<std::uintptr_t, float>> inFlame;
     const float reach = FlameReach();
-    const auto inCone = [&](const float p[3], float& dist) {
+    const auto inConeAt = [&](const float p[3], float& dist, float height) {
         const float dx = p[0] - at[0], dz = p[2] - at[2];
         const float d = std::sqrt(dx * dx + dz * dz);
-        if (d < 1.0f || d > reach || std::fabs(p[1] - at[1]) > kFlameHeight) return false;
+        if (d < 1.0f || d > reach || std::fabs(p[1] - at[1]) > height) return false;
         if ((dx * fx + dz * fz) / d < kFlameCosHalfAngle) return false;
         dist = d;
         return true;
     };
+    const auto inCone = [&](const float p[3], float& dist) { return inConeAt(p, dist, kFlameHeight); };
+    const std::uintptr_t aheri = AheriBoss();
+    // Her cores in the flame (by their position or one of their first joints).
+    std::vector<int> aheriCores;
+    for (int i = 0; aheri && i < 4; ++i) {
+        const auto core = ReadOr<std::uintptr_t>(aheri + 0x2104 + i * 4, 0);
+        if (!core || engine::ClassName(core) != "uEm42Core") continue;
+        float p[3], d = 0.0f;
+        UnitPosition(core, p);
+        bool hit = inConeAt(p, d, kAheriPartHeight);
+        for (int bone = 0; !hit && bone < 16; ++bone) {
+            float b[3];
+            hit = engine::JointPosition(core, bone, b) && inConeAt(b, d, kAheriPartHeight);
+        }
+        if (hit) aheriCores.push_back(i);
+    }
     for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
         if (e.hp <= 0 || (e.object == g->boss.unit && g->boss.dead)) continue;
         float p[3];
@@ -8735,7 +8837,8 @@ void DriveFlameStream(double now) {
         // the legs": its origin is 4 to 5 m below the player and 7 to 25 m off while its legs are in
         // the flame): any of its first kBigBones in the flame counts, the nearest one its distance.
         if (!hit && (e.object == g->boss.unit || e.max >= kBigEnemyHp)) {
-            for (int bone = 0; bone < kBigBones; ++bone) {
+            const int bones = e.object == aheri ? kAheriBones : kBigBones;
+            for (int bone = 0; bone < bones; ++bone) {
                 float b[3], bd = 0.0f;
                 if (!engine::JointPosition(e.object, bone, b) || !inCone(b, bd)) continue;
                 if (!hit || bd < d) d = bd;
@@ -8748,7 +8851,21 @@ void DriveFlameStream(double now) {
     for (auto it = chill.begin(); it != chill.end();) {  // out of the flame a second: the chill is gone
         it = now - it->second.second > 1.0 ? chill.erase(it) : std::next(it);
     }
-    if (inFlame.empty()) return;
+    if (inFlame.empty() && aheriCores.empty()) return;
+    if (inFlame.empty()) {
+        // Only her cores: their hits, no element's status (they are no enemies of their own).
+        if (now >= nextStreamHit) {
+            nextStreamHit = now + kStreamHitEvery;
+            const double amount = StreamDpsOf(aheri) * kStreamHitEvery * StreamMultiplier(aheri, now);
+            const bool mainCore = (ReadOr<std::uint8_t>(aheri + 0x18DC, 0) & 4) != 0;
+            if (mainCore) {
+                AheriFlameHit(aheri, 0x3C, amount, now);
+            } else {
+                for (const int i : aheriCores) AheriFlameHit(aheri, (i + 1) * 0x3C, amount, now);
+            }
+        }
+        return;
+    }
     // A Shock flamethrower: lightning from the gun to the nearest one in its flame, again and again.
     double& nextGunArc = st.nextGunArc;
     if (lookInPlace && g_flameStreamElement == rm::Element::Shock && now >= nextGunArc) {
@@ -8760,6 +8877,16 @@ void DriveFlameStream(double now) {
         for (const auto& [enemy, dist] : inFlame) {
             (void)dist;
             const double amount = StreamDpsOf(enemy) * kStreamHitEvery * StreamMultiplier(enemy, now);
+            if (enemy == g->boss.unit && enemy == aheri) {
+                // Her body, her cores (or her main core while it is out: once a hit).
+                AheriFlameHit(enemy, 0, amount, now);
+                if ((ReadOr<std::uint8_t>(enemy + 0x18DC, 0) & 4) != 0) {
+                    AheriFlameHit(enemy, 0x3C, amount, now);
+                } else {
+                    for (const int i : aheriCores) AheriFlameHit(enemy, (i + 1) * 0x3C, amount, now);
+                }
+                continue;
+            }
             if (enemy == g->boss.unit) {
                 BossFlameDamage(enemy, amount, now);
                 continue;
@@ -13942,6 +14069,17 @@ private:
         }); }
         { ProfileScope p("tick:DriveElements"); DriveElements(now); }
         { ProfileScope p("tick:DriveLevelHits"); DriveLevelHits(now); }
+        {
+            // The game's pause (its menu, a paused world) stops the arena's clock (the user, 2026-11-22:
+            // "timer continues in pause menu").
+            static double lastAt = 0.0;
+            const double dt = now - lastAt;
+            lastAt = now;
+            static bool wasPaused = false;
+            const bool paused = g->match.inMatch && g->run->phase() == rm::Phase::ArenaActive && GamePaused();
+            if (paused && wasPaused && dt > 0.0 && dt < 1.0) g->run->PauseArenaClock(dt);
+            wasPaused = paused;
+        }
         { ProfileScope p("tick:DriveEffectGallery"); DriveEffectGallery(now); }
         {
             music::Context mc;

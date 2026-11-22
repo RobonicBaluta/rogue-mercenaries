@@ -611,6 +611,9 @@ public:
 
     [[nodiscard]] RunSnapshot Snapshot(double now) const;
     [[nodiscard]] Phase phase() const { return run_.phase; }
+    /// The game was paused `seconds` in the arena (its pause menu; 2026-11-22, the user: "timer
+    /// continues in pause menu"): the arena's clock (its time, the par, the rating) leaves them out.
+    void PauseArenaClock(double seconds);
     [[nodiscard]] bool HasActiveRun() const { return run_.active; }
     [[nodiscard]] const RunState& state() const { return run_; }
     [[nodiscard]] const std::optional<RunSummary>& last_summary() const { return last_summary_; }

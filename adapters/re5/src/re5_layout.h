@@ -693,6 +693,13 @@ constexpr std::size_t kMotionLayer0Frames = 0x39C;
 constexpr std::size_t kModelJointCount = 0x314;
 constexpr std::size_t kModelBoneToJoint = 0x31C;  // byte table: a motion track's bone id -> joint (0xFF none)
 constexpr std::size_t kVtableChangeAction = 0xDC;
+// An enemy's hit check (ApplyDamage asks it before any damage; thiscall: the hit's region, an amount;
+// ret 8; nonzero: the hit takes health). Uroboros Aheri's (0x008C0CD0, static 2026-11-22): a region of
+// 0x3C and up is core (region / 0x3C - 1): its health at +0x1FC4 + core * 8 (short, max at +0x1FC6)
+// goes down, a broken core sets +0x1E2C bit core; with her +0x18DC bit 2 (the main core out) those
+// hits add to +0x2154 instead (over 2000: +0x1E2C |= 0x8000). Any other region is her body: the hit
+// takes health.
+constexpr std::size_t kVtableMayHurt = 0x204;
 constexpr std::size_t kVtableTurnTo = 0x154;
 constexpr std::uint32_t kCollisionMask = 0x3FFFFF00;  // the dodge picker's and the ground snap's
 constexpr std::uint32_t kSegmentBlocked = 4;          // the dodge picker's "blocked" bit

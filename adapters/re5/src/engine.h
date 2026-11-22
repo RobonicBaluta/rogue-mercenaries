@@ -236,6 +236,9 @@ bool FireTwinGun(std::uintptr_t gun, const float muzzle[3], const float dir[3]);
 /// boss Jill's guns use for their muzzles: her bones 11 and 6, the hands); a bone the model lacks
 /// gives the origin offset. False without the capability `jointPosition` or on a fault.
 bool JointPosition(std::uintptr_t unit, int bone, float out[3]);
+/// The enemy's own hit check (re5::off::kVtableMayHurt) with a hit of `amount` on `region`, as the
+/// game's ApplyDamage asks it: its answer (1: the hit takes health; its low byte), nothing when it faulted.
+std::optional<std::uint32_t> EnemyMayHurt(std::uintptr_t enemy, int region, int amount);
 bool DeleteUnit(std::uintptr_t unit);
 
 /// Fixes of the game's own code for what Mercenaries mode 2 never met before the mod (in memory,

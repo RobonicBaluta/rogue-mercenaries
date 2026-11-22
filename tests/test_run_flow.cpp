@@ -377,3 +377,18 @@ TEST_CASE("the snapshot carries the arena's time, par, damage taken and the rati
     REQUIRE(s.rating_now);
     CHECK(*s.rating_now == ComputeRating(h.rc.content().economy().rating, 15.0, s.par_seconds, 0.0, 0.0, 0));
 }
+
+// 2026-11-22, the user: "timer continues in pause menu": the game's pauses are left out of the clock.
+TEST_CASE("the game's pause leaves the arena's clock, its rating too", "[run]") {
+    test::Harness h;
+    REQUIRE(h.rc.StartRun("alpha", 42).ok());
+    h.rc.PauseArenaClock(30.0);  // no arena yet: nothing
+    REQUIRE(h.rc.BeginArena(10.0).ok());
+    h.rc.PauseArenaClock(30.0);
+    h.rc.PauseArenaClock(-5.0);   // nothing
+    h.rc.PauseArenaClock(7200.0); // past an hour: no pause, nothing
+    const RunSnapshot s = h.rc.Snapshot(55.0);
+    CHECK(s.arena_seconds == Catch::Approx(15.0));
+    REQUIRE(s.rating_now);
+    CHECK(*s.rating_now == ComputeRating(h.rc.content().economy().rating, 15.0, s.par_seconds, 0.0, 0.0, 0));
+}

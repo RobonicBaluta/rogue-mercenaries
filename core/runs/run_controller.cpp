@@ -110,6 +110,11 @@ const RouteDef* RunController::Route() const { return content_->FindRoute(run_.r
 
 ArenaMetrics* RunController::CurrentArena() { return run_.arenas.empty() ? nullptr : &run_.arenas.back(); }
 
+void RunController::PauseArenaClock(double seconds) {
+    if (!run_.active || run_.phase != Phase::ArenaActive || !(seconds > 0.0) || seconds > 3600.0) return;
+    if (ArenaMetrics* a = CurrentArena()) a->start_time += seconds;
+}
+
 const ArenaMetrics* RunController::CurrentArena() const {
     return run_.arenas.empty() ? nullptr : &run_.arenas.back();
 }

@@ -57,8 +57,71 @@ struct Patch {
     std::uint32_t saved[5] = {};  // size, length, channels, loop start, loop end
     std::string track;
     std::wstring tail, target;
+    // The copies the game keeps of the theme's numbers (TheCopies), each one's values before.
+    std::vector<std::pair<std::uintptr_t, std::array<std::uint32_t, 5>>> copies;
 };
 Patch g_patch;
+
+// The game's other copies of the theme's loop points (the user, 2026-11-22: "themes don't loop": with
+// the list's entry holding the track's numbers the track still played to its end and stopped, as it
+// would with the theme's loop end, past a shorter track's end). Found once in the process's own
+// writable memory by the theme's loop start and loop end side by side; the list's entry is one of them.
+// Each is the loop start's address; the dwords before it are checked for the length, the channels and
+// the size as the list lays them out (size, length, channels, loop start, loop end).
+std::vector<std::uintptr_t> g_copies;
+bool g_copiesSearched = false;
+
+void FindCopies(const rm::music::StreamEntry& theme) {
+    g_copiesSearched = true;
+    g_copies.clear();
+    const DWORD started = GetTickCount();
+    std::size_t scanned = 0;
+    std::vector<std::uint8_t> buf(0x10000 + 8);
+    SYSTEM_INFO si{};
+    GetSystemInfo(&si);
+    std::uintptr_t at = reinterpret_cast<std::uintptr_t>(si.lpMinimumApplicationAddress);
+    const std::uintptr_t top = reinterpret_cast<std::uintptr_t>(si.lpMaximumApplicationAddress);
+    while (at < top && g_copies.size() < 64) {
+        MEMORY_BASIC_INFORMATION mbi{};
+        if (VirtualQuery(reinterpret_cast<LPCVOID>(at), &mbi, sizeof(mbi)) == 0) break;
+        const std::uintptr_t base = reinterpret_cast<std::uintptr_t>(mbi.BaseAddress);
+        const std::uintptr_t end = base + mbi.RegionSize;
+        const DWORD prot = mbi.Protect & 0xFF;
+        const bool writable = prot == PAGE_READWRITE || prot == PAGE_EXECUTE_READWRITE;
+        if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE && writable && (mbi.Protect & PAGE_GUARD) == 0) {
+            for (std::uintptr_t chunk = base; chunk < end && g_copies.size() < 64; chunk += 0x10000) {
+                const std::size_t n = static_cast<std::size_t>(std::min<std::uintptr_t>(0x10000 + 8, end - chunk));
+                if (!SafeCopy(buf.data(), chunk, n)) continue;
+                scanned += n;
+                for (std::size_t o = 0; o + 8 <= n; o += 4) {
+                    std::uint32_t a = 0, b = 0;
+                    std::memcpy(&a, buf.data() + o, 4);
+                    if (a != theme.loop_start) continue;
+                    std::memcpy(&b, buf.data() + o + 4, 4);
+                    if (b == theme.loop_end && o < 0x10000) g_copies.push_back(chunk + o);
+                }
+            }
+        }
+        at = end;
+    }
+    RM_LOGI("music: %zu copies of the theme's loop points in %zu MB of the game's memory (%lu ms)", g_copies.size(), scanned >> 20,
+            GetTickCount() - started);
+    for (const std::uintptr_t c : g_copies) {
+        std::string around;
+        for (int k = -5; k <= 3; ++k) {
+            char part[12];
+            std::snprintf(part, sizeof(part), " %08X", ReadOr<std::uint32_t>(c + static_cast<std::uintptr_t>(static_cast<std::intptr_t>(k * 4)), 0));
+            around += part;
+        }
+        RM_LOGI("music:   at %08X:%s", static_cast<unsigned>(c), around.c_str());
+    }
+}
+
+// A copy's five values (size, length, channels, loop start, loop end) as the list lays them out; a
+// value of the copy that is not the theme's is left as it is.
+std::array<std::uintptr_t, 5> CopyFields(std::uintptr_t loopStart) {
+    return {loopStart - 12, loopStart - 8, loopStart - 4, loopStart, loopStart + 4};
+}
 
 std::string Lower(std::string s) {
     for (char& c : s) c = c == '/' ? '\\' : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -275,6 +338,10 @@ void Restore() {
     if (!g_patch.on) return;
     List& l = g_lists[static_cast<std::size_t>(g_patch.list)];
     if (Locate(l)) Store(l.layout.first + g_patch.index * l.layout.stride, l.layout, g_patch.saved);
+    for (const auto& [loopStart, before] : g_patch.copies) {
+        const auto fields = CopyFields(loopStart);
+        for (std::size_t k = 0; k < 5; ++k) SafeStore<std::uint32_t>(fields[k], before[k]);
+    }
     RM_LOGI("music: the theme is its own again (it was %s)", g_patch.track.c_str());
     g_patch = {};
 }
@@ -306,6 +373,29 @@ bool Apply(const Found& theme, const Found& track) {
     const std::string tail = Lower(theme.entry().path) + ".sngw";
     p.tail = fileredirect::NormaliseTail(std::wstring(tail.begin(), tail.end()));
     p.target = file.wstring();
+    // The game's other copies: each value that is the theme's takes the track's (looked for again when
+    // one no longer holds the theme's loop points).
+    const rm::music::StreamEntry& own = theme.entry();
+    const std::uint32_t themeValues[5] = {own.size, own.length, own.channels, own.loop_start, own.loop_end};
+    const auto stillThere = [&] {
+        for (const std::uintptr_t c : g_copies) {
+            if (ReadOr<std::uint32_t>(c, 0) != own.loop_start || ReadOr<std::uint32_t>(c + 4, 0) != own.loop_end) return false;
+        }
+        return true;
+    };
+    if (!g_copiesSearched || !stillThere()) FindCopies(own);
+    int changed = 0;
+    for (const std::uintptr_t c : g_copies) {
+        if (c == Off(at, lay.loopStart)) continue;  // the list's own entry (done above)
+        const auto fields = CopyFields(c);
+        std::array<std::uint32_t, 5> before{};
+        for (std::size_t k = 0; k < 5; ++k) before[k] = ReadOr<std::uint32_t>(fields[k], 0);
+        p.copies.push_back({c, before});
+        for (std::size_t k = 0; k < 5; ++k) {
+            if (before[k] == themeValues[k] && SafeStore<std::uint32_t>(fields[k], values[k])) ++changed;
+        }
+    }
+    if (!g_copies.empty()) RM_LOGI("music: %d values in %zu copies take %s's", changed, g_copies.size(), src.Leaf().c_str());
     g_patch = p;
     return true;
 }

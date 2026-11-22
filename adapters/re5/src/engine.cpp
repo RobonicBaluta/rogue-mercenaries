@@ -315,7 +315,27 @@ bool CallChangeAction(std::uintptr_t fn, std::uintptr_t self, int id, bool& star
 
 bool Finite(float v) { return v == v && v > -1.0e9f && v < 1.0e9f; }
 
+using MayHurtFn = std::uint32_t(__thiscall*)(std::uintptr_t self, std::uint32_t region, std::uint32_t amount);
+
+bool CallMayHurt(std::uintptr_t fn, std::uintptr_t self, int region, int amount, std::uint32_t& out) {
+    __try {
+        out = reinterpret_cast<MayHurtFn>(fn)(self, static_cast<std::uint32_t>(region), static_cast<std::uint32_t>(amount));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+
 }  // namespace
+
+std::optional<std::uint32_t> EnemyMayHurt(std::uintptr_t enemy, int region, int amount) {
+    const auto vtable = enemy ? ReadOr<std::uintptr_t>(enemy, 0) : 0;
+    const auto fn = vtable ? ReadOr<std::uintptr_t>(vtable + re5::off::kVtableMayHurt, 0) : 0;
+    if (fn < 0x00400000 || fn > 0x01000000) return std::nullopt;
+    std::uint32_t out = 0;
+    if (!CallMayHurt(fn, enemy, region, amount, out)) return std::nullopt;
+    return out & 0xFFu;  // a bool in AL (Aheri's: MOV AL,1 / XOR AL,AL)
+}
 
 std::optional<SegmentResult> CastSegment(const float from[3], const float to[3]) {
     if (!g_caps.collision) return std::nullopt;
