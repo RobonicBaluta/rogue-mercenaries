@@ -128,6 +128,16 @@ TEST_CASE("the shipped maps carry player 2's starts the user set in the map edit
     REQUIRE(village->start2);
     CHECK((*village->start2)[0] == Catch::Approx(-7312.4));
     CHECK((*village->start2)[1] == Catch::Approx(420.0));
+    // The Engine Room's lower floor is the small enemies' only (its stair, 2026-11-22).
+    for (const MapDef& m : r.content->maps()) {
+        if (m.stage != 505) continue;
+        CHECK(m.small_only_points.size() == 2);
+        for (const auto& p : m.small_only_points) {
+            CHECK(std::any_of(m.points.begin(), m.points.end(), [&](const std::array<double, 3>& q) {
+                return std::hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]) < 50.0;
+            }));
+        }
+    }
 }
 
 TEST_CASE("profiles are picked by weight and carry their fields and weapon", "[director]") {
@@ -236,6 +246,77 @@ TEST_CASE("the last enemy is pulled to the point nearest the player and its own 
     CHECK(visited[0] != visited[1]);
     CHECK(visited[0] == visited[2]);
     CHECK(visited[1] == visited[3]);
+}
+
+TEST_CASE("big enemies keep off the small-only points; the small ones use them", "[director]") {
+    // The Engine Room's lower floor (2026-11-22): a stair the specials cannot climb.
+    MapDef map = TestMap(4);
+    map.special_after = 0.0;
+    map.points = {{0, 0, 2000}, {2000, 0, 0}, {-2000, 0, 0}, {0, -300, -2000}, {300, -300, -2000}};
+    map.small_only_points = {{0, -300, -2000}, {300.2, -300, -2000.3}};  // matched within half a metre
+    MapEnemy special{"uEm20", {}, {}, 1, 1.0};
+    special.special = true;
+    special.max_alive = 1;
+    const auto lower = [](const SpawnRequest& r) { return r.pos[1] < -100.0; };
+    const std::optional<std::array<double, 3>> player = std::array<double, 3>{0.0, 0.0, 0.0};
+    // Specials alone: 60 of them, none down there, the one kept alive never moved down there.
+    MapDef bigMap = map;
+    bigMap.roster = {special};
+    Director big(bigMap, 200, 1, 11);
+    int specials = 0, specialsBelow = 0;
+    std::string kept;
+    for (double now = 0.0; now < 200.0 && specials < 60; now += 1.0) {
+        for (const auto& r : big.Tick(now, player)) {
+            const std::string id = "u" + std::to_string(r.ticket);
+            big.Spawned(r.ticket, id);
+            ++specials;
+            if (lower(r)) ++specialsBelow;
+            if (specials == 60) {
+                kept = id;
+            } else {
+                big.Died(id);
+            }
+        }
+    }
+    CHECK(specials == 60);
+    CHECK(specialsBelow == 0);
+    REQUIRE_FALSE(kept.empty());
+    int moved = 0;
+    for (int i = 0; i < 6; ++i) {
+        const auto to = big.Relocate(kept, player);
+        if (!to) continue;
+        ++moved;
+        CHECK((*to)[1] > -100.0);
+    }
+    CHECK(moved > 0);
+    // Majini alone: they still come from there.
+    MapDef smallMap = map;
+    smallMap.roster = {MapEnemy{"uEm10", {}, {}, 1, 1.0}};
+    Director small(smallMap, 200, 1, 12);
+    int majini = 0, majiniBelow = 0;
+    for (double now = 0.0; now < 200.0 && majini < 60; now += 1.0) {
+        for (const auto& r : small.Tick(now, player)) {
+            small.Spawned(r.ticket, "m" + std::to_string(r.ticket));
+            small.Died("m" + std::to_string(r.ticket));
+            ++majini;
+            if (lower(r)) ++majiniBelow;
+        }
+    }
+    CHECK(majini == 60);
+    CHECK(majiniBelow > 0);
+    // A boss's big add (its own health) keeps off them too.
+    Director e(smallMap, 10, 1, 13);
+    std::vector<Director::AddSpec> adds;
+    for (int i = 0; i < 20; ++i) adds.push_back(Director::AddSpec{MapEnemy{"uEm41"}, 10000});
+    e.AddWave(std::move(adds), 0.0);
+    int addCount = 0, addsBelow = 0;
+    for (const auto& r : e.Tick(0.0, player)) {
+        if (!r.add) continue;
+        ++addCount;
+        if (lower(r)) ++addsBelow;
+    }
+    CHECK(addCount == 20);
+    CHECK(addsBelow == 0);
 }
 
 TEST_CASE("a stuck unit moves to another point and its point is not used again", "[director]") {
@@ -533,6 +614,9 @@ TEST_CASE("maps.json is validated", "[director]") {
     // A start is a position.
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "start": [1, -2, 3], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "start": [1, 2], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
+    // Points only the small enemies use: positions too.
+    CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "points": [[0,0,0]], "small_only_points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "points": [[0,0,0]], "small_only_points": [[0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     // Player 2's start too (the map editor's, folded in).
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "start": [1, -2, 3], "start2": [4, 5, 6], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "start2": [4, 5], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());

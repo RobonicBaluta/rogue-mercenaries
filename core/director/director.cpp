@@ -236,9 +236,21 @@ std::size_t Director::PickSeat(const std::vector<PlayerSpot>& players) const {
     return best;
 }
 
-int Director::PickPointFor(const std::vector<PlayerSpot>& players, std::size_t who, const PointFilter& prefer) {
+bool Director::SmallOnly(const std::array<double, 3>& p) const {
+    constexpr double kMatchSq = 50.0 * 50.0;  // half a metre (as the map editor's points)
+    return std::any_of(map_.small_only_points.begin(), map_.small_only_points.end(),
+                       [&](const std::array<double, 3>& q) { return DistanceSq(p, q) <= kMatchSq; });
+}
+
+int Director::PickPointFor(const std::vector<PlayerSpot>& players, std::size_t who, const PointFilter& prefer, bool big) {
     const std::optional<std::array<double, 3>> player =
         who < players.size() ? std::optional<std::array<double, 3>>(players[who].pos) : std::nullopt;
+    // A big one: off the small-only points in every try but the last.
+    const bool keepOff = big && !map_.small_only_points.empty();
+    const auto roomy = [&](const PointFilter& f) -> PointFilter {
+        if (!keepOff) return f;
+        return [this, &f](const std::array<double, 3>& p) { return !SmallOnly(p) && (!f || f(p)); };
+    };
     int point = -1;
     if (players.size() > 1) {
         // Not in another player's face either.
@@ -249,10 +261,13 @@ int Director::PickPointFor(const std::vector<PlayerSpot>& players, std::size_t w
             }
             return true;
         };
-        if (prefer) point = PickPoint(player, [&](const std::array<double, 3>& p) { return prefer(p) && apart(p); });
-        if (point < 0) point = PickPoint(player, apart);
+        const PointFilter both = [&](const std::array<double, 3>& p) { return prefer(p) && apart(p); };
+        if (prefer) point = PickPoint(player, roomy(both));
+        if (point < 0) point = PickPoint(player, roomy(apart));
     }
-    if (point < 0 && prefer) point = PickPoint(player, prefer);
+    if (point < 0 && prefer) point = PickPoint(player, roomy(prefer));
+    const PointFilter none;
+    if (point < 0 && keepOff) point = PickPoint(player, roomy(none));
     if (point < 0) point = PickPoint(player);
     return point;
 }
@@ -273,7 +288,7 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::vector<PlayerSpo
         // The player it comes for; a boss with a story spot appears there, any other unit at a map point.
         const std::size_t who = PickSeat(players);
         int point = -1;
-        if (!storySpot) point = PickPointFor(players, who, prefer);
+        if (!storySpot) point = PickPointFor(players, who, prefer, enemy != nullptr && enemy->special);
         if (enemy == nullptr || (!storySpot && point < 0)) break;
         SpawnRequest r;
         r.ticket = next_ticket_++;
@@ -335,7 +350,7 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::vector<PlayerSpo
             continue;
         }
         const std::size_t who = PickSeat(players);
-        const int point = PickPointFor(players, who, prefer);
+        const int point = PickPointFor(players, who, prefer, it->spec.enemy.special || it->spec.hp > 0);
         if (point < 0) break;
         const MapEnemy& enemy = it->spec.enemy;
         SpawnRequest r;
@@ -413,7 +428,11 @@ std::optional<std::array<double, 3>> Director::Relocate(const std::string& unit_
     if (known) point_failures_[static_cast<std::size_t>(from)] = kMaxPointFailures;  // not this arena again
     const int last = last_point_;
     last_point_ = from;
-    const int to = PickPoint(player, accept, nearest);
+    // A big one is never moved to a small-only point.
+    const auto te = ticket_enemy_.find(it->second);
+    const bool big = te != ticket_enemy_.end() && te->second != nullptr && te->second->special && !map_.small_only_points.empty();
+    const PointFilter roomy = [this, &accept](const std::array<double, 3>& p) { return !SmallOnly(p) && (!accept || accept(p)); };
+    const int to = PickPoint(player, big ? roomy : accept, nearest);
     if (to < 0 || to == from) {
         // Not moved: its point stays as it was.
         if (known) point_failures_[static_cast<std::size_t>(from)] = failures;

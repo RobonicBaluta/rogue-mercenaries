@@ -395,6 +395,8 @@ for stage in args.stages:
         entry['hide_models'] = HIDE_MODELS[stage]
     # An area made again keeps player 2's start (the map editor's, folded in).
     old = next((m for m in doc['maps'] if m['stage'] == stage), None)
+    if old is not None and 'small_only_points' in old:
+        entry['small_only_points'] = old['small_only_points']
     if old is not None and 'start2' in old:
         entry = {**{k: v for k, v in entry.items() if k not in ('max_alive', 'min_player_distance', 'max_player_distance', 'points', 'chests', 'preload', 'layouts', 'roster', 'boss', 'hide_models')},
                  'start2': old['start2'], **{k: v for k, v in entry.items() if k in ('max_alive', 'min_player_distance', 'max_player_distance', 'points', 'chests', 'preload', 'layouts', 'roster', 'boss', 'hide_models')}}

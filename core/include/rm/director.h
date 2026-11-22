@@ -113,6 +113,11 @@ struct MapDef {
     /// Where player 2 starts in a co-op run (the map editor's; none: at `start`, by player 1).
     std::optional<std::array<double, 3>> start2;
     std::vector<std::array<double, 3>> points;  // spawn positions known to be on walkable ground
+    /// Points (of `points`, within half a metre) only the small enemies use: a big one (a special,
+    /// a boss's add that is a special or has its own health) is never spawned or moved there, as
+    /// long as another point will do (the user, 2026-11-22, the Engine Room's lower floor: "there's
+    /// a stair, minibosses can't jump it or use the stairs so they get blocked there").
+    std::vector<std::array<double, 3>> small_only_points;
     std::vector<std::array<double, 3>> chests;  // chest positions (where the game puts its time bonuses)
     std::vector<MapEnemy> roster;
     /// Archives (Image\Archive\<name>) the adapter loads with the arena's enemies: everything the
@@ -276,7 +281,9 @@ private:
     [[nodiscard]] int Active(const MapEnemy* enemy) const;  // alive + pending of that roster entry
     int PickPoint(const std::optional<std::array<double, 3>>& player, const PointFilter& accept = {}, bool nearest = false);
     [[nodiscard]] std::size_t PickSeat(const std::vector<PlayerSpot>& players) const;  // an index into players
-    int PickPointFor(const std::vector<PlayerSpot>& players, std::size_t who, const PointFilter& prefer);
+    // `big`: a special or a boss's big add, kept off the map's small_only_points while another will do.
+    int PickPointFor(const std::vector<PlayerSpot>& players, std::size_t who, const PointFilter& prefer, bool big = false);
+    [[nodiscard]] bool SmallOnly(const std::array<double, 3>& p) const;
     [[nodiscard]] bool BossWaits(double now, const std::optional<std::array<double, 3>>& player) const;
 
     MapDef map_;

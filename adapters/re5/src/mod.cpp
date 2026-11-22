@@ -3243,12 +3243,17 @@ bool QuietAdd(std::uintptr_t unit);  // a boss's add that is a boss itself (its 
 bool BossGoesDown(std::uintptr_t unit, double now);
 void QueueAddFall(std::uintptr_t unit, double now);
 
+// The director's units that died this match (DriveZeroHealth looks after these only, never a
+// boss's parts or the stage's own units); one seen alive again is another unit at that address.
+std::set<std::uintptr_t> g_directorDead;
+
 // The run's id of a dying enemy: the director's own id for its units (reported once), the
 // unit address and max health for anything else.
 std::string EnemyKillId(std::uintptr_t enemy, int maxHp) {
     if (const auto it = g->directorUnits.find(enemy); it != g->directorUnits.end()) {
         std::string id = std::move(it->second);
         g->directorUnits.erase(it);
+        g_directorDead.insert(enemy);
         if (enemy == g->boss.unit) {
             g->boss.unit = 0;
             g->boss.dead = true;
@@ -7588,7 +7593,105 @@ bool ElementDamage(std::uintptr_t enemy, double amount, double now, Reaction onK
     const int dmg = std::max(1, static_cast<int>(std::lround(amount)));
     if (dmg >= hp->hp) React(enemy, onKill, now, true);
     g_specialVictims[enemy] = now;
-    return director::Damage(enemy, dmg);
+    // The panel's DAMAGE counts it as a hit's (the user, 2026-11-22: the flamethrower's "doesn't show
+    // as dealing damage in hud"); a death it misses is DriveZeroHealth's.
+    const bool done = director::Damage(enemy, dmg);
+    if (done) PanelHit(std::min(dmg, hp->hp), dmg >= hp->hp, now);
+    return done;
+}
+
+// An enemy at zero health that is not dying (the user, 2026-11-22: "the normal majini it kills it
+// gives no kills and they behave weirdly by being able to walk around and deal damage"). The mod's
+// own damage (the flamethrower's flame of its own, burns, poison, shock arcs, a straggler finished
+// off) takes health outside a hit, and only the hit that kills starts a death: a Majini at zero drops
+// when its current action ends (a walk never does), the other classes walk on (Popokarimu did after
+// SubHp, 2026-11-08). One at zero for 1 s doing anything but dying gets its death: a Majini its
+// blow-away reaction, any other class the death in its own action table (DieNormal, else Die, else
+// Dead); 6 s on and still not dying, it is taken out (engine::DeleteUnit; it was counted dead at zero
+// already, DetectEnemyDeaths). Only the director's own units; never while it holds the player,
+// climbs or jumps (CanReact), never the arena's boss (DriveBossFall) nor a boss's add that is a boss
+// itself (TameAddDeaths).
+struct ZeroHealthTrack {
+    double since = 0.0;
+    bool tried = false;
+};
+std::map<std::uintptr_t, ZeroHealthTrack> g_zeroHealth;
+
+bool DyingAction(const std::string& action) {
+    if (action.empty()) return true;  // no action any more
+    for (const char* d : {"Die", "Dead", "Death", "Erase", "Flyoff", "HeadExplosion"}) {
+        if (action.find(d) != std::string::npos) return true;
+    }
+    return false;
+}
+
+int DeathActionOf(std::uintptr_t unit, std::string& name) {
+    const auto names = engine::ActionNames(unit);
+    int best = -1, bestRank = 99;
+    for (std::size_t i = 0; i < names.size(); ++i) {
+        const std::string& n = names[i];
+        const int rank = n.find("DieNormal") != std::string::npos                                ? 0
+                         : n.find("Die") != std::string::npos                                    ? 1
+                         : n.find("Dead") != std::string::npos && n.find("Head") == std::string::npos ? 2
+                                                                                                  : 99;
+        if (rank < bestRank) {
+            best = static_cast<int>(i);
+            bestRank = rank;
+            name = n;
+        }
+    }
+    return best;
+}
+
+void DriveZeroHealth(double now) {
+    if (!g->match.inMatch || !g->run->HasActiveRun() || g->run->phase() != rm::Phase::ArenaActive) {
+        g_zeroHealth.clear();
+        g_directorDead.clear();
+        return;
+    }
+    static int logged = 0;
+    std::set<std::uintptr_t> seen;
+    for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
+        const std::uintptr_t unit = e.object;
+        if (e.hp > 0) {
+            g_directorDead.erase(unit);
+            continue;
+        }
+        // Only the director's own (a boss's parts and the stage's units are none of these).
+        if (!g_directorDead.count(unit) && !g->directorUnits.count(unit)) continue;
+        if (unit == g->boss.unit || g_bossAddUnits.count(unit) || g_deadBossAdds.count(unit)) continue;
+        seen.insert(unit);
+        ZeroHealthTrack& t = g_zeroHealth.try_emplace(unit, ZeroHealthTrack{now, false}).first->second;
+        const std::string action = engine::CurrentActionName(unit);
+        if (DyingAction(action) || !CanReact(unit) || now - t.since < 1.0) continue;
+        const std::string cls = engine::ClassName(unit);
+        if (!t.tried) {
+            t.tried = true;
+            bool started = false;
+            std::string how;
+            if (ReactionsOf(unit) != nullptr) {
+                started = React(unit, Reaction::Flyoff, now, true, true);
+                how = "its blow-away reaction";
+            } else {
+                std::string name;
+                const int id = DeathActionOf(unit, name);
+                started = id >= 0 && engine::StartAction(unit, id, name.c_str(), true);
+                how = id >= 0 ? name : std::string("no death in its table");
+            }
+            if (logged++ < 16) {
+                RM_LOGI("zero health: %s %08X still in %s 1 s at zero: %s %s", cls.c_str(), static_cast<unsigned>(unit), action.c_str(),
+                        how.c_str(), started ? "started" : "refused");
+            }
+        } else if (now - t.since >= 6.0) {
+            const bool gone = engine::DeleteUnit(unit);
+            if (logged++ < 16) {
+                RM_LOGW("zero health: %s %08X still in %s 6 s at zero: taken out (%s)", cls.c_str(), static_cast<unsigned>(unit), action.c_str(),
+                        gone ? "ok" : "FAILED");
+            }
+            if (gone) t.since = now + 1.0e9;  // asked once
+        }
+    }
+    for (auto it = g_zeroHealth.begin(); it != g_zeroHealth.end();) it = seen.count(it->first) ? std::next(it) : g_zeroHealth.erase(it);
 }
 
 // Living enemies within `radius` of `at` (3D), nearest first; never `except` nor the boss.
@@ -7907,12 +8010,21 @@ void PlagueOnDeath(std::uintptr_t enemy, int maxHp, double now) {
 // after stream_seconds in the flame, Toxic poisons them, Incendiary sets them burning (Inferno
 // spreads it). The flame: enemies within kFlameReach ahead of the player and kFlameHalfAngle of his
 // facing, at about his height. The amounts scale from kStreamHitDamage, a hit's worth.
-// With an element's look in place of the flame (settings flame_streams, SetFlameStream) the flame's
-// hits are gone with it: each one in the flame takes kStreamDps a second here, every kStreamHitEvery,
-// scaled as a flamethrower hit (its level, affixes, perks); Shock's stuns it (the flash grenade's
-// reaction) as the flame sets it flailing. The flame took a Majini (1000) in about 3.5 s.
+// The flame's damage is the mod's, whatever its look (the user, 2026-11-22: "flamethrower issue, at
+// least with electric upgrade it deals no damage ... mini-bosses get NO damage from it whatsoever ...
+// also bosses. which makes for a horrible experience"): with an element's look in place of the flame
+// (settings flame_streams, SetFlameStream) the game's flame and its hits are gone, and the game's own
+// flame passes almost none (its burn is no hit); its Majini kill was its on-fire reaction, which the
+// burns of the mod start without the game's fire. So each one in the flame takes, every
+// kStreamHitEvery, its share of the second here, scaled as a flamethrower hit (its level, affixes,
+// perks): kStreamDps (the game's flame took a Majini, 1000, in about 3.5 s), a bigger one
+// kStreamBigShare of its health (an Executioner, 18000, in about 17 s of flame, a Chainsaw Majini,
+// 6500, as long), the arena's boss kStreamBossShare (BossFlameDamage). Shock's stuns it (the flash
+// grenade's reaction) as the flame sets it flailing.
 constexpr double kStreamDps = 300.0;
 constexpr double kStreamHitEvery = 0.2;
+constexpr double kStreamBigShare = 0.06;
+constexpr double kStreamBossShare = 0.025;
 std::string g_flameStreamPath;           // the look in place of the flame now ("" the flame)
 std::string g_flameStreamCompanion;      // with it in place of the flame's second list (the mod's own effects)
 bool g_flameStreamLoops = false;         // a recoloured flame: it keeps going by itself
@@ -8006,6 +8118,28 @@ double StreamMultiplier(std::uintptr_t enemy, double now) {
     return g->run->ComputeOutgoingMultiplier(ctx).multiplier;  // its procs: the stream's elements below
 }
 
+// A second of the flame on `enemy`, before its multiplier (kStreamDps, kStreamBigShare, kStreamBossShare).
+double StreamDpsOf(std::uintptr_t enemy) {
+    const auto hp = engine::ReadHp(enemy);
+    const double max = hp && hp->max > 0 ? hp->max : 1000.0;
+    return std::max(kStreamDps, max * (enemy == g->boss.unit ? kStreamBossShare : kStreamBigShare));
+}
+
+// The flame on the arena's boss (ElementDamage leaves bosses out): through the game's SubHp, where
+// the hooks keep a boss with a phase left at 1 (DetectEnemyDeaths puts him down there), Uroboros
+// Wesker at his body share (boss tuning body_damage, as his gunfire); nothing while he is down.
+bool BossFlameDamage(std::uintptr_t boss, double amount, double now) {
+    if (boss == 0 || boss != g->boss.unit || g->boss.dead || BossIsDown(boss)) return false;
+    const auto hp = engine::ReadHp(boss);
+    if (!hp || hp->hp <= 0) return false;
+    const rm::MapDef* map = CurrentMap();
+    if (map && map->boss && map->boss->unit_class == "uEm82") amount *= map->boss->Tuning("body_damage", 1.0);
+    const int dmg = std::max(1, static_cast<int>(std::lround(amount)));
+    const bool done = director::Damage(boss, dmg);
+    if (done) PanelHit(std::min(dmg, hp->hp), false, now);
+    return done;
+}
+
 constexpr float kFlameReach = 500.0f;             // 5 m
 constexpr float kFlameCosHalfAngle = 0.866f;      // 30 degrees either side
 constexpr float kFlameHeight = 250.0f;
@@ -8050,15 +8184,14 @@ void DriveFlameStream(double now) {
     }
     if (lookInPlace) KeepFlameStreamLook(seat, firing);
     if (!firing) return;
-    const auto elements = g->run->ElementsOf("flamethrower");
-    if (elements.empty() && !lookInPlace) return;
+    const auto elements = g->run->ElementsOf("flamethrower");  // none: the flame's damage below all the same
     float fx = 0.0f, fz = 0.0f;
     if (!PlayerFacing(player, fx, fz)) return;
     float at[3];
     UnitPosition(player, at);
     std::vector<std::pair<std::uintptr_t, float>> inFlame;
     for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
-        if (e.hp <= 0 || e.object == g->boss.unit) continue;
+        if (e.hp <= 0 || (e.object == g->boss.unit && g->boss.dead)) continue;
         float p[3];
         UnitPosition(e.object, p);
         const float dx = p[0] - at[0], dz = p[2] - at[2];
@@ -8078,13 +8211,18 @@ void DriveFlameStream(double now) {
         nextGunArc = now + 0.12;
         AddArc(0, inFlame.front().first, now, 0.16);
     }
-    if (lookInPlace && now >= nextStreamHit) {
+    if (now >= nextStreamHit) {
         nextStreamHit = now + kStreamHitEvery;
         for (const auto& [enemy, dist] : inFlame) {
             (void)dist;
-            ElementDamage(enemy, kStreamDps * kStreamHitEvery * StreamMultiplier(enemy, now), now, Reaction::Flyoff);
+            const double amount = StreamDpsOf(enemy) * kStreamHitEvery * StreamMultiplier(enemy, now);
+            if (enemy == g->boss.unit) {
+                BossFlameDamage(enemy, amount, now);
+                continue;
+            }
+            ElementDamage(enemy, amount, now, lookInPlace ? Reaction::Flyoff : Reaction::Fire);
             const auto hp = engine::ReadHp(enemy);
-            if (g_flameStreamElement == rm::Element::Shock && hp && hp->hp > 0) React(enemy, Reaction::Flash, now);
+            if (lookInPlace && g_flameStreamElement == rm::Element::Shock && hp && hp->hp > 0) React(enemy, Reaction::Flash, now);
         }
     }
     for (const auto& [el, evolved] : elements) {
@@ -12593,6 +12731,7 @@ private:
         { ProfileScope p("tick:WatchEventCamera"); WatchEventCamera(now); }
         { ProfileScope p("tick:DriveArena"); DriveArena(now); }
         { ProfileScope p("tick:DetectEnemyDeaths"); DetectEnemyDeaths(now); }
+        { ProfileScope p("tick:DriveZeroHealth"); DriveZeroHealth(now); }
         { ProfileScope p("tick:OpenChests"); OpenChests(now); }
         // M10: player 1's pad is the mod's primary one; each player's own turn below.
         SetPrimaryPadUser(g->run->HasActiveRun() && g->run->SeatCount() > 1 ? PadUserOfSeat(0) : 0);

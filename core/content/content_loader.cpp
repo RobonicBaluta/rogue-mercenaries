@@ -1397,7 +1397,7 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
         MapDef map;
         if (!ReadId(d, e, map.id)) continue;
         d = file.Sub(": map " + Q(map.id));
-        CheckKeys(d, e, {"id", "name", "stage", "rotation", "start", "start2", "points", "chests", "preload", "layouts", "hide_models", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
+        CheckKeys(d, e, {"id", "name", "stage", "rotation", "start", "start2", "points", "small_only_points", "chests", "preload", "layouts", "hide_models", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
         if (const auto s = e.find("start"); s != e.end()) {
             if (!s->is_array() || s->size() != 3 || !(*s)[0].is_number() || !(*s)[1].is_number() || !(*s)[2].is_number()) {
                 d.Error("field 'start' must be [x, y, z]");
@@ -1477,6 +1477,16 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
                     continue;
                 }
                 map.hide_models.push_back(name);
+            }
+        }
+        if (const auto small = e.find("small_only_points"); small != e.end()) {
+            if (!small->is_array()) d.Error("field 'small_only_points' must be a list of [x, y, z]");
+            for (const json& p : small->is_array() ? *small : json::array()) {
+                if (!p.is_array() || p.size() != 3 || !p[0].is_number() || !p[1].is_number() || !p[2].is_number()) {
+                    d.Error("every small_only_points entry must be [x, y, z]");
+                    continue;
+                }
+                map.small_only_points.push_back({p[0].get<double>(), p[1].get<double>(), p[2].get<double>()});
             }
         }
         if (const auto chests = e.find("chests"); chests != e.end()) {
