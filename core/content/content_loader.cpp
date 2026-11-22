@@ -909,8 +909,9 @@ std::int64_t ItemIdValue(const json& v) {
 void ParseSpecial(const Diag& d, const json& sp, SkinSpecial& out) {
     CheckKeys(d, sp, {"kind", "name", "icon", "cooldown_seconds", "every_arenas", "power", "duration_seconds"});
     GetString(d, sp, "kind", out.kind, true);
-    if (!out.kind.empty() && out.kind != "dash" && out.kind != "dual_smg" && out.kind != "backup" && out.kind != "burst") {
-        d.Error("unknown special kind " + Q(out.kind) + " (dash, dual_smg, backup, burst)");
+    if (!out.kind.empty() && out.kind != "dash" && out.kind != "dual_smg" && out.kind != "backup" && out.kind != "burst" &&
+        out.kind != "element_pick") {
+        d.Error("unknown special kind " + Q(out.kind) + " (dash, dual_smg, backup, burst, element_pick)");
     }
     GetString(d, sp, "name", out.name, true);
     if (GetString(d, sp, "icon", out.icon, false) && !IsValidId(out.icon)) d.Error("special icon " + Q(out.icon) + " is not a valid name");
@@ -932,7 +933,8 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                      "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "extra_chests", "special",
                      "special_2", "stack_mult", "never_offered", "drops_as_held_ammo", "pickup_as", "break_grabs",
                      "shop_weapon", "shop_weapon_price", "gun_elements", "arena_element", "refine_every_shop",
-                     "refine_price_mult", "fuel_regen_mult", "pistol_in_hand", "more_starting_weapons", "infinite_ammo"});
+                     "refine_price_mult", "fuel_regen_mult", "pistol_in_hand", "more_starting_weapons", "infinite_ammo",
+                     "only_build_weapons"});
     GetString(d, b, "shop_weapon", out.shop_weapon, false);
     if (GetStringList(d, b, "gun_elements", out.gun_elements, false)) {
         for (const std::string& e : out.gun_elements) {
@@ -942,6 +944,7 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
     GetBool(d, b, "arena_element", out.arena_element, false);
     GetBool(d, b, "refine_every_shop", out.refine_every_shop, false);
     GetBool(d, b, "pistol_in_hand", out.pistol_in_hand, false);
+    GetBool(d, b, "only_build_weapons", out.only_build_weapons, false);
     if (GetNumber(d, b, "refine_price_mult", out.refine_price_mult, false)) {
         CheckRange(d, "refine_price_mult", out.refine_price_mult, 0.0, 5.0);
     }
@@ -2378,8 +2381,11 @@ private:
                     d.Error("drops_as names a game item no loadouts.json equipment hands out");
                 }
             }
-            if ((!b.special.kind.empty() && b.special.cooldown_seconds <= 0.0 && b.special.every_arenas <= 0) ||
-                (!b.special_2.kind.empty() && b.special_2.cooldown_seconds <= 0.0 && b.special_2.every_arenas <= 0)) {
+            // A special that acts in the fight needs a limit; the tester's element screen (element_pick) is no move.
+            const auto unlimited = [](const SkinSpecial& sp) {
+                return !sp.kind.empty() && sp.kind != "element_pick" && sp.cooldown_seconds <= 0.0 && sp.every_arenas <= 0;
+            };
+            if (unlimited(b.special) || unlimited(b.special_2)) {
                 d.Error("special has neither a cooldown nor every_arenas (it could be used without limit)");
             }
             if (!b.starting_weapon.empty()) {

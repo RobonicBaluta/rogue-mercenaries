@@ -2567,6 +2567,23 @@ Status RunController::ChooseElement(std::string_view instance_id, int option) {
     return Status::Success();
 }
 
+Status RunController::TesterSetElement(std::string_view base_id, std::optional<Element> element, bool evolved) {
+    constexpr const char* op = "tester_set_element";
+    if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    if (!run_.character.tester_only) return Fail(op, ErrorCode::NotEligible, "only the tester picks elements");
+    const auto it = std::find_if(run_.weapons.begin(), run_.weapons.end(), [base_id](const WeaponInstance& w) { return w.base_id == base_id; });
+    if (it == run_.weapons.end()) return Fail(op, ErrorCode::UnknownId, "the run has no " + std::string(base_id));
+    it->elements.clear();
+    if (element) it->elements.push_back(*element);
+    it->element_evolved = element.has_value() && evolved;
+    it->element_offer.clear();
+    Event e = MakeEvent(EventType::WeaponRefined);
+    e.Add("weapon", it->base_id).Add("weapon_instance", it->instance_id).Add("source", "tester")
+        .Add("element", element ? std::string(ElementName(*element)) : std::string("none")).Add("evolved", it->element_evolved);
+    Emit(std::move(e));
+    return Status::Success();
+}
+
 std::int64_t RunController::SaleValue(std::int64_t game_item, std::int64_t count) const {
     if (game_item < 0 || count <= 0) return 0;
     const EconomyConfig& eco = content_->economy();

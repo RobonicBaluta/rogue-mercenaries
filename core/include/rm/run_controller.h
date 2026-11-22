@@ -552,6 +552,10 @@ public:
     /// Gives the gun its element: `option` 0 or 1 the offered one, -1 a random one (any element but
     /// the build's, each as likely, so the rare ones too).
     Status ChooseElement(std::string_view instance_id, int option);
+    /// The tester's element pick (special element_pick, 2026-11-22: "let me select what element my
+    /// gun has from the special menu"): the run's gun of base `base_id` gets `element` (none: no
+    /// element), evolved or not, at once; only while the active seat plays a tester_only character.
+    Status TesterSetElement(std::string_view base_id, std::optional<Element> element, bool evolved);
     /// The elements of the run's gun `base_id` (as its hits carry them, the build's too), each with
     /// whether it plays evolved; empty when the run holds no such gun. The adapter's flamethrower
     /// stream plays them on the enemies in its flame.

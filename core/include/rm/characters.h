@@ -50,7 +50,7 @@ struct WeaponFilter {
 /// A build's special move, used with a button combo during an arena (the adapter reads the
 /// input and performs it; the core keeps its cooldown and availability).
 struct SkinSpecial {
-    std::string kind;              // "dash", "dual_smg", "backup", "burst"; empty = none
+    std::string kind;              // "dash", "dual_smg", "backup", "burst", "element_pick" (the tester); empty = none
     std::string name;              // HUD label
     std::string icon;              // icons/<icon>.png
     double cooldown_seconds = 0.0;
@@ -78,6 +78,10 @@ struct SkinBuild {
     /// More base ids handed over at common rarity when the run starts, after starting_weapon (the
     /// tester's Gatling and rocket launcher).
     std::vector<std::string> more_starting_weapons;
+    /// The run starts with the build's own weapons only (the tester, 2026-11-22: "make my tester
+    /// character have only the flamethrower"): the hands take its first one, and the pistol and its
+    /// rounds go (the adapter).
+    bool only_build_weapons = false;
     double max_health_mult = 1.0;    // the adapter scales the player's maximum health
     /// Game item id -> the stack size the adapter allows for it during the run (JSON keys may be
     /// hex, "0x010A").

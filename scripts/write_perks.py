@@ -350,11 +350,16 @@ BUILDS = {
     # (the adapter marks them the way the game's own Infinite Ammo bonus does).
     # Every machine gun (RE5's own class: the AK-74 and SIG 556; the Gatling never uses rounds anyway,
     # weapon table +0x14) and the rocket launcher, which is otherwise thrown away after its one shot.
+    # 2026-11-22, the user: "make my tester character have only the flamethrower and let me select
+    # what element my gun has from the special menu": the flamethrower alone (the pistol goes:
+    # only_build_weapons), and its special opens a screen of every element and its evolution for the
+    # gun in hand. The fuel is not made infinite: the adapter tells the game's flame is firing by its
+    # fuel going down (it refills by itself).
     'tester_kit': {
-        'name': 'Test Kit', 'icon': 'gatling',
-        'summary': 'Starts with a Gatling gun, an AK-74 and a rocket launcher that never run out. For testing.',
-        'extra_weapons': ['gatling'], 'more_starting_weapons': ['gatling', 'ak74', 'rocket_launcher'],
-        'infinite_ammo': {'categories': ['machine_gun'], 'ids': ['rocket_launcher']},
+        'name': 'Test Kit', 'icon': 'fire',
+        'summary': 'Starts with the flamethrower only. Its special picks the element of the gun in hand. For testing.',
+        'more_starting_weapons': ['flamethrower'], 'only_build_weapons': True,
+        'special': {'kind': 'element_pick', 'name': 'Element', 'icon': 'flash'},
     },
     # Rebecca in winter gear (Winter Outfit by Angeltitilxyz, 2026-11-10, the user: "give it the whole
     # ordeal"): a medic out in the cold, her rounds freezing what they hit. Cryo freezes on a tenth

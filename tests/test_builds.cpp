@@ -1007,7 +1007,7 @@ TEST_CASE("a tester_only character is listed and playable only when the install 
     CHECK(HasError(alone.errors, "no enabled character is unlocked by default"));
 }
 
-TEST_CASE("the shipped tester starts with a Gatling, an AK-74 and a rocket launcher that never run out", "[builds]") {
+TEST_CASE("the shipped tester starts with the flamethrower only and picks its gun's element", "[builds]") {
     const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
     REQUIRE(r.ok());
     const CharacterDef* tester = r.content->FindCharacter("tester");
@@ -1018,20 +1018,37 @@ TEST_CASE("the shipped tester starts with a Gatling, an AK-74 and a rocket launc
     test::Harness h(r.content);
     h.rc.SetTesterCharacters(true);
     REQUIRE(h.rc.StartRun("tester", 2).ok());
-    const auto& weapons = h.rc.state().weapons;
     const SkinBuild& build = h.rc.state().character.build;
-    for (const char* id : {"gatling", "ak74", "rocket_launcher"}) {
-        INFO(id);
-        CHECK(std::count_if(weapons.begin(), weapons.end(), [id](const WeaponInstance& w) { return w.base_id == id; }) == 1);
-        const WeaponBaseDef* w = r.content->FindWeapon(id);
-        REQUIRE(w != nullptr);
-        CHECK(build.infinite_ammo.Allows(w->id, WeaponCategoryName(w->category)));
-    }
-    // Every machine gun the run finds or buys never runs out either; other guns do.
-    CHECK(build.infinite_ammo.Allows("sig556", "machine_gun"));
-    CHECK_FALSE(build.infinite_ammo.Allows("m3", "shotgun"));
-    const WeaponBaseDef* pistol = r.content->FindWeapon(h.rc.state().loadout.weapon_id);
-    REQUIRE(pistol != nullptr);
-    CHECK(pistol->category == WeaponCategory::Handgun);
-    CHECK_FALSE(h.rc.state().character.build.infinite_ammo.Allows(pistol->id, WeaponCategoryName(pistol->category)));
+    // 2026-11-22, the user: "make my tester character have only the flamethrower".
+    CHECK(build.more_starting_weapons == std::vector<std::string>{"flamethrower"});
+    CHECK(build.only_build_weapons);
+    const auto& weapons = h.rc.state().weapons;
+    CHECK(std::count_if(weapons.begin(), weapons.end(), [](const WeaponInstance& w) { return w.base_id == "flamethrower"; }) == 1);
+    // Its fuel is never made infinite: the adapter tells the flame is firing by the fuel going down.
+    // (An empty filter is "no infinite guns" to the adapter: InfiniteForBuild.)
+    CHECK(build.infinite_ammo.Empty());
+    // "let me select what element my gun has from the special menu".
+    CHECK(build.Special(0).kind == "element_pick");
+    REQUIRE(h.rc.TesterSetElement("flamethrower", Element::Shock, true).ok());
+    const auto gun = [&]() -> const WeaponInstance& {
+        return *std::find_if(h.rc.state().weapons.begin(), h.rc.state().weapons.end(),
+                             [](const WeaponInstance& w) { return w.base_id == "flamethrower"; });
+    };
+    CHECK(gun().elements == std::vector<Element>{Element::Shock});
+    CHECK(gun().element_evolved);
+    const auto procs = h.rc.ElementsOf("flamethrower");
+    REQUIRE(procs.size() == 1);
+    CHECK(procs[0].first == Element::Shock);
+    CHECK(procs[0].second);  // Storm
+    REQUIRE(h.rc.TesterSetElement("flamethrower", Element::Cryo, false).ok());
+    CHECK(gun().elements == std::vector<Element>{Element::Cryo});
+    CHECK_FALSE(gun().element_evolved);
+    REQUIRE(h.rc.TesterSetElement("flamethrower", std::nullopt, true).ok());
+    CHECK(gun().elements.empty());
+    CHECK_FALSE(gun().element_evolved);
+    CHECK_FALSE(h.rc.TesterSetElement("rocket_launcher", Element::Toxic, false).ok());  // no such gun in the run
+    // Anyone else: refused.
+    test::Harness other(r.content);
+    REQUIRE(other.rc.StartRun("chris", 2).ok());
+    CHECK_FALSE(other.rc.TesterSetElement(other.rc.state().weapons.front().base_id, Element::Shock, false).ok());
 }

@@ -14,7 +14,8 @@ enum class ScreenId {
     Main = 0, Characters, Perks, Credits, Skins, PerkList,
     MatchResults, MatchRewards, MatchShop, MatchRoute, MatchRunOver, MatchOrganize,
     RunResults, RunLength, MatchElement, WhichPlayer, MapEditor,
-    MatchWait  // M10: a player waits for the other (split-screen screens of their own)
+    MatchWait,  // M10: a player waits for the other (split-screen screens of their own)
+    MatchTestElement  // the tester's special (element_pick): the gun in hand's element
 };
 
 struct Item {

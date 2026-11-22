@@ -1034,23 +1034,16 @@
           "costume_index": 10,
           "build": {
             "name": "Test Kit",
-            "icon": "gatling",
-            "summary": "Starts with a Gatling gun, an AK-74 and a rocket launcher that never run out. For testing.",
-            "extra_weapons": [
-              "gatling"
-            ],
+            "icon": "fire",
+            "summary": "Starts with the flamethrower only. Its special picks the element of the gun in hand. For testing.",
             "more_starting_weapons": [
-              "gatling",
-              "ak74",
-              "rocket_launcher"
+              "flamethrower"
             ],
-            "infinite_ammo": {
-              "categories": [
-                "machine_gun"
-              ],
-              "ids": [
-                "rocket_launcher"
-              ]
+            "only_build_weapons": true,
+            "special": {
+              "kind": "element_pick",
+              "name": "Element",
+              "icon": "flash"
             }
           }
         }
