@@ -530,6 +530,9 @@ public:
     Status DevGrantPerk(std::string_view perk_id);
     /// Adds a weapon instance under the normal slot rules (see weapons.h).
     Status DevGrantWeapon(WeaponInstance weapon);
+    /// The run's gun of `base_id` at `level` (1 to economy upgrades max_level; the tester's screen and the
+    /// dev command "level"), as if upgraded that far (perk_acquired, source "dev_level").
+    Status DevSetWeaponLevel(std::string_view base_id, int level);
     /// Refines the run's gun of `base` (else RefineTarget's pick) one tier, as a reward would.
     Status DevRefineWeapon(const std::optional<std::string>& base);
     /// Credits supplies to the active run; each call is its own transaction (reason "dev").
@@ -556,6 +559,11 @@ public:
     /// gun has from the special menu"): the run's gun of base `base_id` gets `element` (none: no
     /// element), evolved or not, at once; only while the active seat plays a tester_only character.
     Status TesterSetElement(std::string_view base_id, std::optional<Element> element, bool evolved);
+    /// The tester's gun (2026-11-22, the user: "something to select what weapon I have so I can test
+    /// everything"): the run holds that one gun alone (the one it had of that base, else a new Common one
+    /// at level 1); the adapter puts it in the hands and takes the others out of the grid. Only while the
+    /// active seat plays a tester_only character.
+    Status TesterSetWeapon(std::string_view base_id);
     /// The elements of the run's gun `base_id` (as its hits carry them, the build's too), each with
     /// whether it plays evolved; empty when the run holds no such gun. The adapter's flamethrower
     /// stream plays them on the enemies in its flame.

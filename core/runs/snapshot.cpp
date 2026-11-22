@@ -263,51 +263,13 @@ RunSnapshot RunController::Snapshot(double now) const {
                 const double atLevel = LevelDamageBonus(c.economy(), o.target_level);
                 const double afterUpgrade = LevelDamageBonus(c.economy(), o.target_level + 1);
                 v.detail = "Damage from its level " + Percent(atLevel) + " now, " + Percent(afterUpgrade) + " after";
-                // A gun with more than damage by level (the flamethrower's fuel, refill and reach).
+                // A gun with more than damage by level (weapons.json per_level: the special guns'), at the
+                // levels above 1 it has after the upgrade (o.target_level).
                 for (const WeaponInstance& w : run_.weapons) {
                     if (w.instance_id != o.target_instance_id) continue;
                     const WeaponBaseDef* base = c.FindWeapon(w.base_id);
                     if (base == nullptr || !base->per_level.Any()) break;
-                    const WeaponLevelPerks& pl = base->per_level;
-                    const int steps = o.target_level;  // the levels above 1 after the upgrade
-                    std::string more;
-                    const auto add = [&more](const std::string& part) { more += (more.empty() ? "" : ", ") + part; };
-                    const auto pct = [steps](double perLevel) { return Percent(perLevel / 100.0 * steps); };
-                    const auto metres = [steps](const char* what, double perLevel) {
-                        char num[24];
-                        std::snprintf(num, sizeof(num), "%.2f", perLevel * steps);
-                        std::string n(num);  // 1.25, 2.5, 5 (no trailing zeros)
-                        while (!n.empty() && n.back() == '0') n.pop_back();
-                        if (!n.empty() && n.back() == '.') n.pop_back();
-                        return std::string(what) + " +" + n + " m";
-                    };
-                    if (pl.fuel_pct > 0.0) add("fuel +" + pct(pl.fuel_pct));
-                    if (pl.refill_pct > 0.0) add("refill +" + pct(pl.refill_pct));
-                    if (pl.reach_m > 0.0) add(metres("reach", pl.reach_m));
-                    if (pl.extra_every_levels > 0) add(std::to_string(1 + steps / pl.extra_every_levels) + " an arena");
-                    if (pl.blast_m > 0.0) add(metres("blast", pl.blast_m));
-                    if (pl.free_round_pct > 0.0) add(pct(pl.free_round_pct) + " a shot keeps its round");
-                    if (pl.status_pct > 0.0) add(pct(pl.status_pct) + " a hit burns or poisons");
-                    if (pl.magazine > 0) add("+" + std::to_string(pl.magazine * steps) + " in the magazine");
-                    if (pl.ramp_pct > 0.0) add("up to +" + pct(pl.ramp_pct) + " while firing");
-                    if (pl.stagger_pct > 0.0) add(pct(pl.stagger_pct) + " a hit staggers");
-                    if (pl.crit_pct > 0.0) add("crit +" + pct(pl.crit_pct));
-                    if (pl.pierce_pct > 0.0) add(pct(pl.pierce_pct) + " to the one behind");
-                    if (pl.explode_every > 0) add("one in " + std::to_string(std::max(2, pl.explode_every - (steps - 1))) + " explodes");
-                    if (pl.chain_targets > 0) add("the stun jumps to " + std::to_string(pl.chain_targets * steps) + " more");
-                    if (pl.stun_s > 0.0) {
-                        char text[48];
-                        std::snprintf(text, sizeof(text), "stun +%.1f s", pl.stun_s * steps);
-                        add(text);
-                    }
-                    if (pl.stunned_damage_pct > 0.0) add("stunned take +" + pct(pl.stunned_damage_pct));
-                    if (pl.supplies_per_kill > 0.0) {
-                        char text[48];
-                        std::snprintf(text, sizeof(text), "+%.2f supplies a kill", pl.supplies_per_kill * steps);
-                        add(text);
-                    }
-                    if (pl.headshot_refund_pct > 0.0) add(pct(pl.headshot_refund_pct) + " a headshot gives its round back");
-                    v.detail += "; after: " + more;
+                    v.detail += ", after: " + DescribeLevelPerks(base->per_level, o.target_level);
                     break;
                 }
                 break;

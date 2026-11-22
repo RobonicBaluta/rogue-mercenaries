@@ -1052,3 +1052,34 @@ TEST_CASE("the shipped tester starts with the flamethrower only and picks its gu
     REQUIRE(other.rc.StartRun("chris", 2).ok());
     CHECK_FALSE(other.rc.TesterSetElement(other.rc.state().weapons.front().base_id, Element::Shock, false).ok());
 }
+
+TEST_CASE("the tester picks the gun it holds and its level", "[builds]") {
+    // 2026-11-22, the user: "add dev command and something to select what weapon I have so I can test everything".
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    test::Harness h(r.content);
+    h.rc.SetTesterCharacters(true);
+    REQUIRE(h.rc.StartRun("tester", 2).ok());
+    REQUIRE(h.rc.TesterSetElement("flamethrower", Element::Shock, false).ok());
+    REQUIRE(h.rc.TesterSetWeapon("grenade_launcher").ok());
+    REQUIRE(h.rc.state().weapons.size() == 1);  // that one alone
+    CHECK(h.rc.state().weapons.front().base_id == "grenade_launcher");
+    CHECK(h.rc.state().weapons.front().level == 1);
+    REQUIRE(h.rc.DevSetWeaponLevel("grenade_launcher", 5).ok());
+    CHECK(h.rc.state().weapons.front().level == 5);
+    CHECK_FALSE(h.rc.DevSetWeaponLevel("grenade_launcher", 6).ok());  // past the economy's maximum
+    CHECK_FALSE(h.rc.DevSetWeaponLevel("grenade_launcher", 0).ok());
+    CHECK_FALSE(h.rc.DevSetWeaponLevel("flamethrower", 3).ok());      // no longer the run's
+    // The same gun picked again keeps its level; a gun that is no game weapon is refused.
+    REQUIRE(h.rc.TesterSetWeapon("grenade_launcher").ok());
+    CHECK(h.rc.state().weapons.front().level == 5);
+    CHECK_FALSE(h.rc.TesterSetWeapon("no_such_gun").ok());
+    CHECK(h.rc.state().weapons.front().base_id == "grenade_launcher");
+    // Anyone else: no pick (the level is a dev command, any run).
+    test::Harness other(r.content);
+    REQUIRE(other.rc.StartRun("chris", 2).ok());
+    CHECK_FALSE(other.rc.TesterSetWeapon("gatling").ok());
+    const std::string pistol = other.rc.state().weapons.front().base_id;
+    REQUIRE(other.rc.DevSetWeaponLevel(pistol, 3).ok());
+    CHECK(other.rc.state().weapons.front().level == 3);
+}

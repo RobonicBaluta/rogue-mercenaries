@@ -357,7 +357,7 @@ BUILDS = {
     # fuel going down (it refills by itself).
     'tester_kit': {
         'name': 'Test Kit', 'icon': 'fire',
-        'summary': 'Starts with the flamethrower only. Its special picks the element of the gun in hand. For testing.',
+        'summary': 'Starts with the flamethrower only. Its special picks the gun, its level and its element. For testing.',
         'more_starting_weapons': ['flamethrower'], 'only_build_weapons': True,
         'special': {'kind': 'element_pick', 'name': 'Element', 'icon': 'flash'},
     },

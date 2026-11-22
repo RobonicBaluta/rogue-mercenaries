@@ -203,6 +203,9 @@ inline constexpr std::string_view kSidearmSlot = "sidearm";
 
 /// Level-1 common instance with no affixes (starting gear).
 WeaponInstance MakeStartingWeapon(std::string_view base_id, std::string instance_id);
+/// What a gun's per_level adds at `steps` levels above 1, for the shop's upgrade line and the tester's
+/// level screen: "fuel +20%, refill +25%, reach +1.25 m" (empty without any).
+std::string DescribeLevelPerks(const WeaponLevelPerks& pl, int steps);
 
 /// Rolls a new instance: affix_count distinct regular affixes, an element (rolled by weight, none
 /// of `exclude`: the build's own) when the tier has one, and unique_count legendary effects for the

@@ -2588,6 +2588,41 @@ Status RunController::TesterSetElement(std::string_view base_id, std::optional<E
     return Status::Success();
 }
 
+Status RunController::TesterSetWeapon(std::string_view base_id) {
+    constexpr const char* op = "tester_set_weapon";
+    if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    if (!run_.character.tester_only) return Fail(op, ErrorCode::NotEligible, "only the tester picks its gun");
+    const WeaponBaseDef* def = content_->FindWeapon(base_id);
+    if (def == nullptr || def->game_item < 0) return Fail(op, ErrorCode::UnknownId, "no game weapon '" + std::string(base_id) + "'");
+    const auto it = std::find_if(run_.weapons.begin(), run_.weapons.end(), [base_id](const WeaponInstance& w) { return w.base_id == base_id; });
+    WeaponInstance gun = it != run_.weapons.end() ? *it : MakeStartingWeapon(std::string(base_id), NextInstanceId());
+    std::vector<std::string> dropped;
+    for (const WeaponInstance& w : run_.weapons) {
+        if (w.instance_id != gun.instance_id) dropped.push_back(w.base_id);
+    }
+    run_.weapons = {gun};
+    Event e = MakeEvent(EventType::PerkAcquired, EventLevel::Debug);
+    e.Add("weapon_instance", gun.instance_id).Add("weapon", gun.base_id).Add("rarity", RarityName(gun.rarity))
+        .Add("level", gun.level).Add("dropped", dropped.size()).Add("source", "tester");
+    Emit(std::move(e));
+    return Status::Success();
+}
+
+Status RunController::DevSetWeaponLevel(std::string_view base_id, int level) {
+    constexpr const char* op = "dev_set_weapon_level";
+    if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
+    const auto it = std::find_if(run_.weapons.begin(), run_.weapons.end(), [base_id](const WeaponInstance& w) { return w.base_id == base_id; });
+    if (it == run_.weapons.end()) return Fail(op, ErrorCode::UnknownId, "the run has no " + std::string(base_id));
+    const int max = std::max(1, content_->economy().upgrades.max_level);
+    if (level < 1 || level > max) return Fail(op, ErrorCode::InvalidArgument, "level " + std::to_string(level) + " is not 1 to " + std::to_string(max));
+    const int before = it->level;
+    it->level = level;
+    Event e = MakeEvent(EventType::PerkAcquired, EventLevel::Debug);
+    e.Add("weapon", it->base_id).Add("weapon_instance", it->instance_id).Add("from_level", before).Add("to_level", level).Add("source", "dev_level");
+    Emit(std::move(e));
+    return Status::Success();
+}
+
 std::int64_t RunController::SaleValue(std::int64_t game_item, std::int64_t count) const {
     if (game_item < 0 || count <= 0) return 0;
     const EconomyConfig& eco = content_->economy();

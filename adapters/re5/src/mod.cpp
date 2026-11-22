@@ -1543,7 +1543,7 @@ std::string Plain(const std::string& s) {
         if (c == '%') out += " percent";
         else if (c == '+' && digitNext) out += "plus ";
         else if (c == '-' && digitNext && !wordBefore) out += "minus ";
-        else if (c == ':') out += ",";
+        else if (c == ':' || c == ';') out += ",";  // the font has no colon or semicolon
         else if (c == '/') out += " or ";
         else if (c == '\'') continue;
         else out += c;
@@ -1981,6 +1981,12 @@ struct TestElementOption {
 std::vector<TestElementOption> TestElementOptions();
 // The run's gun in the local player's hands (else the run's flamethrower, else its first gun).
 const rm::WeaponInstance* TestElementGun();
+// The tester's gun screen (2026-11-22, the user: "something to select what weapon I have so I can test
+// everything"): every game weapon of the content; the pick goes into the grid and the hands on the
+// next tick (DriveTesterPick), and the others go (DriveOnlyBuildWeapons keeps the pick alone).
+std::vector<const rm::WeaponBaseDef*> TestWeaponOptions();
+void RequestTesterWeapon(const std::string& base);
+bool WeaponModelLoaded(std::uint32_t id);
 
 class MenuModel final : public nativemenu::Model {
 public:
@@ -2475,6 +2481,62 @@ private:
                         item.label = "SELL   " + std::to_string(value) + (value == 1 ? " SUPPLY" : " SUPPLIES");
                         item.help = "Half its shop price, paid in supplies.\nA sold gun leaves the run.";
                     }
+                    screen.items.push_back(std::move(item));
+                }
+                break;
+            }
+            case ScreenId::MatchTester: {
+                const rm::WeaponInstance* gun = TestElementGun();
+                const rm::WeaponBaseDef* def = gun != nullptr ? g->content->FindWeapon(gun->base_id) : nullptr;
+                screen.header = "TESTER";
+                Item weapon;
+                weapon.label = "WEAPON   " + Upper(Plain(def != nullptr ? def->name : std::string("NONE")));
+                weapon.help = "The gun in your hands. The run keeps that one alone,\nwith some of its ammo.";
+                screen.items.push_back(std::move(weapon));
+                Item level;
+                level.label = "LEVEL   " + (gun != nullptr ? std::to_string(gun->level) : std::string("NONE"));
+                level.help = "Its level, as if upgraded that far in the shop.";
+                level.locked = gun == nullptr;
+                screen.items.push_back(std::move(level));
+                Item element;
+                std::string name = "NONE";
+                if (gun != nullptr && !gun->elements.empty()) {
+                    if (const rm::ElementDef* d = g->content->FindElement(gun->elements.front(), gun->element_evolved)) name = Upper(Plain(d->name));
+                    element.color = ElementColour(gun->elements.front());
+                }
+                element.label = "ELEMENT   " + name;
+                element.help = "The element its hits carry.";
+                element.locked = gun == nullptr;
+                screen.items.push_back(std::move(element));
+                break;
+            }
+            case ScreenId::MatchTestWeapon: {
+                const rm::WeaponInstance* gun = TestElementGun();
+                screen.header = "TEST WEAPON";
+                for (const rm::WeaponBaseDef* w : TestWeaponOptions()) {
+                    Item item;
+                    item.label = Upper(Plain(w->name)) + (gun != nullptr && gun->base_id == w->id ? "   NOW" : "");
+                    item.locked = !WeaponModelLoaded(static_cast<std::uint32_t>(w->game_item));
+                    item.help = Capitalised(std::string(rm::WeaponCategoryName(w->category))) + "." +
+                                (w->per_level.Any() ? " Its levels add more than damage." : "") +
+                                (item.locked ? "\nNot loaded in this match." : "");
+                    screen.items.push_back(std::move(item));
+                }
+                break;
+            }
+            case ScreenId::MatchTestLevel: {
+                const rm::WeaponInstance* gun = TestElementGun();
+                const rm::WeaponBaseDef* def = gun != nullptr ? g->content->FindWeapon(gun->base_id) : nullptr;
+                screen.header = "TEST LEVEL   " + Upper(Plain(def != nullptr ? def->name : std::string("NO GUN")));
+                screen.empty_help = "No gun of the run in hand.";
+                if (gun == nullptr || def == nullptr) break;
+                const int max = std::max(1, g->content->economy().upgrades.max_level);
+                for (int level = 1; level <= max; ++level) {
+                    Item item;
+                    item.label = "LEVEL " + std::to_string(level) + (gun->level == level ? "   NOW" : "");
+                    const std::string more = rm::DescribeLevelPerks(def->per_level, level - 1);
+                    item.help = Plain("Damage +" + std::to_string(static_cast<int>(std::lround(rm::LevelDamageBonus(g->content->economy(), level) * 100.0))) +
+                                      "%." + (more.empty() ? std::string() : " " + Capitalised(more) + "."));
                     screen.items.push_back(std::move(item));
                 }
                 break;
@@ -3044,11 +3106,65 @@ private:
                 d.outcome = Outcome::Close;  // the tick then banks the run and lets the match end
                 break;
             }
+            case ScreenId::MatchTester: {
+                if (index < 0) {
+                    d.outcome = Outcome::Back;
+                    break;
+                }
+                if (index > 0 && TestElementGun() == nullptr) {
+                    d.outcome = Outcome::Denied;
+                    break;
+                }
+                d.outcome = Outcome::Push;
+                d.next = index == 0 ? ScreenId::MatchTestWeapon : index == 1 ? ScreenId::MatchTestLevel : ScreenId::MatchTestElement;
+                break;
+            }
+            case ScreenId::MatchTestWeapon: {
+                const auto options = TestWeaponOptions();
+                if (index < 0 || index >= static_cast<int>(options.size())) {
+                    d.outcome = Outcome::Back;
+                    break;
+                }
+                const rm::WeaponBaseDef* w = options[static_cast<std::size_t>(index)];
+                if (!WeaponModelLoaded(static_cast<std::uint32_t>(w->game_item))) {
+                    d.outcome = Outcome::Denied;
+                    break;
+                }
+                const rm::Status st = run.TesterSetWeapon(w->id);
+                Report(st, "tester weapon");
+                if (!st.ok()) {
+                    d.outcome = Outcome::Denied;
+                    break;
+                }
+                RequestTesterWeapon(w->id);
+                RM_LOGI("tester: the gun is now %s", w->id.c_str());
+                g->toasts.Push(Plain(w->name));
+                d.outcome = Outcome::Back;
+                break;
+            }
+            case ScreenId::MatchTestLevel: {
+                const rm::WeaponInstance* gun = TestElementGun();
+                if (index < 0 || gun == nullptr) {
+                    d.outcome = Outcome::Back;
+                    break;
+                }
+                const std::string gunId = gun->base_id;
+                const rm::Status st = run.DevSetWeaponLevel(gunId, index + 1);
+                Report(st, "tester level");
+                if (!st.ok()) {
+                    d.outcome = Outcome::Denied;
+                    break;
+                }
+                RM_LOGI("tester: %s at level %d", gunId.c_str(), index + 1);
+                g->toasts.Push("Level " + std::to_string(index + 1));
+                d.outcome = Outcome::Back;
+                break;
+            }
             case ScreenId::MatchTestElement: {
                 const rm::WeaponInstance* gun = TestElementGun();
                 const auto options = TestElementOptions();
                 if (index < 0 || gun == nullptr || index >= static_cast<int>(options.size())) {
-                    d.outcome = Outcome::Close;
+                    d.outcome = Outcome::Back;
                     break;
                 }
                 const TestElementOption& o = options[static_cast<std::size_t>(index)];
@@ -3061,7 +3177,7 @@ private:
                 }
                 RM_LOGI("tester: %s gets %s", gunId.c_str(), o.label.c_str());
                 g->toasts.Push(Capitalised(Plain(o.label)));
-                d.outcome = Outcome::Close;
+                d.outcome = Outcome::Back;
                 break;
             }
             case ScreenId::MatchWait:
@@ -4197,6 +4313,59 @@ void ClearSlot(std::uintptr_t slot);
 bool IsWeaponItem(std::uint32_t id);
 bool IsKnifeItem(std::uint32_t id);
 
+// The tester's pick (TestWeaponOptions): its run, its gun, and whether it still has to go into the grid.
+struct TesterPick {
+    std::string runId, base;
+    bool pending = false;
+};
+TesterPick g_testerPick;
+
+void RequestTesterWeapon(const std::string& base) { g_testerPick = {g->run->state().run_id, base, true}; }
+
+std::vector<const rm::WeaponBaseDef*> TestWeaponOptions() {
+    std::vector<const rm::WeaponBaseDef*> out;
+    for (const rm::WeaponBaseDef& w : g->content->weapons()) {
+        if (w.enabled && w.game_item >= 0) out.push_back(&w);
+    }
+    return out;
+}
+
+// The rounds that come with a tester's gun (none for the rocket launcher, the flamethrower, the stun rod;
+// the longbow's arrows never fit the grid and it never runs out).
+std::uint32_t TesterAmmoFor(const rm::WeaponBaseDef& w) {
+    if (w.category == rm::WeaponCategory::Bow || w.id == "rocket_launcher") return 0;
+    return AmmoItemFor(w.category);
+}
+bool IsAmmoItem(std::uint32_t id) { return id >= re5::addr::kItemHandgunAmmo && id <= 0x0210; }
+
+// The tester's gun the hands take and keep alone: its pick this run, else after a resume the run's one
+// gun, else none (the build's own weapons).
+const rm::WeaponBaseDef* TesterKeptWeapon() {
+    const rm::RunState& state = g->run->state();
+    if (!state.character.tester_only) return nullptr;
+    if (g_testerPick.runId == state.run_id && !g_testerPick.base.empty()) return g->content->FindWeapon(g_testerPick.base);
+    if (state.weapons.size() == 1) return g->content->FindWeapon(state.weapons.front().base_id);
+    return nullptr;
+}
+
+void DriveTesterPick(double now) {
+    rm::RunController& run = *g->run;
+    if (!g_testerPick.pending || g_testerPick.runId != run.state().run_id) return;
+    if (!g->match.inMatch || run.phase() != rm::Phase::ArenaActive || !engine::LocalPlayer() || !engine::Caps().inventory) return;
+    g_testerPick.pending = false;
+    const rm::WeaponBaseDef* w = g->content->FindWeapon(g_testerPick.base);
+    if (w == nullptr || w->game_item < 0) return;
+    const int gun = GiveItem("tester", w->game_item, 1);
+    int rounds = 0;
+    if (const std::uint32_t ammo = TesterAmmoFor(*w)) rounds = GiveItem("tester ammo", ammo, std::max(1, ItemStackMax(ammo)) * 2);
+    // The hands take it and the rest goes (DriveOnlyBuildWeapons, from the start).
+    g_onlyBuild = {};
+    g_onlyBuild.generation = g->matchGeneration;
+    g_onlyBuild.since = now;
+    RM_LOGI("tester: %s into the grid (%s), %d rounds", w->id.c_str(), gun > 0 ? "given" : "not given", rounds);
+    if (gun <= 0) g->toasts.Push(Plain(w->name) + ": no room in the grid");
+}
+
 void DriveOnlyBuildWeapons(double now) {
     rm::RunController& run = *g->run;
     if (!g->match.inMatch || !run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || run.SeatCount() > 1) return;
@@ -4217,6 +4386,8 @@ void DriveOnlyBuildWeapons(double now) {
     std::vector<std::uint32_t> keep;
     std::vector<std::string> ids = build.more_starting_weapons;
     if (!build.starting_weapon.empty()) ids.insert(ids.begin(), build.starting_weapon);
+    const rm::WeaponBaseDef* picked = TesterKeptWeapon();
+    if (picked != nullptr) ids = {picked->id};  // the tester's gun, alone
     for (const std::string& id : ids) {
         if (const rm::WeaponBaseDef* w = g->content->FindWeapon(id); w != nullptr && w->game_item >= 0) {
             keep.push_back(RecordItemId(static_cast<std::uint32_t>(w->game_item)));
@@ -4250,13 +4421,16 @@ void DriveOnlyBuildWeapons(double now) {
     }
     std::uint32_t ammo = 0;
     if (const rm::WeaponBaseDef* p = g->content->FindWeapon(run.state().loadout.weapon_id)) ammo = AmmoItemFor(p->category);
+    // The tester's gun keeps its own rounds, every other kind goes.
+    const std::uint32_t keepAmmo = picked != nullptr ? TesterAmmoFor(*picked) : 0;
     int removed = 0;
     for (int i = 0; i < re5::off::kInventorySlots; ++i) {
         const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
         if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1 || ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1) continue;
         const std::uint32_t id = SlotItemId(slot);
         if (std::find(keep.begin(), keep.end(), id) != keep.end() || id == re5::addr::kItemUnarmed || IsKnifeItem(id)) continue;
-        if (!IsWeaponItem(id) && id != ammo) continue;
+        const bool otherAmmo = picked != nullptr ? IsAmmoItem(id) && id != keepAmmo : id == ammo;
+        if (!IsWeaponItem(id) && !otherAmmo) continue;
         ClearSlot(slot);
         ++removed;
     }
@@ -12999,6 +13173,16 @@ void PollDevCommand(double now) {
         const std::string name = id >= 0 && id < static_cast<int>(names.size()) ? names[static_cast<std::size_t>(id)] : std::string();
         const bool started = !name.empty() && engine::StartAction(unit, id, name.c_str(), true);
         RM_LOGW("dev act %s %d (%s): %s", cls.c_str(), id, name.c_str(), started ? "started" : "refused");
+    } else if (command.rfind("level ", 0) == 0 && run.HasActiveRun()) {
+        // "level <base|held> <n>": the run's gun of that base at level n (1 to the economy's maximum).
+        std::istringstream words(command.substr(6));
+        std::string base;
+        int level = 0;
+        words >> base >> level;
+        if (base == "held") base = EquippedWeaponBaseId().value_or(std::string());
+        const rm::Status st = run.DevSetWeaponLevel(base, level);
+        RM_LOGW("dev level: %s at %d: %s", base.c_str(), level, st.ok() ? "done" : st.message.c_str());
+        if (st.ok()) g->toasts.Push(base + " level " + std::to_string(level));
     } else if (command.rfind("gun ", 0) == 0 && run.HasActiveRun()) {
         // "gun <base|held> <rarity> [elements|-] [effects|-]": the run's gun of that base becomes
         // this one (comma lists of element names and unique affix ids; no regular bonuses).
@@ -13700,7 +13884,7 @@ private:
             g->elementPickRequested = false;
             if (!matchui::IsOpen()) {
                 g->elementPickOpen = true;
-                matchui::Open(nativemenu::ScreenId::MatchTestElement);
+                matchui::Open(nativemenu::ScreenId::MatchTester);
             }
         }
     }
@@ -13824,6 +14008,7 @@ private:
             // Items earned by perks, rewards and the shop wait until the player is in a match.
             if (g->match.inMatch && engine::LocalPlayer() && g->run->phase() != rm::Phase::Idle && ReadMercTimer().recent) {
                 ApplyItemGrants();
+                DriveTesterPick(now);
                 DriveOnlyBuildWeapons(now);
                 DriveWeaponLevels(now);
                 KeepInfiniteGuns();

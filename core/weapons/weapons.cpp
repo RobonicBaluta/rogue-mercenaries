@@ -125,6 +125,33 @@ bool IsUniqueAffix(AffixKind k) {
     }
 }
 
+std::string DescribeLevelPerks(const WeaponLevelPerks& pl, int steps) {
+    std::string more;
+    if (steps <= 0) return more;
+    const auto add = [&more](const std::string& part) { more += (more.empty() ? "" : ", ") + part; };
+    const auto pct = [steps](double perLevel) { return Num(perLevel * steps) + "%"; };
+    const auto metres = [steps](const char* what, double perLevel) { return std::string(what) + " +" + Num(perLevel * steps, 2) + " m"; };
+    if (pl.fuel_pct > 0.0) add("fuel +" + pct(pl.fuel_pct));
+    if (pl.refill_pct > 0.0) add("refill +" + pct(pl.refill_pct));
+    if (pl.reach_m > 0.0) add(metres("reach", pl.reach_m));
+    if (pl.extra_every_levels > 0) add(std::to_string(1 + steps / pl.extra_every_levels) + " an arena");
+    if (pl.blast_m > 0.0) add(metres("blast", pl.blast_m));
+    if (pl.free_round_pct > 0.0) add(pct(pl.free_round_pct) + " a shot keeps its round");
+    if (pl.status_pct > 0.0) add(pct(pl.status_pct) + " a hit burns or poisons");
+    if (pl.magazine > 0) add("+" + std::to_string(pl.magazine * steps) + " in the magazine");
+    if (pl.ramp_pct > 0.0) add("up to +" + pct(pl.ramp_pct) + " while firing");
+    if (pl.stagger_pct > 0.0) add(pct(pl.stagger_pct) + " a hit staggers");
+    if (pl.crit_pct > 0.0) add("crit +" + pct(pl.crit_pct));
+    if (pl.pierce_pct > 0.0) add(pct(pl.pierce_pct) + " to the one behind");
+    if (pl.explode_every > 0) add("one in " + std::to_string(std::max(2, pl.explode_every - (steps - 1))) + " explodes");
+    if (pl.chain_targets > 0) add("the stun jumps to " + std::to_string(pl.chain_targets * steps) + " more");
+    if (pl.stun_s > 0.0) add("stun +" + Num(pl.stun_s * steps) + " s");
+    if (pl.stunned_damage_pct > 0.0) add("stunned take +" + pct(pl.stunned_damage_pct));
+    if (pl.supplies_per_kill > 0.0) add("+" + Num(pl.supplies_per_kill * steps, 2) + " supplies a kill");
+    if (pl.headshot_refund_pct > 0.0) add(pct(pl.headshot_refund_pct) + " a headshot gives its round back");
+    return more;
+}
+
 WeaponInstance MakeStartingWeapon(std::string_view base_id, std::string instance_id) {
     WeaponInstance w;
     w.instance_id = std::move(instance_id);

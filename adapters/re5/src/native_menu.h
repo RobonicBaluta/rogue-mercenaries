@@ -15,7 +15,10 @@ enum class ScreenId {
     MatchResults, MatchRewards, MatchShop, MatchRoute, MatchRunOver, MatchOrganize,
     RunResults, RunLength, MatchElement, WhichPlayer, MapEditor,
     MatchWait,  // M10: a player waits for the other (split-screen screens of their own)
-    MatchTestElement  // the tester's special (element_pick): the gun in hand's element
+    MatchTestElement,  // the tester's special (element_pick): the gun in hand's element
+    MatchTester,       // the tester's special: its gun, its level, its element (2026-11-22)
+    MatchTestWeapon,   // ...the gun it holds
+    MatchTestLevel     // ...that gun's level
 };
 
 struct Item {
