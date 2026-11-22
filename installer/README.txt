@@ -78,6 +78,9 @@ PLAY
   In a run:
     - The big orange number at the top is how many enemies are left in the arena (in a
       boss arena: the boss's health).
+    - New in 0.2.6, solo: the ARENA INTEL panel at the top right shows the time, kills,
+      damage dealt and taken, supplies, keys, credits, your kill chain, the boss's health
+      and the rating so far. "info_panel": false in adapter.json turns it off.
     - Chests (clock statues) give supplies and items. Most need a key; Majini
       sometimes drop keys.
     - Keys 1 to 4 pick the first four inventory cells.
@@ -103,9 +106,10 @@ TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPH
   In the mod's menu set PLAYERS to 2. PLAYER 1 and PLAYER 2 each open the CHARACTERS
   and SKINS screens for that player (an outfit in red is the other player's costume
   slot, which a mod outfit cannot share), and PERKS asks whose perks first. Then
-  START RUN. The game's split-screen lobby appears: player 2 presses START on their
-  controller to join, then both press Ready. Player 1 plays on the top half, player 2
-  on the bottom half.
+  START RUN. With two controllers connected the match starts right away (new in 0.2.6):
+  player 2 is the controller connected last. Otherwise the game's split-screen lobby
+  appears: player 2 presses START on their controller to join, then both press Ready.
+  Player 1 plays on the top half, player 2 on the bottom half.
     - Each player has their own character, skin build, perks, weapons, inventory and
       health. The supplies are shared.
     - An arena has half again as many enemies, more of them at once, and a boss has more
@@ -117,18 +121,22 @@ TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPH
       way. A player who dies stays down until the next arena, which they start with half
       their health; the other plays on (moving, aiming, weapon rings and inventory). The
       run ends when both have fallen.
-    - A chest is the nearest player's. Enemies come for both players.
-    - Between arenas player 1 picks a reward and shops first; then the screens say
-      PLAYER 2 and player 2 does. The screens sit in the top half of the split screen.
-      Any controller or the keyboard works them.
-    - ORGANIZE INVENTORY shows the nine cells of the player whose turn it is: pick one,
-      then another, to swap them. A picked item can also go TO THE STORAGE or be SOLD
+    - A chest is the nearest player's. The enemies are shared evenly between the two of
+      you (new in 0.2.6): each comes for the player who has fewer, from near them.
+    - Leon and Ada have their own names on the weapon rings and in the inventory.
+    - Between arenas each player has their own screens at once (new in 0.2.6): player 1's
+      in the top half, player 2's in the bottom half, each on their own controller (the
+      keyboard works player 1's). Without a controller for player 2 the screens take turns
+      in the top half. NEXT ROUTE is a vote: the same pick goes, different picks one of
+      the two at random.
+    - ORGANIZE INVENTORY shows your nine cells as a grid: pick one, then another, to swap
+      them. A picked item can also go TO THE STORAGE or be SOLD
       (half its SHOP price, in supplies). The storage is the run's, both players': pick
       an item there, then a cell, to take it into your grid. A gun keeps its rounds.
     - Each player's flamethrower shows its element's colours, and each player's sniper
       rifle has its scope on their own controller (right stick click while aiming).
-    - The lobby only appears before the first arena. After the run the game goes back to
-      the Play menu with the run's results.
+    - The lobby, when it appears, only does so before the first arena. After the run the
+      game goes back to the Play menu with the run's results.
     - An interrupted two-player run (the game closed or a match quit) is saved like a
       solo one: CONTINUE RUN shows the lobby again, player 2 presses START to join, both
       press Ready, and the arena that was left starts again with each player's items.
@@ -143,6 +151,10 @@ KNOWN ISSUES (ALPHA)
     controllers: please report what goes wrong.
   - Uroboros Aheri (Excella, on the Bridge Deck), one of the alternate bosses of arena 8,
     may not be beatable yet: pick another boss there.
+  - New in 0.2.6, harder bosses: Jill (more health, attacks from any distance, kicks up
+    close, dodges your aim, flinches only from explosions), Wesker (gets back up twice,
+    calling in enemies each time) and Uroboros Wesker (more health, rage, his second form
+    when he first falls). Please report a fight that cannot be won or never ends.
   - The campaign areas' ladders can be climbed since this version (before, they were
     only scenery, and Factory Floor was left out of the runs for it). If a ladder still
     ignores you, please report the arena.

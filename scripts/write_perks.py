@@ -343,6 +343,18 @@ BUILDS = {
         'name': 'Separate Ways', 'icon': 'bow',
         'summary': 'Starts with a rare longbow. Bows hit 40 percent harder, and every pickup is ammo for the gun in hand.',
         'starting_weapon': 'longbow', 'starting_weapon_rarity': 'rare', 'category_damage': {'bow': 0.4}, 'drops_as_held_ammo': True,
+        'pistol_in_hand': True,
+    },
+    # The tester (the user, 2026-11-22: "can you give me a character just for me, who has infinite
+    # rocket launcher and infinite machinegun to test bosses and stuff myself"): both never run out
+    # (the adapter marks them the way the game's own Infinite Ammo bonus does).
+    # Every machine gun (RE5's own class: the AK-74 and SIG 556; the Gatling never uses rounds anyway,
+    # weapon table +0x14) and the rocket launcher, which is otherwise thrown away after its one shot.
+    'tester_kit': {
+        'name': 'Test Kit', 'icon': 'gatling',
+        'summary': 'Starts with a Gatling gun, an AK-74 and a rocket launcher that never run out. For testing.',
+        'extra_weapons': ['gatling'], 'more_starting_weapons': ['gatling', 'ak74', 'rocket_launcher'],
+        'infinite_ammo': {'categories': ['machine_gun'], 'ids': ['rocket_launcher']},
     },
     # Rebecca in winter gear (Winter Outfit by Angeltitilxyz, 2026-11-10, the user: "give it the whole
     # ordeal"): a medic out in the cold, her rounds freezing what they hit. Cryo freezes on a tenth
@@ -598,11 +610,19 @@ ADA_GUN = {'name': 'uWp1f.arc', 'size': 1035170}
 MOD_SKINS += [
     {'character': 'ada', 'base': 'sheva_bsaa', 'id': 'ada_agent', 'name': 'Agent',
      'mod': dict(ADA_MOD, files=[{'name': 'uPl01ShebaNormal.arc', 'size': 21215645}, ADA_GUN], portrait={'file': 'ada_agent.png'})},
-    {'character': 'ada', 'base': 'sheva_clubbin', 'id': 'ada_assignment', 'name': 'Assignment',
+    # Sheva's slot 4 (Clubbin') loads uPl01ShebaCos2 and slot 5 (Tribal) Cos1: the bundle's Cos1 is
+    # Assignment, its Cos2 the red dress (seen in game 2026-11-21).
+    {'character': 'ada', 'base': 'sheva_tribal', 'id': 'ada_assignment', 'name': 'Assignment',
      'mod': dict(ADA_MOD, files=[{'name': 'uPl01ShebaCos1.arc', 'size': 100704300}, ADA_GUN], portrait={'file': 'ada_assignment.png'})},
-    {'character': 'ada', 'base': 'sheva_tribal', 'id': 'ada_red_dress', 'name': 'Red Dress',
+    {'character': 'ada', 'base': 'sheva_clubbin', 'id': 'ada_red_dress', 'name': 'Red Dress',
      'mod': dict(ADA_MOD, files=[{'name': 'uPl01ShebaCos2.arc', 'size': 25572120}, ADA_GUN], portrait={'file': 'ada_red_dress.png'})},
 ]
+# The tester: listed only on an install whose adapter.json says "test_character": true (never shipped
+# on); Heavy Metal Chris's slot, whose back carries the Gatling. Last in the list.
+TESTER = {'id': 'tester', 'name': 'Tester', 'enabled': True, 'tester_only': True, 'starting_weapons': ['m92f'],
+          'exclusive_mechanic': '', 'unlock_cost_credits': 0, 'costume_index': 10,
+          'skins': [{'id': 'tester_kit', 'name': 'Test Kit', 'costume_index': 10}]}
+c['characters'] = [x for x in c['characters'] if x['id'] != 'tester'] + [TESTER]
 MOD_BASE = {m['id']: m['base'] for m in MOD_SKINS}
 for m in MOD_SKINS:
     ch = next(x for x in c['characters'] if x['id'] == m['character'])
@@ -615,8 +635,11 @@ for m in MOD_SKINS:
     entry['costume_index'] = base['costume_index']
     entry['mod'] = m['mod']
 for ch in c['characters']:
-    ch['starting_passive'] = passives[ch['id']]
-    ch['skill_pool'] = pools[ch['id']]
+    if ch['id'] in passives:
+        ch['starting_passive'] = passives[ch['id']]
+    else:
+        ch.pop('starting_passive', None)  # the tester: no trait, no perks of its own
+    ch['skill_pool'] = pools.get(ch['id'], [])
     for field in UNLOCK_FIELDS:
         ch.pop(field, None)
     ch.update(CHARACTER_UNLOCKS.get(ch['id'], {}))
@@ -653,7 +676,8 @@ c['_comment'] = ("Playable characters. Chris and Sheva and their first skins are
                  "S.T.A.R.S.; 12 Josh, 13 Excella, 16 Barry, 17 Rebecca. Text shown by the game font: letters, digits, space, comma and "
                  "period only. A skin with 'mod' wears a third-party mod's look (name, author, url: its page; files: the archives "
                  "read from RogueMercenaries\\mods instead of the game's, with the size checked); without the mod it is listed but "
-                 "not selectable.")
+                 "not selectable. A character with tester_only is listed only on an install whose adapter.json says "
+                 "\"test_character\": true (the tester).")
 json.dump(c, open('configs/characters.json', 'w'), indent=2)
 open('configs/characters.json', 'a').write('\n')
 

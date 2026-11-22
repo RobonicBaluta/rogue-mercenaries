@@ -1,6 +1,6 @@
 """Folds the map editor's changes (map_edits.json) into configs/maps.json, as the mod applies them
 (core rm::ApplyMapEdit): `clear` drops the map's own points, `removed` drops every point within half
-a metre of one, `added` points come after, `start` replaces the start, `hidden`/`shown` go into or
+a metre of one, `added` points come after, `start` replaces the start, `start2` sets player 2's, `hidden`/`shown` go into or
 out of "hide_models" (any case). A map left without points keeps its own.
 
   python scripts/fold_map_edits.py <map_edits.json> [--keep N ...] [--check]
@@ -19,13 +19,15 @@ MATCH = 50.0  # rm::kMapEditMatchRadius
 
 
 def write_doc(doc):
-    """configs/maps.json's own layout (scripts/campaign_maps.py write_doc, plus hide_models)."""
+    """configs/maps.json's own layout (scripts/campaign_maps.py write_doc)."""
     text = json.dumps(doc, indent=2)
     text = re.sub(r'\[\s+(-?[\d.]+),\s+(-?[\d.]+),\s+(-?[\d.]+)\s+\]', r'[\1, \2, \3]', text)
-    text = re.sub(r'"(arms|preload|layouts|hide_models)": \[([^\]]*)\]',
+    text = re.sub(r'"(arms|preload|layouts|hide_models|attack_chance)": \[([^\]]*)\]',
                   lambda m: f'"{m.group(1)}": [' + ', '.join(x.strip() for x in m.group(2).split(',')) + ']', text)
     text = re.sub(r'\{\s+"weight": (\d+),\s+"fields": \{([^}]*)\}\s+\}',
                   lambda m: '{"weight": ' + m.group(1) + ', "fields": {' + ', '.join(x.strip() for x in m.group(2).split(',') if x.strip()) + '}}', text)
+    # A boss phase's adds, one per line.
+    text = re.sub(r'\{\s+"class": "(uEm\w+)",\s+"count": (\d+)\s+\}', r'{"class": "\1", "count": \2}', text)
     return text + '\n'
 
 
@@ -48,6 +50,20 @@ def apply(entry, edit):
         out['points'] = points
     if edit.get('start'):
         out['start'] = [round(v, 1) for v in edit['start']]
+    if edit.get('start2'):
+        # Player 2's start, right after player 1's (or where it was).
+        start2 = [round(v, 1) for v in edit['start2']]
+        if 'start2' in out:
+            out['start2'] = start2
+        else:
+            ordered = {}
+            for key, value in out.items():
+                ordered[key] = value
+                if key == 'start':
+                    ordered['start2'] = start2
+            if 'start2' not in ordered:
+                ordered['start2'] = start2
+            out = ordered
     hide = list(entry.get('hide_models', []))
     shown = [s.lower() for s in edit.get('shown', [])]
     hide = [h for h in hide if h.lower() not in shown]
@@ -74,6 +90,7 @@ def apply(entry, edit):
     line = (f"s{entry['stage']} {entry['name']}: points {len(own)} -> {len(out.get('points', own))}"
             f"{' (all its own out)' if edit.get('clear') else ''}"
             f"{', start moved' if edit.get('start') else ''}"
+            f"{', player 2 start ' + str(out.get('start2')) if edit.get('start2') else ''}"
             f"{', hidden ' + str(out.get('hide_models')) if out.get('hide_models') != entry.get('hide_models') else ''}")
     return out, line
 

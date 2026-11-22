@@ -685,6 +685,7 @@ CharacterGate RunController::SkinGate(const SkinDef& skin) const {
 std::vector<CharacterAvailability> RunController::Characters() const {
     std::vector<CharacterAvailability> out;
     for (const CharacterDef& c : content_->characters()) {
+        if (c.tester_only && !tester_characters_) continue;
         CharacterAvailability a{c.id, c.name, CheckCharacter(&c, profile_.unlocked_characters), c.unlock_cost_credits,
                                 c.unlock.text, CheckChallenge(c, profile_.stats), c.costume_index};
         for (const SkinDef& s : c.skins) {
@@ -1000,7 +1001,9 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
 Status RunController::CheckPlayable(std::string_view op, std::string_view character_id, std::string_view skin_id,
                                     const CharacterDef*& ch, const SkinDef*& skin) const {
     ch = content_->FindCharacter(character_id);
-    switch (CheckCharacter(ch, profile_.unlocked_characters)) {
+    CharacterGate gate = CheckCharacter(ch, profile_.unlocked_characters);
+    if (ch != nullptr && ch->tester_only && !tester_characters_) gate = CharacterGate::Disabled;  // not on this install
+    switch (gate) {
         case CharacterGate::Unknown:
             return Fail(op, ErrorCode::UnknownId, "unknown character '" + std::string(character_id) + "'");
         case CharacterGate::Disabled:
@@ -1058,6 +1061,17 @@ void RunController::EquipSeat(const CharacterDef& character) {
                                                 BuildElements());
         // Queued, not placed at once: the adapter first cuts the game's loadout down to the gun in
         // hand (which may be this very gun) and then hands the queue over.
+        const WeaponBaseDef* base = content_->FindWeapon(w.base_id);
+        if (base != nullptr && base->game_item >= 0 && caps_.Has(cap::kInventory)) {
+            run_.item_grants.push_back(ItemGrant{base->game_item, 1, "build"});
+        }
+        GrantWeapon(std::move(w), "build");
+    }
+    // More of the build's guns (the tester's Gatling and rocket launcher), at common rarity, queued
+    // the same way.
+    for (const std::string& id : build.more_starting_weapons) {
+        if (id == run_.loadout.weapon_id || id == build.starting_weapon) continue;
+        WeaponInstance w = MakeStartingWeapon(id, NextInstanceId());
         const WeaponBaseDef* base = content_->FindWeapon(w.base_id);
         if (base != nullptr && base->game_item >= 0 && caps_.Has(cap::kInventory)) {
             run_.item_grants.push_back(ItemGrant{base->game_item, 1, "build"});
@@ -1300,6 +1314,8 @@ Status RunController::BeginArena(double now) {
 
     // The director runs the arena when the adapter can spawn and the map is known.
     director_.reset();
+    boss_phases_used_ = 0;
+    boss_add_kills_ = 0;
     std::string guests;
     if (caps_.Has(cap::kDirector)) {
         if (const std::optional<MapDef> map = ArenaMap(map_stage_)) {
@@ -1350,6 +1366,8 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
     // With the director, only its own units exist and count; anything else is ignored.
     // Director ids are unique per spawn and counted once by the director itself, so they skip
     // the seen-id check (the engine reuses unit memory, and the adapter's ids name it).
+    // A boss's add (MapBoss phases) is the director's but not part of the budget: the arena clears on the boss.
+    const bool add = director_ && kill.enemy_id && director_->IsAdd(*kill.enemy_id);
     const bool directorUnit = director_ && kill.enemy_id && director_->Died(*kill.enemy_id);
     if (director_ && !directorUnit) {
         out.ignored = true;
@@ -1372,8 +1390,8 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
     if (!kill.by_player) ++a.non_player_kills;
     const bool counts = kill.by_player || eco.run.non_player_kills_count_toward_budget || director_.has_value();
     if (counts) {
-        const bool within_budget = a.budget_kills < a.budget;
-        ++a.budget_kills;
+        const bool within_budget = add || a.budget_kills < a.budget;
+        const int kill_index = add ? ++boss_add_kills_ : ++a.budget_kills;
         out.counted = true;
         // Every player kill feeds combat state (kill streaks, after-melee); only kills inside
         // the budget pay out supplies/heals so stragglers cannot be farmed.
@@ -1421,10 +1439,10 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
             }
         }
         if (within_budget) {  // counted kills pay out (non-player ones only when the economy says so)
-            const std::string kill_tx = "kill" + std::to_string(a.budget_kills);
+            const std::string kill_tx = (add ? "add" : "kill") + std::to_string(kill_index);
             // Every per-kill amount is exact (KillShare), the build's multiplier in it.
             const double build_mult = run_.character.build.supplies_mult * (1.0 + run_.stats.supplies);
-            const std::int64_t base = KillShare(eco.supplies.per_kill * reward_mult * build_mult, a.budget_kills);
+            const std::int64_t base = KillShare(eco.supplies.per_kill * reward_mult * build_mult, kill_index);
             if (CreditSupplies(ArenaTx(a.arena, kill_tx + ":base"), base, "kill", false)) out.supplies_awarded += base;
 
             for (const auto& [id, stacks] : run_.perks) {
@@ -1440,7 +1458,7 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
                         if (ef.melee_only && !kill.was_melee.value_or(false)) continue;
                         const bool hit = p.chance >= 1.0 || streams_->loot.NextDouble() < p.chance;
                         if (!hit) continue;
-                        const std::int64_t amount = KillShare(p.amount * build_mult, a.budget_kills);
+                        const std::int64_t amount = KillShare(p.amount * build_mult, kill_index);
                         if (CreditSupplies(ArenaTx(a.arena, kill_tx + ":perk:" + id), amount, id, false)) {
                             out.supplies_awarded += amount;
                             out.triggered.push_back(id);
@@ -1463,7 +1481,7 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
                 for (const Affix& af : weapon->affixes) {
                     if (af.kind == AffixKind::SuppliesOnKill) per_kill += af.value;
                 }
-                const std::int64_t amount = KillShare(per_kill * build_mult, a.budget_kills);
+                const std::int64_t amount = KillShare(per_kill * build_mult, kill_index);
                 if (amount > 0 && CreditSupplies(ArenaTx(a.arena, kill_tx + ":weapon"), amount, weapon->instance_id, false)) {
                     out.supplies_awarded += amount;
                 }
@@ -1641,6 +1659,71 @@ bool RunController::IsArenaComplete() const {
     if (!run_.active || run_.phase != Phase::ArenaActive) return false;
     const ArenaMetrics* a = CurrentArena();
     return a != nullptr && a->budget_kills >= a->budget;
+}
+
+BossAddSource FindBossAdd(const Content& content, const std::string& unit_class) {
+    BossAddSource out;
+    out.enemy.unit_class = unit_class;
+    auto entryOn = [&unit_class](const MapDef& m) -> const MapEnemy* {
+        for (const MapEnemy& e : m.roster) {
+            if (e.unit_class == unit_class) return &e;
+        }
+        return nullptr;
+    };
+    const auto& guests = content.economy().run_rosters.guests;
+    if (const auto g = guests.find(unit_class); g != guests.end()) {
+        if (const MapDef* m = content.FindMapByStage(g->second)) {
+            if (const MapEnemy* e = entryOn(*m)) {
+                out.enemy = *e;
+                out.home = m;
+            }
+        }
+    }
+    for (const MapDef& m : content.maps()) {
+        if (out.home != nullptr) break;
+        if (m.boss && m.boss->unit_class == unit_class) {
+            out.home = &m;
+            out.boss = true;
+            out.hp = m.boss->hp;
+        } else if (const MapEnemy* e = entryOn(m)) {
+            out.enemy = *e;
+            out.home = &m;
+        }
+    }
+    // As an add it is no special of its map and no guest.
+    out.enemy.special = false;
+    out.enemy.max_alive = 0;
+    out.enemy.home = -1;
+    return out;
+}
+
+std::optional<RunController::BossPhaseStart> RunController::BossWouldDie(double now) {
+    if (!run_.active || run_.phase != Phase::ArenaActive || !director_ || !director_->map().boss) return std::nullopt;
+    const MapBoss& boss = *director_->map().boss;
+    if (boss_phases_used_ >= static_cast<int>(boss.phases.size())) return std::nullopt;
+    BossPhaseStart s;
+    s.index = boss_phases_used_++;
+    s.count = static_cast<int>(boss.phases.size());
+    s.phase = boss.phases[static_cast<std::size_t>(s.index)];
+    s.hp = std::max(1, static_cast<int>(std::lround(director_->BossHp() * std::clamp(s.phase.hp_fraction, 0.01, 1.0))));
+    std::vector<Director::AddSpec> adds;
+    std::string names;
+    for (const BossAdd& a : s.phase.adds) {
+        const BossAddSource source = FindBossAdd(*content_, a.unit_class);
+        for (int i = 0; i < a.count; ++i) adds.push_back(Director::AddSpec{source.enemy, source.hp});
+        names += (names.empty() ? "" : " ") + a.unit_class + "x" + std::to_string(a.count);
+    }
+    director_->AddWave(std::move(adds), now + s.phase.down_seconds);
+    Event e = MakeEvent(EventType::BossPhase);
+    e.Add("boss", boss.unit_class).Add("phase", s.index + 1).Add("of", s.count).Add("hp", s.hp).Add("adds", names)
+        .Add("down_seconds", s.phase.down_seconds).Add("now", now);
+    Emit(std::move(e));
+    return s;
+}
+
+int RunController::BossPhasesLeft() const {
+    if (!run_.active || run_.phase != Phase::ArenaActive || !director_ || !director_->map().boss) return 0;
+    return std::max(0, static_cast<int>(director_->map().boss->phases.size()) - boss_phases_used_);
 }
 
 int RunController::RemainingEnemies() const {
@@ -2282,6 +2365,12 @@ std::vector<SpawnRequest> RunController::DirectorTick(double now, const std::opt
                                                      const Director::PointFilter& prefer) {
     if (!director_ || !run_.active || run_.phase != Phase::ArenaActive) return {};
     return director_->Tick(now, player, prefer);
+}
+
+std::vector<SpawnRequest> RunController::DirectorTick(double now, const std::vector<PlayerSpot>& players,
+                                                     const Director::PointFilter& prefer) {
+    if (!director_ || !run_.active || run_.phase != Phase::ArenaActive) return {};
+    return director_->Tick(now, players, prefer);
 }
 
 void RunController::DirectorSpawned(std::uint64_t ticket, const std::string& unit_id) {

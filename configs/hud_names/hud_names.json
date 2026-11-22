@@ -1,0 +1,52 @@
+{
+  "about": "The HUD names of characters that wear another one's costume slots, written over the game's \"Chris\" and \"Sheva\" in the cockpit texture cp03 (scripts/hud_names.py).",
+  "boxes": {
+    "chris": [
+      0,
+      0,
+      128,
+      56
+    ],
+    "sheva": [
+      128,
+      0,
+      264,
+      56
+    ]
+  },
+  "fingerprints": {
+    "20c5614954b584a3": "latin",
+    "e92fd910b79c2843": "latin",
+    "ef674d5f89f4dfbb": "latin",
+    "0dcceba493c1256d": "latin",
+    "b87feab8fc08320e": "latin",
+    "ebb0b7378895de33": "rus",
+    "e6360d2930b19eac": "latin"
+  },
+  "names": {
+    "leon": {
+      "latin": {
+        "chris": "leon_chris.png",
+        "sheva": "leon_sheva.png"
+      },
+      "rus": {
+        "chris": "leon_chris_rus.png",
+        "sheva": "leon_sheva_rus.png"
+      }
+    },
+    "ada": {
+      "latin": {
+        "chris": "ada_chris.png",
+        "sheva": "ada_sheva.png"
+      },
+      "rus": {
+        "chris": "ada_chris_rus.png",
+        "sheva": "ada_sheva_rus.png"
+      }
+    }
+  },
+  "labels": {
+    "leon": "Leon",
+    "ada": "Ada"
+  }
+}

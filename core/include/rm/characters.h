@@ -75,6 +75,9 @@ struct SkinBuild {
     WeaponFilter uncapped_upgrades;  // weapons that level past economy upgrades.max_level (empty = none)
     std::string starting_weapon;     // base id handed over when the run starts
     std::string starting_weapon_rarity;  // its rarity name (empty = common)
+    /// More base ids handed over at common rarity when the run starts, after starting_weapon (the
+    /// tester's Gatling and rocket launcher).
+    std::vector<std::string> more_starting_weapons;
     double max_health_mult = 1.0;    // the adapter scales the player's maximum health
     /// Game item id -> the stack size the adapter allows for it during the run (JSON keys may be
     /// hex, "0x010A").
@@ -120,6 +123,9 @@ struct SkinBuild {
     // The run starts with a handgun in the hands: a costume whose loadout holds another gun (Fairy
     // Tale Sheva's M3, under Hound Wolf Sheva) takes its own handgun instead (the adapter).
     bool pistol_in_hand = false;
+    // Weapons whose rounds never run out (the tester): the adapter marks them the way the game's own
+    // Infinite Ammo bonus does, so no shot uses a round and a one-use gun is never thrown away.
+    WeaponFilter infinite_ammo;
     SkinSpecial special;
     SkinSpecial special_2;  // a second special on its own button (Wesker's burst)
     [[nodiscard]] const SkinSpecial& Special(int slot) const { return slot == 1 ? special_2 : special; }
@@ -184,6 +190,9 @@ struct CharacterDef {
     std::string name;
     /// false = reserved/future entry; never selectable or purchasable until the adapter supports it.
     bool enabled = true;
+    /// Listed and playable only on an install that asks for it (the adapter's "test_character",
+    /// RunController::SetTesterCharacters): a character for testing, never shown to players.
+    bool tester_only = false;
     /// Weapon base ids a run may start with (the loadout roll picks one). Without the
     /// "weapon_id" capability the pick is used as the single sidearm slot.
     std::vector<std::string> starting_weapons;

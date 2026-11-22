@@ -4,6 +4,7 @@
 // (render thread). Input arrives through a subclassed WndProc.
 
 struct IDirect3DDevice9;
+struct ImFont;
 
 namespace rmre5::overlay {
 
@@ -30,6 +31,10 @@ void* WindowHandle();
 
 // The device being drawn on, inside the draw callback only (else nullptr).
 IDirect3DDevice9* FrameDevice();
+
+// M10: a proportional serif (Windows' Georgia) for the mod's screens the overlay draws in the game's
+// place (player 2's half of the split screen); null when Windows has none (the overlay's own font then).
+ImFont* MenuFont();
 
 // Menu hotkeys pressed while focused since the last call: bit n (1..9) for the
 // digit keys, kHotkeyEnter for Enter. Read by the draw callback.

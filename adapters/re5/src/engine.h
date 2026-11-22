@@ -56,7 +56,15 @@ struct Verified {
     bool appRequestWord = false;  // M10: the application's request words (a co-op fall's input lock)
     bool playerDeathChecks = false;  // M10: uPlayer's dead and dying checks (a co-op fall stays the fallen one's)
     bool cockpitRings = false;  // M10: the cockpit's weapon rings check (a co-op fall keeps the other's)
+    bool menuRowGlow = false;  // the Play menu's ninth row gets the selection glow
+    bool hudNameTables = false;  // the HUD's text names (the inventory tabs) can be the characters' own
+    bool infiniteAmmo = false;  // a gun can be marked the game's own way to never run out (re5_layout.h kSlotInfiniteBit)
+    bool em82Tuning = false;    // Uroboros Wesker's second form and rage can be set (maps.json boss tuning)
+    bool em84Tuning = false;    // the boss Jill's attack chance and fire cooldown tables can be patched
+    bool em84DieBlow = false;   // the boss Jill's blow-away death's game over can be told apart (hooks_combat)
+    bool seatMenuInput = false;  // M10: each split-screen player's own menu input (their screens of their own)
     bool playerMayAct = false;  // M10: uPlayer's may-act check (a co-op fall keeps the other's inventory)
+    bool pickupPartner = false;  // M10: the may-take-item check's partner (a co-op fall keeps the other's pickups)
     bool playerGameOver = false;  // M10: uPlayer's own game over (a co-op fall does not set it)
     bool wpSlotUiVisible = false;  // M10: the inventory grid's visibility (a co-op fall keeps the other's)
     bool inventory = false;     // uPlayer inventory layout and add helpers

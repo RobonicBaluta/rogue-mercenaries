@@ -23,6 +23,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -35,6 +36,7 @@
 #include "stage_fixes.h"
 #include "imgui.h"
 #include "icons.h"
+#include "hud_names.h"
 #include "portraits.h"
 #include "imgui_internal.h"
 #include "log.h"
@@ -235,6 +237,14 @@ struct ModState {
     int p2Pad = -1;              // M10: player 2's XInput user (-1 not known yet)
     bool coopLobbyNeeded = false;  // M10: a resumed co-op run's next match shows the lobby (player 2 joins again)
     int itemBoxSeat = 0;         // M10: whose ORGANIZE INVENTORY the game's screen holds
+    // M10: a split-screen run's NEXT ROUTE vote (the user, 2026-11-21: "when doing "exit shop" it
+    // should "vote" for the next if they don't want the same thing it takes a random one"): each
+    // player's pick (-1 not yet), for the run and the arena it was cast after.
+    struct RouteVote {
+        std::string run_id;
+        int arena = -1;
+        std::array<int, 4> picks{-1, -1, -1, -1};
+    } routeVote;
     rm::PerkCategory perkCategory = rm::PerkCategory::Style;  // slot opened from the PERKS screen
     std::string diagnosticsResult;
     // Set when any mod code threw; the game keeps running with vanilla rules.
@@ -364,6 +374,7 @@ std::string Plain(const std::string& s);
 // CONTINUE RUN (defined with the resume point's adapter state).
 bool ContinueRun();
 bool NativeItemBoxReady();
+bool RunInItemBox();
 // ---- ORGANIZE: the inventory grid ------------------------------------------------------
 // The game's item grid has nine cells (record +0x18 = 0..8); the in-match inventory and the
 // d-pad shortcuts read the cell, so swapping the cells of two records rearranges the grid.
@@ -503,10 +514,19 @@ WeaponLevels SlotLevels(std::uintptr_t slot) {
     return {ReadOr<std::uint32_t>(slot + re5::off::kSlotUpgrades, 0), ReadOr<std::uint32_t>(slot + re5::off::kSlotUpgrades + 4, 0)};
 }
 
+// The game's mark of a gun that never runs out (re5_layout.h kSlotInfiniteBit), the top bit of the
+// levels' first word: a slot's own (KeepInfiniteGuns), never a level the run keeps, so no other gun
+// of that kind (the other player's) gets it.
+constexpr std::uint32_t kInfiniteLevelBit = static_cast<std::uint32_t>(re5::off::kSlotInfiniteBit) << 24;
+WeaponLevels WithoutInfinite(WeaponLevels levels) {
+    levels[0] &= ~kInfiniteLevelBit;
+    return levels;
+}
+
 void RecordWeaponLevels() {
     if (!g->run->HasActiveRun()) return;
     for (const GridCell& c : ReadGrid()) {
-        if (c.record && ItemStackMax(c.id) == 0) RunLevels()[c.id] = SlotLevels(c.record);
+        if (c.record && ItemStackMax(c.id) == 0) RunLevels()[c.id] = WithoutInfinite(SlotLevels(c.record));
     }
 }
 
@@ -571,15 +591,21 @@ void ApplyWeaponLevels() {
         int& counted = g_weaponLevels.shopSteps[c.id];
         const int due = gun && engine::Caps().weaponLevels ? ShopUpgradesOf(c.id) : counted;
         if (due > counted) {
-            WeaponLevels raised = it != levels.end() ? it->second : SlotLevels(c.record);
+            WeaponLevels raised = it != levels.end() ? it->second : WithoutInfinite(SlotLevels(c.record));
             RaiseForShopUpgrades(c, raised, due - counted);
             counted = due;
             it = levels.insert_or_assign(c.id, raised).first;
         }
-        if (it != levels.end() && SlotLevels(c.record) != it->second) {
-            SafeStore(c.record + re5::off::kSlotUpgrades, it->second[0]);
-            SafeStore(c.record + re5::off::kSlotUpgrades + 4, it->second[1]);
-            RM_LOGI("upgrades: %04X levels %08X %08X", c.id, it->second[0], it->second[1]);
+        if (it != levels.end()) {
+            // The run's levels, with the slot's own infinite mark kept.
+            const WeaponLevels slot = SlotLevels(c.record);
+            WeaponLevels want = WithoutInfinite(it->second);
+            want[0] |= slot[0] & kInfiniteLevelBit;
+            if (slot != want) {
+                SafeStore(c.record + re5::off::kSlotUpgrades, want[0]);
+                SafeStore(c.record + re5::off::kSlotUpgrades + 4, want[1]);
+                RM_LOGI("upgrades: %04X levels %08X %08X", c.id, want[0], want[1]);
+            }
         }
         if (gun && engine::Caps().weaponLevels) SyncGunMax(c);
     }
@@ -661,6 +687,32 @@ std::string GridItemName(std::uint32_t id) {
     return buf;
 }
 
+// The build's guns that never run out (the tester's Gatling and rocket launcher, the user
+// 2026-11-22: "infinite rocket launcher and infinite machinegun"): each one in the player's grid gets
+// the game's own infinite mark, full. Every tick in each player's turn: a gun made at a stage change
+// or handed over comes without it, and the rocket launcher must have it before its one shot.
+bool InfiniteForBuild(std::uint32_t id) {
+    const rm::SkinBuild& build = g->run->state().character.build;
+    if (build.infinite_ammo.Empty()) return false;  // an empty filter would allow every gun
+    const rm::WeaponBaseDef* w = WeaponForItem(id);
+    return w != nullptr && build.infinite_ammo.Allows(w->id, rm::WeaponCategoryName(w->category));
+}
+
+void KeepInfiniteGuns() {
+    if (!engine::Caps().infiniteAmmo || !g->run->HasActiveRun() || g->run->state().character.build.infinite_ammo.Empty() || RunInItemBox()) return;
+    for (const GridCell& c : ReadGrid()) {
+        if (!c.record || !InfiniteForBuild(c.id)) continue;
+        const std::uintptr_t at = c.record + re5::off::kSlotLevelCapacity;
+        const std::uint8_t level = ReadOr<std::uint8_t>(at, 0);
+        if (level & re5::off::kSlotInfiniteBit) continue;
+        if (!SafeStore<std::uint8_t>(at, static_cast<std::uint8_t>(level | re5::off::kSlotInfiniteBit))) continue;
+        const int max = ReadOr<std::int32_t>(c.record + re5::off::kSlotMax, 0);
+        if (max > c.count) SafeStore<std::int32_t>(c.record + re5::off::kSlotCount, max);
+        RM_LOGI("infinite ammo: %04X %s never runs out (capacity level %d, %d of %d rounds)", c.id, GridItemName(c.id).c_str(), level,
+                std::max(c.count, max), max);
+    }
+}
+
 // M5.2: the maps a run picks its arenas from. Mercenaries stages are their stage index
 // (0..stage_count-1); campaign areas of maps.json their stage number, loaded by the host in
 // place of Mercenaries stage 0 ("campaign_arenas": false leaves them out).
@@ -716,6 +768,34 @@ int PickMap(int avoid, int level = 0) {
 
 int PlayerTwoCostume();
 
+// M10: the split-screen lobby's fields for pads chosen without it (the user, 2026-11-21: "take out
+// the "ready" part of the game when playing splitscreen and directly start the game, people think is
+// confusing"): player 2 the last connected XInput pad, player 1 the first other one (none: the
+// keyboard, with the other pad index, as the lobby itself gives it). +0x490/+0x494 and
+// +0x654/+0x658 are the players' pad indexes and +0x620/+0x624 their lobby states (2: ready); the
+// other four are what every lobby left (three lobbies, both pad pairs, 2026-11-21). False with no
+// pad connected: the game's lobby shows, where player 2 joins with START.
+bool AutoCoopLobby() {
+    int two = -1;
+    for (int user = 3; user >= 0 && two < 0; --user) {
+        if (XInputConnected(user)) two = user;
+    }
+    if (two < 0) return false;
+    int one = -1;
+    for (int user = 0; user < 4 && one < 0; ++user) {
+        if (user != two && XInputConnected(user)) one = user;
+    }
+    g->p2Pad = two;
+    g->p1Pad = one;
+    const auto oneIndex = static_cast<std::uint32_t>(one >= 0 ? one : (two == 0 ? 1 : 0));
+    const auto twoIndex = static_cast<std::uint32_t>(two);
+    autopilot::SetLobby({{0x490, oneIndex}, {0x494, twoIndex}, {0x610, 6}, {0x614, 2}, {0x618, 6}, {0x61C, 6},
+                         {0x620, 2}, {0x624, 2}, {0x654, oneIndex}, {0x658, twoIndex}});
+    RM_LOGI("co-op: no lobby: player 1 on %s, player 2 on XInput user %d",
+            one >= 0 ? ("XInput user " + std::to_string(one)).c_str() : "the keyboard", two);
+    return true;
+}
+
 // Arms the autopilot for the next match on map `key`: a Mercenaries stage directly, a campaign
 // area through Mercenaries stage 0 with the host loading its stage number instead.
 void ArmMap(int key, int costume) {
@@ -723,14 +803,15 @@ void ArmMap(int key, int costume) {
     g->currentStage = key;
     host::SetStageOverride(campaign ? key : -1);
     autopilot::Plan plan{campaign ? 0 : key, costume, std::max(1, g->settings.stageCount)};
-    // M10: a co-op run's matches are the game's split-screen ones (the first with its lobby, where
-    // player 2 joins; the later ones without it).
+    // M10: a co-op run's matches are the game's split-screen ones, none with its lobby: the later
+    // ones keep the first's fields, the first (or a resumed run's) has them chosen (AutoCoopLobby;
+    // with no controller connected the lobby shows and player 2 joins there).
     const bool running = g->run->HasActiveRun();
     const bool coop = running ? g->run->SeatCount() > 1 : g->coopPlayers == 2;
     if (coop && engine::Caps().splitScreen) {
         plan.mode = 2;
         plan.costume2 = running ? g->p2Costume : PlayerTwoCostume();
-        plan.skip_lobby = running && !g->coopLobbyNeeded;
+        plan.skip_lobby = (running && !g->coopLobbyNeeded) || AutoCoopLobby();
     }
     autopilot::Arm(plan);
 }
@@ -963,6 +1044,7 @@ struct AdapterSeat {
     std::array<int, 9> counts{};
     int hp = -1;
     BuildHealthState buildHealth;
+    int organizePick = -1;
 };
 std::array<AdapterSeat, 2> g_adapterSeats;
 int g_adapterSeat = 0;
@@ -974,6 +1056,7 @@ void SwapAdapterSeat(AdapterSeat& s) {
     swap(g->transition.counts, s.counts);
     swap(g->transition.hp, s.hp);
     swap(g_buildHealth, s.buildHealth);
+    swap(g->organizePick, s.organizePick);
 }
 
 // Each player's specials, moves, weapon card and flamethrower state (LateSeat, defined with them).
@@ -1034,8 +1117,19 @@ void ForEachSeatTurn(Fn&& fn) {
     }
 }
 
-// The seat whose screen the between-arena menus show: the first player still to choose a reward
-// or still in the shop (player 1 otherwise).
+// M10: the route vote of this route selection (a new run or arena starts a new one).
+ModState::RouteVote& RouteVotes(rm::RunController& run) {
+    ModState::RouteVote& vote = g->routeVote;
+    if (vote.run_id != run.state().run_id || vote.arena != run.state().arena_index) {
+        vote = {};
+        vote.run_id = run.state().run_id;
+        vote.arena = run.state().arena_index;
+    }
+    return vote;
+}
+
+// The seat whose screen the between-arena menus show: the first player still to choose a reward,
+// still in the shop or still to vote for the next route (player 1 otherwise).
 int UiSeat(rm::RunController& run) {
     const int count = run.SeatCount();
     if (count < 2) return 0;
@@ -1053,7 +1147,42 @@ int UiSeat(rm::RunController& run) {
             if (!run.state().reward_chosen) return seat;
         }
     }
+    if (phase == rm::Phase::RouteSelection && !run.state().route_chosen) {
+        const ModState::RouteVote& vote = RouteVotes(run);
+        for (int seat = 0; seat < count && seat < 4; ++seat) {
+            if (vote.picks[static_cast<std::size_t>(seat)] < 0) return seat;
+        }
+    }
     return 0;
+}
+
+// M10: the players' route picks settled: the route they all chose, or one player's pick at random
+// (a notice names each pick). -1 while a player has not voted.
+int SettleRouteVote(rm::RunController& run) {
+    const ModState::RouteVote& vote = RouteVotes(run);
+    const int count = std::min(run.SeatCount(), 4);
+    std::vector<int> picks;
+    for (int seat = 0; seat < count; ++seat) {
+        const int pick = vote.picks[static_cast<std::size_t>(seat)];
+        if (pick < 0) return -1;
+        picks.push_back(pick);
+    }
+    if (picks.empty()) return -1;
+    const bool same = std::all_of(picks.begin(), picks.end(), [&](int p) { return p == picks.front(); });
+    std::random_device device;
+    const int chosen = same ? picks.front() : picks[device() % picks.size()];
+    const auto offers = run.Snapshot(Now()).route_offers;
+    auto title = [&](int i) {
+        return i >= 0 && static_cast<std::size_t>(i) < offers.size() ? Plain(offers[static_cast<std::size_t>(i)].title) : std::string("?");
+    };
+    std::string line;
+    for (int seat = 0; seat < count; ++seat) {
+        line += (seat == 0 ? "Player " : ", player ") + std::to_string(seat + 1) + " chose " + title(picks[static_cast<std::size_t>(seat)]);
+    }
+    RM_LOGI("route: vote %s: choice %d", same ? "agreed" : "split, drawn at random", chosen + 1);
+    g->toasts.Push(same ? "Both players chose " + title(chosen)
+                        : line + ". Drawn at random: " + title(chosen));
+    return chosen;
 }
 
 // A player who fell in the last arena starts this one with the co-op revive share of their health.
@@ -1448,11 +1577,13 @@ std::string CostumeOwner(std::int64_t costume) {
 
 // True when a run of `characterId` in skin `skinId` is what the match's player class shows: its own
 // class, or a mod skin worn in that class's costume.
+// A tester's character (characters.json tester_only) wears another's costume as it is (the tester:
+// Heavy Metal Chris's).
 bool PlaysAs(const std::string& classCharacter, const std::string& characterId, const std::string& skinId) {
     if (classCharacter.empty() || classCharacter == characterId) return true;
     const rm::CharacterDef* def = g->content->FindCharacter(characterId);
     const rm::SkinDef* skin = def != nullptr ? rm::FindSkin(*def, skinId) : nullptr;
-    return skin != nullptr && skin->mod && CostumeOwner(skin->costume_index) == classCharacter;
+    return skin != nullptr && (skin->mod || def->tester_only) && CostumeOwner(skin->costume_index) == classCharacter;
 }
 
 // The character a run started in this match plays: the selected one when its chosen skin is a mod
@@ -1844,16 +1975,67 @@ public:
         return Guarded("menu decide", nativemenu::Decision{}, [&] { return DecideTurn(id, index); });
     }
 
+    // M10: split-screen screens of each player's own (the user, 2026-11-21: "both players should have
+    // their own menu in split scren"): both players in the match, the run's two seats.
+    int SplitSeats() override {
+        std::lock_guard lock(g->mutex);
+        rm::RunController& run = *g->run;
+        const bool two = run.HasActiveRun() && run.SeatCount() > 1 && g->match.inMatch && engine::HumanPlayerInSlot(1) != 0;
+        return two ? 2 : 1;
+    }
+
+    nativemenu::ScreenId SeatScreen(int seat, nativemenu::ScreenId current) override {
+        std::lock_guard lock(g->mutex);
+        return Guarded("menu seat screen", current, [&] { return SeatScreenLocked(seat, current); });
+    }
+
+    nativemenu::Screen BuildFor(nativemenu::ScreenId id, int seat) override {
+        std::lock_guard lock(g->mutex);
+        return Guarded("menu build", nativemenu::Screen{}, [&] { return BuildTurn(id, seat); });
+    }
+
+    nativemenu::Decision DecideFor(nativemenu::ScreenId id, int index, int seat) override {
+        std::lock_guard lock(g->mutex);
+        return Guarded("menu decide", nativemenu::Decision{}, [&] { return DecideTurn(id, index, seat); });
+    }
+
 private:
     using Item = nativemenu::Item;
     using Outcome = nativemenu::Outcome;
     using ScreenId = nativemenu::ScreenId;
 
+    bool splitDecide_ = false;  // M10: deciding on a player's own screens (match_ui follows the run itself)
+
     std::string CreditsLine() const { return Plural(g->run->profile().credits.balance(), "credit"); }
 
-    // M10: the between-arena screens show and act for the player whose turn it is (UiSeat).
-    nativemenu::Screen BuildTurn(ScreenId id) {
-        const int seat = UiSeat(*g->run);
+    // M10: where a player's own screens stand, by the run: their element to choose, the arena's
+    // results, their reward, their shop, their vote, the run's end; a wait for the other once theirs is
+    // done.
+    ScreenId SeatScreenLocked(int seat, ScreenId current) {
+        rm::RunController& run = *g->run;
+        if (!run.HasActiveRun() || seat < 0 || seat >= run.SeatCount()) return current;
+        SeatTurn turn(seat);
+        if (!run.PendingElementChoices().empty()) return ScreenId::MatchElement;
+        switch (run.phase()) {
+            case rm::Phase::ArenaResults: return ScreenId::MatchResults;
+            case rm::Phase::RewardSelection: return run.state().reward_chosen ? ScreenId::MatchWait : ScreenId::MatchRewards;
+            case rm::Phase::Shop: {
+                const auto& status = run.state().seat_status;
+                const bool done = static_cast<std::size_t>(seat) < status.size() && status[static_cast<std::size_t>(seat)].shop_done;
+                return done ? ScreenId::MatchWait : ScreenId::MatchShop;
+            }
+            case rm::Phase::RouteSelection:
+                if (run.state().route_chosen) return current;
+                return RouteVotes(run).picks[static_cast<std::size_t>(std::min(seat, 3))] >= 0 ? ScreenId::MatchWait : ScreenId::MatchRoute;
+            case rm::Phase::RunComplete: return ScreenId::MatchRunOver;
+            default: return current;
+        }
+    }
+
+    // M10: the between-arena screens show and act for the player whose turn it is (UiSeat), or for
+    // `seat` on split-screen screens of their own.
+    nativemenu::Screen BuildTurn(ScreenId id, int seatOfScreen = -1) {
+        const int seat = seatOfScreen >= 0 ? seatOfScreen : UiSeat(*g->run);
         SeatTurn turn(seat);
         MenuPlayerScope menuPlayer(id);
         nativemenu::Screen screen = BuildLocked(id);
@@ -1861,16 +2043,18 @@ private:
             screen.header = "PLAYER " + std::to_string(g->menuPlayer + 1) + "   " + screen.header;
         }
         if (turn.seat() > 0 && (id == ScreenId::MatchRewards || id == ScreenId::MatchShop || id == ScreenId::MatchOrganize ||
-                                id == ScreenId::MatchElement)) {
+                                id == ScreenId::MatchElement || id == ScreenId::MatchRoute)) {
             screen.header = "PLAYER " + std::to_string(turn.seat() + 1) + "   " + screen.header;
         }
         return screen;
     }
 
-    nativemenu::Decision DecideTurn(ScreenId id, int index) {
-        SeatTurn turn(UiSeat(*g->run));
+    nativemenu::Decision DecideTurn(ScreenId id, int index, int seatOfScreen = -1) {
+        SeatTurn turn(seatOfScreen >= 0 ? seatOfScreen : UiSeat(*g->run));
         MenuPlayerScope menuPlayer(id);
+        splitDecide_ = seatOfScreen >= 0;
         const nativemenu::Decision d = DecideLocked(id, index);
+        splitDecide_ = false;
         if (g->menuPlayer == 1 && id == ScreenId::Skins && d.outcome == Outcome::Refresh) {
             RM_LOGI("menu: player 2 wears %s", g->selectedSkin.c_str());  // still swapped: player 2's
         }
@@ -1910,7 +2094,7 @@ private:
                         case MainRow::Start:
                             screen.items.push_back(Item{"START RUN",
                                                         run.CanResumeRun() ? "A new run. The one you can continue\nis banked as interrupted."
-                                                        : two ? "Two players, the screen split in two. Player 2 joins\nwith START on a second controller."
+                                                        : two ? "Two players, the screen split in two. Player 2 plays\non the last controller connected."
                                                               : "Solo Mercenaries on any stage. Pick your character,\nthe run starts with the match.",
                                                         false, 0, "crosshair"});
                             break;
@@ -2230,15 +2414,19 @@ private:
                 screen.header = picked        ? "MOVE " + Upper(Plain(GridItemName(pickedId))) + " TO"
                                 : pickedStash ? "TAKE " + Upper(Plain(GridItemName(pickedId))) + " OUT"
                                               : "ORGANIZE   PICK AN ITEM";
+                // M10: on the split screen the nine cells are drawn as the grid they are, three to a
+                // row (the user, 2026-11-21: "at least make it a bit more readable than the list").
+                const bool asGrid = run.SeatCount() > 1;
+                if (asGrid) screen.grid = kGridCells;
                 for (const OrganizeRow& row : OrganizeRows(pick, static_cast<int>(stash.size()))) {
                     Item item;
                     if (row.kind == OrganizeRow::Cell) {
                         const GridCell& c = grid[static_cast<std::size_t>(row.index)];
-                        item.label = std::to_string(row.index + 1) + "   " +
+                        item.label = (asGrid ? std::string() : std::to_string(row.index + 1) + "   ") +
                                      (c.record ? Upper(Plain(GridItemName(c.id))) + (c.count > 1 ? "  " + std::to_string(c.count) : "")
-                                               : std::string("EMPTY"));
+                                               : std::string(asGrid ? "-" : "EMPTY"));
                         if (picked && row.index == pick) {
-                            item.label += "   PICKED";
+                            if (!asGrid) item.label += "   PICKED";
                             item.color = 0xFFFFD27Fu;
                             item.help = "Press again to put it back.";
                         } else if (picked) {
@@ -2272,6 +2460,27 @@ private:
                 }
                 break;
             }
+            case ScreenId::MatchWait: {
+                // M10: this player is done; the other still chooses.
+                const int other = run.ActiveSeat() == 0 ? 2 : 1;
+                screen.header = "WAITING FOR PLAYER " + std::to_string(other);
+                const std::string who = "Player " + std::to_string(other);
+                switch (run.phase()) {
+                    case rm::Phase::RewardSelection: screen.empty_help = who + " is choosing a reward."; break;
+                    case rm::Phase::Shop: screen.empty_help = who + " is still in the shop."; break;
+                    case rm::Phase::RouteSelection: {
+                        const int pick = RouteVotes(run).picks[static_cast<std::size_t>(std::min(run.ActiveSeat(), 3))];
+                        const auto offers = run.Snapshot(Now()).route_offers;
+                        screen.empty_help = (pick >= 0 && static_cast<std::size_t>(pick) < offers.size()
+                                                 ? "You voted for " + Plain(offers[static_cast<std::size_t>(pick)].title) + ".\n"
+                                                 : std::string()) +
+                                            who + " is voting for the next route.";
+                        break;
+                    }
+                    default: screen.empty_help = who + " is still choosing."; break;
+                }
+                break;
+            }
             case ScreenId::MatchRunOver: {
                 const rm::RunSnapshot s = run.Snapshot(Now());
                 screen.header = "RUN COMPLETE";
@@ -2286,12 +2495,25 @@ private:
                 const rm::RunSnapshot s = run.Snapshot(Now());
                 screen.header = "NEXT ROUTE";
                 screen.empty_help = "No route to choose.";
+                // M10: in split screen each player votes in turn; a pick already made is marked.
+                const bool voting = run.SeatCount() > 1;
+                if (voting) screen.header = "NEXT ROUTE   VOTE";
                 // The run map's next arenas (M5.3): the arena and its tier, warmer for harder
                 // tiers; the help names the route, its rewards and where it leads.
+                int row = 0;
                 for (const auto& o : s.route_offers) {
                     Item item;
                     item.label = Upper(Plain(o.title)) + (o.boss ? std::string("   BOSS")
                                                                  : o.tier > 0 ? "   TIER " + std::to_string(o.tier) : "");
+                    if (voting) {
+                        const ModState::RouteVote& vote = RouteVotes(run);
+                        for (int seat = 0; seat < std::min(run.SeatCount(), 4); ++seat) {
+                            if (seat != run.ActiveSeat() && vote.picks[static_cast<std::size_t>(seat)] == row) {
+                                item.label += "   P" + std::to_string(seat + 1);
+                            }
+                        }
+                    }
+                    ++row;
                     if (o.tier == 2) item.color = 0xFFFFD27Fu;
                     if (o.tier >= 3 || o.boss) item.color = 0xFFFF7A5Cu;
                     item.help = Plain(o.detail);
@@ -2600,11 +2822,11 @@ private:
                         break;
                     }
                 }
-                if (g_elementNext) {
+                if (g_elementNext && !splitDecide_) {
                     d.outcome = Outcome::Push;
                     d.next = *g_elementNext;
                 } else {
-                    d.outcome = Outcome::Back;
+                    d.outcome = Outcome::Back;  // M10: on a player's own screens, where the run has them next
                 }
                 g_elementNext.reset();
                 break;
@@ -2756,12 +2978,27 @@ private:
             }
             case ScreenId::MatchRoute: {
                 if (index < 0) break;
-                const rm::Status st = run.ChooseRoute(static_cast<std::size_t>(index));
+                int pick = index;
+                if (run.SeatCount() > 1) {
+                    // M10: this player's vote; the next player's turn until everyone voted.
+                    ModState::RouteVote& vote = RouteVotes(run);
+                    const int seat = std::clamp(run.ActiveSeat(), 0, 3);
+                    vote.picks[static_cast<std::size_t>(seat)] = index;
+                    RM_LOGI("route: player %d votes for choice %d", seat + 1, index + 1);
+                    pick = SettleRouteVote(run);
+                    if (pick < 0) {
+                        d.outcome = Outcome::Refresh;
+                        break;
+                    }
+                }
+                const rm::Status st = run.ChooseRoute(static_cast<std::size_t>(pick));
                 Report(st, "choose route");
                 if (st.ok()) {
-                    RM_LOGI("route: choice %d of %zu, %s on stage %d (layer %d node %d)", index + 1,
+                    RM_LOGI("route: choice %d of %zu, %s on stage %d (layer %d node %d)", pick + 1,
                             run.RouteChoices().size(), run.state().route_id.c_str(), run.PlannedMapKey(),
                             run.state().map_layer, run.state().map_node);
+                } else {
+                    g->routeVote.picks.fill(-1);  // a refused route: everyone votes again
                 }
                 d.outcome = st.ok() ? Outcome::Close : Outcome::Denied;
                 break;
@@ -2771,6 +3008,8 @@ private:
                 d.outcome = Outcome::Close;  // the tick then banks the run and lets the match end
                 break;
             }
+            case ScreenId::MatchWait:
+                break;  // M10: nothing to choose while the other player chooses
             case ScreenId::RunResults:
                 d.outcome = Outcome::Back;
                 break;
@@ -2911,9 +3150,12 @@ void HandleNativeMenu(double now) {
     matchui::SetModel(&g_menuModel);
     if (nativemenu::TakeChosen()) {
         g->rogueModePending = true;
-        g->toasts.Push((g->coopPlayers == 2 || g->coopLobbyNeeded) && engine::Caps().splitScreen
-                           ? "Rogue Mercenaries: two players. Player 2 presses START to join, then both ready"
-                           : "Rogue Mercenaries: choose Solo, a stage and Chris or Sheva");
+        const bool two = (g->coopPlayers == 2 || g->coopLobbyNeeded) && engine::Caps().splitScreen;
+        bool pad = false;
+        for (int user = 0; user < 4 && !pad; ++user) pad = XInputConnected(user);
+        g->toasts.Push(!two ? "Rogue Mercenaries: choose Solo, a stage and Chris or Sheva"
+                       : pad ? "Rogue Mercenaries: two players. Player 2 plays on the last controller connected"
+                             : "Rogue Mercenaries: two players, no controller found. Player 2 presses START to join, then both ready");
     }
     if (!g->rogueModePending) return;
     rm::RunController& run = *g->run;
@@ -2995,6 +3237,11 @@ struct EnemyTrack {
     double lastSeen = 0.0;
 };
 std::unordered_map<std::uintptr_t, EnemyTrack> g_enemyTracks;
+// A boss's adds alive this match (MapBoss phases): their own falls and holds (with the boss code).
+std::set<std::uintptr_t> g_bossAddUnits;
+bool QuietAdd(std::uintptr_t unit);  // a boss's add that is a boss itself (its end is the mod's)
+bool BossGoesDown(std::uintptr_t unit, double now);
+void QueueAddFall(std::uintptr_t unit, double now);
 
 // The run's id of a dying enemy: the director's own id for its units (reported once), the
 // unit address and max health for anything else.
@@ -3038,6 +3285,7 @@ void ReportEnemyDeath(std::uintptr_t enemy, int maxHp, double now, const char* h
         kill.target_frozen = FrozenNow(enemy, now);  // a frozen one shatters (rm::ProcKind::Shatter)
     }
     kill.target_is_boss = enemy == g->boss.unit;
+    if (g_bossAddUnits.erase(enemy) > 0) QueueAddFall(enemy, now);  // an add that is a boss falls as one
     kill.enemy_id = EnemyKillId(enemy, maxHp);
     PlagueOnDeath(enemy, maxHp, now);
     const rm::KillOutcome out = g->run->OnEnemyKilled(kill);
@@ -3062,7 +3310,13 @@ void DetectEnemyDeaths(double now) {
             continue;
         }
         EnemyTrack& t = it->second;
-        if (t.hp > 0 && e.hp <= 0) ReportEnemyDeath(e.object, t.max, now, "health reached zero");
+        // A boss with a phase left goes down instead of dying (MapBoss phases): no death to report. The
+        // boss counts dead at 1 health: Wesker's own damage stops there (a rocket took him from 8500 to 1
+        // and he fought on, 2026-11-22; his death is the story's).
+        const int floor = e.object == g->boss.unit || QuietAdd(e.object) ? 1 : 0;
+        if (t.hp > floor && e.hp <= floor && !BossGoesDown(e.object, now)) {
+            ReportEnemyDeath(e.object, t.max, now, floor > 0 ? "health reached 1 (a boss)" : "health reached zero");
+        }
         t.hp = e.hp;
         t.lastSeen = now;
     }
@@ -3326,6 +3580,24 @@ void StripToPistol() {
     // pistol"): the hands take the loadout's own handgun, through the game's own change of weapon,
     // and the other gun goes with the rest of the loadout.
     if (equipped != 0 && !isHandgun(equipped) && g->run->state().character.build.pistol_in_hand) {
+        // A costume whose loadout has no handgun at all (Ada's: an AK-74 in her hands; the user,
+        // 2026-11-21: "is weird to have several machineguns"): the run's own pistol is made first
+        // and the hands take it, so the rest of the loadout goes as everywhere else.
+        if (handgun == 0 && isHandgun(static_cast<std::uint32_t>(pistol))) {
+            const auto table = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + ((pistol >> 8) & 0xFF) * 4, 0);
+            const int magazine = table ? std::max(1, ReadOr<std::int32_t>(table + (pistol & 0xFF) * 0x48 + 8, 1)) : 1;
+            if (GiveItem("pistol", pistol, magazine) > 0) {
+                for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+                    const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+                    if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) == 1 &&
+                        ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) == static_cast<std::uint32_t>(pistol)) {
+                        handgun = static_cast<std::uint32_t>(pistol);
+                        handgunCell = ReadOr<std::int32_t>(slot + kSlotCell, -1);
+                        break;
+                    }
+                }
+            }
+        }
         if (handgun != 0 && handgunCell >= 0 && handgunCell < kGridCells && TakeOutOfHand(player, equippedSlot, handgunCell)) {
             RM_LOGI("inventory: the hands took the handgun %04X (cell %d), not %04X: the build starts with a pistol", handgun,
                     handgunCell + 1, equipped);
@@ -3860,6 +4132,7 @@ void RestockWeapons() {
 
 constexpr float kStartTolerance = 1000.0f;  // engine units (10 m) from the map's start
 constexpr float kStartLevel = 40.0f;        // or another level there (s204: the boat under the ledge)
+constexpr float kEditedStartTolerance = 150.0f;  // a start set in the map editor: where it was set
 
 // The skin build's maximum health (M8: Barry, Midnight Wesker) times the health a run gained
 // (Excella). Applied at an arena's start (health then full; a stage change restores the carried
@@ -3907,41 +4180,57 @@ void BuildKillNotice(const rm::KillOutcome& outcome, double now) {
     }
 }
 
-// M6.2: a campaign area starts the player at one of its entrances at random; the map's start is
-// where its points, chests and boss are, so the player goes there. Tried on the match's first
-// tick (under the loading fade, so it does not show as a teleport) and again when the arena
-// begins. True when there is nothing more to do.
-bool MoveToMapStart(const char* when) {
-    const rm::MapDef* map = CurrentMap();
-    if (map == nullptr) return true;
-    std::optional<std::array<double, 3>> start = map->start;
-    // The map editor's start for the map, when it set one.
-    if (const auto edit = g->run->map_edits().find(CurrentMapKey()); edit != g->run->map_edits().end() && edit->second.start) {
-        start = edit->second.start;
-    }
-    if (!start) return true;
-    const auto local = engine::LocalPlayer();
-    if (!local) return false;
-    const float to[3] = {static_cast<float>((*start)[0]), static_cast<float>((*start)[1]), static_cast<float>((*start)[2])};
-    const float dx = ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) - to[0];
-    const float dy = ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f) - to[1];
-    const float dz = ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) - to[2];
+// A player to a start unless they stand near it already (within `tolerance`, on its level). True
+// when there is nothing more to do; false while the game has not placed them yet.
+bool MoveUnitToStart(std::uintptr_t unit, const std::array<double, 3>& start, float tolerance, const char* when, const char* who) {
+    if (!unit) return false;
+    const float to[3] = {static_cast<float>(start[0]), static_cast<float>(start[1]), static_cast<float>(start[2])};
+    const float dx = ReadOr<float>(unit + re5::off::kUnitPosition, 0.0f) - to[0];
+    const float dy = ReadOr<float>(unit + re5::off::kUnitPosition + 4, 0.0f) - to[1];
+    const float dz = ReadOr<float>(unit + re5::off::kUnitPosition + 8, 0.0f) - to[2];
     const float distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-    if (distance <= kStartTolerance && std::fabs(dy) <= kStartLevel) return true;
-    const int copies = engine::WarpUnit(local, to);
+    if (distance <= tolerance && std::fabs(dy) <= kStartLevel) return true;
+    const int copies = engine::WarpUnit(unit, to);
     if (copies == 0) {
         // Not placed by the game yet (or not safely movable): tried again on the next tick.
-        static int waitedGeneration = -1;
-        if (waitedGeneration != g->matchGeneration) {
-            waitedGeneration = g->matchGeneration;
-            RM_LOGI("%s: the player is not placed yet (%.0f %.0f %.0f); moving to the map's start later", when,
-                    to[0] + dx, to[1] + dy, to[2] + dz);
+        static int waitedGeneration[2] = {-1, -1};
+        int& waited = waitedGeneration[std::strcmp(who, "player") == 0 ? 0 : 1];
+        if (waited != g->matchGeneration) {
+            waited = g->matchGeneration;
+            RM_LOGI("%s: the %s is not placed yet (%.0f %.0f %.0f); moving to the start later", when, who, to[0] + dx, to[1] + dy,
+                    to[2] + dz);
         }
         return false;
     }
-    RM_LOGI("%s: player %.1f m from the map's start (%.1f m %s); moved there (%d copies)", when, distance / 100.0f,
-            std::fabs(dy) / 100.0f, dy < 0.0f ? "below" : "above", copies);
+    RM_LOGI("%s: %s %.1f m from the start (%.1f m %s); moved there (%d copies)", when, who, distance / 100.0f, std::fabs(dy) / 100.0f,
+            dy < 0.0f ? "below" : "above", copies);
     return true;
+}
+
+// M6.2: a campaign area starts the player at one of its entrances at random; the map's start is
+// where its points, chests and boss are, so the player goes there. Tried on the match's first
+// tick (under the loading fade, so it does not show as a teleport) and again when the arena
+// begins. True when there is nothing more to do. M10: in a co-op run player 2 goes to their own
+// start (the map editor's, the user, 2026-11-21: "set the player spawn point for both players"),
+// else to player 1's. A start the editor set is kept to within 1.5 m (the map's own: 10 m).
+bool MoveToMapStart(const char* when) {
+    const rm::MapDef* map = CurrentMap();
+    if (map == nullptr) return true;
+    std::optional<std::array<double, 3>> start = map->start, start2 = map->start2;
+    bool edited = false, edited2 = false;
+    // The map editor's starts for the map, when it set them.
+    if (const auto edit = g->run->map_edits().find(CurrentMapKey()); edit != g->run->map_edits().end()) {
+        if (edit->second.start) start = edit->second.start, edited = true;
+        if (edit->second.start2) start2 = edit->second.start2, edited2 = true;
+    }
+    bool done = true;
+    if (start) done = MoveUnitToStart(engine::LocalPlayer(), *start, edited ? kEditedStartTolerance : kStartTolerance, when, "player");
+    if (g->run->SeatCount() > 1) {
+        const std::optional<std::array<double, 3>>& two = start2 ? start2 : start;
+        const bool exact = start2 ? edited2 : edited;
+        if (two) done = MoveUnitToStart(engine::HumanPlayerInSlot(1), *two, exact ? kEditedStartTolerance : kStartTolerance, when, "player 2") && done;
+    }
+    return done;
 }
 int g_startMovedGeneration = -1;
 
@@ -4654,10 +4943,22 @@ struct ScriptedKill {
     const char* cls;
     const char* start;   // the move's first action
     const char* instead; // the attack started in its place
+    double hurt = 0.0;   // the share of the nearest player's maximum health it takes instead (never the last 1)
 };
 constexpr ScriptedKill kScriptedKills[] = {
     {"uEm81", "cEm80ActAtkSyutoStart", "cEm80ActAtkKick"},
     {"uEm80", "cEm80ActAtkSyutoStart", "cEm80ActAtkKick"},
+    // The user, 2026-11-22 (Midnight Wesker): "he uses the rocket launching but has no animation so he
+    // just tps there so take that out". AtkMissile is the hangar story's (8 s, then he stood 24 m away
+    // on another level); his gun instead. RokeUke, his stand after a rocket hits him, held him 6 s at 1
+    // health ("he does his stand down animation and stays 1 hp for a long time"); a stagger instead.
+    {"uEm81", "cEm80ActAtkMissile", "cEm80ActAtkGunReadyBgn"},
+    {"uEm80", "cEm80ActAtkMissile", "cEm80ActAtkGunReadyBgn"},
+    {"uEm81", "cEm80ActRokeUke", "cEm80ActDmgS"},
+    {"uEm80", "cEm80ActRokeUke", "cEm80ActDmgS"},
+    // Uroboros Wesker's drill grab (his second form, boss tuning): it ends in DrillDie, by its name the
+    // story's kill (not seen: the grab never ran before 2026-11-22); his release and a heavy hit instead.
+    {"uEm82", "cEm82AtkDrillDie", "cEm82AtkDrillRelease", 0.35},
 };
 
 // A boss's hold that ends in a kill. The Uroboros' near grab and Uroboros Mkono's share one hold
@@ -4674,6 +4975,7 @@ struct BossHold {
 constexpr BossHold kLethalHolds[] = {
     {"cEm40ActNearCatchOk", "cEm40ActNearEscape"},
     {"cEm41ActNearCatchOk", "cEm40ActNearEscape"},
+    {"cEm82AtkDrillWait", "cEm82AtkDrillRelease"},  // Uroboros Wesker's drill (before its DrillDie)
 };
 constexpr double kHoldRelease = 4.0;
 
@@ -4689,27 +4991,34 @@ bool ReleaseHold(std::uintptr_t grabber, const BossHold& h) {
     return !ids.empty() && engine::StartAction(grabber, ids.front(), h.escape);
 }
 
+// The arena's boss and its adds (an Uroboros Mkono called in by Wesker holds the same way).
 void ReleaseBossHolds(double now) {
-    static std::uintptr_t heldBy = 0;
-    static double since = 0.0;
-    static bool done = false;
-    const std::uintptr_t unit = g->boss.unit;
-    const std::string action = unit && g->run->HasActiveRun() ? engine::CurrentActionName(unit) : std::string();
-    const BossHold* h = LethalHold(action);
-    if (h == nullptr) {
-        heldBy = 0;
-        return;
+    struct Held {
+        double since = 0.0;
+        bool done = false;
+    };
+    static std::map<std::uintptr_t, Held> held;
+    std::vector<std::uintptr_t> units;
+    if (g->run->HasActiveRun()) {
+        if (g->boss.unit) units.push_back(g->boss.unit);
+        units.insert(units.end(), g_bossAddUnits.begin(), g_bossAddUnits.end());
     }
-    if (heldBy != unit) {
-        heldBy = unit;
-        since = now;
-        done = false;
+    std::map<std::uintptr_t, Held> still;
+    for (const std::uintptr_t unit : units) {
+        const std::string action = engine::CurrentActionName(unit);
+        const BossHold* h = LethalHold(action);
+        if (h == nullptr) continue;
+        const auto it = held.find(unit);
+        Held s = it != held.end() ? it->second : Held{now, false};
+        if (!s.done && now - s.since >= kHoldRelease) {
+            s.done = true;
+            const bool ok = ReleaseHold(unit, *h);
+            RM_LOGI("boss: %s held the player %.1f s in %s (a kill at its end); %s", engine::ClassName(unit).c_str(), now - s.since,
+                    action.c_str(), ok ? (std::string(h->escape) + ", he is let go").c_str() : "no escape found, left as it is");
+        }
+        still[unit] = s;
     }
-    if (done || now - since < kHoldRelease) return;
-    done = true;
-    const bool ok = ReleaseHold(unit, *h);
-    RM_LOGI("boss: %s held the player %.1f s in %s (a kill at its end); %s", engine::ClassName(unit).c_str(), now - since,
-            action.c_str(), ok ? (std::string(h->escape) + ", he is let go").c_str() : "no escape found, left as it is");
+    held = std::move(still);
 }
 
 void TameBossKills() {
@@ -4728,6 +5037,30 @@ void TameBossKills() {
         const bool ok = !ids.empty() && engine::StartAction(unit, ids.front(), k.instead);
         RM_LOGI("boss: %s began %s (a scripted kill); %s", cls.c_str(), k.start,
                 ok ? (std::string(k.instead) + " instead").c_str() : "left as it is (no replacement)");
+        if (ok && k.hurt > 0.0) {
+            // The player it held (the nearest one standing) takes a heavy hit, never the last health.
+            std::uintptr_t nearest = 0;
+            float best = 1.0e30f;
+            for (int seat = 0; seat < 2; ++seat) {
+                const auto p = engine::HumanPlayerInSlot(seat);
+                const auto hp = p ? engine::ReadHp(p) : std::nullopt;
+                if (!hp || hp->hp <= 0) continue;
+                float d = 0.0f;
+                for (int a = 0; a < 3; ++a) {
+                    const float v = ReadOr<float>(p + re5::off::kUnitPosition + a * 4, 0.0f) - ReadOr<float>(unit + re5::off::kUnitPosition + a * 4, 0.0f);
+                    d += v * v;
+                }
+                if (d < best) {
+                    best = d;
+                    nearest = p;
+                }
+            }
+            if (const auto hp = nearest ? engine::ReadHp(nearest) : std::nullopt) {
+                const int left = std::max(1, hp->hp - static_cast<int>(std::lround(hp->max * k.hurt)));
+                SafeStore<std::int16_t>(nearest + re5::off::kHp, static_cast<std::int16_t>(left));
+                RM_LOGI("boss: the held player takes %d (%d -> %d)", hp->hp - left, hp->hp, left);
+            }
+        }
         return;
     }
 }
@@ -4785,6 +5118,265 @@ void DriveBossFall(double now) {
         RM_LOGI("boss fall: %s %s (action %d) %.2f s after its death (it was in %s)", cls.c_str(), fall->action, ids.front(),
                 now - g->boss.diedAt, current.c_str());
     }
+}
+
+// A boss's add that is a boss itself (Uroboros Mkono in Wesker's arena) is given its fall like the
+// arena's boss: at zero health it fights on (kScriptedFalls).
+std::map<std::uintptr_t, double> g_addFalls;  // unit -> when its health was gone
+
+// A boss's add that is a boss itself, dead (unit -> when): its refill stays lifted while it dies
+// (hooks_combat SetBossAddUnits: it came back to 10000 after its kill, 2026-11-22), and its death, the
+// Uroboros' cinematic (cEm40ActDead sets the application's event flags as it begins, 0x008B3020),
+// leaves the player their control and camera (the user: "when you kill the spawned uroboros you get the
+// whole sequence where it dies and you have to watch it").
+std::map<std::uintptr_t, double> g_deadBossAdds;
+
+bool StartActionSpec(std::uintptr_t unit, const std::string& spec);  // with the boss's second wind, below
+
+bool QuietAdd(std::uintptr_t unit) {
+    if (!g_bossAddUnits.count(unit)) return false;
+    const std::string cls = engine::ClassName(unit);
+    return std::any_of(std::begin(kScriptedFalls), std::end(kScriptedFalls), [&](const ScriptedFall& f) { return cls == f.cls; });
+}
+
+// Its end, the mod's (the user, 2026-11-22: "when you kill the spawned uroboros you get the whole
+// sequence where it dies and you have to watch it"; its own death took the camera, flags cleared or
+// not): a hit leaves it 1 health (hooks_combat), counted dead there, it dives into the floor and is
+// gone 3 s later through its own delete (engine::DeleteUnit).
+void QueueAddFall(std::uintptr_t unit, double now) {
+    const std::string cls = engine::ClassName(unit);
+    for (const ScriptedFall& f : kScriptedFalls) {
+        if (cls == f.cls) g_deadBossAdds[unit] = now;
+    }
+}
+
+void TameAddDeaths(double now) {
+    static std::set<std::uintptr_t> logged;
+    static std::set<std::uintptr_t> dived;
+    for (auto it = g_deadBossAdds.begin(); it != g_deadBossAdds.end();) {
+        const std::uintptr_t unit = it->first;
+        const std::string cls = engine::ClassName(unit);
+        if (cls.empty() || now - it->second > 20.0) {  // gone (deleted) or long past
+            logged.erase(unit);
+            dived.erase(unit);
+            it = g_deadBossAdds.erase(it);
+            continue;
+        }
+        if (const auto hp = engine::ReadHp(unit); hp && hp->hp <= 0) SafeStore<std::int16_t>(unit + re5::off::kHp, 1);
+        if (dived.insert(unit).second) {
+            const bool ok = StartActionSpec(unit, "cEm40ActDive");
+            RM_LOGI("boss add: %s is beaten: it dives into the floor (%s)", cls.c_str(), ok ? "started" : "refused, gone at once");
+            if (!ok) it->second = now - 3.0;
+        }
+        if (now - it->second >= 3.0) {
+            const bool gone = engine::DeleteUnit(unit);
+            RM_LOGI("boss add: %s removed after its dive: %s", cls.c_str(), gone ? "ok" : "FAILED");
+            logged.erase(unit);
+            dived.erase(unit);
+            it = g_deadBossAdds.erase(it);
+            continue;
+        }
+        const std::string action = engine::CurrentActionName(unit);
+        if (action.find("Dead") != std::string::npos || action.find("Die") != std::string::npos) {
+            const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+            const auto events = app ? ReadOr<std::uint32_t>(app + re5::off::kAppEventFlags, 0) : 0u;
+            const auto flags = app ? ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) : 0u;
+            constexpr std::uint32_t kDeathEvents = 0x80000000u | 0x20000000u;
+            bool changed = false;
+            if (app && (events & kDeathEvents) != 0) changed = SafeStore<std::uint32_t>(app + re5::off::kAppEventFlags, events & ~kDeathEvents) || changed;
+            if (app && (flags & 0x200u) != 0) changed = SafeStore<std::uint32_t>(app + re5::off::kAppFlags, flags & ~0x200u) || changed;
+            const auto cam = areacams::LastCamera();
+            if (cam && ReadOr<std::uintptr_t>(cam + re5::off::kCamCtrlCurrent, 0) == cam + 0x2DE0) {
+                changed = SafeStore<std::uintptr_t>(cam + re5::off::kCamCtrlCurrent, cam + 0xDF0) || changed;
+            }
+            if (changed && logged.insert(it->first).second) {
+                RM_LOGI("boss add: %s's %s would take the player's control and camera (flags %08X %08X); kept with the player",
+                        engine::ClassName(it->first).c_str(), action.c_str(), events, flags);
+            }
+        }
+        ++it;
+    }
+}
+
+void DriveAddFalls(double now) {
+    for (auto it = g_addFalls.begin(); it != g_addFalls.end();) {
+        const std::uintptr_t unit = it->first;
+        const double diedAt = it->second;
+        const std::string cls = engine::ClassName(unit);
+        const ScriptedFall* fall = nullptr;
+        for (const ScriptedFall& f : kScriptedFalls) {
+            if (cls == f.cls) fall = &f;
+        }
+        const std::string current = fall ? engine::CurrentActionName(unit) : std::string();
+        if (!fall || now - diedAt > kBossFallSeconds || current == fall->action ||
+            (FallingByItself(current) && current.find("Atk") == std::string::npos)) {
+            it = g_addFalls.erase(it);
+            continue;
+        }
+        if (now - diedAt < fall->after) {
+            ++it;
+            continue;
+        }
+        const auto ids = engine::ActionIdsOf(unit, fall->action);
+        const bool ok = !ids.empty() && engine::StartAction(unit, ids.front(), fall->action, true);
+        RM_LOGI("boss add fall: %s %s %s", cls.c_str(), fall->action, ok ? "started" : "refused");
+        it = g_addFalls.erase(it);
+    }
+}
+
+// A boss's second wind (MapBoss phases; the user, 2026-11-22, Midnight Wesker: "I want him to kneel
+// and that it looks like he's dead, then it he should get back up and play some voiceline and call
+// in some enemies ... then when you end him for the second time, he's getting a couple of
+// executioners to spawn, an uroboros mkono"). When its health is gone with a phase left, the boss
+// goes down instead (rm::RunController::BossWouldDie): its down action, no hurt while down, kept down
+// (an attack it begins gives way to the down action again); then its health back, its rise action
+// (a taunt and its voice line) and the director's adds. A phase's action is an engine action name,
+// "#n" picking the nth of that name ("cEm80ActProduction#3").
+struct BossDown {
+    std::uintptr_t unit = 0;
+    int generation = -1;
+    bool down = false;
+    double until = 0.0;
+    double keptAt = 0.0;  // the down action started again (at most every 0.4 s)
+    int hp = 0;
+    int index = 0;
+    int count = 0;
+    rm::BossPhase phase;
+    bool downSeen = false;  // a transform phase: its down action has been seen running
+};
+BossDown g_bossDown;
+// The last hit the arena's boss took: when, and whether an explosion (a launcher's, or nothing of a
+// player's hands: grenades, mines, barrels) made it (boss tuning flinch_only_explosives).
+struct BossLastHit {
+    double at = -1.0e9;
+    bool explosive = false;
+} g_bossLastHit;
+
+bool BossIsDown(std::uintptr_t unit) {
+    return unit != 0 && g_bossDown.down && unit == g_bossDown.unit && g_bossDown.generation == g->matchGeneration;
+}
+
+// "name" or "name#n" (the nth action of that name, from 0).
+bool StartActionSpec(std::uintptr_t unit, const std::string& spec) {
+    if (!unit || spec.empty()) return false;
+    const auto hash = spec.find('#');
+    const std::string name = spec.substr(0, hash);
+    const std::size_t nth = hash == std::string::npos ? 0 : static_cast<std::size_t>(std::max(0, std::atoi(spec.c_str() + hash + 1)));
+    const auto ids = engine::ActionIdsOf(unit, name.c_str());
+    if (ids.empty()) return false;
+    const int id = ids[std::min(nth, ids.size() - 1)];
+    return engine::StartAction(unit, id, name.c_str(), true);
+}
+
+// The second form of a boss that has one (Uroboros Wesker: the game's own switch) when it does not
+// have it yet.
+bool SetEm82Pose(std::uintptr_t unit);
+void TakeSecondForm(std::uintptr_t unit, const char* why) {
+    if (engine::ClassName(unit) != "uEm82" || !engine::Caps().em82Tuning) return;
+    if (ReadOr<std::uint8_t>(unit + re5::off::kEm82Pose, 0) == 1) {
+        RM_LOGI("boss: uEm82 has his second form (%s)", why);
+        return;
+    }
+    RM_LOGI("boss: uEm82 takes his second form through the game's switch (%s): %s", why, SetEm82Pose(unit) ? "ok" : "FAILED");
+}
+
+// The application flags Uroboros Wesker's transformation sets as it begins, cleared when it ended
+// some other way (its own end clears them).
+void ClearTransformFlags(const char* why) {
+    const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+    if (!app) return;
+    const auto events = ReadOr<std::uint32_t>(app + re5::off::kAppEventFlags, 0);
+    const auto flags = ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0);
+    if ((events & re5::off::kEm82StageChangeEventFlags) == 0 && (flags & re5::off::kEm82StageChangeAppFlags) == 0) return;
+    SafeStore<std::uint32_t>(app + re5::off::kAppEventFlags, events & ~re5::off::kEm82StageChangeEventFlags);
+    SafeStore<std::uint32_t>(app + re5::off::kAppFlags, flags & ~re5::off::kEm82StageChangeAppFlags);
+    RM_LOGW("boss: the transformation's application flags were still set (%s): %08X %08X, cleared", why, events, flags);
+}
+
+bool BossGoesDown(std::uintptr_t unit, double now) {
+    if (!unit || unit != g->boss.unit) return false;
+    if (BossIsDown(unit)) {
+        SafeStore<std::int16_t>(unit + re5::off::kHp, 1);  // nothing ends it while down
+        return true;
+    }
+    const auto start = g->run->BossWouldDie(now);
+    if (!start) return false;  // no phase left: the real death
+    BossDown& d = g_bossDown;
+    d = {};
+    d.unit = unit;
+    d.generation = g->matchGeneration;
+    d.down = true;
+    d.until = now + start->phase.down_seconds;
+    d.keptAt = now;
+    d.hp = start->hp;
+    d.index = start->index;
+    d.count = start->count;
+    d.phase = start->phase;
+    SafeStore<std::int16_t>(unit + re5::off::kHp, 1);
+    const bool down = StartActionSpec(unit, d.phase.down_action);
+    if (d.phase.transform && !down) TakeSecondForm(unit, "its down action was refused");
+    d.downSeen = d.phase.transform && !down;  // refused: nothing to wait for but down_seconds
+    std::string adds;
+    for (const rm::BossAdd& a : d.phase.adds) adds += " " + a.unit_class + "x" + std::to_string(a.count);
+    RM_LOGI("boss: %s goes down, phase %d of %d (%s %s, %.0f s; then %d health, %s, adds:%s)", engine::ClassName(unit).c_str(), d.index + 1,
+            d.count, d.phase.down_action.empty() ? "no action" : d.phase.down_action.c_str(), down ? "started" : "refused",
+            d.phase.down_seconds, d.hp, d.phase.rise_action.empty() ? "no rise action" : d.phase.rise_action.c_str(),
+            adds.empty() ? " none" : adds.c_str());
+    return true;
+}
+
+void DriveBossDown(double now) {
+    BossDown& d = g_bossDown;
+    if (!d.down) return;
+    if (d.generation != g->matchGeneration || d.unit != g->boss.unit || !g->run->HasActiveRun() ||
+        g->run->phase() != rm::Phase::ArenaActive) {
+        if (d.phase.transform) ClearTransformFlags("its down was dropped");
+        d = {};
+        return;
+    }
+    if (d.phase.transform) {
+        // The story's transformation plays to its own end (its end clears the flags its start set and
+        // applies the form); never cut short, never started again. At most 20 s.
+        const std::string action = engine::CurrentActionName(d.unit);
+        const std::string downName = d.phase.down_action.substr(0, d.phase.down_action.find('#'));
+        if (action == downName) d.downSeen = true;
+        const auto hp = engine::ReadHp(d.unit);
+        if (hp && hp->hp <= 0) SafeStore<std::int16_t>(d.unit + re5::off::kHp, 1);
+        const bool done = d.downSeen && action != downName;
+        if ((!done || now < d.until) && now - (d.until - d.phase.down_seconds) < 20.0) return;
+        if (!done) RM_LOGW("boss: %s's %s ran 20 s; its form is taken without it", engine::ClassName(d.unit).c_str(), downName.c_str());
+        ClearTransformFlags("after its transformation");
+        TakeSecondForm(d.unit, done ? "its transformation ended" : "its transformation ran out");
+        now = std::max(now, d.until);
+    } else if (now < d.until) {
+        // Kept down: anything but the down action or a hurt reaction (an attack, a step) gives way to it.
+        const std::string action = engine::CurrentActionName(d.unit);
+        const std::string downName = d.phase.down_action.substr(0, d.phase.down_action.find('#'));
+        if (!downName.empty() && action != downName && action.find("Dmg") == std::string::npos && now - d.keptAt >= 0.4) {
+            d.keptAt = now;
+            StartActionSpec(d.unit, d.phase.down_action);
+        }
+        const auto hp = engine::ReadHp(d.unit);
+        if (hp && hp->hp <= 0) SafeStore<std::int16_t>(d.unit + re5::off::kHp, 1);
+        return;
+    }
+    d.down = false;
+    // The game's dead mark (+0x18DC bit 0x80, set by its own enemy death at 0 health) turns every hit
+    // away; the hooks keep him at 1 so it is never set, and one that was set anyway goes here.
+    if (const auto flags = ReadOr<std::uint32_t>(d.unit + re5::off::kEnemyHitFlags, 0); flags & 0x80u) {
+        SafeStore<std::uint32_t>(d.unit + re5::off::kEnemyHitFlags, flags & ~0x80u);
+        RM_LOGW("boss: %s carried the game's dead mark (flags %08X): cleared, so hits reach him again", engine::ClassName(d.unit).c_str(),
+                flags);
+    }
+    const bool healed = engine::SetHealth(d.unit, d.hp);
+    const bool rose = StartActionSpec(d.unit, d.phase.rise_action);
+    const rm::MapDef* map = CurrentMap();
+    const std::string name = map && map->boss ? Upper(Plain(map->boss->name)) : std::string("THE BOSS");
+    g->notice = d.phase.transform ? name + " TAKES HIS SECOND FORM"
+                : d.phase.adds.empty() ? name + " GETS BACK UP" : name + " GETS BACK UP AND CALLS FOR HELP";
+    g->noticeUntil = now + 4.0;
+    RM_LOGI("boss: %s gets back up, phase %d of %d: health %d %s, %s %s", engine::ClassName(d.unit).c_str(), d.index + 1, d.count, d.hp,
+            healed ? "set" : "NOT set", d.phase.rise_action.empty() ? "no rise action" : d.phase.rise_action.c_str(), rose ? "started" : "refused");
 }
 
 // Developer "watch <class>": the first enemy of that class, its action and health logged on every
@@ -5142,6 +5734,14 @@ std::uintptr_t DirectorFocusPlayer(double now) {
     return standing[turn % standing.size()];
 }
 
+// A boss's adds with a health of their own, set while they settle (as the boss's).
+struct AddHealth {
+    std::uintptr_t unit = 0;
+    int hp = 0;
+    double spawnedAt = 0.0;
+};
+std::vector<AddHealth> g_addHealth;
+
 void DriveDirector(double now) {
     WatchUnit(now);  // a developer watch, quiet or not
     rm::RunController& run = *g->run;
@@ -5152,6 +5752,11 @@ void DriveDirector(double now) {
     if (!g->match.inMatch) {
         g->directorUnits.clear();
         g->boss = {};
+        g_bossAddUnits.clear();
+        g_addFalls.clear();
+        g_deadBossAdds.clear();
+        g_addHealth.clear();
+        g_bossDown = {};
         StopBossWatch();
         g_stuckTracks.clear();
         g_trapSpots.clear();
@@ -5165,6 +5770,14 @@ void DriveDirector(double now) {
         if (hp && hp->max != g->boss.hp && hp->hp > 0 && engine::SetHealth(g->boss.unit, g->boss.hp)) {
             RM_LOGI("director: boss health %d/%d -> %d", hp->hp, hp->max, g->boss.hp);
         }
+    }
+    // A boss's add that is a boss itself takes its health the same way (Uroboros Mkono's own is 32767).
+    for (auto it = g_addHealth.begin(); it != g_addHealth.end();) {
+        const auto hp = engine::ReadHp(it->unit);
+        if (hp && hp->max != it->hp && hp->hp > 0 && engine::SetHealth(it->unit, it->hp)) {
+            RM_LOGI("director: add %s health %d/%d -> %d", engine::ClassName(it->unit).c_str(), hp->hp, hp->max, it->hp);
+        }
+        it = now - it->spawnedAt > 3.0 ? g_addHealth.erase(it) : it + 1;
     }
     // A moment before the first enemies: the arena's inventory, chests and carried state are
     // set up first, and the player gets their bearings.
@@ -5202,11 +5815,32 @@ void DriveDirector(double now) {
     // Never preferably near a spot an enemy stood stuck at this match (g_trapSpots).
     rm::Director::PointFilter prefer = [](const std::array<double, 3>& p) { return !NearTrap(p); };
     if (bossArena && player) prefer = [&](const std::array<double, 3>& p) { return OpenToPlayer(*player, p) && !NearTrap(p); };
-    for (const rm::SpawnRequest& r : run.DirectorTick(now, player, prefer)) {
+    // Co-op: every standing player, so the director shares the spawns evenly between them (the user,
+    // 2026-11-22: "they have a tendency for rushing 1 player and letting the other with nothing, they
+    // should spawn evenly"); before, the whole first fill came around whoever had the 4 s focus.
+    std::vector<rm::PlayerSpot> players;
+    std::uintptr_t seatUnit[2] = {0, 0};
+    if (run.SeatCount() > 1) {
+        for (int seat = 0; seat < 2; ++seat) {
+            const auto unit = engine::HumanPlayerInSlot(seat);
+            const auto hp = unit ? engine::ReadHp(unit) : std::nullopt;
+            if (!hp || hp->hp <= 0) continue;
+            seatUnit[seat] = unit;
+            players.push_back(rm::PlayerSpot{seat, {ReadOr<float>(unit + re5::off::kUnitPosition, 0.0f), ReadOr<float>(unit + re5::off::kUnitPosition + 4, 0.0f),
+                                                    ReadOr<float>(unit + re5::off::kUnitPosition + 8, 0.0f)}});
+        }
+    }
+    if (players.empty() && player) players.push_back(rm::PlayerSpot{0, *player});
+    for (const rm::SpawnRequest& r : run.DirectorTick(now, players, prefer)) {
         director::SpawnSpec spec;
         spec.unitClass = r.unit_class;
         for (int i = 0; i < 3; ++i) spec.pos[i] = static_cast<float>(r.pos[i]);
-        if (player) spec.facing = static_cast<float>(std::atan2((*player)[0] - r.pos[0], (*player)[2] - r.pos[2]));
+        // It faces the player it came for.
+        std::optional<std::array<double, 3>> towards = player;
+        for (const rm::PlayerSpot& p : players) {
+            if (p.seat == r.seat) towards = p.pos;
+        }
+        if (towards) spec.facing = static_cast<float>(std::atan2((*towards)[0] - r.pos[0], (*towards)[2] - r.pos[2]));
         // A boss at its story spot turns the way the story turns it (its set's angle).
         if (r.facing) spec.facing = static_cast<float>(*r.facing);
         spec.weapon = static_cast<int>(r.arm);
@@ -5214,7 +5848,7 @@ void DriveDirector(double now) {
         // A boss senses the player across its arena: the widest search the game's own spawns use
         // (search type 1 and a circle of 8000 units, seen once in the survey; most use 1000). It
         // walked off into a wall with its descriptor's own (user playtest 2026-11-03, the Uroboros).
-        if (r.boss) {
+        if (r.boss || r.add) {
             spec.fields.emplace_back("search_type", 1.0);
             spec.fields.emplace_back("search_forward", 0.0);
             spec.fields.emplace_back("search_circle", 8000.0);
@@ -5237,6 +5871,15 @@ void DriveDirector(double now) {
         std::string id = "dir_" + std::to_string(r.ticket);
         g->directorUnits[unit] = id;
         run.DirectorSpawned(r.ticket, id);
+        // Co-op: it starts out after the player it came for (uEnemy +0x1BA4, the target the Majini's own
+        // search sets; it may change its mind later as the game's AI does). Never a boss.
+        const std::uintptr_t forPlayer = r.seat >= 0 && r.seat < 2 && players.size() > 1 ? seatUnit[r.seat] : 0;
+        if (forPlayer && !r.boss) SafeStore<std::uintptr_t>(unit + re5::off::kEnemyTarget, forPlayer);
+        if (r.add) {
+            g_bossAddUnits.insert(unit);
+            if (r.hp > 0) g_addHealth.push_back({unit, r.hp, now});
+            RM_LOGI("director: the boss's add %s%s", r.unit_class.c_str(), r.hp > 0 ? (", health " + std::to_string(r.hp)).c_str() : "");
+        }
         if (r.boss) {
             g->boss = {unit, r.hp, now};
             StartBossWatch(r.unit_class);
@@ -5244,9 +5887,13 @@ void DriveDirector(double now) {
                     CurrentMap() && CurrentMap()->boss ? CurrentMap()->boss->name.c_str() : "?", r.hp);
         }
         const rm::Director* d = run.director();
-        RM_LOGI("director: %s (arm %llX, %zu fields) at %.0f %.0f %.0f -> %08X; %d alive, %d dead of %d", r.unit_class.c_str(),
+        char forWhom[48] = "";
+        if (players.size() > 1 && r.seat >= 0 && d) {
+            std::snprintf(forWhom, sizeof(forWhom), "; for P%d (P1 %d, P2 %d)", r.seat + 1, d->ForSeat(0), d->ForSeat(1));
+        }
+        RM_LOGI("director: %s (arm %llX, %zu fields) at %.0f %.0f %.0f -> %08X; %d alive, %d dead of %d%s", r.unit_class.c_str(),
                 static_cast<unsigned long long>(r.arm), r.fields.size(), pos[0], pos[1], pos[2], static_cast<unsigned>(unit),
-                d ? d->alive() : 0, d ? d->dead() : 0, d ? d->budget() : 0);
+                d ? d->alive() : 0, d ? d->dead() : 0, d ? d->budget() : 0, forWhom);
     }
     TraceDirectorArena(now, player);
     RescueStuckEnemies(now, player);
@@ -5281,6 +5928,47 @@ void LogCoopState(const char* tag) {
             app ? ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) : 0u, app ? ReadOr<std::uint32_t>(app + re5::off::kAppScreenFlags, 0) : 0u,
             static_cast<unsigned>(cam), !current ? "-" : current == cam + 0xDF0 ? "own" : current == cam + 0x2DE0 ? "event" : "other",
             ReadMercTimer().state, seats.c_str());
+}
+
+// The characters' own names on the HUD (hud_names; the user, 2026-11-21: "Try to add the correct
+// names of the characters in game"): a run's player wearing another character's costume slots
+// (Leon Chris's, Ada Sheva's) gets their name in that character's box while the match plays. Two
+// players on one base character share its box: the game's name stays. Twice a second.
+void UpdateHudNames(double now) {
+    static double next = 0.0;
+    if (now < next) return;
+    next = now + 0.5;
+    std::string box[2];
+    rm::RunController& run = *g->run;
+    if (g->match.inMatch && run.HasActiveRun()) {
+        static const char* const kBase[2] = {"chris", "sheva"};
+        bool claimed[2] = {false, false};
+        bool clash[2] = {false, false};
+        for (int seat = 0; seat < std::max(1, run.SeatCount()); ++seat) {
+            rm::SeatScope scope(run, seat);
+            const std::string id = run.state().character_id;
+            int costume = -1;
+            if (const rm::CharacterDef* c = g->content->FindCharacter(id)) {
+                for (const rm::SkinDef& s : c->skins) {
+                    if (s.id == run.state().skin_id) costume = static_cast<int>(s.costume_index);
+                }
+            }
+            for (int b = 0; b < 2; ++b) {
+                const rm::CharacterDef* base = g->content->FindCharacter(kBase[b]);
+                const bool onBase = base != nullptr && std::any_of(base->skins.begin(), base->skins.end(),
+                                                                    [&](const rm::SkinDef& s) { return s.costume_index == costume; });
+                if (!onBase) continue;
+                const std::string name = id != kBase[b] && hudnames::HasName(id) ? id : std::string();
+                if (claimed[b] && box[b] != name) clash[b] = true;
+                claimed[b] = true;
+                box[b] = name;
+            }
+        }
+        for (int b = 0; b < 2; ++b) {
+            if (clash[b]) box[b].clear();
+        }
+    }
+    hudnames::SetWanted(box[0], box[1], CockpitObject(0), CockpitObject(1));
 }
 
 void WatchCoopFall(double now) {
@@ -5473,7 +6161,23 @@ void UpdatePreloads() {
             };
             // The class archive brings what the class itself needs (its parts, its own weapons,
             // uEm10Eff for the Majini; 0x007D5820); its descriptors' weapons and plagas are added.
-            for (const rm::MapEnemy& e : map->roster) {
+            std::vector<rm::MapEnemy> enemies = map->roster;
+            if (map->boss) {
+                for (const rm::BossPhase& phase : map->boss->phases) {
+                    for (const rm::BossAdd& add : phase.adds) {
+                        const rm::BossAddSource source = rm::FindBossAdd(*g->content, add.unit_class);
+                        enemies.push_back(source.enemy);
+                        if (source.boss && source.home != nullptr) {
+                            for (const std::string& archive : source.home->preload) {
+                                if (std::find(extras.enemyArchives.begin(), extras.enemyArchives.end(), archive) == extras.enemyArchives.end()) {
+                                    extras.enemyArchives.push_back(archive);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            for (const rm::MapEnemy& e : enemies) {
                 addClass(e.unit_class);
                 for (const std::int64_t arm : e.arms) addArm(arm);
                 for (const rm::EnemyProfile& p : e.profiles) {
@@ -5927,6 +6631,515 @@ bool PlayerFacing(std::uintptr_t player, float& fx, float& fz) {
     fx /= len;
     fz /= len;
     return true;
+}
+
+// ---- Boss tuning (maps.json boss "tuning"; the user's picks, 2026-11-22, the boss tuning board) ----
+// Uroboros Wesker (uEm82): his second form below a share of his health (the game's own switch,
+// addr::kFnEm82SetPose), body hits at a share (hooks_combat SetBossBodyShare), his rage on a clock (the
+// bit and timer his Tornado sets), and a ground slam, javelin or arm dance on a clock. Jill (uEm84):
+// her attack chances and fire cooldowns (her own tables, patched while her arena runs, put back after),
+// her close moves and her wide sweep on clocks, no flinching but to explosions, a roll aside when aimed at.
+struct BossTuning {
+    std::uintptr_t unit = 0;
+    int generation = -1;
+    bool secondForm = false;
+    double nextRage = 0.0, nextSpecial = 0.0, nextMelee = 0.0, nextWide = 0.0, nextFlinchLog = 0.0;
+    std::string lastAction;
+    double aimSince = -1.0;
+    bool aimHandled = false;
+    double upSince = -1.0;      // Jill above the player since (the balcony)
+    double nextJumpDown = 0.0;
+    unsigned picks = 0;  // which special or move comes next (in turn)
+} g_bossTuning;
+
+bool WriteProtectedFloats(std::uintptr_t address, const float* values, std::size_t count) {
+    const std::size_t bytes = count * sizeof(float);
+    DWORD old = 0;
+    if (!VirtualProtect(reinterpret_cast<void*>(address), bytes, PAGE_READWRITE, &old)) return false;
+    const bool ok = SafeWrite(address, values, bytes);
+    VirtualProtect(reinterpret_cast<void*>(address), bytes, old, &old);
+    return ok;
+}
+
+// Jill's tables: the arena's tuning while her arena runs (`boss`), the game's own otherwise.
+void PatchJillTables(const rm::MapBoss* boss) {
+    struct Table {
+        std::uintptr_t address;
+        std::size_t count;
+        float original[11];
+    };
+    static Table tables[] = {{re5::addr::kJillAttackChance, 6, {}}, {re5::addr::kJillFireCooldownA, 11, {}},
+                             {re5::addr::kJillFireCooldownB, 11, {}}};
+    static bool applied = false;
+    static bool saved = false;
+    const bool want = boss != nullptr && engine::Caps().em84Tuning;
+    if (want == applied) return;
+    if (want) {
+        if (!saved) {
+            for (Table& t : tables) {
+                for (std::size_t i = 0; i < t.count; ++i) t.original[i] = ReadOr<float>(t.address + i * 4, 0.0f);
+            }
+            saved = true;
+        }
+        float chance[6];
+        const auto c = boss->tuning.find("attack_chance");
+        for (std::size_t i = 0; i < 6; ++i) {
+            chance[i] = c != boss->tuning.end() && c->second.size() == 6 ? static_cast<float>(c->second[i]) : tables[0].original[i];
+        }
+        const float cap = static_cast<float>(boss->Tuning("fire_cooldown_max", 0.0));
+        float cooldownA[11], cooldownB[11];
+        for (std::size_t i = 0; i < 11; ++i) {
+            cooldownA[i] = cap > 0.0f ? std::min(tables[1].original[i], cap) : tables[1].original[i];
+            cooldownB[i] = cap > 0.0f ? std::min(tables[2].original[i], cap) : tables[2].original[i];
+        }
+        const bool ok = WriteProtectedFloats(tables[0].address, chance, 6) && WriteProtectedFloats(tables[1].address, cooldownA, 11) &&
+                        WriteProtectedFloats(tables[2].address, cooldownB, 11);
+        RM_LOGI("boss tuning: Jill's tables: attack chance %.2f %.2f %.2f %.2f %.2f %.2f, fire cooldowns at most %.2f s -> %s", chance[0], chance[1],
+                chance[2], chance[3], chance[4], chance[5], cap > 0.0f ? cap : 99.0f, ok ? "ok" : "FAILED");
+        applied = true;
+    } else {
+        bool ok = true;
+        for (const Table& t : tables) ok = WriteProtectedFloats(t.address, t.original, t.count) && ok;
+        RM_LOGI("boss tuning: Jill's tables back to the game's own -> %s", ok ? "ok" : "FAILED");
+        applied = false;
+    }
+}
+
+// The nearest standing human player to `unit` and the distance (engine units).
+std::uintptr_t NearestStanding(std::uintptr_t unit, float& distance) {
+    std::uintptr_t nearest = 0;
+    float best = 1.0e30f;
+    for (int seat = 0; seat < 2; ++seat) {
+        const auto p = engine::HumanPlayerInSlot(seat);
+        const auto hp = p ? engine::ReadHp(p) : std::nullopt;
+        if (!hp || hp->hp <= 0) continue;
+        float d = 0.0f;
+        for (int a = 0; a < 3; ++a) {
+            const float v = ReadOr<float>(p + re5::off::kUnitPosition + a * 4, 0.0f) - ReadOr<float>(unit + re5::off::kUnitPosition + a * 4, 0.0f);
+            d += v * v;
+        }
+        if (d < best) {
+            best = d;
+            nearest = p;
+        }
+    }
+    distance = nearest ? std::sqrt(best) : 1.0e30f;
+    return nearest;
+}
+
+bool ContainsAny(const std::string& s, std::initializer_list<const char*> parts) {
+    for (const char* p : parts) {
+        if (s.find(p) != std::string::npos) return true;
+    }
+    return false;
+}
+
+// The game's own switch to his second form (no C++ objects here: __try), its pose byte only (apply 0):
+// with apply 1 it also takes the story's giant model and turns off his hit shapes 3 to 5, made for the
+// lava finale where only the story's rockets end him. The pose byte alone is what his picker reads
+// (0x009C8850): the second form's moves, his own body. (The user's "he's untargetable, no damage",
+// 2026-11-22, was the game's dead mark from his first death, not the form: hooks_combat
+// g_lastHealthBoss.)
+bool SetEm82Pose(std::uintptr_t unit) {
+    __try {
+        reinterpret_cast<void(__thiscall*)(std::uintptr_t, int, int)>(re5::addr::kFnEm82SetPose)(unit, 1, 0);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+void DriveUroborosWesker(const rm::MapBoss& boss, std::uintptr_t unit, const std::string& action, double now) {
+    BossTuning& t = g_bossTuning;
+    if (!engine::Caps().em82Tuning) return;
+    const auto hp = engine::ReadHp(unit);
+    const double formAt = boss.Tuning("second_form_at", 0.0);
+    if (!t.secondForm && formAt > 0.0 && hp && hp->max > 0 && hp->hp > 0 && hp->hp <= formAt * hp->max) {
+        t.secondForm = true;
+        const bool ok = ReadOr<std::uint8_t>(unit + re5::off::kEm82Pose, 0) == 1 || SetEm82Pose(unit);
+        g->notice = Upper(Plain(boss.name)) + " TAKES HIS SECOND FORM";
+        g->noticeUntil = now + 3.0;
+        RM_LOGI("boss tuning: %s at %d/%d health: his second form %s (pose byte %d)", boss.name.c_str(), hp->hp, hp->max,
+                ok ? "on" : "FAILED", ReadOr<std::uint8_t>(unit + re5::off::kEm82Pose, 0));
+    }
+    const double rageEvery = boss.Tuning("rage_every", 0.0);
+    if (rageEvery > 0.0 && now >= t.nextRage) {
+        t.nextRage = now + rageEvery;
+        const auto flags = ReadOr<std::uint32_t>(unit + re5::off::kEm82Flags, 0);
+        if ((flags & re5::off::kEm82RageBit) == 0) {
+            SafeStore<float>(unit + re5::off::kEm82RageTimer, static_cast<float>(boss.Tuning("rage_seconds", 15.0)));
+            SafeStore<std::uint32_t>(unit + re5::off::kEm82Flags, flags | re5::off::kEm82RageBit);
+            RM_LOGI("boss tuning: %s enraged for %.0f s (in %s)", boss.name.c_str(), boss.Tuning("rage_seconds", 15.0), action.c_str());
+        }
+    }
+    const double specialsEvery = boss.Tuning("specials_every", 0.0);
+    if (specialsEvery > 0.0 && now >= t.nextSpecial) {
+        const bool busy = ContainsAny(action, {"Atk", "Dmg", "Drill", "Pinion", "Event", "StageChange", "CoreRev", "Jump"});
+        if (busy) {
+            t.nextSpecial = now + 0.5;
+        } else {
+            static const char* const kSpecials[] = {"cEm82AtkGroundHitStart", "cEm82AtkJavelinThrow", "cEm82AtkArmDancing"};
+            const char* special = kSpecials[t.picks++ % 3];
+            const bool ok = StartActionSpec(unit, special);
+            t.nextSpecial = now + (ok ? specialsEvery : 1.0);
+            RM_LOGI("boss tuning: %s %s (in %s): %s", boss.name.c_str(), special, action.c_str(), ok ? "started" : "refused");
+        }
+    }
+}
+
+void DriveJill(const rm::MapBoss& boss, std::uintptr_t unit, const std::string& action, double now) {
+    BossTuning& t = g_bossTuning;
+    float distance = 0.0f;
+    const std::uintptr_t player = NearestStanding(unit, distance);
+    // Free to start something: not attacking, hurt, climbing, grabbed or dying.
+    const bool free = !ContainsAny(action, {"Atck", "Dmg", "Die", "Climb", "Jump", "Hang", "Handrail", "Catch", "Caught", "Pinion",
+                                            "Strip", "Sleep", "Appear", "Provoke", "WideFire", "Roll"});
+    const double range = boss.Tuning("melee_range", 400.0);
+    const double meleeEvery = boss.Tuning("melee_every", 0.0);
+    // Height: she and the nearest player on one floor or not (the balcony is 4 m up).
+    const float dy = player ? ReadOr<float>(unit + re5::off::kUnitPosition + 4, 0.0f) - ReadOr<float>(player + re5::off::kUnitPosition + 4, 0.0f)
+                            : 0.0f;
+    const bool sameFloor = std::fabs(dy) < 150.0f;
+    // The user, 2026-11-22: "she goes up and uses the smgs but you are below so it doesnt do anything".
+    // A climb she begins while the player is below gives way to a roll and burst at them; up there with
+    // the player below, she jumps down.
+    if (player && action != t.lastAction && dy < 100.0f &&
+        ContainsAny(action, {"ClimbPiller_ReadyBgn", "JumpPiller_ReadyBgn", "ClimbPiller_2ndFloor", "JumpPiller_2ndFloor"})) {
+        const bool ok = StartActionSpec(unit, "cEm84ActRollFire");
+        RM_LOGI("boss tuning: Jill began %s with the player on the floor: %s", action.c_str(), ok ? "a roll and burst instead" : "left as it is");
+    }
+    if (player && dy > 200.0f && free) {
+        if (t.upSince < 0.0) t.upSince = now;
+        if (now - t.upSince > 1.0 && now >= t.nextJumpDown) {
+            const bool ok = StartActionSpec(unit, "cEm84ActJumpDown");
+            t.nextJumpDown = now + 2.0;
+            RM_LOGI("boss tuning: Jill %.1f m above the player: jump down %s", dy / 100.0f, ok ? "started" : "refused");
+        }
+    } else if (dy <= 200.0f) {
+        t.upSince = -1.0;
+    }
+    if (meleeEvery > 0.0 && now >= t.nextMelee && player) {
+        if (free && distance <= range && sameFloor) {
+            static const char* const kClose[] = {"cEm84ActAtckHiKick", "cEm84ActAtckAshibarai", "cEm84ActAtckSliding"};
+            const char* move = kClose[t.picks++ % 3];
+            const bool ok = StartActionSpec(unit, move);
+            t.nextMelee = now + (ok ? meleeEvery : 0.5);
+            RM_LOGI("boss tuning: Jill %s at %.1f m (in %s): %s", move, distance / 100.0f, action.c_str(), ok ? "started" : "refused");
+        } else {
+            t.nextMelee = now + 0.3;
+        }
+    }
+    const double wideEvery = boss.Tuning("wide_fire_every", 0.0);
+    if (wideEvery > 0.0 && now >= t.nextWide && player) {
+        if (free && distance > range && sameFloor) {
+            const bool ok = StartActionSpec(unit, "cEm84ActWideFire");
+            t.nextWide = now + (ok ? wideEvery : 0.5);
+            RM_LOGI("boss tuning: Jill's wide fire at %.1f m (in %s): %s", distance / 100.0f, action.c_str(), ok ? "started" : "refused");
+        } else {
+            t.nextWide = now + 0.5;
+        }
+    }
+    // No flinching but to explosions: a hurt reaction a gun or a blade began gives way to an evasion, a
+    // roll aside or a roll and burst in turn (the user, 2026-11-22: "even if she doesnt flinch she still
+    // resets her atack she sould evade a bit or look more natural"; her guns up again read as a reset).
+    if (boss.Tuning("flinch_only_explosives", 0.0) > 0.0 && action != t.lastAction && action.find("Dmg") != std::string::npos &&
+        action.find("Die") == std::string::npos && now - g_bossLastHit.at < 0.5 && !g_bossLastHit.explosive) {
+        const std::string evade = (t.picks++ % 2 == 0) ? "cEm84ActRoll#" + std::to_string(t.picks % 4) : std::string("cEm84ActRollFire");
+        const bool ok = StartActionSpec(unit, evade);
+        if (now >= t.nextFlinchLog) {
+            t.nextFlinchLog = now + 5.0;
+            RM_LOGI("boss tuning: Jill shrugs off %s: %s %s", action.c_str(), evade.c_str(), ok ? "instead" : "refused");
+        }
+    }
+    // A roll aside when a player holds their aim on her.
+    const double dodge = boss.Tuning("dodge_chance", 0.0);
+    if (dodge > 0.0) {
+        bool aimed = false;
+        for (int seat = 0; seat < 2 && !aimed; ++seat) {
+            const auto p = engine::HumanPlayerInSlot(seat);
+            if (!p || engine::CurrentActionName(p).find("weapon_ready") == std::string::npos) continue;
+            float fx = 0.0f, fz = 0.0f;
+            if (!PlayerFacing(p, fx, fz)) continue;
+            const float dx = ReadOr<float>(unit + re5::off::kUnitPosition, 0.0f) - ReadOr<float>(p + re5::off::kUnitPosition, 0.0f);
+            const float dz = ReadOr<float>(unit + re5::off::kUnitPosition + 8, 0.0f) - ReadOr<float>(p + re5::off::kUnitPosition + 8, 0.0f);
+            const float len = std::sqrt(dx * dx + dz * dz);
+            aimed = len > 1.0f && (dx * fx + dz * fz) / len > 0.94f;  // within about 20 degrees
+        }
+        if (!aimed) {
+            t.aimSince = -1.0;
+            t.aimHandled = false;
+        } else {
+            if (t.aimSince < 0.0) t.aimSince = now;
+            if (!t.aimHandled && now - t.aimSince >= boss.Tuning("dodge_aim_seconds", 1.5)) {
+                t.aimHandled = true;
+                const double roll = static_cast<double>((t.picks * 2654435761u) % 1000u) / 1000.0;
+                ++t.picks;
+                if (roll < dodge && free) {
+                    const std::string move = "cEm84ActRoll#" + std::to_string(t.picks % 4);
+                    const bool ok = StartActionSpec(unit, move);
+                    RM_LOGI("boss tuning: Jill rolls aside from an aim (%s): %s", move.c_str(), ok ? "started" : "refused");
+                }
+            }
+        }
+    }
+}
+
+void DriveBossTuning(double now) {
+    const rm::MapDef* map = CurrentMap();
+    const bool arena = g->match.inMatch && g->run->HasActiveRun() && g->run->phase() == rm::Phase::ArenaActive && map != nullptr &&
+                       map->boss.has_value();
+    const rm::MapBoss* boss = arena ? &*map->boss : nullptr;
+    PatchJillTables(boss != nullptr && boss->unit_class == "uEm84" && !boss->tuning.empty() ? boss : nullptr);
+    SetBossBodyShare(boss != nullptr && boss->unit_class == "uEm82" ? static_cast<float>(boss->Tuning("body_damage", 1.0)) : 1.0f);
+    const std::uintptr_t unit = g->boss.unit;
+    BossTuning& t = g_bossTuning;
+    if (!boss || !unit || boss->tuning.empty()) {
+        t = {};
+        return;
+    }
+    if (t.unit != unit || t.generation != g->matchGeneration) {
+        t = {};
+        t.unit = unit;
+        t.generation = g->matchGeneration;
+        t.nextRage = now + boss->Tuning("rage_every", 0.0);
+        t.nextSpecial = now + boss->Tuning("specials_every", 0.0);
+        t.nextMelee = now + boss->Tuning("melee_every", 0.0);
+        t.nextWide = now + boss->Tuning("wide_fire_every", 0.0);
+        RM_LOGI("boss tuning: %s (%zu settings)", boss->name.c_str(), boss->tuning.size());
+    }
+    const std::string action = engine::CurrentActionName(unit);
+    const std::string cls = engine::ClassName(unit);
+    if (BossIsDown(unit)) {
+        t.lastAction = action;
+        return;  // down for its next phase (a transformation): nothing started on top
+    }
+    if (cls == "uEm82") DriveUroborosWesker(*boss, unit, action, now);
+    else if (cls == "uEm84") DriveJill(*boss, unit, action, now);
+    t.lastAction = action;
+}
+
+// ---- The info panel (the user, 2026-11-22) ----------------------------------------------------------
+// A small card at the top right during an arena with what the game's HUD and the mod's own top line do
+// not show: the arena's time against its par and the rating it would get now, kills and the kill chain,
+// damage dealt and per second, damage taken, the run's credits, and a boss's health and phases.
+struct PanelStats {
+    std::string runId;
+    int arena = -1;
+    double dealt = 0.0;
+    std::deque<std::pair<double, int>> recent;  // (time, damage) of the last few seconds
+    int chain = 0;  // kills each within kChainSeconds of the one before
+    int bestChain = 0;
+    double lastKillAt = -1.0e9;
+    int bossPhases = 0;  // the boss's phases begun this arena
+} g_panel;
+constexpr double kChainSeconds = 3.5;
+constexpr double kDpsWindow = 5.0;
+
+void PanelHit(int damage, bool killed, double now) {
+    if (damage > 0) {
+        g_panel.dealt += damage;
+        g_panel.recent.emplace_back(now, damage);
+    }
+    if (killed) {
+        g_panel.chain = now - g_panel.lastKillAt <= kChainSeconds ? g_panel.chain + 1 : 1;
+        g_panel.bestChain = std::max(g_panel.bestChain, g_panel.chain);
+        g_panel.lastKillAt = now;
+    }
+}
+
+const char* RatingLetter(rm::Rating r) {
+    switch (r) {
+        case rm::Rating::S: return "S";
+        case rm::Rating::A: return "A";
+        case rm::Rating::B: return "B";
+        default: return "C";
+    }
+}
+
+ImU32 RatingColour(rm::Rating r) {
+    switch (r) {
+        case rm::Rating::S: return IM_COL32(255, 206, 84, 255);
+        case rm::Rating::A: return IM_COL32(120, 220, 120, 255);
+        case rm::Rating::B: return IM_COL32(110, 170, 255, 255);
+        default: return IM_COL32(190, 190, 190, 255);
+    }
+}
+
+std::string Clock(double seconds) {
+    const int s = std::max(0, static_cast<int>(seconds));
+    char text[16];
+    std::snprintf(text, sizeof(text), "%d:%02d", s / 60, s % 60);
+    return text;
+}
+
+void DrawInfoPanel(const rm::RunSnapshot& s, double now) {
+    if (!g->settings.infoPanel || !s.run_active || s.phase != rm::Phase::ArenaActive || !g->match.inMatch || s.seat_count > 1 ||
+        matchui::IsOpen() || overlay::IsFocused() || mapeditor::Open()) {
+        return;
+    }
+    if (g_panel.runId != s.run_id || g_panel.arena != s.arena) {
+        g_panel = {};
+        g_panel.runId = s.run_id;
+        g_panel.arena = s.arena;
+    }
+    while (!g_panel.recent.empty() && now - g_panel.recent.front().first > kDpsWindow) g_panel.recent.pop_front();
+    double windowDamage = 0.0;
+    for (const auto& [at, damage] : g_panel.recent) windowDamage += damage;
+    const double dps = windowDamage / kDpsWindow;
+    if (now - g_panel.lastKillAt > kChainSeconds) g_panel.chain = 0;
+
+    IDirect3DDevice9* device = overlay::FrameDevice();
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const float k = std::min(display.x / 1280.0f, display.y / 720.0f);
+    const float ox = (display.x - 1280.0f * k) * 0.5f;
+    const float oy = (display.y - 720.0f * k) * 0.5f;
+    const auto at = [&](float x, float y) { return ImVec2(ox + x * k, oy + y * k); };
+    ImDrawList* list = ImGui::GetBackgroundDrawList();
+    ImFont* serif = overlay::MenuFont();
+    ImFont* body = ImGui::GetFont();
+    ImFont* valueFont = serif ? serif : body;
+    const ImU32 gold = IM_COL32(255, 210, 127, 255), white = IM_COL32(236, 236, 236, 255), dim = IM_COL32(160, 160, 160, 230);
+    const ImU32 good = IM_COL32(120, 220, 120, 255), warn = IM_COL32(255, 140, 90, 255);
+
+    // One cell of the grid: two to a row, a wide one alone (the boss).
+    struct Cell {
+        const char* icon;
+        const char* label;
+        std::string value;
+        ImU32 colour;
+        std::string note;   // small, after the value
+        float bar = -1.0f;  // 0..1: a thin bar under the cell
+        ImU32 barColour = 0;
+        bool wide = false;
+    };
+    std::vector<Cell> cells;
+    char text[64];
+    const float timeShare = s.par_seconds > 0.0 ? static_cast<float>(std::min(1.0, s.arena_seconds / s.par_seconds)) : -1.0f;
+    cells.push_back({"clock", "TIME", Clock(s.arena_seconds), s.par_seconds > 0.0 && s.arena_seconds > s.par_seconds ? warn : white,
+                     s.par_seconds > 0.0 ? "/ " + Clock(s.par_seconds) : std::string(), timeShare,
+                     timeShare >= 1.0f ? warn : IM_COL32(255, 210, 127, 200)});
+    const rm::MapDef* arenaMap = CurrentMap();
+    const bool bossArena = arenaMap != nullptr && arenaMap->boss.has_value();
+    std::snprintf(text, sizeof(text), "%d", s.kills);
+    cells.push_back({"skull", "KILLS", text, white, s.remaining > 0 && !bossArena ? std::to_string(s.remaining) + " left" : std::string()});
+    std::snprintf(text, sizeof(text), "%.0f", g_panel.dealt);
+    char note[32];
+    std::snprintf(note, sizeof(note), "%.0f/s", dps);
+    cells.push_back({"crosshair", "DAMAGE", text, white, note});
+    if (s.damage_taken <= 0.0) {
+        cells.push_back({"shield", "TAKEN", "NO HIT", good, std::string()});
+    } else {
+        std::snprintf(text, sizeof(text), "%.0f", s.damage_taken);
+        cells.push_back({"shield", "TAKEN", text, warn, std::string()});
+    }
+    // The run's supplies and keys (out of the mod's top line while the panel shows them).
+    std::snprintf(text, sizeof(text), "%lld", static_cast<long long>(s.supplies));
+    cells.push_back({"supplies", "SUPPLIES", text, gold, std::string()});
+    if (s.keys_needed) {
+        std::snprintf(text, sizeof(text), "%d", s.keys);
+        cells.push_back({"key", "KEYS", text, s.keys > 0 ? gold : dim, std::string()});
+    }
+    std::snprintf(text, sizeof(text), "%lld", static_cast<long long>(s.credits_pending));
+    cells.push_back({"credits", "CREDITS", text, gold, std::string()});
+    if (g_panel.chain >= 2) {
+        std::snprintf(text, sizeof(text), "x%d", g_panel.chain);
+        const float left = static_cast<float>(std::clamp(1.0 - (now - g_panel.lastKillAt) / kChainSeconds, 0.0, 1.0));
+        cells.push_back({"chain", "CHAIN", text, gold, "best x" + std::to_string(g_panel.bestChain), left, gold});
+    } else {
+        cells.push_back({"chain", "CHAIN", g_panel.bestChain >= 2 ? "best x" + std::to_string(g_panel.bestChain) : std::string("-"), dim, std::string()});
+    }
+    if (bossArena && g->boss.unit) {
+        if (const auto hp = engine::ReadHp(g->boss.unit); hp && hp->max > 0) {
+            const int phases = static_cast<int>(arenaMap->boss->phases.size()) + 1;
+            const int phase = std::min(phases, 1 + (g_bossDown.unit == g->boss.unit ? g_bossDown.index + (g_bossDown.down ? 0 : 1) : 0));
+            const float share = static_cast<float>(std::clamp(static_cast<double>(hp->hp) / hp->max, 0.0, 1.0));
+            std::snprintf(text, sizeof(text), "%d%%", static_cast<int>(std::lround(share * 100.0f)));
+            const bool down = BossIsDown(g->boss.unit);
+            cells.push_back({"star", "BOSS", down ? std::string("DOWN") : std::string(text), down ? warn : white,
+                             phases > 1 ? "phase " + std::to_string(phase) + "/" + std::to_string(phases) : std::string(), share,
+                             IM_COL32(220, 70, 60, 230), true});
+        }
+    }
+
+    // The card: the top right corner, where the mod's top line had the supplies and keys.
+    const float width = 330.0f, rowH = 23.0f, pad = 9.0f, head = 20.0f, colGap = 14.0f;
+    // In the corner, as far from the top as from the right (the user, 2026-11-22, twice: "the hud should
+    // be a bit more higher", "Make the mod hud a bit higher, it is still too low").
+    const float right = 1252.0f, top = 28.0f;
+    const float colW = (width - pad * 2.0f - colGap) * 0.5f;
+    int rows = 0;
+    for (std::size_t i = 0, col = 0; i < cells.size(); ++i) {
+        if (cells[i].wide) {
+            if (col != 0) ++rows;
+            ++rows;
+            col = 0;
+        } else if (++col == 2 || i + 1 == cells.size()) {
+            ++rows;
+            col = 0;
+        }
+    }
+    const float height = head + rowH * static_cast<float>(rows) + pad * 0.6f;
+    const ImVec2 a = at(right - width, top), b = at(right, top + height);
+    list->AddRectFilled(a, b, IM_COL32(8, 9, 12, 172), 7.0f * k);
+    list->AddRect(a, b, IM_COL32(255, 255, 255, 28), 7.0f * k, 0, 1.0f);
+    list->AddLine(at(right - width + 10.0f, top + 1.0f), at(right - 10.0f, top + 1.0f), IM_COL32(255, 210, 127, 170), 2.0f * k);
+    list->AddText(body, 11.5f * k, at(right - width + pad + 2.0f, top + 5.0f), dim, "ARENA INTEL");
+    if (s.rating_now) {
+        const ImVec2 c = at(right - pad - 8.0f, top + 11.0f);
+        const ImU32 rc = RatingColour(*s.rating_now);
+        list->AddCircleFilled(c, 8.5f * k, IM_COL32(0, 0, 0, 160), 20);
+        list->AddCircle(c, 8.5f * k, rc, 20, 1.5f * k);
+        const ImVec2 size = valueFont->CalcTextSizeA(13.0f * k, FLT_MAX, 0.0f, RatingLetter(*s.rating_now));
+        list->AddText(valueFont, 13.0f * k, ImVec2(c.x - size.x * 0.5f, c.y - size.y * 0.5f), rc, RatingLetter(*s.rating_now));
+        list->AddText(body, 11.0f * k, at(right - pad - 62.0f, top + 5.0f), dim, "RATING");
+    }
+    auto drawCell = [&](const Cell& c, float x0, float x1, float y) {
+        const float iconSize = 15.0f;
+        const ImVec2 i0 = at(x0, y + (rowH - iconSize) * 0.5f - 2.0f), i1 = at(x0 + iconSize, y + (rowH - iconSize) * 0.5f + iconSize - 2.0f);
+        if (const auto tex = device ? icons::Texture(device, c.icon) : 0) {
+            list->AddImage(static_cast<ImTextureID>(tex), i0, i1, ImVec2(0, 0), ImVec2(1, 1), IM_COL32(255, 255, 255, 230));
+        } else {
+            list->AddCircleFilled(ImVec2((i0.x + i1.x) * 0.5f, (i0.y + i1.y) * 0.5f), 4.0f * k, dim);
+        }
+        list->AddText(body, 11.0f * k, at(x0 + iconSize + 6.0f, y + 5.0f), dim, c.label);
+        float x = x1;
+        if (!c.note.empty()) {
+            const ImVec2 ns = body->CalcTextSizeA(10.5f * k, FLT_MAX, 0.0f, c.note.c_str());
+            list->AddText(body, 10.5f * k, ImVec2(ox + x * k - ns.x, oy + (y + 6.0f) * k), dim, c.note.c_str());
+            x -= ns.x / k + 5.0f;
+        }
+        const float valueSize = 15.5f * k;
+        const ImVec2 vs = valueFont->CalcTextSizeA(valueSize, FLT_MAX, 0.0f, c.value.c_str());
+        list->AddText(valueFont, valueSize, ImVec2(ox + x * k - vs.x + 1.0f, oy + (y + 2.0f) * k + 1.0f), IM_COL32(0, 0, 0, 200), c.value.c_str());
+        list->AddText(valueFont, valueSize, ImVec2(ox + x * k - vs.x, oy + (y + 2.0f) * k), c.colour, c.value.c_str());
+        if (c.bar >= 0.0f) {
+            const float bx0 = x0 + iconSize + 6.0f, by = y + rowH - 4.0f;
+            list->AddRectFilled(at(bx0, by), at(x1, by + 2.5f), IM_COL32(255, 255, 255, 30), 1.0f * k);
+            list->AddRectFilled(at(bx0, by), at(bx0 + (x1 - bx0) * c.bar, by + 2.5f), c.barColour, 1.0f * k);
+        }
+    };
+    const float left = right - width + pad;
+    float y = top + head;
+    int col = 0;
+    for (const Cell& c : cells) {
+        if (c.wide) {
+            if (col != 0) {
+                y += rowH;
+                col = 0;
+            }
+            drawCell(c, left, right - pad, y);
+            y += rowH;
+            continue;
+        }
+        const float x0 = left + static_cast<float>(col) * (colW + colGap);
+        drawCell(c, x0, x0 + colW, y);
+        // A thin divider between the two columns.
+        if (col == 0) list->AddLine(at(x0 + colW + colGap * 0.5f, y + 4.0f), at(x0 + colW + colGap * 0.5f, y + rowH - 4.0f), IM_COL32(255, 255, 255, 22), 1.0f);
+        if (++col == 2) {
+            col = 0;
+            y += rowH;
+        }
+    }
 }
 
 // The move in progress.
@@ -8427,6 +9640,236 @@ void DrawSplitHud() {
     text(g_splitHud.center, 640.0f, 70.0f, 15.0f, IM_COL32(220, 220, 220, 200));
 }
 
+// ---- Developer: the UI lab (the user, 2026-11-21: "make tests with everything you find") ----------
+// The ways the mod can show UI, each tried with a change: the game's text routine (uilab text), a
+// loaded texture rewritten (uilab tex), a layout element moved (uilab layout / move), the overlay
+// (uilab imgui). "uilab off" puts everything back.
+std::atomic<bool> g_labImgui{false};
+struct LabMove {
+    std::uintptr_t element = 0;
+    float x = 0.0f, y = 0.0f;  // where it was
+};
+std::vector<LabMove> g_labMoves;
+
+std::uintptr_t LabScreen(const std::string& token) {
+    if (token == "ck0" || token == "ck1") return CockpitObject(token[2] - '0');
+    return static_cast<std::uintptr_t>(std::strtoul(token.c_str(), nullptr, 16));
+}
+
+void LabTextShowcase(bool on) {
+    std::vector<matchui::LabText> t;
+    if (on) {
+        t.push_back({9, "UI LAB   THE GAME'S OWN TEXT", 640, 24, 0.5f, 0xFFFFFFFFu});
+        const float scales[] = {0.3f, 0.45f, 0.65f, 0.9f};
+        for (int i = 0; i < 4; ++i) t.push_back({3, "SCALE", 200, 76 + i * 46 + i * i * 6, scales[i], 0xFFFFFFFFu});
+        const std::uint32_t colours[] = {0xFFFFFFFFu, 0xFF6CE06Cu, 0xFF5AA8FFu, 0xFFC07CFFu, 0xFFFFA040u, 0xFFFF5050u};
+        for (int i = 0; i < 6; ++i) t.push_back({4, "COLOUR", 520, 72 + i * 34, 0.45f, colours[i]});
+        const std::uint32_t alphas[] = {0xFF, 0xC0, 0x80, 0x40};
+        for (int i = 0; i < 4; ++i) t.push_back({5, "FADING", 820, 76 + i * 40, 0.5f, (alphas[i] << 24) | 0xFFD27Fu});
+        t.push_back({6, "TWO LINES\nIN ONE TEXT", 1080, 100, 0.42f, 0xFFFFFFFFu});
+        t.push_back({7, "ANYWHERE", 110, 330, 0.4f, 0xFF60FF60u});
+        t.push_back({7, "ANYWHERE", 1170, 330, 0.4f, 0xFF60FF60u});
+        t.push_back({7, "ANYWHERE", 1080, 250, 0.7f, 0x90FFFFFFu});
+    }
+    matchui::SetLabTexts(std::move(t));
+}
+
+void LabCommand(const std::string& args) {
+    std::istringstream words(args);
+    std::string what;
+    words >> what;
+    if (what == "text") {
+        LabTextShowcase(true);
+        RM_LOGW("ui lab: the game's text showcase on");
+    } else if (what == "tex") {
+        // "uilab tex <path part> <x> <y> <png file>"
+        std::string part, file;
+        int x = 0, y = 0;
+        words >> part >> x >> y;
+        std::getline(words, file);
+        if (!file.empty() && file[0] == ' ') file.erase(0, 1);
+        hudnames::LabPut(part, x, y, std::filesystem::path(file));
+        RM_LOGW("ui lab: %s at %d,%d from %s queued", part.c_str(), x, y, file.c_str());
+    } else if (what == "texback") {
+        hudnames::LabRestore();
+    } else if (what == "layout" || what == "move") {
+        // "uilab layout <screen|ck0|ck1> <element>": its fields; "uilab move ... <dx> <dy>": moved.
+        std::string screenText, name;
+        float dx = 0.0f, dy = 0.0f;
+        words >> screenText >> name >> dx >> dy;
+        const std::uintptr_t screen = LabScreen(screenText);
+        const std::uintptr_t element = screen ? nativemenu::LayoutElementOf(screen, name.c_str()) : 0;
+        RM_LOGW("ui lab: %s of %08X (%s, layer %d): element %08X", name.c_str(), static_cast<unsigned>(screen), engine::ClassName(screen).c_str(),
+                ReadOr<std::int32_t>(screen + 0x18, -1), static_cast<unsigned>(element));
+        if (!element) return;
+        for (int row = 0; row < 8; ++row) {
+            float f[4] = {};
+            std::uint32_t u[4] = {};
+            for (int k = 0; k < 4; ++k) {
+                u[k] = ReadOr<std::uint32_t>(element + (row * 4 + k) * 4, 0);
+                std::memcpy(&f[k], &u[k], 4);
+            }
+            RM_LOGW("ui lab:   +%02X: %08X %08X %08X %08X | %.1f %.1f %.1f %.1f", row * 16, u[0], u[1], u[2], u[3], f[0], f[1], f[2], f[3]);
+        }
+        if (what == "move") {
+            const float x = ReadOr<float>(element + 0x50, 0.0f), y = ReadOr<float>(element + re5::addr::kLayoutElementY, 0.0f);
+            g_labMoves.push_back({element, x, y});
+            SafeStore<float>(element + 0x50, x + dx);
+            SafeStore<float>(element + re5::addr::kLayoutElementY, y + dy);
+            RM_LOGW("ui lab: %s moved from %.1f, %.1f by %.1f, %.1f", name.c_str(), x, y, dx, dy);
+        }
+    } else if (what == "find") {
+        // "uilab find <element>": the layout layers that have an element of that name.
+        std::string name;
+        words >> name;
+        int hits = 0;
+        for (int layer = 0; layer < 0x5C; ++layer) {
+            if (const std::uintptr_t e = nativemenu::LayoutElementOnLayer(layer, name.c_str())) {
+                RM_LOGW("ui lab: %s on layer %d: element %08X (x %.1f, y %.1f)", name.c_str(), layer, static_cast<unsigned>(e),
+                        ReadOr<float>(e + 0x50, 0.0f), ReadOr<float>(e + re5::addr::kLayoutElementY, 0.0f));
+                ++hits;
+            }
+        }
+        RM_LOGW("ui lab: %s on %d layers", name.c_str(), hits);
+    } else if (what == "moveon") {
+        // "uilab moveon <layer> <element> <dx> <dy>": moved (put back by "uilab off").
+        int layer = -1;
+        std::string name;
+        float dx = 0.0f, dy = 0.0f;
+        words >> layer >> name >> dx >> dy;
+        const std::uintptr_t element = nativemenu::LayoutElementOnLayer(layer, name.c_str());
+        if (!element) {
+            RM_LOGW("ui lab: no %s on layer %d", name.c_str(), layer);
+            return;
+        }
+        const float x = ReadOr<float>(element + 0x50, 0.0f), y = ReadOr<float>(element + re5::addr::kLayoutElementY, 0.0f);
+        g_labMoves.push_back({element, x, y});
+        SafeStore<float>(element + 0x50, x + dx);
+        SafeStore<float>(element + re5::addr::kLayoutElementY, y + dy);
+        RM_LOGW("ui lab: %s on layer %d moved from %.1f, %.1f by %.1f, %.1f", name.c_str(), layer, x, y, dx, dy);
+    } else if (what == "imgui") {
+        g_labImgui = !g_labImgui.load();
+        RM_LOGW("ui lab: the overlay showcase %s", g_labImgui.load() ? "on" : "off");
+    } else if (what == "off") {
+        LabTextShowcase(false);
+        hudnames::LabRestore();
+        for (auto it = g_labMoves.rbegin(); it != g_labMoves.rend(); ++it) {
+            SafeStore<float>(it->element + 0x50, it->x);
+            SafeStore<float>(it->element + re5::addr::kLayoutElementY, it->y);
+        }
+        g_labMoves.clear();
+        g_labImgui = false;
+        RM_LOGW("ui lab: everything put back");
+    } else {
+        RM_LOGW("ui lab: text | tex <path> <x> <y> <png> | texback | layout <screen> <element> | move <screen> <element> <dx> <dy> | imgui | off");
+    }
+}
+
+// The overlay's showcase: a panel in the mod's serif with the mod's icons, a bust, bars and a ring.
+void DrawLabImgui() {
+    if (!g_labImgui.load()) return;
+    IDirect3DDevice9* device = overlay::FrameDevice();
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const float k = std::min(display.x / 1280.0f, display.y / 720.0f);
+    const float ox = (display.x - 1280.0f * k) * 0.5f;
+    const float oy = (display.y - 720.0f * k) * 0.5f;
+    const auto at = [&](float x, float y) { return ImVec2(ox + x * k, oy + y * k); };
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    ImFont* serif = overlay::MenuFont();
+    ImFont* font = serif ? serif : ImGui::GetFont();
+    const auto text = [&](const char* s, float x, float y, float size, ImU32 c) {
+        list->AddText(font, size * k, ImVec2(at(x, y).x + 1, at(x, y).y + 1), IM_COL32(0, 0, 0, 200), s);
+        list->AddText(font, size * k, at(x, y), c, s);
+    };
+    // The panel.
+    list->AddRectFilled(at(860, 380), at(1250, 700), IM_COL32(12, 10, 8, 215), 8.0f * k);
+    list->AddRect(at(860, 380), at(1250, 700), IM_COL32(255, 210, 127, 200), 8.0f * k, 0, 2.0f);
+    text("OVERLAY PANEL", 880, 390, 22.0f, IM_COL32(255, 210, 127, 255));
+    text("Any font, any picture, anywhere, both halves", 880, 418, 13.0f, IM_COL32(220, 220, 220, 230));
+    // Icons (configs\icons) in boxes.
+    const char* icons[] = {"handgun", "grenade", "herb", "medkit", "key", "crown"};
+    for (int i = 0; i < 6; ++i) {
+        const ImVec2 a = at(880.0f + i * 60.0f, 445.0f), b = at(930.0f + i * 60.0f, 495.0f);
+        list->AddRectFilled(a, b, IM_COL32(40, 36, 30, 230), 4.0f * k);
+        list->AddRect(a, b, i == 2 ? IM_COL32(255, 210, 127, 255) : IM_COL32(255, 255, 255, 60), 4.0f * k, 0, i == 2 ? 2.0f : 1.0f);
+        if (const auto tex = device ? icons::Texture(device, icons[i]) : 0) {
+            list->AddImage(static_cast<ImTextureID>(tex), ImVec2(a.x + 5 * k, a.y + 5 * k), ImVec2(b.x - 5 * k, b.y - 5 * k));
+        }
+    }
+    // A bust (the game's own portrait art, costume slot 0).
+    if (const portraits::Portrait p = device ? portraits::Get(device, 0) : portraits::Portrait{}; p.texture) {
+        const float h = 170.0f, w = h * static_cast<float>(p.width) / std::max(1, p.height);
+        list->AddImage(static_cast<ImTextureID>(p.texture), at(880, 510), at(880 + w, 510 + h));
+    }
+    // Bars and a ring.
+    const float t = static_cast<float>(std::fmod(Now(), 4.0) / 4.0);
+    for (int i = 0; i < 3; ++i) {
+        const float y = 520.0f + i * 34.0f;
+        const float fill = i == 0 ? 0.8f : i == 1 ? 0.45f : t;
+        const ImU32 colours[] = {IM_COL32(90, 220, 90, 255), IM_COL32(240, 200, 70, 255), IM_COL32(90, 160, 255, 255)};
+        list->AddRectFilled(at(1010, y), at(1230, y + 14), IM_COL32(30, 30, 30, 220), 3.0f * k);
+        list->AddRectFilledMultiColor(at(1010, y), at(1010 + 220 * fill, y + 14), colours[i], colours[i], IM_COL32(20, 20, 20, 255),
+                                      IM_COL32(20, 20, 20, 255));
+        list->AddRect(at(1010, y), at(1230, y + 14), IM_COL32(255, 255, 255, 70), 3.0f * k);
+    }
+    const ImVec2 c = at(1120, 650);
+    list->PathArcTo(c, 34.0f * k, -1.5708f, -1.5708f + 6.2832f * t, 40);
+    list->PathStroke(IM_COL32(255, 210, 127, 255), 0, 6.0f * k);
+    list->AddCircle(c, 40.0f * k, IM_COL32(255, 255, 255, 80), 48, 1.5f);
+    text("RING", 1104, 640, 15.0f, IM_COL32(255, 255, 255, 230));
+}
+
+// M10: a player's own between-arena screen on their half of the split screen, where the game's text
+// routine cannot draw (player 2's) or draws rows only (a grid): in the game screens' layout and
+// colours, over a dark band so it reads over the paused world. Takes no mod lock (match_ui's own).
+void DrawSplitMenus() {
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const float k = std::min(display.x / 1280.0f, display.y / 720.0f);
+    const float ox = (display.x - 1280.0f * k) * 0.5f;
+    const float oy = (display.y - 720.0f * k) * 0.5f;
+    ImDrawList* list = ImGui::GetBackgroundDrawList();
+    ImFont* serif = overlay::MenuFont();
+    ImFont* font = serif ? serif : ImGui::GetFont();
+    // The game font's scale as an overlay text size: the width of the game's own lines (Georgia; the
+    // HUD label's 15 lines for scale 0.36 with the overlay's own font).
+    const float kTextPerScale = serif ? 32.0f : 15.0f / 0.36f;
+    const auto colour = [](std::uint32_t argb) {
+        return IM_COL32((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF, (argb >> 24) & 0xFF);
+    };
+    for (int seat = 0; seat < 2; ++seat) {
+        matchui::View v;
+        if (!matchui::SplitView(seat, v)) continue;
+        const float top = seat == 0 ? 0.0f : kSplitHalfLines;
+        const auto at = [&](float x, float y) { return ImVec2(ox + x * k, oy + (top + y) * k); };
+        const auto text = [&](const std::string& s, float x, float y, float scale, ImU32 c) {
+            if (s.empty()) return;
+            const float size = scale * kTextPerScale * k;
+            const ImVec2 sz = font->CalcTextSizeA(size, FLT_MAX, 0.0f, s.c_str());
+            const ImVec2 p(at(x, y).x - sz.x * 0.5f, at(x, y).y - sz.y * 0.5f);
+            list->AddText(font, size, ImVec2(p.x + 1.0f, p.y + 1.0f), IM_COL32(0, 0, 0, 220), s.c_str());
+            list->AddText(font, size, p, c, s.c_str());
+        };
+        list->AddRectFilled(at(0.0f, 0.0f), at(1280.0f, kSplitHalfLines), IM_COL32(0, 0, 0, 110));
+        text(v.header, 640.0f, static_cast<float>(v.headerY), v.headerScale, IM_COL32(255, 255, 255, 255));
+        for (const matchui::ViewRow& row : v.rows) {
+            if (row.cell) {
+                // A cell of the item grid: a box, brighter on the cursor.
+                const ImVec2 a = at(static_cast<float>(row.x) - 190.0f, static_cast<float>(row.y) - 17.0f);
+                const ImVec2 b = at(static_cast<float>(row.x) + 190.0f, static_cast<float>(row.y) + 17.0f);
+                list->AddRectFilled(a, b, row.selected ? IM_COL32(60, 50, 20, 200) : IM_COL32(20, 20, 20, 170), 3.0f * k);
+                list->AddRect(a, b, row.selected ? IM_COL32(255, 210, 127, 255) : IM_COL32(255, 255, 255, 70), 3.0f * k, 0,
+                              row.selected ? 2.0f : 1.0f);
+            }
+            text(row.label, static_cast<float>(row.x), static_cast<float>(row.y), row.scale, colour(row.argb));
+        }
+        std::istringstream lines(v.help);
+        float y = static_cast<float>(v.helpY);
+        for (std::string line; std::getline(lines, line); y += v.helpScale * kTextPerScale * 1.15f) {
+            text(line, 640.0f, y, v.helpScale, IM_COL32(255, 255, 255, 255));
+        }
+    }
+}
+
 void DrawSpecialWidgets() {
     rm::RunController& run = *g->run;
     if (!run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || !g->match.inMatch || matchui::IsOpen()) return;
@@ -8482,8 +9925,12 @@ void UpdateMatchStatus() {
                 counter = digits ? percent : -1;
                 hud.center = (digits ? std::string() : std::to_string(percent) + " PERCENT ") + Upper(Plain(map->boss->name));
             }
-            hud.right = std::to_string(s.supplies) + " SUPPLIES";
-            if (s.keys_needed) hud.right += "   " + Upper(Plural(s.keys, "key"));
+            // The info panel shows the supplies and keys itself (the user, 2026-11-22: "make supplies and keys
+            // appear inside the hud"); the top line keeps them where it does not show (co-op, turned off).
+            if (!g->settings.infoPanel || run.SeatCount() > 1) {
+                hud.right = std::to_string(s.supplies) + " SUPPLIES";
+                if (s.keys_needed) hud.right += "   " + Upper(Plural(s.keys, "key"));
+            }
             if (!g->noticeNext.empty() && Now() >= g->noticeUntil) {
                 g->notice = std::move(g->noticeNext);
                 g->noticeNext.clear();
@@ -8495,6 +9942,7 @@ void UpdateMatchStatus() {
         }
     }
     hud.split = run.HasActiveRun() && run.SeatCount() > 1 && g->match.inMatch;
+    matchui::SetPlayerPads(g->p1Pad, g->p2Pad);
     SetMercHudCounter(counter);
     g_splitHud = hud;
     matchui::SetHud(hud);
@@ -8587,6 +10035,7 @@ void DriveUiDemo(double now) {
 // edits the campaign save, so the save data ([kSaveData], plain in memory) is copied when it opens
 // and put back byte for byte when it closes; what it changed is logged first.
 std::uintptr_t g_itemBox = 0;
+
 constexpr std::size_t kSaveSnapshotBytes = 0x30000;  // covers slot 0's inventories, storage and stage
 std::vector<char> g_saveSnapshot;
 std::uintptr_t g_saveSnapshotBase = 0;
@@ -9044,7 +10493,10 @@ void WriteSaveGrid(std::uintptr_t block, const std::array<GridCell, kGridCells>*
             SafeStore<std::int32_t>(rec + field, 0);
         }
         for (const std::size_t word : {std::size_t{0}, std::size_t{4}}) {
-            SafeStore<std::uint32_t>(rec + kSaveRecordUpgrades + word, item ? ReadOr<std::uint32_t>(c->record + re5::off::kSlotUpgrades + word, 0) : 0);
+            // Without the infinite mark (KeepInfiniteGuns puts it back once the grid is the match's again).
+            const std::uint32_t keep = word == 0 ? ~kInfiniteLevelBit : ~0u;
+            SafeStore<std::uint32_t>(rec + kSaveRecordUpgrades + word,
+                                     item ? ReadOr<std::uint32_t>(c->record + re5::off::kSlotUpgrades + word, 0) & keep : 0);
         }
     }
 }
@@ -9140,7 +10592,7 @@ void TakeRunFromSave(std::uintptr_t save) {
         std::snprintf(buf, sizeof(buf), " %d:%04Xx%d", cell, id, count);
         text += buf;
         if (ItemStackMax(id) == 0) {  // a weapon: its levels as the screen left them
-            WeaponLevels levels = SlotLevels(rec);
+            WeaponLevels levels = WithoutInfinite(SlotLevels(rec));
             // Out of the storage with none (a gun the stage change could not place goes there
             // without its levels): the run's levels for it stay, they never go down in a run.
             const auto known = RunLevels().find(id);
@@ -10037,6 +11489,40 @@ void PollDevCommand(double now) {
             }
         }
         RM_LOGW("spritebits %08X: %d drawn: %s", static_cast<unsigned>(cockpit), count, ranges.c_str());
+    } else if (command == "slots") {
+        // "slots" (or "seat N slots"): every record of the player's 24-slot inventory: item, count,
+        // maximum, grid cell, the valid byte and the hands (M10: a split screen's "FULL" pickups).
+        const auto player = engine::LocalPlayer();
+        const auto inv = player ? player + re5::off::kPlayerInventory : 0;
+        std::string line;
+        int valid = 0;
+        for (int i = 0; inv && i < re5::off::kInventorySlots; ++i) {
+            const auto slot = inv + re5::off::kInventoryFirstSlot + static_cast<std::uintptr_t>(i) * re5::off::kInventorySlotSize;
+            const int v = ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0);
+            const auto id = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
+            if (v == 0 && id == 0) continue;
+            if (v == 1) ++valid;
+            char part[96];
+            std::snprintf(part, sizeof(part), " | %d:%04X x%d/%d c%d v%d%s", i, id, ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0),
+                          ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0), ReadOr<std::int32_t>(slot + kSlotCell, -9), v,
+                          ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1 ? " E" : "");
+            line += part;
+        }
+        RM_LOGW("dev slots %08X: %d valid, inventory +0 %08X%s", static_cast<unsigned>(player), valid,
+                inv ? ReadOr<std::uint32_t>(inv, 0) : 0u, line.c_str());
+    } else if (command.rfind("maytake ", 0) == 0) {
+        // "[seat N] maytake <hex item>": the game's own may-take-item check (0x00B65BF0, thiscall
+        // (item, 0, 0)) for that player, when its bytes are the known ones (M10: a split screen's FULL).
+        const auto item = static_cast<int>(std::strtoul(command.c_str() + 8, nullptr, 16));
+        const auto player = engine::LocalPlayer();
+        const bool known = BytesMatch(0x00B65BF0, "51 8B 44 24 08 3D FF FF 00 00 55 8B E9 75 07 B0 01 5D 59 C2 0C 00");
+        int answer = -1;
+        if (player && known) {
+            answer = reinterpret_cast<bool(__fastcall*)(std::uintptr_t, void*, int, int, int)>(0x00B65BF0)(player, nullptr, item, 0, 0) ? 1 : 0;
+        }
+        RM_LOGW("dev maytake %04X for %08X: %d", item, static_cast<unsigned>(player), answer);
+    } else if (command == "pickuppatch on" || command == "pickuppatch off") {
+        RM_LOGW("dev %s: %s", command.c_str(), SetPickupPartnerPatch(command == "pickuppatch on") ? "done" : "refused");
     } else if (command == "invprobe") {
         // M10: the inventory grid's open check for each human player, the game's own answers:
         // 0x00C698B0 (stdcall (player)), its may-act part 0x00B6A820 (through the mod's hook) and its
@@ -10106,6 +11592,25 @@ void PollDevCommand(double now) {
                     ReadOr<std::uint8_t>(ck + re5::addr::kCockpitRingsOn, 0), ReadOr<std::int32_t>(ck + 0x230, -9),
                     ReadOr<std::uint8_t>(ck + 0x344, 0));
         }
+    } else if (command.rfind("uilab", 0) == 0) {
+        LabCommand(command.size() > 6 ? command.substr(6) : std::string());
+    } else if (command.rfind("msgset ", 0) == 0) {
+        // "msgset <id> [text]": a mes_system message's text for a test (no text: the game's).
+        std::istringstream words(command.substr(7));
+        int id = -1;
+        words >> id;
+        std::string text;
+        std::getline(words, text);
+        if (!text.empty() && text[0] == ' ') text.erase(0, 1);
+        nativemenu::SetMessageText(id, text);
+    } else if (command.rfind("msgfind ", 0) == 0) {
+        nativemenu::LogMessagesWith(command.substr(8));
+    } else if (command.rfind("texfrom ", 0) == 0) {
+        // "texfrom <hex object>": every texture within reach of an object (its path).
+        hudnames::ProbeFrom(static_cast<std::uintptr_t>(std::strtoul(command.c_str() + 8, nullptr, 16)));
+    } else if (command == "hudnames") {
+        // The HUD names' texture: the next search logs every texture it meets.
+        hudnames::Probe();
     } else if (command == "coopprobe") {
         // One line of the co-op state (M10 fall tests): phase, flags, camera, both players.
         LogCoopState("probe");
@@ -10446,6 +11951,10 @@ void PollDevCommand(double now) {
         // "grabs break|game": every Majini grab broken at once (as Iron Grip), or left to the game.
         g->devBreakGrabs = command.substr(6) == "break";
         RM_LOGW("dev grabs %s", g->devBreakGrabs ? "broken" : "left to the game");
+    } else if (command == "bossdown") {
+        // "bossdown": the arena's boss goes down as if its health were gone (its next phase).
+        const bool down = BossGoesDown(g->boss.unit, now);
+        RM_LOGW("dev bossdown: %s", down ? "down for its next phase" : "no boss, or no phase left");
     } else if (command == "abandon" && run.HasActiveRun()) {
         // Ends the run as the overlay's "Abandon run" does; the match goes on as plain Mercenaries.
         Report(run.AbandonRun(now), "dev abandon run");
@@ -10502,6 +12011,11 @@ void PollDevCommand(double now) {
             done = true;
         }
         if (!done) RM_LOGW("dev face %s: no such live enemy", cls.c_str());
+    } else if (command.rfind("killclass ", 0) == 0) {
+        // "killclass <class>": the first live enemy of that class, a real death (the game's own kill).
+        const std::string cls = command.substr(10);
+        const std::uintptr_t unit = FirstEnemyOf(cls);
+        RM_LOGW("dev killclass %s: %s", cls.c_str(), unit && director::Kill(unit) ? "killed" : "none alive");
     } else if (command == "killone") {
         // One real death: the first live enemy (to bring an arena down to its last enemy).
         for (const auto& e : engine::ReadEnemyStates()) {
@@ -10764,7 +12278,9 @@ void PollDevCommand(double now) {
         int count = 1;
         words >> idText >> count;
         const auto item = static_cast<int>(std::strtoul(idText.c_str(), nullptr, 16));
-        const auto game = ReadMercTimer().object;
+        // aGame (the method's own class): the Mercenaries timer object passed here before crashed the
+        // game in split screen (2026-11-21, a pad read with a garbage index).
+        const auto game = GameTask();
         if (!engine::Caps().inventory || !game) {
             RM_LOGW("dev notify: game object or signatures not available");
         } else {
@@ -10836,6 +12352,20 @@ public:
 
 private:
     float Outgoing(const OutgoingHit& hit) {
+        if (hit.enemy != 0) {
+            std::lock_guard lock(g->mutex);
+            if (BossIsDown(hit.enemy)) return 0.0f;  // down for its next phase (MapBoss phases)
+            if (hit.enemy == g->boss.unit) {
+                bool launcher = false;
+                if (hit.attackerIsLocal && !engine::InMeleeAction(hit.attacker)) {
+                    SeatTurn turn(SeatTurn::OfUnit(hit.attacker));
+                    const auto base = EquippedWeaponBaseId();
+                    const rm::WeaponBaseDef* w = base ? g->content->FindWeapon(*base) : nullptr;
+                    launcher = w != nullptr && w->category == rm::WeaponCategory::Launcher;
+                }
+                g_bossLastHit = {Now(), !hit.attackerIsLocal || launcher};
+            }
+        }
         if (!hit.attackerIsLocal) return 1.0f;
         std::lock_guard lock(g->mutex);
         SeatTurn turn(SeatTurn::OfUnit(hit.attacker));
@@ -10917,10 +12447,16 @@ private:
                 std::lock_guard lock(g->mutex);
                 if (g_hitSamples.size() < 64) g_hitSamples.push_back({r.enemy, Now() + 0.25});
                 g_specialVictims[r.enemy] = Now();  // its death soon after is the player's (fire, a fall)
+                PanelHit(r.appliedDamage, false, Now());
             }
             return;
         }
         std::lock_guard lock(g->mutex);
+        if (r.attackerIsLocal) PanelHit(r.appliedDamage, true, Now());
+        // A boss with a phase left goes down instead of dying (MapBoss phases), whatever took its last
+        // health: a hit to 0 reported its death here and Uroboros Wesker never took his second form
+        // (the user's fight, 2026-11-22: 438 -> 0, killed).
+        if (r.enemy == g->boss.unit && BossGoesDown(r.enemy, Now())) return;
         SeatTurn turn(r.attackerIsLocal ? SeatTurn::OfUnit(r.attacker) : 0);
         rm::KillEvent kill;
         kill.now = Now();
@@ -11051,6 +12587,7 @@ private:
         { ProfileScope p("tick:SkipMercIntro"); SkipMercIntro(g->run->HasActiveRun()); }  // a run's match starts without the announcer's intro
         { ProfileScope p("tick:DriveDirector"); DriveDirector(now); }
         { ProfileScope p("tick:DriveBossFall"); DriveBossFall(now); }
+        { ProfileScope p("tick:DriveBossDown"); DriveBossDown(now); DriveAddFalls(now); TameAddDeaths(now); DriveBossTuning(now); }
         { ProfileScope p("tick:TameBossKills"); TameBossKills(); }
         { ProfileScope p("tick:ReleaseBossHolds"); ReleaseBossHolds(now); }
         { ProfileScope p("tick:WatchEventCamera"); WatchEventCamera(now); }
@@ -11091,12 +12628,31 @@ private:
         }
         // The run's boss takes gunfire where its own check would refuse it (Uroboros Wesker).
         SetBossTakesGunfire(g->boss.unit);
+        // With a phase left, and while down, he keeps his last health point (the game's own death would
+        // mark him dead).
+        SetBossKeepsLastHealth(g->boss.unit && !g->boss.dead && (g->run->BossPhasesLeft() > 0 || BossIsDown(g->boss.unit)) ? g->boss.unit
+                                                                                                                         : 0);
+        {
+            // Mkono's refill lifted too, alive or dying: only the adds that are bosses themselves (the
+            // hook holds 8; with every add listed Mkono was past its 4 and kept its refill, 2026-11-22).
+            std::vector<std::uintptr_t> adds;
+            auto bossLike = [](std::uintptr_t unit) {
+                const std::string cls = engine::ClassName(unit);
+                return std::any_of(std::begin(kScriptedFalls), std::end(kScriptedFalls), [&](const ScriptedFall& f) { return cls == f.cls; });
+            };
+            for (const std::uintptr_t unit : g_bossAddUnits) {
+                if (bossLike(unit)) adds.push_back(unit);
+            }
+            for (const auto& [unit, at] : g_deadBossAdds) adds.push_back(unit);
+            SetBossAddUnits(adds);
+        }
         // A match a run played in stays a run's match until it is gone, so quitting it writes no
         // save even if the run is settled first.
         static bool runMatch = false;
         if (!g->match.inMatch) runMatch = false;
         else if (g->run->HasActiveRun()) runMatch = true;
         autopilot::SetRunMatch(runMatch);
+        SetRunMatchHooks(runMatch);
         // The game's save file is never written in a run's match nor for a while after it (a
         // pause menu quit wrote it with no quit state on the way); a run waiting at the menus
         // holds nothing back (the campaign saves as ever).
@@ -11120,12 +12676,14 @@ private:
             SetCoopStanding(standing[0], standing[1]);
         }
         WatchCoopFall(now);
+        UpdateHudNames(now);
         ForEachSeatTurn([&] {
             if (g->run->phase() == rm::Phase::ArenaActive && g->match.inMatch) ApplyBuildHealth();  // gains mid-arena
             // Items earned by perks, rewards and the shop wait until the player is in a match.
             if (g->match.inMatch && engine::LocalPlayer() && g->run->phase() != rm::Phase::Idle && ReadMercTimer().recent) {
                 ApplyItemGrants();
                 DriveWeaponLevels(now);
+                KeepInfiniteGuns();
             }
         });
         { ProfileScope p("tick:DriveScope"); ForEachSeatTurn([&] { DriveScope(now); }); ApplyScopes(); }
@@ -11507,6 +13065,7 @@ void ModInit(const Paths& paths, const Settings& settings) {
 
     auto loaded = rm::Content::LoadFromDirectory(paths.configDir);
     icons::SetDirectory(paths.configDir / L"icons");
+    hudnames::SetDirectory(paths.configDir / L"hud_names");
     portraits::SetGameDirectory(paths.gameDir);
     LoadJoypadMapping();
     for (const auto& w : loaded.warnings) RM_LOGW("content: %s", w.c_str());
@@ -11548,6 +13107,8 @@ void ModInit(const Paths& paths, const Settings& settings) {
     options.sink = g->fanout.get();
     options.store = g->store.get();
     g->run = std::make_unique<rm::RunController>(g->content, std::move(profile.profile), options);
+    g->run->SetTesterCharacters(settings.testCharacter);
+    if (settings.testCharacter) RM_LOGI("the tester's characters are listed (adapter.json test_character)");
     if (g->run->CanResumeRun()) {
         // A run with a point to go on from waits for CONTINUE RUN (START RUN settles it instead).
         RM_LOGI("interrupted run %s kept: CONTINUE RUN goes on with it", g->run->interrupted_run()->run_id.c_str());
@@ -11804,11 +13365,15 @@ void DrawUnguarded() {
     menumouse::OnDraw();  // the mouse on the mod's screens: this frame's pointer
     DrawMenuPortrait();
     DrawMenuIcons();
+    DrawSplitMenus();  // M10: match_ui's own lock, not the mod's
+    DrawLabImgui();    // developer: the UI lab's overlay showcase
+    hudnames::OnDraw(overlay::FrameDevice());  // the HUD's names (its own lock)
     std::lock_guard lock(g->mutex);
     { ProfileScope p("draw:DrawElementArcs"); DrawElementArcs(); }
     mapeditor::Draw({g->run.get(), CurrentMapKey(), g->match.inMatch});
     { ProfileScope p("draw:DrawSplitHud"); DrawSplitHud(); }
     { ProfileScope p("draw:DrawSpecialWidgets"); DrawSpecialWidgets(); }
+    { ProfileScope p("draw:DrawInfoPanel"); DrawInfoPanel(g->run->Snapshot(Now()), Now()); }
     if (g->run->SeatCount() > 1) {
         ForEachSeatTurn([] {  // M10: each player's card on their half
             g_drawShiftY = g->run->ActiveSeat() == 0 ? -kSplitHalfLines : 0.0f;

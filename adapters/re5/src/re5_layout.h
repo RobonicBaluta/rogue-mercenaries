@@ -79,6 +79,26 @@ constexpr std::uintptr_t kFnEnemyHitCheck = 0x009E0700;
 // region of 0x3C and up hurts while his core part (+0x1F50) is open (its type 2, its +0x1E24
 // clear); any other drains his gauges (+0x1F9C, +0x1FA0) and does not (research/re5-engine-map.md).
 constexpr std::uintptr_t kFnEm82MayHurt = 0x009217E0;
+// Uroboros Wesker's second form (2026-11-22, the boss audit): thiscall (pose, apply), ret 8. It sets
+// his pose byte (off::kEm82Pose); with apply 1 it switches his model variant (0x0084DBF0) and his hit
+// shapes. The story's StageChange calls it; his brain's picker (0x009C8850) then draws his moves from
+// the second form's table (0x01120648: the drill grab under 2 m, the ground slam, javelins), and
+// Tornado (his body gauge +0x1F9C empty) sets his rage (off::kEm82RageBit, its timer
+// off::kEm82RageTimer): the rage table (drill, slam, javelin) until the timer runs out and his core
+// shows (CoreRev).
+constexpr std::uintptr_t kFnEm82SetPose = 0x00921220;
+// The boss Jill's (uEm84) tables, read only by her brain (2026-11-22, the boss audit): her chance to
+// attack by distance band, far to near (6 floats: 0, 0, 0.3, 0.3, 0.9, 1; read at 0x009D041F), and
+// her two fire cooldowns by the game's per-player level 0..10 (11 floats each, 2.5 s down to 0.3 s;
+// read at 0x009CE3D1 and 0x009D04F7).
+constexpr std::uintptr_t kJillAttackChance = 0x01120A64;
+// The boss Jill's blow-away death (cEm84ActDieBlow, vtable 0x00F90560 - 0x10; its update 0x00947000)
+// asks the application for the game over when its motion ends (`push 0x8000000; call 0x00726120` at
+// 0x00947038): the story's "partner died" (2026-11-22, a rocket killed her in a run and the match
+// ended). Her other death (DieNormal, update 0x00946D60) asks for nothing. The call's return address:
+constexpr std::uintptr_t kJillDieBlowGameOverReturn = 0x00947042;
+constexpr std::uintptr_t kJillFireCooldownA = 0x011209B8;
+constexpr std::uintptr_t kJillFireCooldownB = 0x01120AA8;
 // Uroboros Mkono's (uEm41, vtable 0x00F7D160 slot +0x18) update: `byte [esi+0x2118] = 0`, the
 // Uroboros' update 0x008AE2B0, then its health set to its maximum (+0x1366) through vtable +0x10C
 // (hooks_combat.cpp: a run's boss skips that).
@@ -245,6 +265,15 @@ constexpr std::uintptr_t kFnWpSlotUpdate = 0x00C6C420;
 // application flags 0x60000000, action flags bits 1, 6 and 8, 0x00B5AB30) asks it, and so do five
 // of the player's moves (0x00764895, 0x00B828D7, 0x00B840D3, 0x00B898BE, 0x00B89BDE).
 constexpr std::uintptr_t kFnPlayerMayAct = 0x00B6A820;
+// uPlayer's partner (thiscall (1), ret 4): its +0x2A74.. links, each kept only while it is a live
+// player (0x007E6370).
+constexpr std::uintptr_t kFnPlayerPartner = 0x00B5BED0;
+// uPlayer's "may take this item" (0x00B65BF0, thiscall (item, ?, ?), ret 0xC; the ground item's
+// prompt and its take ask it): a weapon already held says no, then outside the campaign (game
+// work +0x58 not 1) it says no while the partner (kFnPlayerPartner, called here) is dead - bit 1
+// of its action flags or of +0x2D98 - before it looks at the inventory: a co-op survivor got the
+// game's red FULL with 7 of 9 cells free (2026-11-21). The call's own target is replaced.
+constexpr std::uintptr_t kPickupPartnerCall = 0x00B65CD7;
 // uIdWpSlot00 (the inventory grid on screen; vtable 0x00FACED4, move 0x00A741B0): its player at
 // +0x2C and that player's partner at +0x30 (the move sets it right after this check). Its
 // visibility check (thiscall, bool; only the move calls it) says no with request word 0x8000 or
@@ -385,6 +414,17 @@ constexpr std::uintptr_t kFnPlayMenuMove = 0x00A396C0;
 constexpr std::uintptr_t kFnMenuInput = 0x009E3420;
 // Play menu row/help draw, called from inside its move(); reads the enabled mask.
 constexpr std::uintptr_t kFnPlayMenuDraw = 0x00A373B0;
+// A menu row's selection glow (thiscall (index 1..8, message, selected, y), ret 0x10): the
+// layout's element "sel_%02d" gets the message's width, is drawn, and with a y of 0 or more
+// stands there (+0x54) instead of its own row. The Play menu's draw passes its rows' (-1).
+constexpr std::uintptr_t kFnMenuRowGlow = 0x00A17E90;
+// A layout's named element: the name (a ref-counted string made by kFnLayoutName, thiscall
+// (out, const char*)) is looked up with kFnLayoutElement, thiscall on [kLayoutManager] (the
+// name, which it releases, and the screen's layer, screen +0x18).
+constexpr std::uintptr_t kFnLayoutName = 0x00425DC0;
+constexpr std::uintptr_t kFnLayoutElement = 0x007C1DC0;
+constexpr std::size_t kLayoutElementY = 0x54;  // float
+constexpr std::uintptr_t kPlayMenuLabelTable = 0x01131D90;  // uint16 message per row
 // void DrawMenuText(int message, int x, int y, const uint32_t* argb, float scale)
 // (ret 0x14, ignores ecx): draws one menu row label.
 constexpr std::uintptr_t kFnMenuDrawLabel = 0x00A17660;
@@ -398,6 +438,24 @@ constexpr std::uintptr_t kFnMenuNavigate = 0x009E4BD0;
 constexpr std::uintptr_t kFnMenuRowColor = 0x00A17350;
 constexpr std::uintptr_t kFnMenuSoundDecide = 0x009E4A70;
 constexpr std::uintptr_t kFnMenuSoundCancel = 0x009E4A50;
+// M10: the pieces of Navigate and of the menu input query, for one player's own pad. The pad object
+// ([kPadInstance]) keeps each pad's menu bits at +pad * off::kPadStride: +off::kPadTrigger (pressed
+// this frame, 0x00799820) and +off::kPadRepeat (repeating, 0x007998B0); Navigate ORs its main pad's
+// (+0x5D8) with the keyboard's (thiscall on the pad object (1): kFnKeyboardTrigger, kFnKeyboardRepeat)
+// and hands both to kFnMenuListStep (thiscall (trigger, repeat, cursor, count), ret 0x10, `this`
+// unused), which steps with the masks kMenuMaskDown and kMenuMaskUp. kMenuMaskRight and
+// kMenuMaskLeft are the two other directions of the same table (0x01121C70..7F).
+constexpr std::uintptr_t kFnKeyboardTrigger = 0x0079B340;
+constexpr std::uintptr_t kFnKeyboardRepeat = 0x0079B530;
+constexpr std::uintptr_t kFnMenuListStep = 0x009E35D0;
+// The characters' names the HUD prints as text (ASCII, by character: Chris, Sheva, Jill, Wesker, ...):
+// the inventory tabs (read at 0x00A70529) and a cockpit label (read at 0x009F34D6).
+constexpr std::uintptr_t kInventoryNameTable = 0x011341E8;
+constexpr std::uintptr_t kCockpitNameTable = 0x01123460;
+constexpr std::uintptr_t kMenuMaskRight = 0x01121C70;
+constexpr std::uintptr_t kMenuMaskLeft = 0x01121C74;
+constexpr std::uintptr_t kMenuMaskDown = 0x01121C78;
+constexpr std::uintptr_t kMenuMaskUp = 0x01121C7C;
 constexpr std::uintptr_t kFnMenuSoundDeny = 0x009E4AC0;
 // The cursor-move tick (sound id 0x42): the Play menu's move plays it when its cursor changes
 // (after Navigate and the sId mouse hit test, 0x00A397DF).
@@ -646,6 +704,18 @@ constexpr int kEm10DmgYoroke = 0x7C;  // cEm10ActDmgYoroke: stagger
 constexpr std::size_t kWeaponScopeType = 0x98;   // weapon record: not 0 = aims through a scope (the game reads it every frame)
 constexpr std::size_t kSlotLevelReload = 0x22;   // byte of the slot's levels (kSlotUpgrades + 2)
 constexpr std::size_t kSlotLevelCapacity = 0x23; // byte of the slot's levels (kSlotUpgrades + 3)
+// A gun that never runs out: the game's own Infinite Ammo bonus sets this bit of a picked-up gun's
+// capacity level (`or byte [slot+0x23], 0x80` at 0x007EA03C, when the player's bonus mask has that
+// gun), and the may-use-a-round check 0x00C4C200 calls any capacity level past 13 infinite (before
+// the weapon table's own flags). The shot then takes no round (0x00C8A188: the check, else
+// 0x00C4C1E0 subtracts one) and the has-rounds check 0x00C4C2F0 says yes at 0 rounds.
+constexpr std::uint8_t kSlotInfiniteBit = 0x80;
+// Uroboros Wesker (uEm82), addr::kFnEm82SetPose: his pose byte (1: the second form), his flags (the
+// rage bit) and his rage timer (float seconds; CoreRev once it is out).
+constexpr std::size_t kEm82Pose = 0x1F85;
+constexpr std::size_t kEm82Flags = 0x1BB4;
+constexpr std::uint32_t kEm82RageBit = 0x1000;
+constexpr std::size_t kEm82RageTimer = 0x1F90;
 constexpr std::size_t kPlayerWeaponCell = 0x2DD8;  // int32: the grid cell of what is in the hands
 constexpr std::size_t kPlayerNumber = 0x2D9C;   // uint8, copied into enemy+0x136C on hit
 constexpr std::size_t kPlayerControl = 0x2DA8;  // int32 from game work +0x480 + slot*4: 0 the local player, 1 a computer one
@@ -752,6 +822,12 @@ constexpr std::size_t kSetInfoAreaKeepType = 0xC0;  // u32; +0xC4 mAreaKeepDist 
 constexpr std::size_t kAppLock = 0x4;
 constexpr std::size_t kAppThreadedFlag = 0x1C;
 constexpr std::size_t kAppFlags = 0x10438;
+// More application flags. Uroboros Wesker's StageChange (his transformation) sets 0x100000, 0x80000000
+// and 0x20000000 here and 0x200 in kAppFlags as it begins (0x0092C6A0) and clears them as it ends
+// (0x0092C990, which also applies his second form through 0x00921220).
+constexpr std::size_t kAppEventFlags = 0x10448;
+constexpr std::uint32_t kEm82StageChangeEventFlags = 0x100000u | 0x80000000u | 0x20000000u;
+constexpr std::uint32_t kEm82StageChangeAppFlags = 0x200u;
 constexpr std::size_t kAppScreenFlags = 0x10434;     // & kAppScreensPaused: screens' moves skip a frame
 constexpr std::uint32_t kAppScreensPaused = 0x500;
 // aGame: +0x348 points at a byte per player; the cockpit HUD draws its other mode (the item
@@ -842,6 +918,15 @@ constexpr std::size_t kScreenBack = 0x3E;
 // Pad singleton: decide/cancel button masks for the menu input bits.
 constexpr std::size_t kPadDecideMask = 0x5B4;
 constexpr std::size_t kPadCancelMask = 0x5B8;
+// M10: the pad object's per-pad menu bits (addr::kFnMenuListStep's note) and its switches: no input
+// at all while +0x5DC is set, and the player the keyboard belongs to (+0x614). The menu input query
+// also answers nothing while the application's +0x10428 is set.
+constexpr std::size_t kPadStride = 0x2C0;
+constexpr std::size_t kPadTrigger = 0x198;
+constexpr std::size_t kPadRepeat = 0x1A4;
+constexpr std::size_t kPadsInputOff = 0x5DC;
+constexpr std::size_t kPadsKeyboardPlayer = 0x614;
+constexpr std::size_t kAppMenuInputOff = 0x10428;
 // sMessage -> rMessage for etc\message\mes_system_<lang>
 // One loaded rMessage per language and file, at +kMessageFirstTable + (language * 19 + file) * 0x3A0
 // (0x007D9F50). mes_system is file 0. Languages: 0 j, 1 e, 2 g, 3 f, 4 s, 5 i, 6 r, 7 p, 8 c, 9 chT, 10 chS.
@@ -894,6 +979,8 @@ inline constexpr Signature kSignatures[] = {
     {"player_dead_or_frozen", addr::kFnPlayerDeadOrFrozen, "56 8B F1 8B 06 8B 90 5C 01 00 00 FF D2 84 C0 75 2F 66 83 BE 64 13 00 00 01"},
     {"player_game_over", addr::kFnPlayerGameOver, "56 8B F1 8B 86 7C 2D 00 00 C1 E8 04 A8 01 74 0A 8B 16 8B 82 B4 01 00 00 FF D0 83 BE A8 2D 00 00 02"},
     {"wpslot_ui_visible", addr::kFnWpSlotUiVisible, "A1 A4 40 23 01 F7 80 3C 04 01 00 00 80 00 00 53 56 8B F1 8B 5E 30 57 8B 7E 2C 74 06"},
+    {"player_partner", addr::kFnPlayerPartner, "56 8B F1 8B 86 74 2A 00 00 85 C0 74 1A 8B 0D DC 27 1B 01 50 E8 87 A4 C8"},
+    {"pickup_partner_call", 0x00B65CC2, "A1 A4 40 23 01 8B 88 2C 04 01 00 83 79 58 01 74 30 6A 01 8B CD E8 F4 61 FF FF"},
     {"player_may_act", addr::kFnPlayerMayAct,
      "56 8B F1 66 83 BE 64 13 00 00 01 75 04 32 C0 5E C3 8B 06 8B 90 5C 01 00 00 FF D2 3C 01 74 EE 80 BE CC 1B 00 00 00 7F E5 A1 A4 40 23 01"},
     {"wpslot_update", addr::kFnWpSlotUpdate, "51 56 8B F1 C6 46 7E 00 A1 58 21 1B 01 8B 48 20 69 C9 40 59 00 00 8B 84 01 D8 73 02 00 83 F8 64"},
@@ -957,7 +1044,36 @@ inline constexpr Signature kSignatures[] = {
     {"playmenu_cursor_count", 0x00A397A2, "8B 86 90 01 00 00 8B 4E 48 50 51 8B"},
     {"playmenu_label_table", 0x01131D90, "A9 03 AA 03 AB 03 AD 03 AC 03 B0 03 AF 03 AE 03 A8 03"},
     {"menu_input", addr::kFnMenuInput, "A1 A4 40 23 01 80 B8 28 04 01 00 00 74 05 33 C0 C2 08 00"},
+    // M10: one player's own menu input (addr::kFnMenuListStep's note).
+    {"pad_trigger_bits", 0x00799820, "80 B9 DC 05 00 00 00 74 05 33 C0 C2 04 00 8B 44 24 04 69 C0 C0 02 00 00 8B 84 08 98 01 00 00"},
+    {"pad_repeat_bits", 0x007998B0, "80 B9 DC 05 00 00 00 74 05 33 C0 C2 04 00 8B 44 24 04 69 C0 C0 02 00 00 8B 84 08 A4 01 00 00"},
+    {"keyboard_trigger", addr::kFnKeyboardTrigger, "8A 81 DC 05 00 00 84 C0 8B 15 74 9C 24 01 53 56 75 23 80 B9 F0 05 00 00 01"},
+    {"keyboard_repeat", addr::kFnKeyboardRepeat, "8A 81 DC 05 00 00 84 C0 8B 15 74 9C 24 01 53 56 75 23 80 B9 F0 05 00 00 01"},
+    {"menu_list_step", addr::kFnMenuListStep, "A1 78 1C 12 01 8B 54 24 08 56 8B 74 24 08 85 C6 57 74 07 B9 01 00 00 00"},
+    {"menu_navigate_keyboard", 0x009E4BE7, "8B 0D 40 9C 24 01 8B 81 D8 05 00 00 50 E8 B7 4C DB FF 8B 0D 40 9C 24 01 6A 01 8B F8 E8 28 69 DB FF"},
+    {"menu_direction_masks", addr::kMenuMaskRight, "20 00 02 00 80 00 08 00 40 00 04 00 10 00 01 00"},
+    // A gun that never runs out (off::kSlotInfiniteBit): the check's level test, and the shot's call of it.
+    {"weapon_infinite_check", 0x00C4C233, "80 7F 23 0D 76 07 5F B0 01 5E C2 04"},
+    // Boss tuning (2026-11-22): Uroboros Wesker's second form switch and his picker's rage checks; the
+    // boss Jill's three table reads and the tables as the game ships them.
+    {"em82_set_pose", addr::kFnEm82SetPose, "55 8B EC 83 E4 F0 51 8A 45 08 53 56 BB 01 00 00 00 38 5D 0C 8B F1 57 88 86 85 1F 00 00"},
+    {"em82_pick_rage", 0x009C88FB, "8B 8A B4 1B 00 00 C1 E9 0C 83 C4 04 F6 C1 01"},
+    {"em82_rage_timer", 0x009C8B3E, "8B 88 B4 1B 00 00 8B D1 C1 EA 0C F6 C2 01 74 1E 0F 57 C0 0F 2F 80 90 1F 00 00"},
+    {"em84_chance_read", 0x009D041F, "D9 04 B5 64 0A 12 01"},
+    {"em84_dieblow_gameover", 0x00947032, "8B 0D A4 40 23 01 68 00 00 00 08 E8 DE F0 DD FF"},
+    {"em84_cooldown_a_read", 0x009CE3D1, "D9 04 85 B8 09 12 01"},
+    {"em84_cooldown_b_read", 0x009D04F7, "D9 04 85 A8 0A 12 01"},
+    {"em84_chance_data", addr::kJillAttackChance, "00 00 00 00 00 00 00 00 9A 99 99 3E 9A 99 99 3E 66 66 66 3F 00 00 80 3F"},
+    {"em84_cooldown_a_data", addr::kJillFireCooldownA, "00 00 20 40 CD CC 0C 40 66 66 E6 3F 00 00 C0 3F 9A 99 99 3F 66 66 66 3F"},
+    {"em84_cooldown_b_data", addr::kJillFireCooldownB, "00 00 20 40 CD CC 0C 40 66 66 E6 3F 00 00 C0 3F 9A 99 99 3F 66 66 66 3F"},
+    {"shot_infinite_check", 0x00C8A188, "E8 73 20 FC FF 84 C0 0F 85"},
+    // The HUD's text names (addr::kInventoryNameTable): the two reads of the tables.
+    {"inventory_name_read", 0x00A70529, "8B 2C 85 E8 41 13 01 C1 E1 18 8D 7C 24 50"},
+    {"cockpit_name_read", 0x009F34D6, "8B 04 85 60 34 12 01 8D 54 24 7C 83 C4 0C"},
     {"smessage_get_dti", 0x007E06E0, "B8 F4 26 1B 01 C3"},
+    {"menu_row_glow", addr::kFnMenuRowGlow, "83 EC 20 56 8B F1 83 7E 78 09 57 0F 85 BC 00 00 00"},
+    {"layout_name", addr::kFnLayoutName, "53 8B 5C 24 08 85 DB 56 8B F1 74 5C"},
+    {"layout_element", addr::kFnLayoutElement, "8B 44 24 08 83 F8 5C 56 57 73 1E 8B 0D 34 23 1B 01"},
     {"playmenu_draw", addr::kFnPlayMenuDraw, "83 EC 0C 56 57 8B F1 E8 C4 C3 FA FF 33 FF 39 BE 90 01 00 00"},
     // Row y = (item + 3) * 50, then `push 640; push label; mov ecx, esi; call DrawMenuText`.
     {"playmenu_row_y", 0x00A373D2, "8D 5F 03 6B DB 32"},

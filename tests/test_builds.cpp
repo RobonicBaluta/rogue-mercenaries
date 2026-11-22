@@ -863,8 +863,11 @@ TEST_CASE("Ada Wong wears Sheva's three outfits, each skin with its build", "[bu
     REQUIRE(ada != nullptr);
     REQUIRE(sheva != nullptr);
     CHECK(ada->starting_passive == "ada_butterfly");
+    // Each skin on the slot whose archive its mod replaces: the bundle's Cos1 is Assignment, its
+    // Cos2 the red dress, and slot 4 (Clubbin') loads Cos2, slot 5 (Tribal) Cos1 (seen in game
+    // 2026-11-21: Assignment on slot 4 was the game's Clubbin' Sheva).
     const std::vector<std::pair<std::string, std::string>> slots = {
-        {"ada_agent", "sheva_bsaa"}, {"ada_assignment", "sheva_clubbin"}, {"ada_red_dress", "sheva_tribal"}};
+        {"ada_agent", "sheva_bsaa"}, {"ada_assignment", "sheva_tribal"}, {"ada_red_dress", "sheva_clubbin"}};
     for (const auto& [mine, base] : slots) {
         INFO(mine);
         const SkinDef* a = FindSkin(*ada, mine);
@@ -941,4 +944,94 @@ TEST_CASE("a run length's pace fills every stat on its last gain, never before",
                                    {"melee_kill_caps", {{"heal", 0.4}}},
                                    {"melee_kill_gains_by_length", {{"short", {{"heal", 2.5}}}}}}),
                    "whole number"));
+}
+
+// The tester (the user, 2026-11-22: "can you give me a character just for me, who has infinite rocket
+// launcher and infinite machinegun to test bosses and stuff myself"): more starting guns, guns that
+// never run out, and a character only an install that asks for it lists.
+TEST_CASE("a build's more starting weapons are handed over and its infinite guns are named", "[builds]") {
+    CHECK(LoadErrors(json{{"more_starting_weapons", {"shotgun", "rifle"}}, {"infinite_ammo", {{"ids", {"rifle"}}}}}).empty());
+    CHECK(HasError(LoadErrors(json{{"more_starting_weapons", {"bazooka"}}}), "more_starting_weapons references unknown weapon"));
+    CHECK(HasError(LoadErrors(json{{"infinite_ammo", {{"ids", {"bazooka"}}}}}), "references unknown weapon"));
+    CHECK(HasError(LoadErrors(json{{"more_starting_weapons", {"rifle"}}, {"usable_weapons", {{"categories", {"handgun", "shotgun"}}}}}),
+                   "not one of the build's usable weapons"));
+    auto buildOnly = [](json& weapons, json&) {
+        for (json& w : weapons["weapons"]) {
+            if (w["id"] == "rifle") w["build_only"] = true;
+        }
+    };
+    const auto missing = Content::LoadFromStrings(BuildSourcesWith(json{{"more_starting_weapons", {"rifle"}}}, buildOnly));
+    CHECK(HasError(missing.errors, "build_only and not in the build's extra_weapons"));
+    const auto listed = Content::LoadFromStrings(
+        BuildSourcesWith(json{{"more_starting_weapons", {"rifle"}}, {"extra_weapons", {"rifle"}}}, buildOnly));
+    for (const std::string& e : listed.errors) UNSCOPED_INFO("got: " << e);
+    CHECK(listed.errors.empty());
+
+    test::Harness h(test::Load(BuildSources(json{{"more_starting_weapons", {"shotgun", "rifle"}}, {"infinite_ammo", {{"ids", {"rifle"}}}}})));
+    REQUIRE(h.rc.StartRun("alpha", 6, "alpha_build").ok());
+    const auto& weapons = h.rc.state().weapons;
+    auto count = [&weapons](const char* id) { return std::count_if(weapons.begin(), weapons.end(), [id](const WeaponInstance& w) { return w.base_id == id; }); };
+    CHECK(count("rifle") == 1);
+    CHECK(count("shotgun") == 1);  // once, whether the roll's own gun was the shotgun or not
+    if (h.rc.state().loadout.weapon_id != "shotgun") {
+        // The shotgun has a game item: queued for the adapter like a build's starting weapon.
+        const auto grants = h.rc.ConsumeItemGrants();
+        CHECK(std::any_of(grants.begin(), grants.end(), [](const ItemGrant& g) { return g.source == "build" && g.game_item == 0x0104; }));
+    }
+    const SkinBuild& build = h.rc.state().character.build;
+    CHECK(build.infinite_ammo.Allows("rifle", "rifle"));
+    CHECK_FALSE(build.infinite_ammo.Allows("shotgun", "shotgun"));
+    // An empty filter allows every weapon, so an adapter asks whether it lists any first.
+    CHECK(SkinBuild{}.infinite_ammo.Empty());
+}
+
+TEST_CASE("a tester_only character is listed and playable only when the install asks for it", "[builds]") {
+    const auto content = test::Load(test::EditFixture([](json&, json&, json& characters, json&, json&) {
+        characters["characters"].push_back(json{{"id", "tester"}, {"name", "Tester"}, {"tester_only", true}, {"starting_weapons", {"pistol"}}});
+    }));
+    auto listed = [](const RunController& rc) {
+        const auto all = rc.Characters();
+        return std::any_of(all.begin(), all.end(), [](const CharacterAvailability& a) { return a.id == "tester"; });
+    };
+    test::Harness off(content);
+    CHECK_FALSE(listed(off.rc));
+    CHECK_FALSE(off.rc.StartRun("tester", 1).ok());
+    test::Harness on(content);
+    on.rc.SetTesterCharacters(true);
+    CHECK(listed(on.rc));
+    CHECK(on.rc.StartRun("tester", 1).ok());
+    // A tester's character is never the one a player starts with.
+    const auto alone = Content::LoadFromStrings(test::EditFixture([](json&, json&, json& characters, json&, json&) {
+        characters["characters"] = json::array({json{{"id", "tester"}, {"name", "Tester"}, {"tester_only", true}, {"starting_weapons", {"pistol"}}}});
+    }));
+    CHECK(HasError(alone.errors, "no enabled character is unlocked by default"));
+}
+
+TEST_CASE("the shipped tester starts with a Gatling, an AK-74 and a rocket launcher that never run out", "[builds]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const CharacterDef* tester = r.content->FindCharacter("tester");
+    REQUIRE(tester != nullptr);
+    CHECK(tester->tester_only);
+    test::Harness hidden(r.content);
+    CHECK_FALSE(hidden.rc.StartRun("tester", 2).ok());
+    test::Harness h(r.content);
+    h.rc.SetTesterCharacters(true);
+    REQUIRE(h.rc.StartRun("tester", 2).ok());
+    const auto& weapons = h.rc.state().weapons;
+    const SkinBuild& build = h.rc.state().character.build;
+    for (const char* id : {"gatling", "ak74", "rocket_launcher"}) {
+        INFO(id);
+        CHECK(std::count_if(weapons.begin(), weapons.end(), [id](const WeaponInstance& w) { return w.base_id == id; }) == 1);
+        const WeaponBaseDef* w = r.content->FindWeapon(id);
+        REQUIRE(w != nullptr);
+        CHECK(build.infinite_ammo.Allows(w->id, WeaponCategoryName(w->category)));
+    }
+    // Every machine gun the run finds or buys never runs out either; other guns do.
+    CHECK(build.infinite_ammo.Allows("sig556", "machine_gun"));
+    CHECK_FALSE(build.infinite_ammo.Allows("m3", "shotgun"));
+    const WeaponBaseDef* pistol = r.content->FindWeapon(h.rc.state().loadout.weapon_id);
+    REQUIRE(pistol != nullptr);
+    CHECK(pistol->category == WeaponCategory::Handgun);
+    CHECK_FALSE(h.rc.state().character.build.infinite_ammo.Allows(pistol->id, WeaponCategoryName(pistol->category)));
 }

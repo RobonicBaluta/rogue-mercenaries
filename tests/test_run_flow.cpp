@@ -363,3 +363,17 @@ TEST_CASE("operations outside a run fail cleanly", "[run]") {
     CHECK_FALSE(h.rc.ComputeIncoming(IncomingContext{0.0, 10.0, 5.0, 100.0}).prevent_death);
     CHECK(h.sink.Count(EventType::Error) >= 7);
 }
+
+// The info panel (2026-11-22): the arena under way in the snapshot.
+TEST_CASE("the snapshot carries the arena's time, par, damage taken and the rating it would get now", "[run]") {
+    test::Harness h;
+    REQUIRE(h.rc.StartRun("alpha", 42).ok());
+    CHECK_FALSE(h.rc.Snapshot(0.0).rating_now);  // no arena yet
+    REQUIRE(h.rc.BeginArena(10.0).ok());
+    const RunSnapshot s = h.rc.Snapshot(25.0);
+    CHECK(s.arena_seconds == Catch::Approx(15.0));
+    CHECK(s.par_seconds > 0.0);
+    CHECK(s.damage_taken == Catch::Approx(0.0));
+    REQUIRE(s.rating_now);
+    CHECK(*s.rating_now == ComputeRating(h.rc.content().economy().rating, 15.0, s.par_seconds, 0.0, 0.0, 0));
+}

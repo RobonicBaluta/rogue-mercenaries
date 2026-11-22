@@ -13,7 +13,8 @@ namespace rmre5::nativemenu {
 enum class ScreenId {
     Main = 0, Characters, Perks, Credits, Skins, PerkList,
     MatchResults, MatchRewards, MatchShop, MatchRoute, MatchRunOver, MatchOrganize,
-    RunResults, RunLength, MatchElement, WhichPlayer, MapEditor
+    RunResults, RunLength, MatchElement, WhichPlayer, MapEditor,
+    MatchWait  // M10: a player waits for the other (split-screen screens of their own)
 };
 
 struct Item {
@@ -30,6 +31,7 @@ struct Screen {
     std::vector<Item> items;
     std::string empty_help;  // help line when there are no items
     int portrait = -1;       // bust shown when the cursor row has none (-1 = none)
+    int grid = 0;            // M10: the first `grid` items are cells, three to a row (split screen)
 };
 
 enum class Outcome {
@@ -52,6 +54,13 @@ struct Model {
     virtual ~Model() = default;
     virtual Screen Build(ScreenId id) = 0;
     virtual Decision Decide(ScreenId id, int index) = 0;
+    // M10: split-screen screens of each player's own (match_ui). How many players have them (1:
+    // one screen for both, in turns); the screen `seat` belongs on now, given the first one of its
+    // stack; and Build and Decide for that player.
+    virtual int SplitSeats() { return 1; }
+    virtual ScreenId SeatScreen(int seat, ScreenId current) { (void)seat; return current; }
+    virtual Screen BuildFor(ScreenId id, int seat) { (void)seat; return Build(id); }
+    virtual Decision DecideFor(ScreenId id, int index, int seat) { (void)seat; return Decide(id, index); }
 };
 void SetModel(Model* model);
 
@@ -112,6 +121,15 @@ int CursorPortrait();
 /// the messages are not loaded or are not those names.
 bool SetItemBoxLabels(const std::string& first, const std::string& second);
 void RestoreItemBoxLabels();
+/// Developer: the layout element `name` of the uId screen `screen` (its layer: screen +0x18), 0 when
+/// none; for the UI lab's layout tests.
+std::uintptr_t LayoutElementOf(std::uintptr_t screen, const char* name);
+/// Developer: the layout element `name` on layout layer `layer` (0..0x5B), 0 when none.
+std::uintptr_t LayoutElementOnLayer(int layer, const char* name);
+/// Developer: logs every loaded message (any language, any file) whose text is `text`.
+void LogMessagesWith(const std::string& text);
+/// Developer: mes_system message `id` shows `text` (empty: the game's again).
+void SetMessageText(int id, const std::string& text);
 /// The next time the Play menu waits for input, the mod menu opens by itself on `screen`
 /// (above its main screen), as if ROGUE MERCENARIES had been chosen: a finished run's results.
 void OpenOnPlayMenu(ScreenId screen);

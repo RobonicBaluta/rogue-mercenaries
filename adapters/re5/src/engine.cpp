@@ -60,8 +60,12 @@ bool VerifySignatures(unsigned timeoutMs) {
     // The packer decompresses the code section in chunks after imports (and
     // this DLL) load. Unpacked-but-not-yet-written pages read as zero, so
     // wait until no signature site is all zero before comparing anything.
+    // A site whose own first bytes are zero (data: the boss Jill's attack chance table starts with
+    // two 0.0 floats) reads the same packed or not and is left out of the wait; it is still compared
+    // below. With it in, the wait ran out its whole timeout (2026-11-22: 120 s before the mod started).
     auto allSitesWritten = [] {
         for (const auto& sig : re5::kSignatures) {
+            if (std::strncmp(sig.bytes, "00 00 00 00", 11) == 0) continue;
             unsigned char head[4]{};
             if (!SafeCopy(head, sig.va, sizeof(head)) || (head[0] | head[1] | head[2] | head[3]) == 0) {
                 return false;
@@ -138,7 +142,13 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.appRequestWord = g_caps.gameOverCheck && SignatureOk("app_request_word");
     g_caps.playerDeathChecks = g_caps.gameOverCheck && SignatureOk("player_dead_or_frozen") && SignatureOk("player_in_death");
     g_caps.cockpitRings = g_caps.playerDeathChecks && SignatureOk("cockpit_rings_check");
+    g_caps.menuRowGlow = SignatureOk("menu_row_glow") && SignatureOk("layout_name") && SignatureOk("layout_element");
+    g_caps.hudNameTables = SignatureOk("inventory_name_read") && SignatureOk("cockpit_name_read");
+    g_caps.seatMenuInput = SignatureOk("menu_input") && SignatureOk("pad_trigger_bits") && SignatureOk("pad_repeat_bits") &&
+                           SignatureOk("keyboard_trigger") && SignatureOk("keyboard_repeat") && SignatureOk("menu_list_step") &&
+                           SignatureOk("menu_navigate_keyboard") && SignatureOk("menu_direction_masks");
     g_caps.playerMayAct = g_caps.playerDeathChecks && SignatureOk("player_may_act");
+    g_caps.pickupPartner = g_caps.playerDeathChecks && SignatureOk("player_partner") && SignatureOk("pickup_partner_call");
     g_caps.playerGameOver = g_caps.playerDeathChecks && SignatureOk("player_game_over");
     g_caps.wpSlotUiVisible = g_caps.playerDeathChecks && SignatureOk("wpslot_ui_visible");
     g_caps.gameoverScreen = g_caps.resultsScreen && SignatureOk("gameover_move") && SignatureOk("gameover_move_slot") &&
@@ -196,6 +206,11 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.partnerDeath = g_caps.partner && SignatureOk("player_death_event");
     g_caps.equipCell = g_caps.inventory && SignatureOk("player_equip_cell");
     g_caps.weaponLevels = g_caps.inventory && SignatureOk("weapon_reload_levels") && SignatureOk("weapon_capacity_levels");
+    g_caps.infiniteAmmo = g_caps.inventory && SignatureOk("weapon_infinite_check") && SignatureOk("shot_infinite_check");
+    g_caps.em84DieBlow = SignatureOk("em84_dieblow_gameover");
+    g_caps.em82Tuning = SignatureOk("em82_set_pose") && SignatureOk("em82_pick_rage") && SignatureOk("em82_rage_timer");
+    g_caps.em84Tuning = SignatureOk("em84_chance_read") && SignatureOk("em84_cooldown_a_read") && SignatureOk("em84_cooldown_b_read") &&
+                        SignatureOk("em84_chance_data") && SignatureOk("em84_cooldown_a_data") && SignatureOk("em84_cooldown_b_data");
     g_caps.weaponScope = g_caps.inventory && g_caps.actions && SignatureOk("weapon_record") && SignatureOk("weapon_scope_read");
     g_caps.twinGuns = SignatureOk("item_unit_create") && SignatureOk("unit_set_euler") && SignatureOk("unit_attach") &&
                       SignatureOk("wp76_fire") && DtiName(re5::addr::kDtiWp76) == "uWp76";

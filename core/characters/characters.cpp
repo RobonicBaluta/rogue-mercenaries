@@ -131,6 +131,8 @@ void ApplyPerkBuild(SkinBuild& build, const SkinBuild& perk) {
     }
     for (const std::string& c : perk.never_offered.categories) build.never_offered.categories.push_back(c);
     for (const std::string& id : perk.never_offered.ids) build.never_offered.ids.push_back(id);
+    for (const std::string& c : perk.infinite_ammo.categories) build.infinite_ammo.categories.push_back(c);
+    for (const std::string& id : perk.infinite_ammo.ids) build.infinite_ammo.ids.push_back(id);
     // One conversion of drops at a time: a skin's own (Safari's mines) wins over the perk's.
     if (build.drops_as < 0) build.drops_as_held_ammo = build.drops_as_held_ammo || perk.drops_as_held_ammo;
     for (const auto& pick : perk.pickup_as) build.pickup_as.push_back(pick);

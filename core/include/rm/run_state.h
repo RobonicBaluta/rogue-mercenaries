@@ -384,6 +384,12 @@ struct RunSnapshot {
     int kills = 0;
     int budget = 0;
     int remaining = 0;  // enemies still needed to clear the arena
+    // The arena under way (the info panel, 2026-11-22): its time so far, its route's par time, the damage
+    // taken in it, and the rating it would get if it were cleared now (none outside an arena).
+    double arena_seconds = 0.0;
+    double par_seconds = 0.0;
+    double damage_taken = 0.0;
+    std::optional<Rating> rating_now;
     std::int64_t supplies = 0;
     std::int64_t credits = 0;          // profile balance
     std::int64_t credits_pending = 0;  // earned this run, banked at EndRun

@@ -5,6 +5,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -41,6 +42,28 @@ struct MapEnemy {
     int home = -1;
 };
 
+/// Enemies a boss calls in (MapBoss phases): `count` of `unit_class`.
+struct BossAdd {
+    std::string unit_class;
+    int count = 1;
+};
+/// A boss's second wind (the user, 2026-11-22, Midnight Wesker: "I want him to kneel and that it looks
+/// like he's dead, then he should get back up and play some voiceline and call in some enemies"): the
+/// first death goes to phases[0] instead, the next to phases[1], and the one after the last is real.
+/// The boss stays down `down_seconds` (it cannot be hurt), then gets up with `hp_fraction` of its
+/// health and its adds come. The actions are the adapter's (engine action names; empty: none).
+struct BossPhase {
+    double down_seconds = 6.0;
+    double hp_fraction = 1.0;
+    std::string down_action;  // played as it goes down ("looks dead")
+    std::string rise_action;  // played as it gets up (a taunt with its voice line)
+    std::vector<BossAdd> adds;
+    /// It takes its second form while down (the user, 2026-11-22, Uroboros Wesker: "when he dies we bump
+    /// it to a second phase where he enters that natural second phase"): the down lasts while its down
+    /// action plays, at least down_seconds; then the adapter gives the form (Uroboros Wesker: his second
+    /// form's moves on his own body; the story's StageChange left him unhittable).
+    bool transform = false;
+};
 /// A boss (ROADMAP M6): on its map the director spawns only the boss, and the arena clears when
 /// it dies. Runs end on a boss arena when one is in their pool.
 struct MapBoss {
@@ -59,6 +82,19 @@ struct MapBoss {
     /// With a spawn, instead of `trigger`: it appears once the player is inside this box (min x, y,
     /// z, max x, y, z): the story's own trigger for it (the Uroboros' s103 "uro shtuugen").
     std::optional<std::array<double, 6>> trigger_box;
+    std::vector<BossPhase> phases;  // its deaths before the real one (BossPhase)
+    /// How the adapter makes it harder (the user's picks, 2026-11-22, the boss tuning board): numbers
+    /// by name, each checked against kBossTuningKeys. Uroboros Wesker: second_form_at (his health
+    /// share when his second form starts), body_damage (the share of a body hit he takes), rage_every
+    /// and rage_seconds, specials_every. Jill: attack_chance (6 chances, far to near), fire_cooldown_max
+    /// (seconds), melee_every and melee_range, wide_fire_every, flinch_only_explosives, dodge_chance
+    /// and dodge_aim_seconds.
+    StringMap<std::vector<double>> tuning;
+    /// A tuning value (its first number), or `fallback` when not set.
+    [[nodiscard]] double Tuning(std::string_view key, double fallback = 0.0) const {
+        const auto it = tuning.find(std::string(key));
+        return it != tuning.end() && !it->second.empty() ? it->second.front() : fallback;
+    }
     /// Its name in a sentence: "the Uroboros", "Wesker".
     [[nodiscard]] std::string Phrase() const { return article.empty() ? name : article + " " + name; }
 };
@@ -74,6 +110,8 @@ struct MapDef {
     /// Where the player starts (campaign areas: the game picks one of the area's entrances at
     /// random, so the adapter moves the player here when an arena begins far from it).
     std::optional<std::array<double, 3>> start;
+    /// Where player 2 starts in a co-op run (the map editor's; none: at `start`, by player 1).
+    std::optional<std::array<double, 3>> start2;
     std::vector<std::array<double, 3>> points;  // spawn positions known to be on walkable ground
     std::vector<std::array<double, 3>> chests;  // chest positions (where the game puts its time bonuses)
     std::vector<MapEnemy> roster;
@@ -134,9 +172,17 @@ struct SpawnRequest {
     std::int64_t arm = -1;
     std::array<double, 3> pos{};
     SpawnFields fields;  // from the picked profile (empty = adapter defaults)
-    int hp = 0;          // > 0: the unit's health once spawned (bosses)
+    int hp = 0;          // > 0: the unit's health once spawned (bosses, a boss's add that is a boss itself)
     bool boss = false;
+    bool add = false;    // a boss's add (Director::AddWave): not part of the budget
     std::optional<double> facing;  // a boss's story turn (MapBoss::facing); else the adapter's choice
+    int seat = -1;       // the player it was placed for (PlayerSpot::seat); -1: no player known
+};
+
+/// A standing player the spawns are shared between (co-op: each standing one; solo: the one).
+struct PlayerSpot {
+    int seat = 0;
+    std::array<double, 3> pos{};
 };
 
 /// Runs one arena: `budget` enemies in total, at most `max_alive` at once, refilled as they
@@ -156,6 +202,14 @@ public:
     /// `prefer` takes come first when given (any point when it takes none).
     std::vector<SpawnRequest> Tick(double now, const std::optional<std::array<double, 3>>& player,
                                    const PointFilter& prefer = {});
+    /// The same with every standing player: each spawn goes to the player with the fewest of our
+    /// units (alive or asked for), the other's turn when even, at a point picked for that player and
+    /// not too close to any other (the user, 2026-11-22, co-op: "they have a tendency for rushing 1
+    /// player and letting the other with nothing, they should spawn evenly"). A waiting boss
+    /// appears once any player comes near.
+    std::vector<SpawnRequest> Tick(double now, const std::vector<PlayerSpot>& players, const PointFilter& prefer = {});
+    /// Our units (alive or asked for, adds too) placed for that seat.
+    [[nodiscard]] int ForSeat(int seat) const;
     /// The adapter created the request's unit; `unit_id` is how its death will be reported.
     void Spawned(std::uint64_t ticket, const std::string& unit_id);
     /// The adapter could not create it; the slot goes back to the budget (the point is
@@ -164,8 +218,24 @@ public:
     /// The adapter cannot create this class at all here (its archive is not loaded): it is not
     /// picked again this arena. Call SpawnFailed for the request as well.
     void Unavailable(const std::string& unit_class);
-    /// A unit died or vanished. True (once) when it was one of ours.
+    /// A unit died or vanished. True (once) when it was one of ours (an add's death too: it is
+    /// ours, but it does not count toward the budget; ask IsAdd first).
     bool Died(const std::string& unit_id);
+    /// One enemy a boss calls in: its roster entry (its home map's) and, > 0, its health before the
+    /// arena's boss_hp_mult (another map's boss: that boss's health).
+    struct AddSpec {
+        MapEnemy enemy;
+        int hp = 0;
+    };
+    /// The boss calls in `adds` from `at` on (a BossPhase): they come from map points like any spawn
+    /// (outside the alive cap), but are not part of the budget, so the arena still clears on the boss.
+    void AddWave(std::vector<AddSpec> adds, double at);
+    /// True while `unit_id` is a live add.
+    [[nodiscard]] bool IsAdd(const std::string& unit_id) const { return adds_alive_.count(unit_id) > 0; }
+    [[nodiscard]] int adds_alive() const { return static_cast<int>(adds_alive_.size()); }
+    [[nodiscard]] int adds_waiting() const { return static_cast<int>(adds_queued_.size() + adds_pending_.size()); }
+    /// The boss's health in this arena (its MapBoss hp times the arena's boss_hp_mult; 0 without one).
+    [[nodiscard]] int BossHp() const;
     /// One of our units cannot reach the player (behind a door, on a ledge): it gets another
     /// point, within reach of the player when one is known and one `accept` takes (when given),
     /// and its own point is not used again this arena. Empty: no such point (nothing changes),
@@ -205,6 +275,8 @@ private:
     [[nodiscard]] bool Fits(int threat) const { return pick_level_ <= 0 || threat <= pick_level_; }
     [[nodiscard]] int Active(const MapEnemy* enemy) const;  // alive + pending of that roster entry
     int PickPoint(const std::optional<std::array<double, 3>>& player, const PointFilter& accept = {}, bool nearest = false);
+    [[nodiscard]] std::size_t PickSeat(const std::vector<PlayerSpot>& players) const;  // an index into players
+    int PickPointFor(const std::vector<PlayerSpot>& players, std::size_t who, const PointFilter& prefer);
     [[nodiscard]] bool BossWaits(double now, const std::optional<std::array<double, 3>>& player) const;
 
     MapDef map_;
@@ -226,9 +298,19 @@ private:
     std::vector<int> point_failures_;
     std::unordered_map<std::uint64_t, const MapEnemy*> ticket_enemy_;  // pending and alive tickets
     std::unordered_map<std::uint64_t, int> ticket_point_;               // alive tickets: their point
+    std::unordered_map<std::uint64_t, int> ticket_seat_;                // pending and alive tickets (adds too): their player
+    int last_seat_ = -1;                                                // the seat the last spawn went to
     int relocations_ = 0;
     std::vector<std::array<double, 3>> chests_;
     StringSet unavailable_;  // classes the adapter cannot create on this stage
+    struct QueuedAdd {
+        AddSpec spec;
+        double at = 0.0;
+        int tries = 0;
+    };
+    std::vector<QueuedAdd> adds_queued_;                           // not asked for yet
+    std::unordered_map<std::uint64_t, QueuedAdd> adds_pending_;   // ticket -> the add asked for
+    StringMap<std::uint64_t> adds_alive_;                          // unit id -> ticket
 };
 
 }  // namespace rm

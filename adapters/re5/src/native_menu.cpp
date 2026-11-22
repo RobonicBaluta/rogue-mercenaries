@@ -26,6 +26,8 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <tuple>
@@ -753,6 +755,56 @@ void __fastcall PlayMenuMoveDetour(std::uintptr_t self, void*) {
     g_atInput = ReadOr<std::uint8_t>(self + re5::off::kMenuState, 0) == kStateInput;
 }
 
+// A named element of a menu's layout (the selection glow "sel_01".."sel_08"), with the game's own
+// lookup (re5::addr::kFnLayoutElement). 0 when there is none or the call faulted.
+std::uintptr_t LayoutElement(std::uintptr_t menu, const char* name) {
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kLayoutManager, 0);
+    const int layer = ReadOr<std::int32_t>(menu + 0x18, -1);
+    if (!engine::Caps().menuRowGlow || !manager || layer < 0 || layer >= 0x5C) return 0;
+    __try {
+        std::uintptr_t text = 0;
+        reinterpret_cast<void(__thiscall*)(std::uintptr_t*, const char*)>(re5::addr::kFnLayoutName)(&text, name);
+        return reinterpret_cast<std::uintptr_t(__thiscall*)(std::uintptr_t, std::uintptr_t, int)>(re5::addr::kFnLayoutElement)(manager, text, layer);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+// Our row's selection glow. The game's layout has one per row of its own (sel_01..sel_08); with
+// Extra Content ours is the ninth and had none (the user, 2026-11-21: "rogue mercenaries doesn't
+// have the red underglow in the menu, which is weird because the other menu point do"). While
+// it is selected, sel_08 is drawn on it through the game's own row glow with our row's y; once
+// it is not (or the mod menu is up, which uses sel_08 for its own eighth row) sel_08 goes back.
+std::uintptr_t g_movedGlow = 0;  // sel_08, while it stands on our row
+float g_glowHomeY = 0.0f;        // its own row's y
+
+void PutGlowBack() {
+    if (!g_movedGlow) return;
+    SafeStore<float>(g_movedGlow + re5::addr::kLayoutElementY, g_glowHomeY);
+    g_movedGlow = 0;
+}
+
+void OurRowGlow(std::uintptr_t menu, bool selected) {
+    if (!selected || GameRows(menu) != 8) {  // seven rows: sel_08 is our row's own
+        PutGlowBack();
+        return;
+    }
+    const std::uintptr_t glow = LayoutElement(menu, "sel_08");
+    if (!glow) return;
+    if (g_movedGlow != glow) {
+        g_movedGlow = glow;
+        g_glowHomeY = ReadOr<float>(glow + re5::addr::kLayoutElementY, 0.0f);
+    }
+    const int message = ReadOr<std::uint16_t>(re5::addr::kPlayMenuLabelTable + static_cast<std::uintptr_t>(RogueItem(menu)) * 2, 0);
+    // Every frame, as the game does for its own rows (its move takes the glow down each frame).
+    __try {
+        reinterpret_cast<void(__thiscall*)(std::uintptr_t, int, int, bool, int)>(re5::addr::kFnMenuRowGlow)(menu, 8, message, true,
+                                                                                                         RogueRowY(menu));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+}
+
+
 void __fastcall PlayMenuDrawDetour(std::uintptr_t self, void*) {
     const bool mod = g_enabled.load() && g_modMenu.load();
     const bool extended = !mod && g_enabled.load() && Extended(self);
@@ -764,6 +816,9 @@ void __fastcall PlayMenuDrawDetour(std::uintptr_t self, void*) {
     }
     if (mod || extended) t_drawingMenu = self;
     g_origDraw(self);
+    if (g_applied.load() && engine::Caps().menuRowGlow) {
+        OurRowGlow(self, extended && ReadOr<std::int32_t>(self + re5::off::kMenuCursor, -1) == RogueItem(self));
+    }
     t_drawingMenu = 0;
     if (!g_applied.load()) return;
     if (mod) {
@@ -863,6 +918,7 @@ void SetModel(Model* model) { g_model = model; }
 
 void EnableDrawProbe() { g_drawProbe = true; }
 
+
 void SetDevSimulation(bool noExtraContent, bool mercenariesLocked) {
     g_devMercenariesLocked = mercenariesLocked;
     if (!noExtraContent) return;
@@ -945,6 +1001,75 @@ bool SetItemBoxLabels(const std::string& first, const std::string& second) {
     EncodeInto(g_labelBuffers[1], second);
     for (std::size_t i = 0; i < 2; ++i) SafeStore(g_labelAddress[i], reinterpret_cast<std::uintptr_t>(g_labelBuffers[i].data()));
     return true;
+}
+
+// Developer: mes_system message `id` shows `text` (empty: the game's again).
+std::map<int, std::pair<std::uintptr_t, std::unique_ptr<std::array<std::uint16_t, 64>>>> g_devMessages;
+void SetMessageText(int id, const std::string& text) {
+    std::lock_guard lock(g_textMutex);
+    const Messages m = FindMessages();
+    if (!g_widthsReady || !m.table || id < 0 || id >= m.count) {
+        RM_LOGW("dev msgset: no message %d", id);
+        return;
+    }
+    const auto cell = m.table + static_cast<std::uintptr_t>(id) * 4;
+    auto it = g_devMessages.find(id);
+    if (text.empty()) {
+        if (it != g_devMessages.end()) {
+            SafeStore(cell, it->second.first);
+            g_devMessages.erase(it);
+        }
+        RM_LOGW("dev msgset: message %d is the game's again", id);
+        return;
+    }
+    if (it == g_devMessages.end()) {
+        it = g_devMessages.emplace(id, std::make_pair(ReadOr<std::uintptr_t>(cell, 0), std::make_unique<std::array<std::uint16_t, 64>>())).first;
+    }
+    EncodeInto(*it->second.second, text);
+    SafeStore(cell, reinterpret_cast<std::uintptr_t>(it->second.second->data()));
+    RM_LOGW("dev msgset: message %d now \"%s\" (was \"%s\")", id, text.c_str(), Letters(it->second.first).c_str());
+}
+
+std::uintptr_t LayoutElementOf(std::uintptr_t screen, const char* name) { return LayoutElement(screen, name); }
+
+std::uintptr_t LayoutElementOnLayer(int layer, const char* name) {
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kLayoutManager, 0);
+    if (!engine::Caps().menuRowGlow || !manager || layer < 0 || layer >= 0x5C) return 0;
+    __try {
+        std::uintptr_t text = 0;
+        reinterpret_cast<void(__thiscall*)(std::uintptr_t*, const char*)>(re5::addr::kFnLayoutName)(&text, name);
+        return reinterpret_cast<std::uintptr_t(__thiscall*)(std::uintptr_t, std::uintptr_t, int)>(re5::addr::kFnLayoutElement)(manager, text, layer);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return 0;
+    }
+}
+
+void LogMessagesWith(const std::string& text) {
+    std::lock_guard lock(g_textMutex);
+    const auto sMessage = ReadOr<std::uintptr_t>(re5::addr::kSMessageInstance, 0);
+    int hits = 0, files = 0;
+    for (int language = 0; sMessage && language < re5::off::kMessageLanguages; ++language) {
+        for (int file = 0; file < 19; ++file) {
+            const auto rMessage = ReadOr<std::uintptr_t>(
+                sMessage + re5::off::kMessageFirstTable + (static_cast<std::uintptr_t>(language) * 19 + file) * 0x3A0, 0);
+            if (!rMessage || ReadOr<std::uint32_t>(rMessage + re5::off::kRMessageTypeCrc, 0) != kRMessageCrc) continue;
+            const auto data = ReadOr<std::uintptr_t>(rMessage + re5::off::kRMessageData, 0);
+            if (!data || ReadOr<std::uint32_t>(data, 0) != kMsg2Magic) continue;
+            const auto table = ReadOr<std::uintptr_t>(rMessage + re5::off::kRMessageTable, 0);
+            const int count = ReadOr<std::uint16_t>(data + re5::off::kMsg2Count, 0);
+            const std::string path = ReadCString(rMessage + re5::off::kRMessagePath, 64);
+            ++files;
+            for (int id = 0; table && id < count; ++id) {
+                const std::string letters = Letters(ReadOr<std::uintptr_t>(table + static_cast<std::uintptr_t>(id) * 4, 0));
+                if (letters.find(text) != std::string::npos) {
+                    RM_LOGW("dev msgfind: \"%s\" is in message %d of %s (language %d, file %d): %s", text.c_str(), id, path.c_str(), language, file,
+                            letters.c_str());
+                    ++hits;
+                }
+            }
+        }
+    }
+    RM_LOGW("dev msgfind: \"%s\": %d messages in %d loaded files", text.c_str(), hits, files);
 }
 
 void RestoreItemBoxLabels() {

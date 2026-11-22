@@ -289,6 +289,18 @@ struct ChestReward {
     int number = 0;            // chests opened this run, this one included
 };
 
+/// Where a boss's add (MapBoss phases) comes from: its roster entry on its home map (economy
+/// run_rosters guests; else the first map whose roster has it), or another map's boss, with that
+/// boss's health (before boss_hp_mult) and that map (its preload). `home` is null when no map knows
+/// the class (it comes as the class alone).
+struct BossAddSource {
+    MapEnemy enemy;
+    int hp = 0;
+    const MapDef* home = nullptr;
+    bool boss = false;
+};
+BossAddSource FindBossAdd(const Content& content, const std::string& unit_class);
+
 class RunController {
 public:
     RunController(std::shared_ptr<const Content> content, Profile profile,
@@ -302,6 +314,23 @@ public:
     void SetPlaceableWeapons(std::optional<StringSet> bases) { placeable_weapons_ = std::move(bases); }
     /// The mod skins whose mod files the adapter found (SkinDef::mod); the others are NotInstalled.
     void SetInstalledModSkins(StringSet skin_ids) { installed_mod_skins_ = std::move(skin_ids); }
+    /// Lists and lets runs start with tester_only characters (an install's "test_character"); off,
+    /// they are neither listed by Characters() nor playable.
+    void SetTesterCharacters(bool on) { tester_characters_ = on; }
+    /// The arena's boss would die now (its health is gone). With a phase left (MapBoss phases) that
+    /// phase starts instead: the boss stays down phase.down_seconds, then gets up with `hp` and the
+    /// director brings the phase's adds (AddWave). None: no phase left, the death is real. Each
+    /// call uses up one phase; the count starts again with every arena.
+    struct BossPhaseStart {
+        int index = 0;  // 0-based
+        int count = 0;  // the boss's phases in all
+        BossPhase phase;
+        int hp = 0;     // its health when it gets up
+    };
+    std::optional<BossPhaseStart> BossWouldDie(double now);
+    /// The phases the arena's boss has left this arena (0: none, or no boss arena running): while
+    /// any is left, his health never reaches 0 (the adapter keeps his last point and puts him down).
+    [[nodiscard]] int BossPhasesLeft() const;
     /// A skin's gate: its challenge, then (a mod skin) whether its mod is installed.
     [[nodiscard]] CharacterGate SkinGate(const SkinDef& skin) const;
     [[nodiscard]] const Capabilities& capabilities() const { return caps_; }
@@ -554,6 +583,8 @@ public:
     /// (Director::Tick).
     std::vector<SpawnRequest> DirectorTick(double now, const std::optional<std::array<double, 3>>& player,
                                            const Director::PointFilter& prefer = {});
+    /// The same with every standing player (co-op): the spawns shared evenly between them.
+    std::vector<SpawnRequest> DirectorTick(double now, const std::vector<PlayerSpot>& players, const Director::PointFilter& prefer = {});
     void DirectorSpawned(std::uint64_t ticket, const std::string& unit_id);
     void DirectorSpawnFailed(std::uint64_t ticket);
     /// The adapter cannot create this class on the stage (its archive is not loaded): the
@@ -702,6 +733,9 @@ private:
     MapEdits map_edits_;
     std::optional<StringSet> placeable_weapons_;
     StringSet installed_mod_skins_;
+    bool tester_characters_ = false;
+    int boss_phases_used_ = 0;  // this arena's (BossWouldDie)
+    int boss_add_kills_ = 0;    // this arena's adds killed (their supplies' transaction ids)
     int dev_supply_grants_ = 0;
     int external_supply_changes_ = 0;
     IEventSink* sink_ = nullptr;

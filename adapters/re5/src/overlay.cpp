@@ -8,6 +8,7 @@
 #include <atomic>
 #include <cstring>
 #include <mutex>
+#include <string>
 
 #include "imgui.h"
 #include "imgui_impl_dx9.h"
@@ -31,6 +32,7 @@ std::atomic<bool> g_focused{false};
 std::atomic<DWORD> g_lastToggle{0};
 std::atomic<DWORD> g_lastDirectInputKeys{0};
 bool g_initialized = false;
+ImFont* g_menuFont = nullptr;
 bool g_deviceObjectsLost = false;
 IDirect3DDevice9* g_frameDevice = nullptr;  // during the draw callback
 HWND g_window = nullptr;
@@ -149,6 +151,15 @@ bool Initialize(IDirect3DDevice9* device) {
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
+    // The overlay's own font first (the default), then the mod screens' serif (MenuFont).
+    io.Fonts->AddFontDefault();
+    char windows[MAX_PATH] = {};
+    const UINT length = GetWindowsDirectoryA(windows, MAX_PATH);
+    if (length > 0 && length < MAX_PATH) {
+        const std::string path = std::string(windows) + "\\Fonts\\georgia.ttf";
+        if (GetFileAttributesA(path.c_str()) != INVALID_FILE_ATTRIBUTES) g_menuFont = io.Fonts->AddFontFromFileTTF(path.c_str(), 32.0f);
+    }
+    RM_LOGI("overlay: menu font %s", g_menuFont ? "Georgia" : "missing (the overlay's own)");
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
     style.WindowRounding = 4.0f;
@@ -173,6 +184,7 @@ unsigned TakeEditorPresses() { return g_editorPresses.exchange(0); }
 void PressEditorKey() { EditorPress(); }
 bool IsFocused() { return g_focused.load(); }
 bool IsInitialized() { return g_initialized; }
+ImFont* MenuFont() { return g_menuFont; }
 void* WindowHandle() { return g_window; }
 IDirect3DDevice9* FrameDevice() { return g_frameDevice; }
 

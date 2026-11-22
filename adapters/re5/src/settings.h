@@ -94,6 +94,12 @@ struct Settings {
     bool everythingUnlocked = false;
     // The map editor (F8 in an arena, MAP EDITOR in the mod menu): adapter.json "map_editor".
     bool mapEditor = false;
+    // The tester (characters.json tester_only: a Gatling and a rocket launcher that never run out, for
+    // trying bosses and maps): listed only with adapter.json "test_character": true.
+    bool testCharacter = false;
+    // The info panel (the user, 2026-11-22: "a small top right panel with cool information with slick
+    // icons and stuff from data that we don't see in the organic hud"): adapter.json "info_panel".
+    bool infoPanel = true;
     int scopeKey = 0x2C;
     // The elements' looks (2026-11-11): an effect list started on each enemy an element's proc
     // reaches, by proc kind ("burn", "ignite_around", "poison", "poison_cloud", "freeze", "shock",

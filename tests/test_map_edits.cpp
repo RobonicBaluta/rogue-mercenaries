@@ -39,6 +39,10 @@ TEST_CASE("a map edit takes out points near a removed one and adds its own", "[d
     CHECK(out.points[2] == std::array<double, 3>{3000, 0, 0});
     REQUIRE(out.start);
     CHECK((*out.start)[2] == 9);
+    CHECK_FALSE(out.start2);  // player 2: by player 1
+    edit.start2 = std::array<double, 3>{4, 5, 6};
+    REQUIRE(ApplyMapEdit(EditMap(), edit).start2);
+    CHECK((*ApplyMapEdit(EditMap(), edit).start2)[0] == 4);
     CHECK(RemovesPoint(edit, {1000, 0, 0}));
     CHECK_FALSE(RemovesPoint(edit, {1100, 0, 0}));  // a metre off
 }
@@ -55,13 +59,17 @@ TEST_CASE("map edits survive a write and a read", "[director]") {
     edits[505].added = {{-1782.34, 301.0, 1999.0}};
     edits[505].removed = {{-3475.0, 2.0, 2513.0}, {-911.0, 138.0, 3521.0}};
     edits[3].start = std::array<double, 3>{1, 2, 3};
+    edits[4].start2 = std::array<double, 3>{4, 5, 6};  // player 2's start alone is an edit
     edits[7];  // empty: left out
     const std::string text = SerializeMapEdits(edits);
     std::string error;
     const auto back = ParseMapEdits(text, &error);
     REQUIRE(back);
     CHECK(error.empty());
-    REQUIRE(back->size() == 2);
+    REQUIRE(back->size() == 3);
+    REQUIRE(back->at(4).start2);
+    CHECK((*back->at(4).start2)[2] == 6);
+    CHECK_FALSE(back->at(4).start);
     CHECK(back->at(505).added.size() == 1);
     CHECK(back->at(505).added[0][0] == Catch::Approx(-1782.3));
     CHECK(back->at(505).removed.size() == 2);

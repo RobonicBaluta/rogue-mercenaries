@@ -380,7 +380,6 @@ DWORD WINAPI XInputGetStateDetour(DWORD user, void* state) {
     DWORD result = g_origXInputGetState(user, state);
     if (user < 4) {
         g_polls[user].fetch_add(1);
-        g_xConnected[user].store(result == ERROR_SUCCESS);
         if (!g_pollLogged[user].exchange(true)) {
             RM_LOGI("xinput: the game polls user %lu (first answer %lu)", static_cast<unsigned long>(user), static_cast<unsigned long>(result));
         }
@@ -403,6 +402,7 @@ DWORD WINAPI XInputGetStateDetour(DWORD user, void* state) {
             std::memcpy(p + 8, thumbs, sizeof(thumbs));
             result = ERROR_SUCCESS;
         }
+        g_xConnected[user].store(result == ERROR_SUCCESS);  // as the game sees it (a developer's virtual pad too)
     }
     const int primary = g_primaryPadUser.load();
     if (result == ERROR_SUCCESS && state && user < 4) {

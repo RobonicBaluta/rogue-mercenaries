@@ -153,7 +153,10 @@ TEST_CASE("shipped configs load without errors and meet content requirements", "
         CHECK(ch.unlock_cost_credits == 0);
         REQUIRE_FALSE(ch.skins.empty());
         const bool base = ch.id == "chris" || ch.id == "sheva";
-        if (base) {
+        if (ch.tester_only) {
+            // The tester: open, but listed only on an install that asks for it (test_builds.cpp).
+            CHECK(ch.unlock.kind == ChallengeKind::None);
+        } else if (base) {
             CHECK(ch.unlock.kind == ChallengeKind::None);
             CHECK(CheckCharacter(&ch, {}) == CharacterGate::Selectable);
         } else if (ch.id != "wesker") {  // his two skins are his locks

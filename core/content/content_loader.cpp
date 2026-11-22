@@ -932,7 +932,7 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                      "heal_damage_bonus", "heal_damage_seconds", "drops_as", "chest_keys_exempt", "extra_chests", "special",
                      "special_2", "stack_mult", "never_offered", "drops_as_held_ammo", "pickup_as", "break_grabs",
                      "shop_weapon", "shop_weapon_price", "gun_elements", "arena_element", "refine_every_shop",
-                     "refine_price_mult", "fuel_regen_mult", "pistol_in_hand"});
+                     "refine_price_mult", "fuel_regen_mult", "pistol_in_hand", "more_starting_weapons", "infinite_ammo"});
     GetString(d, b, "shop_weapon", out.shop_weapon, false);
     if (GetStringList(d, b, "gun_elements", out.gun_elements, false)) {
         for (const std::string& e : out.gun_elements) {
@@ -953,6 +953,7 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
     if (GetString(d, b, "icon", out.icon, false) && !IsValidId(out.icon)) d.Error("icon " + Q(out.icon) + " is not a valid name");
     if (GetNumber(d, b, "ammo_stack_mult", out.ammo_stack_mult, false)) CheckRange(d, "ammo_stack_mult", out.ammo_stack_mult, 1.0, 20.0);
     GetStringList(d, b, "extra_weapons", out.extra_weapons, false);
+    GetStringList(d, b, "more_starting_weapons", out.more_starting_weapons, false);
     if (GetNumber(d, b, "melee_damage", out.melee_damage, false)) CheckRange(d, "melee_damage", out.melee_damage, -0.9, 20.0);
     // The run stats a melee kill can raise, and their caps.
     const auto knownStat = [](const std::string& stat) {
@@ -1083,6 +1084,7 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
         }
     }
     ParseWeaponFilter(d, b, "never_offered", out.never_offered);
+    ParseWeaponFilter(d, b, "infinite_ammo", out.infinite_ammo);
     if (const json* sp = Get(b, "special")) {
         if (sp->is_object()) {
             ParseSpecial(d.Sub(" special"), *sp, out.special);
@@ -1293,9 +1295,10 @@ void ParseCharacters(const Diag& file, const json& doc, std::vector<CharacterDef
         d = file.Sub(": character " + Q(c.id));
         CheckKeys(d, e, {"id", "name", "enabled", "starting_weapons", "starting_passive", "skill_pool",
                          "exclusive_mechanic", "unlock_cost_credits", "unlock_kind", "unlock_count",
-                         "unlock_character", "unlock_boss", "unlock_text", "costume_index", "skins"});
+                         "unlock_character", "unlock_boss", "unlock_text", "costume_index", "skins", "tester_only"});
         GetString(d, e, "name", c.name, true);
         GetBool(d, e, "enabled", c.enabled, false);
+        GetBool(d, e, "tester_only", c.tester_only, false);
         GetStringList(d, e, "starting_weapons", c.starting_weapons, true);
         GetString(d, e, "starting_passive", c.starting_passive, false);
         GetStringList(d, e, "skill_pool", c.skill_pool, false);
@@ -1394,12 +1397,20 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
         MapDef map;
         if (!ReadId(d, e, map.id)) continue;
         d = file.Sub(": map " + Q(map.id));
-        CheckKeys(d, e, {"id", "name", "stage", "rotation", "start", "points", "chests", "preload", "layouts", "hide_models", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
+        CheckKeys(d, e, {"id", "name", "stage", "rotation", "start", "start2", "points", "chests", "preload", "layouts", "hide_models", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
         if (const auto s = e.find("start"); s != e.end()) {
             if (!s->is_array() || s->size() != 3 || !(*s)[0].is_number() || !(*s)[1].is_number() || !(*s)[2].is_number()) {
                 d.Error("field 'start' must be [x, y, z]");
             } else {
                 map.start = std::array<double, 3>{(*s)[0].get<double>(), (*s)[1].get<double>(), (*s)[2].get<double>()};
+            }
+        }
+        // Where player 2 starts in a co-op run (the map editor's, folded in: scripts/fold_map_edits.py).
+        if (const auto s2 = e.find("start2"); s2 != e.end()) {
+            if (!s2->is_array() || s2->size() != 3 || !(*s2)[0].is_number() || !(*s2)[1].is_number() || !(*s2)[2].is_number()) {
+                d.Error("field 'start2' must be [x, y, z]");
+            } else {
+                map.start2 = std::array<double, 3>{(*s2)[0].get<double>(), (*s2)[1].get<double>(), (*s2)[2].get<double>()};
             }
         }
         GetBool(d, e, "rotation", map.rotation, false);
@@ -1483,7 +1494,7 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
             if (!boss->is_object()) {
                 bd.Error("must be an object");
             } else {
-                CheckKeys(bd, *boss, {"class", "name", "article", "hp", "spawn", "facing", "trigger", "trigger_box", "trigger_wait"});
+                CheckKeys(bd, *boss, {"class", "name", "article", "hp", "spawn", "facing", "trigger", "trigger_box", "trigger_wait", "phases", "tuning"});
                 MapBoss b;
                 GetString(bd, *boss, "class", b.unit_class, true);
                 if (b.unit_class.rfind("uEm", 0) != 0) bd.Error("class must be an enemy class (uEm..)");
@@ -1521,6 +1532,91 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
                 }
                 if (!b.spawn && (b.facing || boss->contains("trigger") || boss->contains("trigger_box") || boss->contains("trigger_wait"))) {
                     bd.Error("'facing', 'trigger', 'trigger_box' and 'trigger_wait' need 'spawn'");
+                }
+                // How the adapter makes it harder (MapBoss tuning): known names, numbers in range.
+                if (const json* tuning = Get(*boss, "tuning")) {
+                    struct Known {
+                        const char* key;
+                        std::size_t count;
+                        double min;
+                        double max;
+                    };
+                    static constexpr Known kBossTuningKeys[] = {
+                        {"second_form_at", 1, 0.0, 1.0}, {"body_damage", 1, 0.0, 1.0}, {"rage_every", 1, 5.0, 600.0},
+                        {"rage_seconds", 1, 1.0, 60.0}, {"specials_every", 1, 3.0, 300.0}, {"attack_chance", 6, 0.0, 1.0},
+                        {"fire_cooldown_max", 1, 0.1, 5.0}, {"melee_every", 1, 1.0, 120.0}, {"melee_range", 1, 100.0, 2000.0},
+                        {"wide_fire_every", 1, 1.0, 120.0}, {"flinch_only_explosives", 1, 0.0, 1.0}, {"dodge_chance", 1, 0.0, 1.0},
+                        {"dodge_aim_seconds", 1, 0.2, 10.0},
+                    };
+                    if (!tuning->is_object()) {
+                        bd.Error("field 'tuning' must be an object");
+                    } else {
+                        for (const auto& [key, value] : tuning->items()) {
+                            const Known* known = nullptr;
+                            for (const Known& k : kBossTuningKeys) {
+                                if (key == k.key) known = &k;
+                            }
+                            if (known == nullptr) {
+                                bd.Error("unknown tuning " + Q(key));
+                                continue;
+                            }
+                            std::vector<double> numbers;
+                            if (value.is_number()) {
+                                numbers.push_back(value.get<double>());
+                            } else if (value.is_array() && std::all_of(value.begin(), value.end(), [](const json& v) { return v.is_number(); })) {
+                                for (const json& v : value) numbers.push_back(v.get<double>());
+                            }
+                            if (numbers.size() != known->count) {
+                                bd.Error("tuning " + Q(key) + " must be " + (known->count == 1 ? std::string("a number") : std::to_string(known->count) + " numbers"));
+                                continue;
+                            }
+                            for (const double v : numbers) CheckRange(bd, "tuning " + key, v, known->min, known->max);
+                            b.tuning[key] = std::move(numbers);
+                        }
+                    }
+                }
+                // Its deaths before the real one (MapBoss phases).
+                if (const json* phases = Get(*boss, "phases")) {
+                    if (!phases->is_array() || phases->size() > 5) {
+                        bd.Error("field 'phases' must be a list of at most 5");
+                    } else {
+                        for (std::size_t pi = 0; pi < phases->size(); ++pi) {
+                            const json& ph = (*phases)[pi];
+                            const Diag pd = bd.Sub(": phases[" + std::to_string(pi) + "]");
+                            if (!ph.is_object()) {
+                                pd.Error("must be an object");
+                                continue;
+                            }
+                            CheckKeys(pd, ph, {"down_seconds", "hp_fraction", "down_action", "rise_action", "adds", "transform"});
+                            BossPhase phase;
+                            GetBool(pd, ph, "transform", phase.transform, false);
+                            if (GetNumber(pd, ph, "down_seconds", phase.down_seconds, false)) CheckRange(pd, "down_seconds", phase.down_seconds, 0.0, 60.0);
+                            if (GetNumber(pd, ph, "hp_fraction", phase.hp_fraction, false)) CheckRange(pd, "hp_fraction", phase.hp_fraction, 0.01, 1.0);
+                            GetString(pd, ph, "down_action", phase.down_action, false);
+                            GetString(pd, ph, "rise_action", phase.rise_action, false);
+                            if (const json* adds = Get(ph, "adds")) {
+                                if (!adds->is_array()) {
+                                    pd.Error("field 'adds' must be a list");
+                                } else {
+                                    for (const json& a : *adds) {
+                                        BossAdd add;
+                                        if (!a.is_object()) {
+                                            pd.Error("an add must be an object");
+                                            continue;
+                                        }
+                                        CheckKeys(pd, a, {"class", "count"});
+                                        GetString(pd, a, "class", add.unit_class, true);
+                                        if (add.unit_class.rfind("uEm", 0) != 0) pd.Error("an add's class must be an enemy class (uEm..)");
+                                        std::int64_t count = 1;
+                                        if (GetInt(pd, a, "count", count, false)) CheckRange(pd, "count", static_cast<double>(count), 1, 10);
+                                        add.count = static_cast<int>(std::clamp<std::int64_t>(count, 1, 10));
+                                        phase.adds.push_back(std::move(add));
+                                    }
+                                }
+                            }
+                            b.phases.push_back(std::move(phase));
+                        }
+                    }
                 }
                 map.boss = std::move(b);
             }
@@ -2245,7 +2341,7 @@ private:
           for (const SkinDef& s : base.skins) {
             const Diag d = chars_d.Sub(": character " + Q(base.id) + " skin " + Q(s.id) + ": build");
             const SkinBuild& b = s.build;
-            for (const WeaponFilter* f : {&b.offered_weapons, &b.usable_weapons, &b.uncapped_upgrades, &b.never_offered}) {
+            for (const WeaponFilter* f : {&b.offered_weapons, &b.usable_weapons, &b.uncapped_upgrades, &b.never_offered, &b.infinite_ammo}) {
                 for (const std::string& id : f->ids) {
                     if (c.FindWeapon(id) == nullptr) d.Error("references unknown weapon " + Q(id));
                 }
@@ -2284,8 +2380,19 @@ private:
                     d.Error("starting_weapon " + Q(w->id) + " is not one of the build's usable weapons");
                 }
             }
+            for (const std::string& id : b.more_starting_weapons) {
+                const WeaponBaseDef* w = c.FindWeapon(id);
+                if (w == nullptr) {
+                    d.Error("more_starting_weapons references unknown weapon " + Q(id));
+                } else if (!b.usable_weapons.Allows(w->id, WeaponCategoryName(w->category))) {
+                    d.Error("more_starting_weapons lists " + Q(w->id) + ", which is not one of the build's usable weapons");
+                } else if (w->build_only && std::find(b.extra_weapons.begin(), b.extra_weapons.end(), w->id) == b.extra_weapons.end()) {
+                    d.Error("more_starting_weapons lists " + Q(w->id) + ", which is build_only and not in the build's extra_weapons");
+                }
+            }
           }
-          if (base.enabled && base.unlock_cost_credits == 0 && base.unlock.kind == ChallengeKind::None) any_free = true;
+          // A tester's character is not shown to players: it cannot be the one they start with.
+          if (base.enabled && !base.tester_only && base.unlock_cost_credits == 0 && base.unlock.kind == ChallengeKind::None) any_free = true;
         }
         if (!c.characters_.empty() && !any_free) chars_d.Error("no enabled character is unlocked by default");
         if (c.characters_.empty()) chars_d.Error("at least one character is required");
@@ -2336,6 +2443,19 @@ private:
                 eco_d.Error(what + " references unknown map " + std::to_string(home));
             } else if (std::none_of(m->roster.begin(), m->roster.end(), [&](const MapEnemy& e) { return e.unit_class == unit_class; })) {
                 eco_d.Error(what + ": map " + std::to_string(home) + " (" + m->name + ") has no " + unit_class + " in its roster");
+            }
+        }
+        // A boss's adds (MapBoss phases) come from some map: a roster entry or another map's boss.
+        for (const MapDef& m : c.maps_) {
+            if (!m.boss) continue;
+            for (const BossPhase& phase : m.boss->phases) {
+                for (const BossAdd& add : phase.adds) {
+                    const bool known = std::any_of(c.maps_.begin(), c.maps_.end(), [&](const MapDef& other) {
+                        return (other.boss && other.boss->unit_class == add.unit_class) ||
+                               std::any_of(other.roster.begin(), other.roster.end(), [&](const MapEnemy& e) { return e.unit_class == add.unit_class; });
+                    });
+                    if (!known) eco_d.Error("map " + std::to_string(m.stage) + " boss phases: add " + add.unit_class + " is in no map's roster and is no map's boss");
+                }
             }
         }
         // The ladder's bosses are boss maps.

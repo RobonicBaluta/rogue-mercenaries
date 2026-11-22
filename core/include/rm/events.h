@@ -44,6 +44,7 @@ enum class EventType {
     WeaponRefined,      // a held gun went one tier up (reward, shop, chest)
     WeaponLost,         // a gun left the run: no longer held (sold, used up) or given up
     PlayerJoined,       // local co-op: another player's seat joined the run (M10)
+    BossPhase,          // a boss went down into its next phase instead of dying (MapBoss phases)
 };
 std::string_view EventTypeName(EventType type);
 

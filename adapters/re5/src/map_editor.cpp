@@ -181,8 +181,9 @@ void Commit(rm::RunController& run, rm::MapEdits edits, int mapKey, const std::s
     const auto it = edits.find(mapKey);
     const std::size_t added = it != edits.end() ? it->second.added.size() : 0;
     const std::size_t removed = it != edits.end() ? it->second.removed.size() : 0;
-    RM_LOGI("map editor: %s on map %d (%zu added, %zu taken out%s)%s", what.c_str(), mapKey, added, removed,
-            it != edits.end() && it->second.start ? ", own start" : "", saved ? "" : "; map_edits.json NOT written");
+    RM_LOGI("map editor: %s on map %d (%zu added, %zu taken out%s%s)%s", what.c_str(), mapKey, added, removed,
+            it != edits.end() && it->second.start ? ", own start" : "", it != edits.end() && it->second.start2 ? ", player 2's start" : "",
+            saved ? "" : "; map_edits.json NOT written");
     g_status = what + (saved ? "." : ". Could not write map_edits.json!");
 }
 
@@ -353,14 +354,19 @@ void DrawMarkers(rm::RunController& run, int mapKey, const std::optional<Point>&
                 list->AddLine(ImVec2(s->x - r, s->y + r), ImVec2(s->x + r, s->y - r), IM_COL32(240, 70, 60, 230), 3.0f);
             }
         }
-        if (map && map->start) {
-            if (const auto s = project(*map->start)) {
+        // The starts: player 1's yellow, player 2's orange.
+        const auto startMarker = [&](const std::optional<Point>& at, ImU32 fill, ImU32 text, const char* label) {
+            if (!at) return;
+            if (const auto s = project(*at)) {
                 const float r = MarkerSize(*s) + 3.0f;
                 const ImVec2 c(s->x, s->y);
-                list->AddQuadFilled(ImVec2(c.x, c.y - r), ImVec2(c.x + r, c.y), ImVec2(c.x, c.y + r), ImVec2(c.x - r, c.y),
-                                    IM_COL32(255, 210, 60, 230));
-                list->AddText(ImVec2(c.x + r + 2.0f, c.y - 7.0f), IM_COL32(255, 230, 120, 230), "start");
+                list->AddQuadFilled(ImVec2(c.x, c.y - r), ImVec2(c.x + r, c.y), ImVec2(c.x, c.y + r), ImVec2(c.x - r, c.y), fill);
+                list->AddText(ImVec2(c.x + r + 2.0f, c.y - 7.0f), text, label);
             }
+        };
+        if (map) {
+            startMarker(map->start, IM_COL32(255, 210, 60, 230), IM_COL32(255, 230, 120, 230), "start 1");
+            startMarker(map->start2, IM_COL32(255, 140, 40, 230), IM_COL32(255, 180, 110, 230), "start 2");
         }
         // The laser: a magenta ring where it meets the world, a line down to the ground under it.
         if (const std::optional<Laser>& laser = g_open && g_laserAtOpen ? g_laserAtOpen : g_laser) {
@@ -666,18 +672,34 @@ void DrawWindow(rm::RunController& run, int mapKey, const std::optional<Point>& 
         return;
     }
     ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("Set the arena start here")) {
+    // The players' starts (player 2's for a co-op run; the user, 2026-11-21: "set the player spawn
+    // point for both players"), where player 1 stands.
+    if (ImGui::Button("Set player 1's start here")) {
         edit.start = *player;
-        Commit(run, edits, mapKey, "arena start set where you stand");
+        Commit(run, edits, mapKey, "player 1's start set where you stand");
+        ImGui::End();
+        return;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Set player 2's start here")) {
+        edit.start2 = *player;
+        Commit(run, edits, mapKey, "player 2's start set where you stand");
         ImGui::End();
         return;
     }
     if (edit.start) {
-        ImGui::SameLine();
         if (ImGui::Button("Map's own start")) {
             edit.start.reset();
             Commit(run, edits, mapKey, "the map's own start again");
+            ImGui::End();
+            return;
+        }
+    }
+    if (edit.start2) {
+        if (edit.start) ImGui::SameLine();
+        if (ImGui::Button("Player 2 with player 1")) {
+            edit.start2.reset();
+            Commit(run, edits, mapKey, "player 2 starts at player 1's start again");
             ImGui::End();
             return;
         }
@@ -713,7 +735,8 @@ void DrawWindow(rm::RunController& run, int mapKey, const std::optional<Point>& 
         std::vector<const Marked*> byDistance;
         for (const Marked& m : points) byDistance.push_back(&m);
         std::sort(byDistance.begin(), byDistance.end(), [](const Marked* a, const Marked* b) { return a->distance < b->distance; });
-        ImGui::TextDisabled("blue: the map's, green: yours, red X: taken out, yellow: the start, magenta: the laser");
+        ImGui::TextDisabled("blue: the map's, green: yours, red X: taken out, yellow: player 1's start, orange: player 2's,\n"
+                            "magenta: the laser");
         for (int i = 0; i < static_cast<int>(byDistance.size()) && i < kListRows; ++i) {
             const Marked& m = *byDistance[static_cast<std::size_t>(i)];
             ImGui::PushID(m.index);

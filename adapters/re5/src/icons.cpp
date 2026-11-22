@@ -83,6 +83,14 @@ IDirect3DTexture9* Load(IDirect3DDevice9* device, const std::string& name) {
 
 void SetDirectory(const std::filesystem::path& dir) { g_dir = dir; }
 
+bool DecodePng(const std::filesystem::path& file, unsigned& width, unsigned& height, std::vector<unsigned char>& pixels) {
+    UINT w = 0, h = 0;
+    const bool ok = Decode(file, w, h, pixels);
+    width = w;
+    height = h;
+    return ok;
+}
+
 unsigned long long Texture(IDirect3DDevice9* device, const std::string& name) {
     if (!device || name.empty()) return 0;
     if (device != g_device) {  // a new device: the old one's textures went with it (not released)

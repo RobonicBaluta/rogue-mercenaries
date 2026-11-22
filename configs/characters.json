@@ -1,5 +1,5 @@
 {
-  "_comment": "Playable characters. Chris and Sheva and their first skins are open from the start; every other character and skin is earned (unlock_kind/unlock_count/unlock_text/unlock_character/unlock_boss, see core/include/rm/characters.h; a character's first skin comes with it). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin is a build (ROADMAP M8, written by scripts/write_perks.py): 'build' holds its rules (weapon filters, damage by weapon category, supplies, free shop rerolls, rarity, uncapped upgrades, a starting weapon, max health), and a skin without one yet keeps a small trait (a 'skin' perk). costume_index is the class and the model each slot loads, checked in game: 0..2 and 10 Heavy Metal, 14 Warrior Chris; 3 and 11 Fairy Tale, 15 Business Sheva; 9 Wesker S.T.A.R.S.; 12 Josh, 13 Excella, 16 Barry, 17 Rebecca. Text shown by the game font: letters, digits, space, comma and period only. A skin with 'mod' wears a third-party mod's look (name, author, url: its page; files: the archives read from RogueMercenaries\\mods instead of the game's, with the size checked); without the mod it is listed but not selectable.",
+  "_comment": "Playable characters. Chris and Sheva and their first skins are open from the start; every other character and skin is earned (unlock_kind/unlock_count/unlock_text/unlock_character/unlock_boss, see core/include/rm/characters.h; a character's first skin comes with it). starting_weapons: the first entry is the pistol every run starts with (the adapter strips the game's own Mercenaries loadout down to it); other weapons come from supply perks, rewards and the shop. starting_passive is the character's free style trait; skill_pool lists the perks the character can unlock. A skin is a build (ROADMAP M8, written by scripts/write_perks.py): 'build' holds its rules (weapon filters, damage by weapon category, supplies, free shop rerolls, rarity, uncapped upgrades, a starting weapon, max health), and a skin without one yet keeps a small trait (a 'skin' perk). costume_index is the class and the model each slot loads, checked in game: 0..2 and 10 Heavy Metal, 14 Warrior Chris; 3 and 11 Fairy Tale, 15 Business Sheva; 9 Wesker S.T.A.R.S.; 12 Josh, 13 Excella, 16 Barry, 17 Rebecca. Text shown by the game font: letters, digits, space, comma and period only. A skin with 'mod' wears a third-party mod's look (name, author, url: its page; files: the archives read from RogueMercenaries\\mods instead of the game's, with the size checked); without the mod it is listed but not selectable. A character with tester_only is listed only on an install whose adapter.json says \"test_character\": true (the tester).",
   "schema_version": 1,
   "characters": [
     {
@@ -921,7 +921,7 @@
         {
           "id": "ada_assignment",
           "name": "Assignment",
-          "costume_index": 4,
+          "costume_index": 5,
           "mod": {
             "name": "Ada Bundle",
             "author": "Cond3mned, Kreed, Nealktorce, Yumiko, Freyr95, Cixon",
@@ -964,7 +964,7 @@
         {
           "id": "ada_red_dress",
           "name": "Red Dress",
-          "costume_index": 5,
+          "costume_index": 4,
           "mod": {
             "name": "Ada Bundle",
             "author": "Cond3mned, Kreed, Nealktorce, Yumiko, Freyr95, Cixon",
@@ -995,7 +995,8 @@
             "category_damage": {
               "bow": 0.4
             },
-            "drops_as_held_ammo": true
+            "drops_as_held_ammo": true,
+            "pistol_in_hand": true
           },
           "unlock_kind": "runs_completed_as",
           "unlock_character": "ada",
@@ -1014,6 +1015,47 @@
       "unlock_boss": "boss:uEm84",
       "unlock_count": 1,
       "unlock_text": "Beat Jill"
+    },
+    {
+      "id": "tester",
+      "name": "Tester",
+      "enabled": true,
+      "tester_only": true,
+      "starting_weapons": [
+        "m92f"
+      ],
+      "exclusive_mechanic": "",
+      "unlock_cost_credits": 0,
+      "costume_index": 10,
+      "skins": [
+        {
+          "id": "tester_kit",
+          "name": "Test Kit",
+          "costume_index": 10,
+          "build": {
+            "name": "Test Kit",
+            "icon": "gatling",
+            "summary": "Starts with a Gatling gun, an AK-74 and a rocket launcher that never run out. For testing.",
+            "extra_weapons": [
+              "gatling"
+            ],
+            "more_starting_weapons": [
+              "gatling",
+              "ak74",
+              "rocket_launcher"
+            ],
+            "infinite_ammo": {
+              "categories": [
+                "machine_gun"
+              ],
+              "ids": [
+                "rocket_launcher"
+              ]
+            }
+          }
+        }
+      ],
+      "skill_pool": []
     }
   ]
 }

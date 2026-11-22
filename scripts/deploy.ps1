@@ -79,6 +79,7 @@ switch ($Mode) {
         $files = @()
         $configDst = Join-Path $modDir 'configs'
         $iconDst = Join-Path $configDst 'icons'
+        $hudDst = Join-Path $configDst 'hud_names'
         try {
             Copy-Item -LiteralPath $Dll -Destination $targetDll
             $files += [pscustomobject]@{ path = $targetDll; sha256 = Get-Hash $targetDll }
@@ -89,6 +90,16 @@ switch ($Mode) {
                     $dst = Join-Path $configDst $_.Name
                     Copy-Item -LiteralPath $_.FullName -Destination $dst
                     $files += [pscustomobject]@{ path = $dst; sha256 = Get-Hash $dst }
+                }
+                # The HUD's character names (hud_names.json and its tiles).
+                $hudSrc = Join-Path $configSrc 'hud_names'
+                if (Test-Path -LiteralPath $hudSrc) {
+                    New-Item -ItemType Directory -Force -Path $hudDst | Out-Null
+                    Get-ChildItem -LiteralPath $hudSrc -File | Where-Object { $_.Extension -in '.png', '.json' } | ForEach-Object {
+                        $dst = Join-Path $hudDst $_.Name
+                        Copy-Item -LiteralPath $_.FullName -Destination $dst
+                        $files += [pscustomobject]@{ path = $dst; sha256 = Get-Hash $dst }
+                    }
                 }
                 $iconSrc = Join-Path $configSrc 'icons'
                 if (Test-Path -LiteralPath $iconSrc) {
@@ -108,7 +119,7 @@ switch ($Mode) {
         } catch {
             # All-or-nothing: remove whatever this attempt copied, then report.
             foreach ($f in $files) { Remove-Item -LiteralPath $f.path -ErrorAction SilentlyContinue }
-            foreach ($d in @($iconDst, $configDst, $modDir)) {
+            foreach ($d in @($iconDst, $hudDst, $configDst, $modDir)) {
                 if ((Test-Path -LiteralPath $d) -and -not (Get-ChildItem -LiteralPath $d -Force)) { Remove-Item -LiteralPath $d }
             }
             throw "install failed and was rolled back: $_"
@@ -117,7 +128,7 @@ switch ($Mode) {
             installed = (Get-Date).ToString('o')
             source_dll = (Resolve-Path $Dll).Path
             exe_sha256 = $expectedExeHash
-            dirs = @($iconDst, $configDst, $modDir)
+            dirs = @($iconDst, $hudDst, $configDst, $modDir)
             files = $files
         }
         New-Item -ItemType Directory -Force -Path (Split-Path $manifestPath) | Out-Null

@@ -2,7 +2,9 @@
 
 #include <MinHook.h>
 #include <intrin.h>
+#include <cstring>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -46,6 +48,7 @@ struct HitScope {
     bool attackerIsLocal = false;
     int rawDamage = 0;
     int appliedDamage = 0;
+    bool bodyHit = false;  // Uroboros Wesker: his own check refused it (not his open core), the mod let it through
     HitScope* previous = nullptr;
 };
 thread_local HitScope* t_hit = nullptr;
@@ -67,6 +70,39 @@ using MayHurtFn = std::uint32_t(__thiscall*)(std::uintptr_t self, std::uint32_t 
 MayHurtFn g_origEm82MayHurt = nullptr;
 std::atomic<std::uintptr_t> g_gunfireBoss{0};
 std::atomic<int> g_gunfireLogged{0};
+// The share of a body hit Uroboros Wesker takes (maps.json boss tuning "body_damage"; 1: all of it).
+std::atomic<float> g_bossBodyShare{1.0f};
+// A boss's adds that are bosses themselves (Uroboros Mkono called in by Wesker): their own refills
+// are lifted as the run's boss's are (SetBossAddUnits).
+constexpr int kBossAddSlots = 8;
+std::atomic<std::uintptr_t> g_bossAdds[kBossAddSlots] = {};
+// One of the boss's adds that is a boss itself (not the arena's boss): a hit never takes its last
+// health, so the game never starts its own death (the Uroboros' is a cinematic with the story's calls).
+bool IsBossAddUnit(std::uintptr_t self) {
+    if (self == 0 || self == g_gunfireBoss.load(std::memory_order_relaxed)) return false;
+    for (const auto& a : g_bossAdds) {
+        if (a.load(std::memory_order_relaxed) == self) return true;
+    }
+    return false;
+}
+// The run's boss while he has a phase left (SetBossKeepsLastHealth; 0: none): his health never
+// reaches 0. At 0 the game's own enemy death (0x00963660) runs and marks him dead, +0x18DC bit 0x80,
+// which the enemy hit check (0x009E0700) turns every later hit away by: Uroboros Wesker's second form
+// took nothing, the user's fights 2026-11-22 ("takes no damage, tried rockers, tried ak in normal,
+// chest core, back core, nothing"; dev watch: flags 22190000 to 22190080 at the killing hit). At 1
+// the mod puts him down (mod.cpp DetectEnemyDeaths: a boss counts dead at 1).
+std::atomic<std::uintptr_t> g_lastHealthBoss{0};
+bool KeepsLastHealth(std::uintptr_t self) {
+    return self != 0 && (self == g_lastHealthBoss.load(std::memory_order_relaxed) || IsBossAddUnit(self));
+}
+bool IsRunBoss(std::uintptr_t self) {
+    if (self == 0) return false;
+    if (self == g_gunfireBoss.load(std::memory_order_relaxed)) return true;
+    for (const auto& a : g_bossAdds) {
+        if (a.load(std::memory_order_relaxed) == self) return true;
+    }
+    return false;
+}
 
 std::uint32_t __fastcall Em82MayHurtDetour(std::uintptr_t self, void*, std::uint32_t region, std::uint32_t amount) {
     const std::uint32_t own = g_origEm82MayHurt(self, region, amount);
@@ -74,8 +110,18 @@ std::uint32_t __fastcall Em82MayHurtDetour(std::uintptr_t self, void*, std::uint
     if (g_gunfireLogged.fetch_add(1) < 3) {
         RM_LOGI("boss: %s takes a hit its own check refused (region %u)", engine::ClassName(self).c_str(), region & 0xFFFFu);
     }
+    if (t_hit != nullptr && t_hit->enemy == self) t_hit->bodyHit = true;  // its damage is scaled where it is taken
     return 1;
 }
+
+// Uroboros Wesker's form switch (re5_layout.h addr::kFnEm82SetPose: thiscall (pose, apply), ret 8): with
+// apply 1 and pose 1 it takes the story's giant lava model and turns off his hit shapes 3 to 5 (the
+// finale the story's rockets end). His own actions call it so (0x00922060, 0x00922A50 StageChange's
+// step, 0x00929B4A). For a run's boss it only ever sets his pose byte: the second form's moves on his
+// own body. (Nothing hurting him in that form, 2026-11-22, was the dead mark: g_lastHealthBoss.)
+using Em82SetPoseFn = void(__thiscall*)(std::uintptr_t self, int pose, int apply);
+Em82SetPoseFn g_origEm82SetPose = nullptr;
+std::atomic<int> g_em82PoseLogged{0};
 
 // Uroboros Mkono (uEm41) as a run's boss: its update (0x008B6040) runs the Uroboros' (0x008AE2B0)
 // and then sets its health back to its maximum (vtable +0x10C, the same call its grab kills the
@@ -281,6 +327,22 @@ bool __fastcall WpSlotUiVisibleDetour(std::uintptr_t self, void* edx) {
     return shown;
 }
 
+// The may-take-item check's partner (re5::addr::kPickupPartnerCall). Its one call of the
+// partner lookup goes here instead: while the player is the only one standing in a co-op match
+// (the partner a fall) it has no partner, so a pickup is decided by the player's own inventory;
+// otherwise the game's own lookup answers. Only this call: every other partner lookup is the game's.
+using PlayerPartnerFn = std::uintptr_t(__fastcall*)(std::uintptr_t self, void* edx, int which);
+
+bool OnlyOneStanding(std::uintptr_t self);
+
+std::uintptr_t __fastcall PickupPartner(std::uintptr_t self, void* edx, int which) {
+    const std::uintptr_t partner = reinterpret_cast<PlayerPartnerFn>(re5::addr::kFnPlayerPartner)(self, edx, which);
+    if (partner == 0 || !OnlyOneStanding(self) || !HiddenFall(partner)) return partner;
+    static std::atomic<int> logged{0};
+    if (logged.fetch_add(1) < 2) RM_LOGI("co-op: %08X picks up with its partner down (its own inventory decides)", static_cast<unsigned>(self));
+    return 0;
+}
+
 // uPlayer's may-act check (re5::addr::kFnPlayerMayAct). In a split-screen match it says no while
 // the partner is dead, so after a co-op fall the player still standing could not open the
 // inventory (the grid asks it first). While that player is the only one standing and the mod is
@@ -349,7 +411,20 @@ std::uint32_t __fastcall GameOverCheckDetour(std::uintptr_t self, void* edx) {
     return g_origGameOverCheck(self, edx);
 }
 
+// A run's match is on (mod.cpp, as autopilot::SetRunMatch): the boss Jill's blow-away death asks for
+// no game over then.
+std::atomic<bool> g_runMatchHooks{false};
+
 void __fastcall AppRequestDetour(std::uintptr_t app, void* edx, std::uint32_t flags) {
+    // The boss Jill's blow-away death (re5_layout.h kJillDieBlowGameOverReturn): the story's "partner
+    // died" game over, in a run only her fall (the arena clears on her death).
+    if ((flags & kAppGameOver) != 0 && g_runMatchHooks.load(std::memory_order_relaxed) && engine::Caps().em84DieBlow &&
+        reinterpret_cast<std::uintptr_t>(_ReturnAddress()) == re5::addr::kJillDieBlowGameOverReturn) {
+        static std::atomic<int> logged{0};
+        if (logged.fetch_add(1) < 4) RM_LOGI("boss: Jill's blow-away death asked for the game over; not in a run");
+        flags &= ~kAppGameOver;
+        if (flags == 0) return;
+    }
     if ((flags & kAppGameOver) != 0 && g_coopDeathHold.load(std::memory_order_relaxed)) {
         const int standing = StandingHumans();
         if (standing > 0) {
@@ -427,8 +502,16 @@ void __fastcall DeathEventDetour(std::uintptr_t self, void* edx, int player) {
     g_origDeathEvent(self, edx, player);
 }
 
+void __fastcall Em82SetPoseDetour(std::uintptr_t self, void*, int pose, int apply) {
+    if ((apply & 0xFF) == 1 && (pose & 0xFF) == 1 && IsRunBoss(self)) {
+        if (g_em82PoseLogged.fetch_add(1) < 4) RM_LOGI("boss: uEm82's giant form asked for: his pose only (he stays hittable)");
+        apply = 0;
+    }
+    g_origEm82SetPose(self, pose, apply);
+}
+
 void __fastcall Em41UpdateDetour(std::uintptr_t self, void* edx) {
-    if (self == 0 || self != g_gunfireBoss.load(std::memory_order_relaxed)) {
+    if (!IsRunBoss(self)) {
         g_origEm41Update(self, edx);
         return;
     }
@@ -515,11 +598,19 @@ void __fastcall CharacterSubHpDetour(std::uintptr_t self, void*, std::int16_t am
         hit.damage = amount;
         hit.targetHp = hp ? hp->hp : 0;
         hit.targetMaxHp = hp ? hp->max : 0;
-        const float multiplier = g_sink->OutgoingMultiplier(hit);
-        const int applied = std::isfinite(multiplier) ? ClampDamage(amount * static_cast<double>(multiplier)) : amount;
+        float multiplier = g_sink->OutgoingMultiplier(hit);
+        // A body hit on Uroboros Wesker counts for its share only (the core takes it all).
+        if (scope->bodyHit) multiplier *= g_bossBodyShare.load(std::memory_order_relaxed);
+        int applied = std::isfinite(multiplier) ? ClampDamage(amount * static_cast<double>(multiplier)) : amount;
+        // A boss's add that is a boss itself, and the boss with a phase left, keep their last health
+        // point: the mod ends the one and puts the other down (mod.cpp).
+        if (KeepsLastHealth(self) && hit.targetHp > 0 && applied >= hit.targetHp) applied = std::max(0, hit.targetHp - 1);
         scope->rawDamage += amount;
         scope->appliedDamage += applied;
         amount = static_cast<std::int16_t>(applied);
+    } else if (amount > 0 && KeepsLastHealth(self)) {
+        // Damage outside a hit (a burn, the game's own scripts) keeps it too.
+        if (const auto hp = engine::ReadHp(self); hp && hp->hp > 0 && amount >= hp->hp) amount = static_cast<std::int16_t>(hp->hp - 1);
     }
     g_origCharacterSubHp(self, amount);
 }
@@ -702,6 +793,10 @@ bool InstallCombatHooks() {
     if (ok && caps.bossGunfire) {
         Hook(re5::addr::kFnEm82MayHurt, reinterpret_cast<void*>(&Em82MayHurtDetour), reinterpret_cast<void**>(&g_origEm82MayHurt),
              "uEm82 may-hurt (a run's boss takes gunfire)");
+        if (engine::Caps().em82Tuning) {
+            Hook(re5::addr::kFnEm82SetPose, reinterpret_cast<void*>(&Em82SetPoseDetour), reinterpret_cast<void**>(&g_origEm82SetPose),
+                 "uEm82 form switch (a run's boss keeps his own body and hit shapes)");
+        }
     }
     if (ok && caps.bossNoRefill) {
         Hook(re5::addr::kFnEm41Update, reinterpret_cast<void*>(&Em41UpdateDetour), reinterpret_cast<void**>(&g_origEm41Update),
@@ -722,6 +817,10 @@ bool InstallCombatHooks() {
     if (ok && caps.wpSlotUiVisible) {
         Hook(re5::addr::kFnWpSlotUiVisible, reinterpret_cast<void*>(&WpSlotUiVisibleDetour), reinterpret_cast<void**>(&g_origWpSlotUiVisible),
              "inventory grid visibility (a co-op fall keeps the other player's inventory)");
+    }
+    if (ok && caps.pickupPartner) {
+        RM_LOGI("may-take-item check: its partner lookup %s (a co-op fall keeps the other player's pickups)",
+                SetPickupPartnerPatch(true) ? "goes through the mod" : "left as it is (bytes not as expected)");
     }
     if (ok && caps.playerGameOver) {
         Hook(re5::addr::kFnPlayerGameOver, reinterpret_cast<void*>(&PlayerGameOverDetour), reinterpret_cast<void**>(&g_origPlayerGameOver),
@@ -783,6 +882,29 @@ int GamePlayerOff(int player) {
     return bytes ? ReadOr<std::uint8_t>(bytes + static_cast<std::uintptr_t>(player), 0) : -1;
 }
 
+// The call (E8 rel32) at re5::addr::kPickupPartnerCall: to PickupPartner, or back to the game's own
+// partner lookup. True when the call is as asked.
+bool SetPickupPartnerPatch(bool on) {
+    if (!engine::Caps().pickupPartner) return false;
+    const std::uintptr_t site = re5::addr::kPickupPartnerCall;
+    const auto bytesFor = [site](std::uintptr_t target, unsigned char out[5]) {
+        const std::int32_t rel = static_cast<std::int32_t>(target - (site + 5));
+        out[0] = 0xE8;
+        std::memcpy(out + 1, &rel, sizeof(rel));
+    };
+    unsigned char game[5], mod[5];
+    bytesFor(re5::addr::kFnPlayerPartner, game);
+    bytesFor(reinterpret_cast<std::uintptr_t>(&PickupPartner), mod);
+    const auto hex = [](const unsigned char b[5]) {
+        char text[16];
+        std::snprintf(text, sizeof(text), "%02X %02X %02X %02X %02X", b[0], b[1], b[2], b[3], b[4]);
+        return std::string(text);
+    };
+    const unsigned char* want = on ? mod : game;
+    if (BytesMatch(site, hex(want).c_str())) return true;
+    return engine::WriteCode(site, hex(on ? game : mod).c_str(), want, 5);
+}
+
 void SetCoopStanding(std::uintptr_t first, std::uintptr_t second) {
     g_standing[0] = first;
     g_standing[1] = second;
@@ -842,6 +964,18 @@ void SetBossTakesGunfire(std::uintptr_t unit) {
         g_em41Logged = 0;
     }
 }
+
+void SetBossAddUnits(const std::vector<std::uintptr_t>& units) {
+    for (int i = 0; i < kBossAddSlots; ++i) {
+        g_bossAdds[i].store(i < static_cast<int>(units.size()) ? units[static_cast<std::size_t>(i)] : 0, std::memory_order_relaxed);
+    }
+}
+
+void SetRunMatchHooks(bool on) { g_runMatchHooks.store(on, std::memory_order_relaxed); }
+
+void SetBossKeepsLastHealth(std::uintptr_t unit) { g_lastHealthBoss.store(unit, std::memory_order_relaxed); }
+
+void SetBossBodyShare(float share) { g_bossBodyShare.store(std::clamp(share, 0.0f, 1.0f), std::memory_order_relaxed); }
 
 bool InstallAttachProbe() {
     if (!engine::Caps().twinGuns) return false;  // the unit_attach signature with the others

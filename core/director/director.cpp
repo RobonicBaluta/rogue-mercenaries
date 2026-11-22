@@ -213,26 +213,72 @@ int Director::PickPoint(const std::optional<std::array<double, 3>>& player, cons
 
 std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::array<double, 3>>& player,
                                          const PointFilter& prefer) {
+    std::vector<PlayerSpot> players;
+    if (player) players.push_back(PlayerSpot{0, *player});
+    return Tick(now, players, prefer);
+}
+
+int Director::ForSeat(int seat) const {
+    return static_cast<int>(std::count_if(ticket_seat_.begin(), ticket_seat_.end(), [seat](const auto& t) { return t.second == seat; }));
+}
+
+std::size_t Director::PickSeat(const std::vector<PlayerSpot>& players) const {
+    std::size_t best = 0;
+    int fewest = players.empty() ? 0 : ForSeat(players[0].seat);
+    for (std::size_t i = 1; i < players.size(); ++i) {
+        const int n = ForSeat(players[i].seat);
+        // Fewer first; even, the one the last spawn did not go to.
+        if (n < fewest || (n == fewest && players[best].seat == last_seat_ && players[i].seat != last_seat_)) {
+            best = i;
+            fewest = n;
+        }
+    }
+    return best;
+}
+
+int Director::PickPointFor(const std::vector<PlayerSpot>& players, std::size_t who, const PointFilter& prefer) {
+    const std::optional<std::array<double, 3>> player =
+        who < players.size() ? std::optional<std::array<double, 3>>(players[who].pos) : std::nullopt;
+    int point = -1;
+    if (players.size() > 1) {
+        // Not in another player's face either.
+        const double minSq = map_.min_player_distance * map_.min_player_distance;
+        const PointFilter apart = [&](const std::array<double, 3>& p) {
+            for (std::size_t i = 0; i < players.size(); ++i) {
+                if (i != who && DistanceSq(p, players[i].pos) < minSq) return false;
+            }
+            return true;
+        };
+        if (prefer) point = PickPoint(player, [&](const std::array<double, 3>& p) { return prefer(p) && apart(p); });
+        if (point < 0) point = PickPoint(player, apart);
+    }
+    if (point < 0 && prefer) point = PickPoint(player, prefer);
+    if (point < 0) point = PickPoint(player);
+    return point;
+}
+
+std::vector<SpawnRequest> Director::Tick(double now, const std::vector<PlayerSpot>& players, const PointFilter& prefer) {
     std::vector<SpawnRequest> out;
     last_now_ = now;
     if (first_tick_ < 0.0) first_tick_ = now;
-    boss_waiting_ = BossWaits(now, player);
+    // A boss at his story spot waits until any player comes near.
+    boss_waiting_ = players.empty() ? BossWaits(now, std::nullopt)
+                                    : std::all_of(players.begin(), players.end(), [&](const PlayerSpot& p) { return BossWaits(now, p.pos); });
     const bool storySpot = map_.boss && map_.boss->spawn.has_value();
     int cap = std::max(1, map_.max_alive);
     if (threat_.max_alive > 0) cap = std::min(cap, threat_.max_alive);
     while (!boss_waiting_ && requested_ < budget_ && alive() + pending() < cap && now >= next_spawn_time_) {
         const MapEnemy* enemy = PickSpecial();
         if (enemy == nullptr) enemy = PickEnemy();
-        // A boss with a story spot appears there; any other unit at a map point.
+        // The player it comes for; a boss with a story spot appears there, any other unit at a map point.
+        const std::size_t who = PickSeat(players);
         int point = -1;
-        if (!storySpot) {
-            point = prefer ? PickPoint(player, prefer) : -1;
-            if (point < 0) point = PickPoint(player);
-        }
+        if (!storySpot) point = PickPointFor(players, who, prefer);
         if (enemy == nullptr || (!storySpot && point < 0)) break;
         SpawnRequest r;
         r.ticket = next_ticket_++;
         r.unit_class = enemy->unit_class;
+        r.seat = who < players.size() ? players[who].seat : -1;
         // The weapon and profile: only variants within the arena's threat (all of them when none fits).
         if (!enemy->arms.empty()) {
             std::vector<std::int64_t> arms;
@@ -270,13 +316,60 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::optional<std::ar
         }
         pending_.emplace_back(r.ticket, point);
         ticket_enemy_[r.ticket] = enemy;
+        if (r.seat >= 0) ticket_seat_[r.ticket] = r.seat;
+        last_seat_ = r.seat;
         last_point_ = point;
         ++requested_;
         out.push_back(std::move(r));
         // The first fill comes at once; refills are spaced out.
         if (requested_ > cap) next_spawn_time_ = now + kSpawnInterval;
     }
+    // A boss's adds (AddWave): all of a wave at once, each at a map point, outside the cap.
+    for (auto it = adds_queued_.begin(); it != adds_queued_.end();) {
+        if (unavailable_.count(it->spec.enemy.unit_class)) {  // not loaded here: dropped
+            it = adds_queued_.erase(it);
+            continue;
+        }
+        if (now < it->at) {
+            ++it;
+            continue;
+        }
+        const std::size_t who = PickSeat(players);
+        const int point = PickPointFor(players, who, prefer);
+        if (point < 0) break;
+        const MapEnemy& enemy = it->spec.enemy;
+        SpawnRequest r;
+        r.ticket = next_ticket_++;
+        r.unit_class = enemy.unit_class;
+        r.add = true;
+        r.seat = who < players.size() ? players[who].seat : -1;
+        if (r.seat >= 0) ticket_seat_[r.ticket] = r.seat;
+        last_seat_ = r.seat;
+        r.arm = enemy.arms.empty() ? -1 : enemy.arms[rng_.Index(enemy.arms.size())];
+        if (!enemy.profiles.empty()) {
+            std::vector<double> weights;
+            for (const EnemyProfile& p : enemy.profiles) weights.push_back(std::max(0.0, p.weight));
+            const std::size_t i = rng_.WeightedIndex(weights);
+            r.fields = enemy.profiles[i < enemy.profiles.size() ? i : 0].fields;
+            for (const auto& [name, value] : r.fields) {
+                if (name == "arm") r.arm = static_cast<std::int64_t>(value);
+            }
+        }
+        r.pos = map_.points[static_cast<std::size_t>(point)];
+        if (it->spec.hp > 0) r.hp = static_cast<int>(std::lround(it->spec.hp * std::max(0.1, threat_.boss_hp_mult)));
+        adds_pending_[r.ticket] = std::move(*it);
+        it = adds_queued_.erase(it);
+        out.push_back(std::move(r));
+    }
     return out;
+}
+
+int Director::BossHp() const {
+    return map_.boss ? static_cast<int>(std::lround(map_.boss->hp * std::max(0.1, threat_.boss_hp_mult))) : 0;
+}
+
+void Director::AddWave(std::vector<AddSpec> adds, double at) {
+    for (AddSpec& a : adds) adds_queued_.push_back(QueuedAdd{std::move(a), at, 0});
 }
 
 bool Director::BossWaits(double now, const std::optional<std::array<double, 3>>& player) const {
@@ -296,6 +389,11 @@ bool Director::BossWaits(double now, const std::optional<std::array<double, 3>>&
 }
 
 void Director::Spawned(std::uint64_t ticket, const std::string& unit_id) {
+    if (const auto add = adds_pending_.find(ticket); add != adds_pending_.end()) {
+        adds_pending_.erase(add);
+        adds_alive_[unit_id] = ticket;
+        return;
+    }
     const auto it = std::find_if(pending_.begin(), pending_.end(), [ticket](const auto& p) { return p.first == ticket; });
     if (it == pending_.end()) return;
     ticket_point_[ticket] = it->second;
@@ -329,6 +427,17 @@ std::optional<std::array<double, 3>> Director::Relocate(const std::string& unit_
 }
 
 void Director::SpawnFailed(std::uint64_t ticket) {
+    ticket_seat_.erase(ticket);
+    if (const auto add = adds_pending_.find(ticket); add != adds_pending_.end()) {
+        // An add tries again a moment later, three times at most.
+        QueuedAdd again = std::move(add->second);
+        adds_pending_.erase(add);
+        if (++again.tries < 3) {
+            again.at = last_now_ + 1.0;
+            adds_queued_.push_back(std::move(again));
+        }
+        return;
+    }
     const auto it = std::find_if(pending_.begin(), pending_.end(), [ticket](const auto& p) { return p.first == ticket; });
     if (it == pending_.end()) return;
     if (it->second >= 0 && it->second < static_cast<int>(point_failures_.size())) ++point_failures_[static_cast<std::size_t>(it->second)];
@@ -342,8 +451,14 @@ void Director::SpawnFailed(std::uint64_t ticket) {
 void Director::Unavailable(const std::string& unit_class) { unavailable_.insert(unit_class); }
 
 bool Director::Died(const std::string& unit_id) {
+    if (const auto add = adds_alive_.find(unit_id); add != adds_alive_.end()) {
+        ticket_seat_.erase(add->second);
+        adds_alive_.erase(add);
+        return true;
+    }
     const auto it = alive_.find(unit_id);
     if (it == alive_.end()) return false;
+    ticket_seat_.erase(it->second);
     ticket_enemy_.erase(it->second);
     ticket_point_.erase(it->second);
     alive_.erase(it);

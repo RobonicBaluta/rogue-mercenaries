@@ -109,10 +109,30 @@ BOSSES = {
     # up an attack (his knee dash: 150, 100 a pistol hit), otherwise he shrugs it off (DmgNot); at
     # zero health he fights on, so the mod counts him dead and plays his own Shrink as his fall
     # (build/runs/20261108-002722-hits-uEm81-s506). His campaign health.
-    506: {'class': 'uEm81', 'name': 'Wesker', 'article': '', 'hp': 8500, 'preload': []},
+    # His second wind (the user, 2026-11-22: "I want him to kneel and that it looks like he's dead, then
+    # it he should get back up and play some voiceline and call in some enemies, little amount of small
+    # majini, 1 or 2 executioners and some chainsaw guy ... then when you end him for the second time,
+    # he's getting a couple of executioners to spawn, an uroboros mkono"): MapBoss phases. The adds
+    # (their archives load with the arena) come from their home maps, Uroboros Mkono with its own
+    # boss health; the third death is real.
+    506: {'class': 'uEm81', 'name': 'Wesker', 'article': '', 'hp': 8500, 'preload': [],
+          'phases': [
+              {'down_seconds': 4, 'down_action': 'cEm80ActHiza', 'rise_action': 'cEm80ActProduction',
+               'adds': [{'class': 'uEm10', 'count': 3}, {'class': 'uEm11', 'count': 2}, {'class': 'uEm20', 'count': 2},
+                        {'class': 'uEm22', 'count': 1}]},
+              {'down_seconds': 4, 'down_action': 'cEm80ActHiza', 'rise_action': 'cEm80ActProduction',
+               'adds': [{'class': 'uEm20', 'count': 2}, {'class': 'uEm41', 'count': 1}]},
+          ]},
     # Jill in her battle suit (2026-11-08): dashes, rolls, fires her SMGs; a killing shot plays her own
     # DieNormal (build/runs/20261108-010222-hits-uEm84-s309). 2000 her own: 6000 (a pistol hit 250-275).
-    309: {'class': 'uEm84', 'name': 'Jill', 'article': '', 'hp': 6000, 'preload': []},
+    # The user's picks (2026-11-22, the boss tuning board): 15000 health, attacking from any distance,
+    # her fire cooldowns at most 1.4 s, close moves every 5 s within 4 m, her wide sweep every 10 s at
+    # range, no flinching but to explosions (an evasion instead), a roll aside 60 percent of the time
+    # after 1.5 s in a player's aim. Her balcony start went (the user, the same day: "she goes up and
+    # uses the smgs but you are below so it doesnt do anything"): she stays on the player's floor.
+    309: {'class': 'uEm84', 'name': 'Jill', 'article': '', 'hp': 15000, 'preload': [],
+          'tuning': {'attack_chance': [0.5, 0.6, 0.8, 0.9, 1.0, 1.0], 'fire_cooldown_max': 1.4, 'melee_every': 5, 'melee_range': 400,
+                     'wide_fire_every': 10, 'flinch_only_explosives': 1, 'dodge_chance': 0.6, 'dodge_aim_seconds': 1.5}},
     # The flying creature of s108 (Popokarimu, by its looks and moves: walks, flies, dives, dashes,
     # strikes with its arm); a killing shot plays its own Die (build/runs/20261108-010801-hits-uEm44-s108).
     # 19200 its own, 50 a pistol hit on it: 12000. It appears at once where the story lands it (s108_em00:
@@ -125,7 +145,15 @@ BOSSES = {
     # fall. His tentacles (uEm8e) and core (uEm8c) come with him.
     # 25 a pistol hit on his body (build/runs/20261108-153415-bossarena-uEm82-s508): 3000, about 120
     # pistol hits (180 at the 12-arena run's 1.5).
-    508: {'class': 'uEm82', 'name': 'Uroboros Wesker', 'article': '', 'hp': 3000, 'preload': ['uEm8c', 'uEm8e']},
+    # The user's picks (2026-11-22, the boss tuning board): 9000 health, body hits at half, rage every 60 s,
+    # a special attack every 20 s (maps.json boss tuning). His second form (the full move set his arena
+    # never switched on: drill grab, ground slam, javelins, Tornado and rage) comes with his first death,
+    # with his health back (the user, the same day: "when he dies we bump it to a second phase"): a 2.5 s
+    # stagger at his core, then his pose byte alone. Not the story's StageChange: its end applies the giant
+    # lava form, whose hit shapes are off ("he's untargetable, no damage").
+    508: {'class': 'uEm82', 'name': 'Uroboros Wesker', 'article': '', 'hp': 9000, 'preload': ['uEm8c', 'uEm8e'],
+          'tuning': {'body_damage': 0.5, 'rage_every': 60, 'rage_seconds': 15, 'specials_every': 20},
+          'phases': [{'down_seconds': 2.5, 'down_action': 'cEm82ActDmgCore', 'transform': True}]},
     # Uroboros Mkono, the stronger Uroboros of the flamethrower room (uEm41, 2026-11-08; called Aheri
     # before 2026-11-19: the game's chapter 5-2 boss): it walks, runs, beats down
     # and grabs on its own; its arm and core parts come with it. The room's own setup is skipped in a
@@ -286,10 +314,12 @@ def write_doc():
     with open('configs/maps.json', 'w', encoding='utf-8', newline='\n') as f:
         text = json.dumps(doc, indent=2)
         text = re.sub(r'\[\s+(-?[\d.]+),\s+(-?[\d.]+),\s+(-?[\d.]+)\s+\]', r'[\1, \2, \3]', text)
-        text = re.sub(r'"(arms|preload|layouts)": \[([^\]]*)\]',
+        text = re.sub(r'"(arms|preload|layouts|hide_models|attack_chance)": \[([^\]]*)\]',
                       lambda m: f'"{m.group(1)}": [' + ', '.join(x.strip() for x in m.group(2).split(',')) + ']', text)
         text = re.sub(r'\{\s+"weight": (\d+),\s+"fields": \{([^}]*)\}\s+\}',
                       lambda m: '{"weight": ' + m.group(1) + ', "fields": {' + ', '.join(x.strip() for x in m.group(2).split(',') if x.strip()) + '}}', text)
+        # A boss phase's adds, one per line.
+        text = re.sub(r'\{\s+"class": "(uEm\w+)",\s+"count": (\d+)\s+\}', r'{"class": "\1", "count": \2}', text)
         f.write(text + '\n')
 
 
@@ -357,12 +387,17 @@ for stage in args.stages:
         # Its story spot (the director spawns it there, not at a waypoint) and when it appears.
         if 'spawn' in boss:
             entry['boss']['spawn'] = [round(c, 1) for c in boss['spawn']]
-        for key in ('facing', 'trigger', 'trigger_box', 'trigger_wait'):
+        for key in ('facing', 'trigger', 'trigger_box', 'trigger_wait', 'phases', 'tuning'):
             if key in boss:
                 entry['boss'][key] = boss[key]
     entry = with_layouts(entry, ladder_layouts(stage))
     if stage in HIDE_MODELS:
         entry['hide_models'] = HIDE_MODELS[stage]
+    # An area made again keeps player 2's start (the map editor's, folded in).
+    old = next((m for m in doc['maps'] if m['stage'] == stage), None)
+    if old is not None and 'start2' in old:
+        entry = {**{k: v for k, v in entry.items() if k not in ('max_alive', 'min_player_distance', 'max_player_distance', 'points', 'chests', 'preload', 'layouts', 'roster', 'boss', 'hide_models')},
+                 'start2': old['start2'], **{k: v for k, v in entry.items() if k in ('max_alive', 'min_player_distance', 'max_player_distance', 'points', 'chests', 'preload', 'layouts', 'roster', 'boss', 'hide_models')}}
     # An area made again keeps its place in the list (the run map draws from it in order).
     if any(m['stage'] == stage for m in doc['maps']):
         doc['maps'] = [entry if m['stage'] == stage else m for m in doc['maps']]

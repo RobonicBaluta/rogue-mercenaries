@@ -123,6 +123,8 @@ void SetDeathEventPass(bool pass);
 /// M10: the human players standing (hp above 0) as the game tick last saw them; a co-op player who
 /// falls while one of them stands is not "dead" to the game's own checks (no split-screen freeze).
 void SetCoopStanding(std::uintptr_t first, std::uintptr_t second);
+/// M10: the may-take-item check's partner lookup through the mod (on) or the game's own (off).
+bool SetPickupPartnerPatch(bool on);
 /// M10: the match's game task (aGame), or 0.
 std::uintptr_t GameTask();
 /// M10: aGame's "off" byte of a player (-1 without the task).
@@ -186,6 +188,18 @@ bool SetAttachProbe(std::uintptr_t parent);
 /// The run's boss (0: none): when its class's own "may this hit hurt" says no (Uroboros Wesker:
 /// anything but his open core), the hit hurts anyway, the game's own damage then (2026-11-08).
 void SetBossTakesGunfire(std::uintptr_t unit);
+/// The boss's adds that are bosses themselves (Uroboros Mkono in Wesker's arena; at most 8): their own
+/// full-health refill is lifted as the run's boss's is, so gunfire wears them down.
+void SetBossAddUnits(const std::vector<std::uintptr_t>& units);
+/// The share of a body hit Uroboros Wesker takes when his own check refused it (not his open core;
+/// maps.json boss tuning "body_damage"; 1: all of it).
+void SetBossBodyShare(float share);
+/// The run's boss while he has a phase left (0: none): no damage takes his last health point, so the
+/// game's own death never marks him dead (its mark turns every later hit away); the mod puts him down.
+void SetBossKeepsLastHealth(std::uintptr_t unit);
+/// A run's match is on: game overs a boss's own death asks for are dropped (the boss Jill's blow-away
+/// death asks for the story's "partner died").
+void SetRunMatchHooks(bool on);
 /// The computer partner of this arena (0: none): an execution of that player does not start the
 /// death camera that ends the match (2026-11-09: a chainsaw killed Josh's Sheva, game over).
 void SetPartnerUnit(std::uintptr_t unit);

@@ -61,6 +61,7 @@ MapDef ApplyMapEdit(const MapDef& map, const MapEdit& edit) {
     points.insert(points.end(), edit.added.begin(), edit.added.end());
     if (!points.empty()) out.points = std::move(points);
     if (edit.start) out.start = edit.start;
+    if (edit.start2) out.start2 = edit.start2;
     auto lower = [](std::string s) {
         std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         return s;
@@ -122,6 +123,11 @@ std::optional<MapEdits> ParseMapEdits(std::string_view text, std::string* error)
             if (!ReadPoint(*s, start)) return fail("map " + key + ": 'start' must be [x, y, z]");
             edit.start = start;
         }
+        if (const auto s = value.find("start2"); s != value.end() && !s->is_null()) {
+            std::array<double, 3> start{};
+            if (!ReadPoint(*s, start)) return fail("map " + key + ": 'start2' must be [x, y, z]");
+            edit.start2 = start;
+        }
         if (!edit.empty()) edits[static_cast<int>(stage)] = std::move(edit);
     }
     return edits;
@@ -144,6 +150,7 @@ std::string SerializeMapEdits(const MapEdits& edits) {
         }
         if (edit.clear) e["clear"] = true;
         if (edit.start) e["start"] = WritePoint(*edit.start);
+        if (edit.start2) e["start2"] = WritePoint(*edit.start2);
         if (!edit.hidden.empty()) e["hidden"] = edit.hidden;
         if (!edit.shown.empty()) e["shown"] = edit.shown;
         maps[std::to_string(stage)] = std::move(e);

@@ -5,6 +5,7 @@
 #include <catch_amalgamated.hpp>
 
 #include "rm/director.h"
+#include "rm/run_controller.h"
 #include "test_support.h"
 
 using namespace rm;
@@ -109,6 +110,24 @@ TEST_CASE("shipped maps load and every map can spawn at tier 1", "[director]") {
         if (m.boss) continue;  // a boss arena spawns its boss alone
         CHECK(std::any_of(m.roster.begin(), m.roster.end(), [](const MapEnemy& e) { return e.min_tier <= 1 && e.weight > 0; }));
     }
+}
+
+TEST_CASE("the shipped maps carry player 2's starts the user set in the map editor", "[director]") {
+    ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    int starts = 0;
+    for (const MapDef& m : r.content->maps()) {
+        if (m.start2) ++starts;
+    }
+    CHECK(starts >= 12);  // 2026-11-22: twelve maps
+    const MapDef* village = nullptr;
+    for (const MapDef& m : r.content->maps()) {
+        if (m.stage == 202) village = &m;
+    }
+    REQUIRE(village != nullptr);
+    REQUIRE(village->start2);
+    CHECK((*village->start2)[0] == Catch::Approx(-7312.4));
+    CHECK((*village->start2)[1] == Catch::Approx(420.0));
 }
 
 TEST_CASE("profiles are picked by weight and carry their fields and weapon", "[director]") {
@@ -364,6 +383,69 @@ TEST_CASE("spawn points away from the player are preferred", "[director]") {
     }
 }
 
+TEST_CASE("in co-op the spawns are shared evenly between the players, each near its own", "[director]") {
+    // Two groups of points 20 m apart, a player in each; a third far group for neither.
+    MapDef map = TestMap(8);
+    map.max_player_distance = 1500.0;
+    map.points = {{600, 0, 0},     {0, 0, 600},     {-600, 0, 0},    {0, 0, -600},     {20600, 0, 0},
+                  {20000, 0, 600}, {19400, 0, 0},   {20000, 0, -600}, {50000, 0, 50000}};
+    const std::vector<PlayerSpot> players = {{0, {0, 0, 0}}, {1, {20000, 0, 0}}};
+    Director d(map, 40, 1, 7);
+    const auto near = [](const SpawnRequest& r, const std::array<double, 3>& p) {
+        return std::hypot(r.pos[0] - p[0], r.pos[2] - p[2]) <= 1500.0;
+    };
+    auto first = d.Tick(0.0, players);
+    REQUIRE(first.size() == 8);  // the first fill at once
+    int bySeat[2] = {0, 0};
+    for (const auto& r : first) {
+        REQUIRE((r.seat == 0 || r.seat == 1));
+        ++bySeat[r.seat];
+        CHECK(near(r, players[static_cast<std::size_t>(r.seat)].pos));  // at its own player's points
+        d.Spawned(r.ticket, "u" + std::to_string(r.ticket));
+    }
+    CHECK(bySeat[0] == 4);
+    CHECK(bySeat[1] == 4);
+    CHECK(d.ForSeat(0) == 4);
+    CHECK(d.ForSeat(1) == 4);
+    // Player 1's three die: the refills go to them, not to player 2.
+    int killed = 0;
+    for (const auto& r : first) {
+        if (r.seat == 0 && killed < 3) {
+            d.Died("u" + std::to_string(r.ticket));
+            ++killed;
+        }
+    }
+    CHECK(d.ForSeat(0) == 1);
+    double now = 1.0;
+    for (int i = 0; i < 3; ++i, now += 1.0) {
+        auto refill = d.Tick(now, players);
+        REQUIRE(refill.size() == 1);
+        CHECK(refill[0].seat == 0);
+        CHECK(near(refill[0], players[0].pos));
+        d.Spawned(refill[0].ticket, "u" + std::to_string(refill[0].ticket));
+    }
+    CHECK(d.ForSeat(0) == 4);
+    CHECK(d.ForSeat(1) == 4);
+    // A failed spawn gives its seat's slot back.
+    for (const auto& r : first) d.Died("u" + std::to_string(r.ticket));
+    auto more = d.Tick(now, players);
+    REQUIRE_FALSE(more.empty());
+    const int seat = more[0].seat;
+    const int before = d.ForSeat(seat);
+    d.SpawnFailed(more[0].ticket);
+    CHECK(d.ForSeat(seat) == before - 1);
+}
+
+TEST_CASE("with one player standing every spawn is theirs", "[director]") {
+    Director d(TestMap(3), 10, 1, 3);
+    const auto spawns = d.Tick(0.0, std::vector<PlayerSpot>{{1, {0, 0, 0}}});
+    REQUIRE(spawns.size() == 3);
+    for (const auto& r : spawns) CHECK(r.seat == 1);
+    // No player known: no seat.
+    Director e(TestMap(3), 10, 1, 3);
+    for (const auto& r : e.Tick(0.0, std::nullopt)) CHECK(r.seat == -1);
+}
+
 TEST_CASE("arenas on a listed map are run by the director", "[director]") {
     ContentSources src = test::FixtureSources();
     src.maps = kMapsJson;
@@ -451,6 +533,9 @@ TEST_CASE("maps.json is validated", "[director]") {
     // A start is a position.
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "start": [1, -2, 3], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "start": [1, 2], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
+    // Player 2's start too (the map editor's, folded in).
+    CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "start": [1, -2, 3], "start2": [4, 5, 6], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
+    CHECK_FALSE(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 104, "start2": [4, 5], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 1, "points": [[0,0,0]], "chests": [[1,2,3]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 503, "rotation": false, "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
     CHECK(errors(R"({"schema_version": 1, "maps": [{"id": "a", "name": "A", "stage": 503, "preload": ["uWp6f", "uEm10Eff"], "points": [[0,0,0]], "roster": [{"class": "uEm10"}]}]})").empty());
@@ -543,4 +628,208 @@ TEST_CASE("a boss with a story spot appears there once the player comes near", "
     REQUIRE(p.size() == 1);
     CHECK_FALSE(p[0].facing.has_value());
     CHECK(std::find(map.points.begin(), map.points.end(), p[0].pos) != map.points.end());
+}
+
+// A boss's second wind (MapBoss phases; the user, 2026-11-22, Midnight Wesker).
+TEST_CASE("a boss's adds come at their time from map points and never count toward the budget", "[director]") {
+    MapDef map = TestMap(5);
+    map.boss = MapBoss{"uEm81", "Wesker", 8500};
+    Director d(map, 30, 3, 9);
+    const auto first = d.Tick(0.0, std::nullopt);
+    REQUIRE(first.size() == 1);
+    d.Spawned(first[0].ticket, "boss");
+    CHECK(d.BossHp() == 8500);
+    d.AddWave({Director::AddSpec{MapEnemy{"uEm10", {0x70100}}, 0}, Director::AddSpec{MapEnemy{"uEm41"}, 10000}}, 6.0);
+    CHECK(d.adds_waiting() == 2);
+    CHECK(d.Tick(5.0, std::nullopt).empty());  // not yet: the boss is still down
+    const auto adds = d.Tick(6.0, std::nullopt);
+    REQUIRE(adds.size() == 2);
+    for (const SpawnRequest& r : adds) {
+        CHECK(r.add);
+        CHECK_FALSE(r.boss);
+    }
+    CHECK(adds[0].unit_class == "uEm10");
+    CHECK(adds[0].arm == 0x70100);
+    CHECK(adds[0].hp == 0);
+    CHECK(adds[1].unit_class == "uEm41");
+    CHECK(adds[1].hp == 10000);
+    d.Spawned(adds[0].ticket, "add_a");
+    d.SpawnFailed(adds[1].ticket);  // asked for again a moment later
+    CHECK(d.Tick(6.5, std::nullopt).empty());
+    const auto again = d.Tick(7.5, std::nullopt);
+    REQUIRE(again.size() == 1);
+    CHECK(again[0].unit_class == "uEm41");
+    d.Spawned(again[0].ticket, "add_b");
+    CHECK(d.IsAdd("add_a"));
+    CHECK(d.adds_alive() == 2);
+    CHECK(d.adds_waiting() == 0);
+    CHECK(d.Died("add_a"));
+    CHECK_FALSE(d.IsAdd("add_a"));
+    CHECK(d.dead() == 0);
+    CHECK_FALSE(d.complete());  // an add is not the budget
+    CHECK(d.Died("boss"));
+    CHECK(d.complete());
+    // A class the stage cannot make is dropped from the wave.
+    Director none(map, 30, 3, 9);
+    none.AddWave({Director::AddSpec{MapEnemy{"uEm22"}, 0}}, 0.0);
+    none.Unavailable("uEm22");
+    for (const SpawnRequest& r : none.Tick(1.0, std::nullopt)) CHECK_FALSE(r.add);
+    CHECK(none.adds_waiting() == 0);
+}
+
+TEST_CASE("a boss with phases goes down twice before its real death, and its adds never clear the arena", "[director]") {
+    ContentSources src = test::FixtureSources();
+    src.maps = R"({"schema_version": 1, "maps": [
+      {"id": "test_map", "name": "Test Map", "stage": 4, "max_alive": 3, "min_player_distance": 500,
+       "points": [[0, 0, 0], [1000, 0, 0], [0, 0, 1000], [2000, 0, 2000]],
+       "roster": [{"class": "uEm10", "arms": [458992], "weight": 3}]},
+      {"id": "u", "name": "U", "stage": 103, "points": [[0, 0, 0]], "boss": {"class": "uEm40", "name": "Uroboros", "hp": 6000}},
+      {"id": "w", "name": "W", "stage": 506, "points": [[0, 0, 0], [1000, 0, 0], [0, 0, 1000]],
+       "boss": {"class": "uEm81", "name": "Wesker", "hp": 8500, "phases": [
+         {"down_seconds": 6, "down_action": "cEm80ActHiza", "rise_action": "cEm80ActProduction#3", "adds": [{"class": "uEm10", "count": 2}]},
+         {"down_seconds": 4, "hp_fraction": 0.5, "adds": [{"class": "uEm40"}]}]}}]})";
+    const auto content = test::Load(src);
+    test::Harness h(content);
+    h.rc.SetMapStage(506);
+    REQUIRE(h.rc.StartRun("alpha", 3).ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    const auto boss = h.rc.DirectorTick(0.0, std::nullopt);
+    REQUIRE(boss.size() == 1);
+    REQUIRE(boss[0].boss);
+    h.rc.DirectorSpawned(boss[0].ticket, "boss");
+    const int bossHp = boss[0].hp;
+
+    CHECK(h.rc.BossPhasesLeft() == 2);
+    const auto one = h.rc.BossWouldDie(10.0);
+    REQUIRE(one);
+    CHECK(h.rc.BossPhasesLeft() == 1);
+    CHECK(one->index == 0);
+    CHECK(one->count == 2);
+    CHECK(one->hp == bossHp);
+    CHECK(one->phase.down_action == "cEm80ActHiza");
+    CHECK(one->phase.rise_action == "cEm80ActProduction#3");
+    CHECK(h.rc.DirectorTick(15.0, std::nullopt).empty());  // still down
+    const auto adds = h.rc.DirectorTick(16.0, std::nullopt);
+    REQUIRE(adds.size() == 2);
+    CHECK(adds[0].add);
+    CHECK(adds[0].unit_class == "uEm10");
+    CHECK(adds[0].arm == 458992);  // its home roster's weapon
+    h.rc.DirectorSpawned(adds[0].ticket, "a1");
+    h.rc.DirectorSpawned(adds[1].ticket, "a2");
+    const std::int64_t before = h.rc.state().supplies.balance();
+    KillEvent k;
+    k.now = 20.0;
+    k.by_player = true;
+    k.enemy_id = "a1";
+    CHECK(h.rc.OnEnemyKilled(k).counted);
+    k.now = 21.0;
+    k.enemy_id = "a2";
+    CHECK(h.rc.OnEnemyKilled(k).counted);
+    CHECK(h.rc.RemainingEnemies() == 1);  // the arena waits for the boss
+    CHECK(h.rc.state().supplies.balance() > before);  // an add's kill pays (its own transaction)
+
+    const auto two = h.rc.BossWouldDie(30.0);
+    REQUIRE(two);
+    CHECK(two->index == 1);
+    CHECK(two->hp == static_cast<int>(std::lround(bossHp * 0.5)));
+    CHECK(h.rc.BossPhasesLeft() == 0);  // his last health point is his own again: the next death is real
+    const auto mkono = h.rc.DirectorTick(34.0, std::nullopt);
+    REQUIRE(mkono.size() == 1);
+    CHECK(mkono[0].unit_class == "uEm40");
+    CHECK(mkono[0].hp >= 6000);  // another map's boss comes with that boss's health
+    CHECK_FALSE(h.rc.BossWouldDie(40.0));  // no phase left: the death is real
+    KillEvent end;
+    end.now = 41.0;
+    end.by_player = true;
+    end.enemy_id = "boss";
+    end.target_is_boss = true;
+    CHECK(h.rc.OnEnemyKilled(end).counted);
+    CHECK(h.rc.RemainingEnemies() == 0);
+}
+
+TEST_CASE("a boss's phases are validated", "[director]") {
+    auto errors = [](const std::string& boss) {
+        ContentSources src = test::FixtureSources();
+        src.maps = std::string(R"({"schema_version": 1, "maps": [{"id": "w", "name": "W", "stage": 506, "points": [[0,0,0]], "boss": )") + boss + "}]}";
+        return Content::LoadFromStrings(src).errors;
+    };
+    CHECK(errors(R"({"class": "uEm81", "name": "W", "hp": 8500, "phases": [{"down_seconds": 6, "adds": [{"class": "uEm81", "count": 2}]}]})").empty());
+    CHECK_FALSE(errors(R"({"class": "uEm81", "name": "W", "phases": [{"adds": [{"class": "uEm99"}]}]})").empty());  // known to no map
+    CHECK_FALSE(errors(R"({"class": "uEm81", "name": "W", "phases": [{"down_seconds": 100}]})").empty());
+    CHECK_FALSE(errors(R"({"class": "uEm81", "name": "W", "phases": [{"hp_fraction": 0}]})").empty());
+    CHECK_FALSE(errors(R"({"class": "uEm81", "name": "W", "phases": [{"adds": [{"class": "uEm81", "count": 50}]}]})").empty());
+    CHECK_FALSE(errors(R"({"class": "uEm81", "name": "W", "phases": [{"sound": "x"}]})").empty());
+}
+
+TEST_CASE("the shipped Wesker goes down twice: small Majini, Executioners and a chainsaw, then Executioners and Uroboros Mkono", "[director]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const MapDef* hangar = r.content->FindMapByStage(506);
+    REQUIRE(hangar != nullptr);
+    REQUIRE(hangar->boss);
+    REQUIRE(hangar->boss->phases.size() == 2);
+    auto classes = [](const BossPhase& p) {
+        std::string out;
+        for (const BossAdd& a : p.adds) out += a.unit_class + "x" + std::to_string(a.count) + " ";
+        return out;
+    };
+    CHECK(classes(hangar->boss->phases[0]) == "uEm10x3 uEm11x2 uEm20x2 uEm22x1 ");
+    CHECK(classes(hangar->boss->phases[1]) == "uEm20x2 uEm41x1 ");
+    // Each add comes from a map that knows it; Uroboros Mkono as a boss, with its health and its parts.
+    for (const BossPhase& p : hangar->boss->phases) {
+        for (const BossAdd& a : p.adds) {
+            INFO(a.unit_class);
+            const BossAddSource source = FindBossAdd(*r.content, a.unit_class);
+            REQUIRE(source.home != nullptr);
+            CHECK(source.boss == (a.unit_class == "uEm41"));
+        }
+    }
+    const BossAddSource mkono = FindBossAdd(*r.content, "uEm41");
+    CHECK(mkono.hp == 10000);
+    REQUIRE(mkono.home != nullptr);
+    CHECK(std::find(mkono.home->preload.begin(), mkono.home->preload.end(), "uEm41Arm") != mkono.home->preload.end());
+}
+
+// The user's picks for Uroboros Wesker and Jill (2026-11-22, the boss tuning board): MapBoss tuning.
+TEST_CASE("a boss's tuning is validated, and the shipped bosses carry the user's picks", "[director]") {
+    auto errors = [](const std::string& tuning) {
+        ContentSources src = test::FixtureSources();
+        src.maps = std::string(R"({"schema_version": 1, "maps": [{"id": "w", "name": "W", "stage": 508, "points": [[0,0,0]], "boss": {"class": "uEm82", "name": "W", "tuning": )") +
+                   tuning + "}}]}";
+        return Content::LoadFromStrings(src).errors;
+    };
+    CHECK(errors(R"({"second_form_at": 0.6, "body_damage": 0.5, "rage_every": 60, "attack_chance": [0.5, 0.6, 0.8, 0.9, 1, 1]})").empty());
+    CHECK_FALSE(errors(R"({"teleport": 1})").empty());                       // unknown
+    CHECK_FALSE(errors(R"({"attack_chance": [0.5, 0.6]})").empty());         // six numbers
+    CHECK_FALSE(errors(R"({"body_damage": 2})").empty());                    // out of range
+    CHECK_FALSE(errors(R"({"rage_every": "often"})").empty());               // a number
+
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const MapDef* volcano = r.content->FindMapByStage(508);
+    REQUIRE(volcano != nullptr);
+    REQUIRE(volcano->boss);
+    CHECK(volcano->boss->hp == 9000);
+    CHECK(volcano->boss->Tuning("second_form_at", -1.0) == Catch::Approx(-1.0));  // his first death brings it instead
+    REQUIRE(volcano->boss->phases.size() == 1);
+    CHECK(volcano->boss->phases[0].transform);
+    CHECK(volcano->boss->phases[0].down_action == "cEm82ActDmgCore");  // not StageChange: its giant form takes no hits
+    CHECK(volcano->boss->phases[0].hp_fraction == Catch::Approx(1.0));
+    CHECK(volcano->boss->phases[0].adds.empty());
+    CHECK(volcano->boss->Tuning("body_damage") == Catch::Approx(0.5));
+    CHECK(volcano->boss->Tuning("rage_every") == Catch::Approx(60));
+    CHECK(volcano->boss->Tuning("specials_every") == Catch::Approx(20));
+    CHECK(volcano->boss->Tuning("dodge_chance", -1.0) == Catch::Approx(-1.0));  // not set: the fallback
+    const MapDef* monarch = r.content->FindMapByStage(309);
+    REQUIRE(monarch != nullptr);
+    REQUIRE(monarch->boss);
+    CHECK(monarch->boss->hp == 15000);
+    CHECK_FALSE(monarch->boss->spawn);  // no balcony start: she fought from up there at a player below
+    REQUIRE(monarch->boss->tuning.count("attack_chance") == 1);
+    CHECK(monarch->boss->tuning.at("attack_chance") == std::vector<double>{0.5, 0.6, 0.8, 0.9, 1.0, 1.0});
+    CHECK(monarch->boss->Tuning("fire_cooldown_max") == Catch::Approx(1.4));
+    CHECK(monarch->boss->Tuning("melee_every") == Catch::Approx(5));
+    CHECK(monarch->boss->Tuning("wide_fire_every") == Catch::Approx(10));
+    CHECK(monarch->boss->Tuning("flinch_only_explosives") == Catch::Approx(1));
+    CHECK(monarch->boss->Tuning("dodge_chance") == Catch::Approx(0.6));
 }

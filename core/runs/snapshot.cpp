@@ -133,6 +133,15 @@ RunSnapshot RunController::Snapshot(double now) const {
     if (const ArenaMetrics* a = CurrentArena()) {
         s.kills = a->player_kills;
         s.budget = a->budget;
+        if (run_.phase == Phase::ArenaActive) {
+            s.arena_seconds = std::max(0.0, now - a->start_time);
+            s.damage_taken = a->damage_taken;
+            if (const RouteDef* r = Route()) {
+                s.par_seconds = r->modifiers.par_time_seconds;
+                const double hp_max = a->hp_max_seen > 0.0 ? a->hp_max_seen : run_.player_hp_max.value_or(0.0);
+                s.rating_now = ComputeRating(c.economy().rating, s.arena_seconds, s.par_seconds, a->damage_taken, hp_max, a->deaths);
+            }
+        }
     }
     s.remaining = RemainingEnemies();
     s.supplies = run_.supplies.balance();

@@ -666,6 +666,7 @@
       "name": "Civilian Checkpoint",
       "stage": 100,
       "start": [5576.6, -0.0, 991.6],
+      "start2": [10466.9, -0.0, 7619.3],
       "max_alive": 12,
       "min_player_distance": 800,
       "max_player_distance": 3500,
@@ -758,6 +759,7 @@
       "name": "The Bridge",
       "stage": 104,
       "start": [2123.6, -350.0, -10882.3],
+      "start2": [4069.3, -350.0, -14601.5],
       "max_alive": 12,
       "min_player_distance": 800,
       "max_player_distance": 3500,
@@ -849,6 +851,7 @@
       "name": "Shanty Town",
       "stage": 105,
       "start": [5370.4, 630.0, -1063.4],
+      "start2": [-162.9, -97.4, -2338.0],
       "max_alive": 12,
       "min_player_distance": 800,
       "max_player_distance": 3500,
@@ -959,6 +962,7 @@
       "name": "The Port",
       "stage": 113,
       "start": [-92.9, 16.7, -4678.2],
+      "start2": [-2554.0, 51.7, -6151.2],
       "max_alive": 12,
       "min_player_distance": 800,
       "max_player_distance": 3500,
@@ -1739,6 +1743,7 @@
       "name": "Village (Campaign)",
       "stage": 202,
       "start": [-3969.7, 301.2, 7726.8],
+      "start2": [-7312.4, 420.0, 1941.6],
       "max_alive": 12,
       "min_player_distance": 800,
       "max_player_distance": 3500,
@@ -1775,6 +1780,7 @@
         [-1057.4, -100.0, 7155.4]
       ],
       "preload": ["uEm12", "uEm10Eff", "uOm1202", "uOm1203", "uWp5f", "uEm0d", "uWp60", "uEm62", "uWp3c", "uWp3d", "uWp3e", "uEm0c", "uWp62", "uWp80", "uEm0b", "uEm24", "uWp64", "uOm0100"],
+      "hide_models": ["OM101BL_IDo00_U024"],
       "roster": [
         {
           "class": "uEm12",
@@ -1813,6 +1819,7 @@
       "name": "Drilling Facilities",
       "stage": 204,
       "start": [33716.0, 114.9, -88388.3],
+      "start2": [33027.2, 114.9, -86984.0],
       "max_alive": 12,
       "min_player_distance": 800,
       "max_player_distance": 3500,
@@ -1876,6 +1883,7 @@
       "name": "Ship Deck (Campaign)",
       "stage": 500,
       "start": [529.4, 0.0, 2613.4],
+      "start2": [1326.6, 200.2, -4307.0],
       "max_alive": 12,
       "min_player_distance": 800,
       "max_player_distance": 3500,
@@ -2653,6 +2661,7 @@
       "name": "Ancient Village",
       "stage": 300,
       "start": [-3314.4, 2996.6, 46320.6],
+      "start2": [-3830.8, 2987.5, 45193.0],
       "max_alive": 12,
       "min_player_distance": 800,
       "max_player_distance": 3500,
@@ -2983,6 +2992,7 @@
       "name": "Worship Area",
       "stage": 302,
       "start": [1324.4, 950.0, 14491.2],
+      "start2": [-1069.3, 950.0, 17269.4],
       "max_alive": 12,
       "min_player_distance": 800,
       "max_player_distance": 3500,
@@ -3446,6 +3456,7 @@
       "name": "Missile Area 2nd Floor",
       "stage": 314,
       "start": [-2455.7, 900.0, -22567.5],
+      "start2": [-3324.7, 900.0, -19423.5],
       "max_alive": 12,
       "min_player_distance": 800,
       "max_player_distance": 3500,
@@ -3535,6 +3546,7 @@
       "name": "Power Station",
       "stage": 310,
       "start": [-3955.3, -1066.8, -24615.7],
+      "start2": [2986.4, -1300.0, -23941.4],
       "max_alive": 9,
       "min_player_distance": 800,
       "max_player_distance": 3500,
@@ -3867,6 +3879,7 @@
       "name": "Engine Room",
       "stage": 505,
       "start": [-2996.4, 500.9, 504.4],
+      "start2": [-1622.7, 400.9, 76.7],
       "max_alive": 12,
       "min_player_distance": 800,
       "max_player_distance": 3500,
@@ -4220,7 +4233,29 @@
         "class": "uEm81",
         "name": "Wesker",
         "article": "",
-        "hp": 8500
+        "hp": 8500,
+        "phases": [
+          {
+            "down_seconds": 4,
+            "down_action": "cEm80ActHiza",
+            "rise_action": "cEm80ActProduction",
+            "adds": [
+              {"class": "uEm10", "count": 3},
+              {"class": "uEm11", "count": 2},
+              {"class": "uEm20", "count": 2},
+              {"class": "uEm22", "count": 1}
+            ]
+          },
+          {
+            "down_seconds": 4,
+            "down_action": "cEm80ActHiza",
+            "rise_action": "cEm80ActProduction",
+            "adds": [
+              {"class": "uEm20", "count": 2},
+              {"class": "uEm41", "count": 1}
+            ]
+          }
+        ]
       }
     },
     {
@@ -4248,7 +4283,20 @@
         "class": "uEm82",
         "name": "Uroboros Wesker",
         "article": "",
-        "hp": 3000
+        "hp": 9000,
+        "tuning": {
+          "body_damage": 0.5,
+          "rage_every": 60,
+          "rage_seconds": 15,
+          "specials_every": 20
+        },
+        "phases": [
+          {
+            "down_seconds": 2.5,
+            "down_action": "cEm82ActDmgCore",
+            "transform": true
+          }
+        ]
       }
     },
     {
@@ -5246,7 +5294,17 @@
         "class": "uEm84",
         "name": "Jill",
         "article": "",
-        "hp": 6000
+        "hp": 15000,
+        "tuning": {
+          "attack_chance": [0.5, 0.6, 0.8, 0.9, 1.0, 1.0],
+          "fire_cooldown_max": 1.4,
+          "melee_every": 5,
+          "melee_range": 400,
+          "wide_fire_every": 10,
+          "flinch_only_explosives": 1,
+          "dodge_chance": 0.6,
+          "dodge_aim_seconds": 1.5
+        }
       }
     },
     {
