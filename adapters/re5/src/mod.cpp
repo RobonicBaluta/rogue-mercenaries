@@ -6792,6 +6792,34 @@ bool PlayerFacing(std::uintptr_t player, float& fx, float& fz) {
 // bit and timer his Tornado sets), and a ground slam, javelin or arm dance on a clock. Jill (uEm84):
 // her attack chances and fire cooldowns (her own tables, patched while her arena runs, put back after),
 // her close moves and her wide sweep on clocks, no flinching but to explosions, a roll aside when aimed at.
+// A boss's flinch from damage that plays no reaction of its own (the user, 2026-11-22: "Jill, Wesker and
+// Uroboros Wesker doesn't reac to flamethrower, maybe it would be nice that they flinch if they get X%
+// damage while doing one animation or attack"): kBossFlinchShare of its health taken during one of its
+// actions (from anything: the flame, burns, hits) plays its hurt reaction, at most every
+// kBossFlinchCooldown, never while it is down, dying, holding a player or in a scripted move.
+struct BossFlinchClass {
+    const char* cls;
+    const char* action;
+};
+constexpr BossFlinchClass kBossFlinches[] = {
+    {"uEm84", "cEm84ActDmgNormalU"},  // Jill
+    {"uEm81", "cEm80ActDmgS"},        // Wesker
+    {"uEm80", "cEm80ActDmgS"},
+    {"uEm82", "cEm82ActDmgS"},        // Uroboros Wesker
+};
+constexpr double kBossFlinchShare = 0.05;
+constexpr double kBossFlinchCooldown = 4.0;
+struct BossFlinch {
+    std::uintptr_t unit = 0;
+    int action = -2;
+    int hpAtStart = -1;
+    double cooldownUntil = 0.0;
+    double forcedAt = -1.0e9;  // the mod's own flinch (Jill's explosives-only rule leaves it)
+    int logs = 0;
+};
+BossFlinch g_bossFlinch;
+bool DyingAction(const std::string& action);  // with DriveZeroHealth, below
+
 struct BossTuning {
     std::uintptr_t unit = 0;
     int generation = -1;
@@ -6996,7 +7024,8 @@ void DriveJill(const rm::MapBoss& boss, std::uintptr_t unit, const std::string& 
     // roll aside or a roll and burst in turn (the user, 2026-11-22: "even if she doesnt flinch she still
     // resets her atack she sould evade a bit or look more natural"; her guns up again read as a reset).
     if (boss.Tuning("flinch_only_explosives", 0.0) > 0.0 && action != t.lastAction && action.find("Dmg") != std::string::npos &&
-        action.find("Die") == std::string::npos && now - g_bossLastHit.at < 0.5 && !g_bossLastHit.explosive) {
+        action.find("Die") == std::string::npos && now - g_bossLastHit.at < 0.5 && !g_bossLastHit.explosive &&
+        now - g_bossFlinch.forcedAt > 1.0) {
         const std::string evade = (t.picks++ % 2 == 0) ? "cEm84ActRoll#" + std::to_string(t.picks % 4) : std::string("cEm84ActRollFire");
         const bool ok = StartActionSpec(unit, evade);
         if (now >= t.nextFlinchLog) {
@@ -7034,6 +7063,50 @@ void DriveJill(const rm::MapBoss& boss, std::uintptr_t unit, const std::string& 
                 }
             }
         }
+    }
+}
+
+void DriveBossFlinch(double now) {
+    BossFlinch& f = g_bossFlinch;
+    const std::uintptr_t unit = g->boss.unit;
+    if (!unit || g->boss.dead || !g->match.inMatch || BossIsDown(unit)) {
+        if (!unit) f = {};
+        return;
+    }
+    const std::string cls = engine::ClassName(unit);
+    const BossFlinchClass* entry = nullptr;
+    for (const BossFlinchClass& c : kBossFlinches) {
+        if (cls == c.cls) entry = &c;
+    }
+    const auto hp = engine::ReadHp(unit);
+    if (entry == nullptr || !hp || hp->max <= 0 || hp->hp <= 0) return;
+    const int action = engine::CurrentActionId(unit);
+    if (f.unit != unit) {
+        f = {};
+        f.unit = unit;
+    }
+    // From the start of each action (and from a heal: a phase's health back), what it took since.
+    if (action != f.action || hp->hp > f.hpAtStart) {
+        f.action = action;
+        f.hpAtStart = hp->hp;
+        return;
+    }
+    if (f.hpAtStart - hp->hp < kBossFlinchShare * hp->max || now < f.cooldownUntil) return;
+    const std::string doing = engine::CurrentActionName(unit);
+    if (doing == entry->action || DyingAction(doing) ||
+        ContainsAny(doing, {"Dmg", "Catch", "Kata", "Syuto", "Nee", "Pinion", "Drill", "Hold", "_PL", "Event", "StageChange", "Production",
+                            "Hiza", "Shrink", "Appear", "Demo", "Hang", "Climb", "Jump"})) {
+        return;  // keeps counting: it flinches once it is free
+    }
+    const int taken = f.hpAtStart - hp->hp;
+    const bool ok = StartActionSpec(unit, entry->action);
+    f.cooldownUntil = now + kBossFlinchCooldown;
+    f.forcedAt = now;
+    f.action = engine::CurrentActionId(unit);
+    f.hpAtStart = hp->hp;
+    if (f.logs++ < 12) {
+        RM_LOGI("boss: %s took %d (%.1f%% of %d) in %s: %s %s", cls.c_str(), taken, 100.0 * taken / hp->max, hp->max, doing.c_str(),
+                entry->action, ok ? "started" : "refused");
     }
 }
 
@@ -7651,6 +7724,11 @@ struct ElementStatus {
     // Plague (evolved Toxic): while poisoned by it, its death lets out a cloud (PlagueOnDeath).
     double cloudFraction = 0.0, cloudRadius = 0.0, cloudSeconds = 0.0;
     bool clouded = false;       // its cloud is out already
+    // The flamethrower's (weapons.json stream_*; the user, 2026-11-22): its fast burn, until a total is
+    // dealt (FlameBurn), and its poison stacks, until the enemy dies (PoisonStack).
+    double flameBurnLeft = 0.0, flameBurnDps = 0.0, nextFlameTick = 0.0;
+    int stacks = 0;
+    double stackDps = 0.0, lastStackAt = -100.0, nextStackTick = 0.0;
 };
 std::map<std::uintptr_t, ElementStatus> g_elementStatus;
 
@@ -7665,6 +7743,12 @@ std::map<std::string, int> g_procLogged;  // log lines per proc kind this match
 bool StatusActive(std::uintptr_t enemy, double now, double ElementStatus::*until) {
     const auto it = g_elementStatus.find(enemy);
     return it != g_elementStatus.end() && now < it->second.*until;
+}
+
+// Poisoned: by a hit's poison, or by the flamethrower's stacks (they never end).
+bool PoisonedNow(std::uintptr_t enemy, double now) {
+    const auto it = g_elementStatus.find(enemy);
+    return it != g_elementStatus.end() && (now < it->second.poisonUntil || it->second.stacks > 0);
 }
 
 bool FrozenNow(std::uintptr_t enemy, double now) { return StatusActive(enemy, now, &ElementStatus::frozenUntil); }
@@ -7805,8 +7889,9 @@ void DriveZeroHealth(double now) {
             g_directorDead.erase(unit);
             continue;
         }
-        // Only the director's own (a boss's parts and the stage's units are none of these).
-        if (!g_directorDead.count(unit) && !g->directorUnits.count(unit)) continue;
+        // Only the director's own (a boss's parts and the stage's units are none of these), and U-8's
+        // spawns (uEmc5, 1 health; the user, 2026-11-22: "not the spawns neither").
+        if (!g_directorDead.count(unit) && !g->directorUnits.count(unit) && engine::ClassName(unit) != "uEmc5") continue;
         if (unit == g->boss.unit || g_bossAddUnits.count(unit) || g_deadBossAdds.count(unit)) continue;
         seen.insert(unit);
         ZeroHealthTrack& t = g_zeroHealth.try_emplace(unit, ZeroHealthTrack{now, false}).first->second;
@@ -7868,6 +7953,43 @@ bool Ignite(std::uintptr_t enemy, double dps, double seconds, double now) {
     if (!fresh) return false;
     st.nextTick = std::max(st.nextTick, now + kElementTick);
     return React(enemy, Reaction::Fire, now);
+}
+
+// The flamethrower's burn (Incendiary's stream_*): `dps` a second until `total` is dealt; a burn while
+// one burns keeps the higher rate and tops its total up. True when it took its on-fire reaction.
+constexpr double kFlameBurnTick = 0.2;
+bool FlameBurn(std::uintptr_t enemy, double dps, double total, double now) {
+    if (enemy == g->boss.unit || dps <= 0.0 || total <= 0.0) return false;
+    ElementStatus& st = g_elementStatus[enemy];
+    const bool fresh = st.flameBurnLeft <= 0.0;
+    st.flameBurnDps = fresh ? dps : std::max(st.flameBurnDps, dps);
+    st.flameBurnLeft = std::max(st.flameBurnLeft, total);
+    if (!fresh) return false;
+    st.nextFlameTick = now + kFlameBurnTick;
+    return React(enemy, Reaction::Fire, now);
+}
+
+// The flamethrower's poison (Toxic's stream_*): one more stack of `dps` a second, at most every
+// `every` s and up to `maxStacks`; the stacks tick once a second until the enemy dies. Plague's
+// cloud as a hit's poison sets it. True when it took its acid reaction (its first stack).
+constexpr double kStackTick = 1.0;
+bool PoisonStack(std::uintptr_t enemy, double dps, double every, int maxStacks, double now, double cloudFraction, double cloudRadius,
+                 double cloudSeconds) {
+    if (enemy == g->boss.unit || dps <= 0.0) return false;
+    ElementStatus& st = g_elementStatus[enemy];
+    if (now - st.lastStackAt < every) return false;
+    st.lastStackAt = now;
+    const bool first = st.stacks <= 0;
+    if (st.stacks < std::max(1, maxStacks)) ++st.stacks;
+    st.stackDps = std::max(st.stackDps, dps);
+    if (cloudFraction > 0.0) {
+        st.cloudFraction = std::max(st.cloudFraction, cloudFraction);
+        st.cloudRadius = std::max(st.cloudRadius, cloudRadius);
+        st.cloudSeconds = std::max(st.cloudSeconds, cloudSeconds);
+    }
+    if (!first) return false;
+    st.nextStackTick = now + kStackTick;
+    return React(enemy, Reaction::Acid, now);
 }
 
 // The equipped gun's inventory record (0: none).
@@ -8096,15 +8218,21 @@ void ApplyProc(const QueuedProc& q, double now) {
                 ++reached;
             }
             break;
-        case rm::ProcKind::PoisonCloud:
+        case rm::ProcKind::PoisonCloud: {
             // Plague: the cloud of a poisoned enemy that died poisons those around it (no cloud of theirs).
+            // It looks like the incendiary grenade's fire in green, on the dead one (rm::fx::kMiasmaSource).
+            const std::string miasma = rm::fx::FlameEffectPath(rm::fx::kMiasmaCode, 0);
+            const bool shown = engine::EffectInMemory(miasma.c_str()) && engine::PlayEffect(miasma.c_str(), q.enemy);
+            static int miasmaLogs = 0;
+            if (miasmaLogs++ < 3) RM_LOGI("elements: Plague's cloud on %08X: %s", static_cast<unsigned>(q.enemy), shown ? miasma.c_str() : "its old look");
             for (const auto& [enemy, d] : EnemiesNear(q.at, static_cast<float>(p.radius), q.enemy)) {
                 (void)d;
                 PoisonEnemy(enemy, p.dps, p.seconds, now);
-                PlayLook(p, enemy, now);
+                if (!shown) PlayLook(p, enemy, now);
                 ++reached;
             }
             break;
+        }
         case rm::ProcKind::Execute: {
             const auto hp = engine::ReadHp(q.enemy);
             if (!hp || hp->hp <= 0 || q.enemy == g->boss.unit) {
@@ -8173,7 +8301,7 @@ void PlagueOnDeath(std::uintptr_t enemy, int maxHp, double now) {
     const auto it = g_elementStatus.find(enemy);
     if (it == g_elementStatus.end()) return;
     ElementStatus& st = it->second;
-    if (st.clouded || st.cloudFraction <= 0.0 || st.cloudRadius <= 0.0 || now >= st.poisonUntil + 0.5) return;
+    if (st.clouded || st.cloudFraction <= 0.0 || st.cloudRadius <= 0.0 || (now >= st.poisonUntil + 0.5 && st.stacks <= 0)) return;
     st.clouded = true;
     QueuedProc q;
     q.enemy = enemy;
@@ -8300,7 +8428,7 @@ double StreamMultiplier(std::uintptr_t enemy, double now) {
         ctx.player_hp_max = me->max;
     }
     ctx.target_frozen = StatusActive(enemy, now, &ElementStatus::frozenUntil);
-    ctx.target_poisoned = StatusActive(enemy, now, &ElementStatus::poisonUntil);
+    ctx.target_poisoned = PoisonedNow(enemy, now);
     return g->run->ComputeOutgoingMultiplier(ctx).multiplier;  // its procs: the stream's elements below
 }
 
@@ -8326,6 +8454,8 @@ bool BossFlameDamage(std::uintptr_t boss, double amount, double now) {
     return done;
 }
 
+constexpr int kBigBones = 48;           // a big one's bones the flame is tested against
+constexpr int kBigEnemyHp = 6000;       // big: the boss, and one of this much health or more
 constexpr float kFlameReach = 500.0f;             // 5 m
 constexpr float kFlameCosHalfAngle = 0.866f;      // 30 degrees either side
 constexpr float kFlameHeight = 250.0f;
@@ -8376,15 +8506,32 @@ void DriveFlameStream(double now) {
     float at[3];
     UnitPosition(player, at);
     std::vector<std::pair<std::uintptr_t, float>> inFlame;
+    const auto inCone = [&](const float p[3], float& dist) {
+        const float dx = p[0] - at[0], dz = p[2] - at[2];
+        const float d = std::sqrt(dx * dx + dz * dz);
+        if (d < 1.0f || d > kFlameReach || std::fabs(p[1] - at[1]) > kFlameHeight) return false;
+        if ((dx * fx + dz * fz) / d < kFlameCosHalfAngle) return false;
+        dist = d;
+        return true;
+    };
     for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
         if (e.hp <= 0 || (e.object == g->boss.unit && g->boss.dead)) continue;
         float p[3];
         UnitPosition(e.object, p);
-        const float dx = p[0] - at[0], dz = p[2] - at[2];
-        const float d = std::sqrt(dx * dx + dz * dz);
-        if (d < 1.0f || d > kFlameReach || std::fabs(p[1] - at[1]) > kFlameHeight) continue;
-        if ((dx * fx + dz * fz) / d < kFlameCosHalfAngle) continue;
-        inFlame.emplace_back(e.object, d);
+        float d = 0.0f;
+        bool hit = inCone(p, d);
+        // A big one by its bones (the user, 2026-11-22: "U-8 Takes no flamethrower damage, not him, not
+        // the legs": its origin is 4 to 5 m below the player and 7 to 25 m off while its legs are in
+        // the flame): any of its first kBigBones in the flame counts, the nearest one its distance.
+        if (!hit && (e.object == g->boss.unit || e.max >= kBigEnemyHp)) {
+            for (int bone = 0; bone < kBigBones; ++bone) {
+                float b[3], bd = 0.0f;
+                if (!engine::JointPosition(e.object, bone, b) || !inCone(b, bd)) continue;
+                if (!hit || bd < d) d = bd;
+                hit = true;
+            }
+        }
+        if (hit) inFlame.emplace_back(e.object, d);
     }
     std::sort(inFlame.begin(), inFlame.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
     for (auto it = chill.begin(); it != chill.end();) {  // out of the flame a second: the chill is gone
@@ -8422,14 +8569,23 @@ void DriveFlameStream(double now) {
                 look.kind = d->spread_radius > 0.0 ? rm::ProcKind::IgniteAround : rm::ProcKind::Burn;
                 for (const auto& [enemy, dist] : inFlame) {
                     (void)dist;
-                    Ignite(enemy, kStreamHitDamage * d->dps_fraction, d->seconds, now);
+                    // The flame's own burn: fast, until a total, of its damage a second here.
+                    const double flameDps = StreamDpsOf(enemy) * StreamMultiplier(enemy, now);
+                    const auto burn = [&](std::uintptr_t who) {
+                        if (d->stream_dps_fraction > 0.0 && d->stream_total_fraction > 0.0) {
+                            FlameBurn(who, flameDps * d->stream_dps_fraction, flameDps * d->stream_total_fraction, now);
+                        } else {
+                            Ignite(who, kStreamHitDamage * d->dps_fraction, d->seconds, now);
+                        }
+                    };
+                    burn(enemy);
                     PlayLook(look, enemy, now);
                     if (d->spread_radius <= 0.0) continue;
                     float p[3];
                     UnitPosition(enemy, p);
                     for (const auto& [other, od] : EnemiesNear(p, static_cast<float>(d->spread_radius), enemy)) {
                         (void)od;
-                        Ignite(other, kStreamHitDamage * d->dps_fraction, d->seconds, now);
+                        burn(other);
                     }
                 }
                 break;
@@ -8437,7 +8593,14 @@ void DriveFlameStream(double now) {
                 look.kind = rm::ProcKind::Poison;
                 for (const auto& [enemy, dist] : inFlame) {
                     (void)dist;
-                    PoisonEnemy(enemy, kStreamHitDamage * d->dps_fraction, d->seconds, now, d->cloud_dps_fraction, d->radius);
+                    // The flame's own poison: a slow stack a second that never ends.
+                    if (d->stream_dps_fraction > 0.0 && d->stream_stack_seconds > 0.0) {
+                        const double flameDps = StreamDpsOf(enemy) * StreamMultiplier(enemy, now);
+                        PoisonStack(enemy, flameDps * d->stream_dps_fraction, d->stream_stack_seconds, d->stream_max_stacks, now,
+                                    d->cloud_dps_fraction, d->radius, d->seconds);
+                    } else {
+                        PoisonEnemy(enemy, kStreamHitDamage * d->dps_fraction, d->seconds, now, d->cloud_dps_fraction, d->radius);
+                    }
                     PlayLook(look, enemy, now);
                 }
                 break;
@@ -8632,9 +8795,31 @@ void DriveElements(double now) {
     for (auto it = g_elementStatus.begin(); it != g_elementStatus.end();) {
         ElementStatus& st = it->second;
         const bool burning = now < st.burnUntil, poisoned = now < st.poisonUntil, frozen = now < st.frozenUntil;
-        if (!living.count(it->first) || (!burning && !poisoned && !frozen && now - st.reactedAt > kReactionCooldown)) {
+        const bool flame = st.flameBurnLeft > 0.0, stacked = st.stacks > 0;
+        if (!living.count(it->first) || (!burning && !poisoned && !frozen && !flame && !stacked && now - st.reactedAt > kReactionCooldown)) {
             it = g_elementStatus.erase(it);
             continue;
+        }
+        if (flame && now >= st.nextFlameTick) {
+            st.nextFlameTick = now + kFlameBurnTick;
+            const double dealt = std::min(st.flameBurnLeft, st.flameBurnDps * kFlameBurnTick);
+            st.flameBurnLeft = std::max(0.0, st.flameBurnLeft - dealt);
+            if (st.flameBurnLeft <= 0.0) st.flameBurnDps = 0.0;
+            st.owed += dealt;
+            const double whole = std::floor(st.owed);
+            if (whole >= 1.0) {
+                st.owed -= whole;
+                ElementDamage(it->first, whole, now, Reaction::Fire);
+            }
+        }
+        if (stacked && now >= st.nextStackTick) {
+            st.nextStackTick = now + kStackTick;
+            st.owed += st.stacks * st.stackDps * kStackTick;
+            const double whole = std::floor(st.owed);
+            if (whole >= 1.0) {
+                st.owed -= whole;
+                ElementDamage(it->first, whole, now, Reaction::Acid);
+            }
         }
         if ((burning || poisoned) && now >= st.nextTick) {
             st.nextTick = now + kElementTick;
@@ -12717,7 +12902,7 @@ private:
         // The rarity remake: the target's statuses, the boss, the rounds left (Last Word).
         ctx.target_is_boss = hit.enemy != 0 && hit.enemy == g->boss.unit;
         ctx.target_frozen = StatusActive(hit.enemy, ctx.now, &ElementStatus::frozenUntil);
-        ctx.target_poisoned = StatusActive(hit.enemy, ctx.now, &ElementStatus::poisonUntil);
+        ctx.target_poisoned = PoisonedNow(hit.enemy, ctx.now);
         if (const std::uintptr_t slot = EquippedGunSlot(); slot && !*ctx.is_melee) {
             ctx.magazine_left = ReadOr<std::int32_t>(slot + re5::off::kSlotCount, -1);
         }
@@ -12928,7 +13113,7 @@ private:
         { ProfileScope p("tick:SkipMercIntro"); SkipMercIntro(g->run->HasActiveRun()); }  // a run's match starts without the announcer's intro
         { ProfileScope p("tick:DriveDirector"); DriveDirector(now); }
         { ProfileScope p("tick:DriveBossFall"); DriveBossFall(now); }
-        { ProfileScope p("tick:DriveBossDown"); DriveBossDown(now); DriveAddFalls(now); TameAddDeaths(now); DriveBossTuning(now); }
+        { ProfileScope p("tick:DriveBossDown"); DriveBossDown(now); DriveAddFalls(now); TameAddDeaths(now); DriveBossTuning(now); DriveBossFlinch(now); }
         { ProfileScope p("tick:TameBossKills"); TameBossKills(); }
         { ProfileScope p("tick:ReleaseBossHolds"); ReleaseBossHolds(now); }
         { ProfileScope p("tick:WatchEventCamera"); WatchEventCamera(now); }

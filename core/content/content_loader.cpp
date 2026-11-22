@@ -631,7 +631,8 @@ std::vector<std::string> AffixImpliedCaps(AffixKind kind) {
 // An element's numbers (its own, or its "evolved" block's); the element itself is set already.
 void ParseElementNumbers(const Diag& d, const json& e, ElementDef& el, bool evolved) {
     std::vector<std::string_view> keys = {"name", "description", "chance", "seconds", "dps_fraction", "damage_fraction",
-                                          "damage_cap", "radius", "targets", "taken_mult", "boss_bonus", "stream_seconds"};
+                                          "damage_cap", "radius", "targets", "taken_mult", "boss_bonus", "stream_seconds",
+                                          "stream_dps_fraction", "stream_total_fraction", "stream_stack_seconds", "stream_max_stacks"};
     if (evolved) {
         for (std::string_view k : {"spread_radius", "shatter_freeze_seconds", "cloud_dps_fraction", "chain"}) keys.push_back(k);
     } else {
@@ -652,6 +653,16 @@ void ParseElementNumbers(const Diag& d, const json& e, ElementDef& el, bool evol
     if (GetNumber(d, e, "taken_mult", el.taken_mult, false)) CheckRange(d, "taken_mult", el.taken_mult, 0.1, 10.0);
     if (GetNumber(d, e, "boss_bonus", el.boss_bonus, false)) CheckRange(d, "boss_bonus", el.boss_bonus, 0.0, 5.0);
     if (GetNumber(d, e, "stream_seconds", el.stream_seconds, false)) CheckRange(d, "stream_seconds", el.stream_seconds, 0.0, 30.0);
+    if (GetNumber(d, e, "stream_dps_fraction", el.stream_dps_fraction, false)) {
+        CheckRange(d, "stream_dps_fraction", el.stream_dps_fraction, 0.0, 5.0);
+    }
+    if (GetNumber(d, e, "stream_total_fraction", el.stream_total_fraction, false)) {
+        CheckRange(d, "stream_total_fraction", el.stream_total_fraction, 0.0, 20.0);
+    }
+    if (GetNumber(d, e, "stream_stack_seconds", el.stream_stack_seconds, false)) {
+        CheckRange(d, "stream_stack_seconds", el.stream_stack_seconds, 0.1, 30.0);
+    }
+    GetIntRange(d, e, "stream_max_stacks", el.stream_max_stacks, false, 0, 100);
     if (GetNumber(d, e, "weight", el.weight, false)) CheckRange(d, "weight", el.weight, 0.0, 1000.0);
     if (GetNumber(d, e, "spread_radius", el.spread_radius, false)) CheckRange(d, "spread_radius", el.spread_radius, 0.0, 5000.0);
     if (GetNumber(d, e, "shatter_freeze_seconds", el.shatter_freeze_seconds, false)) {

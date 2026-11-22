@@ -74,7 +74,13 @@ inline constexpr FlameLook kFlameLooks[] = {
 };
 inline constexpr const char* kEffectsArchive = "rmEffects";  // Image\Archive\rmEffects.arc
 /// Raised when what BuildFlameEffects makes changes (a stale archive is built again).
-inline constexpr int kEffectsVersion = 1;
+inline constexpr int kEffectsVersion = 2;
+/// Plague's death cloud (the user, 2026-11-22: "use the incendiary grenade effect for the miasma from the
+/// upgraded toxic version (but green of course) on the dead enemy"): the incendiary grenade's fire
+/// (uWp07's effect\cef\wp\wp07 names this list in coreEff.arc) in the toxic look's green, at
+/// FlameEffectPath(kMiasmaCode, 0); every texture it names recoloured under "effect\tex\g<nnn>".
+inline constexpr const char* kMiasmaSource = "effect\\efl\\core\\cr0012";
+inline constexpr char kMiasmaCode = 'g';
 
 /// "effect\efl\wp\wp21\wp21<code><part>": part 0 the stream, 4 its companion, 3 the hit's look.
 std::string FlameEffectPath(char code, int part);
@@ -83,7 +89,8 @@ std::string FlameEffectPath(char code, int part);
 /// flamethrower's three effect lists recoloured for every kFlameLooks entry, and for those with a
 /// stream the coloured textures they use (tx0003, tx0006, tx0007, tx0008) recoloured under their own
 /// folder ("effect\tex\c006\tx0006_BM") with their frames, the lists' paths renamed to them. One
-/// line per step in `log`; nullopt when a source entry is missing or not as expected.
+/// line per step in `log`; nullopt when a source entry is missing or not as expected. Also Plague's
+/// cloud (kMiasmaSource) when coreEff.arc has it (else left out, said in `log`).
 std::optional<Bytes> BuildFlameEffects(const Bytes& wp21Arc, const Bytes& coreEffArc, std::vector<std::string>* log);
 
 }  // namespace rm::fx

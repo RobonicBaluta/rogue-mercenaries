@@ -309,6 +309,46 @@ std::optional<Bytes> BuildFlameEffects(const Bytes& wp21Arc, const Bytes& coreEf
             effectLists.push_back({path, kTypeEffectList, std::move(list)});
         }
     }
+    // Plague's death cloud: the incendiary grenade's fire in the toxic look's green, every texture it
+    // names recoloured under "effect\tex\g<nnn>" (a texture this cannot recolour keeps its own).
+    if (auto cloud = ReadArchiveEntry(coreEffArc, kMiasmaSource, kTypeEffectList)) {
+        double hue = 105.0;
+        for (const FlameLook& look : kFlameLooks) {
+            if (std::string_view(look.element) == "toxic") hue = look.hue;
+        }
+        std::vector<std::string> numbers;  // the textures it names: "effect\tex\<nnnn>\"
+        const std::string_view text(reinterpret_cast<const char*>(cloud->data()), cloud->size());
+        for (std::size_t at = text.find("effect\\tex\\"); at != std::string_view::npos; at = text.find("effect\\tex\\", at + 1)) {
+            if (at + 16 > text.size() || text[at + 15] != '\\') continue;
+            const std::string n(text.substr(at + 11, 4));
+            if (std::find(numbers.begin(), numbers.end(), n) == numbers.end()) numbers.push_back(n);
+        }
+        std::vector<std::pair<std::string, std::string>> renames;
+        for (const std::string& n : numbers) {
+            const std::string from = "effect\\tex\\" + n + "\\tx" + n;
+            auto image = ReadArchiveEntry(coreEffArc, from + "_BM", kTypeTexture);
+            auto frames = ReadArchiveEntry(coreEffArc, from, kTypeEffectAnim);
+            if (!image || !frames || !RecolorDxt5(*image, hue)) continue;
+            const std::string folder = std::string(1, kMiasmaCode) + n.substr(1);  // "g003"
+            entries.push_back({"effect\\tex\\" + folder + "\\tx" + n + "_BM", kTypeTexture, std::move(*image)});
+            entries.push_back({"effect\\tex\\" + folder + "\\tx" + n, kTypeEffectAnim, std::move(*frames)});
+            renames.emplace_back("effect\\tex\\" + n + "\\", "effect\\tex\\" + folder + "\\");
+        }
+        const auto colours = RecolorEffectList(*cloud, hue);
+        if (colours) {
+            int renamed = 0;
+            for (const auto& [from, to] : renames) renamed += ReplaceInlinePaths(*cloud, from, to);
+            const std::string path = FlameEffectPath(kMiasmaCode, 0);
+            note(path + " (Plague's cloud, from " + kMiasmaSource + "): " + std::to_string(*colours) + " colours, " +
+                 std::to_string(renames.size()) + " of " + std::to_string(numbers.size()) + " textures recoloured, " +
+                 std::to_string(renamed) + " texture paths");
+            effectLists.push_back({path, kTypeEffectList, std::move(*cloud)});
+        } else {
+            note(std::string(kMiasmaSource) + " is not an effect list this reads; Plague's cloud keeps its look");
+        }
+    } else {
+        note(std::string("not in coreEff.arc: ") + kMiasmaSource + "; Plague's cloud keeps its look");
+    }
     for (ArcEntry& e : effectLists) entries.push_back(std::move(e));
     Bytes archive = WriteArchive(entries);
     if (archive.empty()) {

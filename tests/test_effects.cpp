@@ -225,10 +225,26 @@ TEST_CASE("the flamethrower's looks are built for every element from the game's 
         core.push_back({folder, kTypeEffectAnim, MakeAnim()});
     }
     std::vector<std::string> log;
+    // Without the incendiary grenade's fire in coreEff.arc: the looks, Plague's cloud left out.
+    const auto withoutCloud = BuildFlameEffects(WriteArchive(wp21), WriteArchive(core), &log);
+    REQUIRE(withoutCloud.has_value());
+    CHECK(withoutCloud->at(6) == 3 * (4 + 4 + 3) + 1);
+    CHECK_FALSE(ReadArchiveEntry(*withoutCloud, FlameEffectPath(kMiasmaCode, 0), kTypeEffectList).has_value());
+    // With it (2026-11-22): its green copy, its texture (0006) recoloured under g006.
+    core.push_back({kMiasmaSource, kTypeEffectList, MakeEffectList()});
+    log.clear();
     const auto built = BuildFlameEffects(WriteArchive(wp21), WriteArchive(core), &log);
     REQUIRE(built.has_value());
-    // Cryo, Toxic and Shock: 4 textures, 4 frames, 3 lists each; Incendiary: its look only.
-    CHECK(built->at(6) == 3 * (4 + 4 + 3) + 1);
+    // Cryo, Toxic and Shock: 4 textures, 4 frames, 3 lists each; Incendiary: its look only; the cloud:
+    // its list, one texture and its frames.
+    CHECK(built->at(6) == 3 * (4 + 4 + 3) + 1 + 3);
+    const auto cloud = ReadArchiveEntry(*built, FlameEffectPath(kMiasmaCode, 0), kTypeEffectList);
+    REQUIRE(cloud.has_value());
+    const char* green = "effect\\tex\\g006\\tx0006_BM";
+    CHECK(std::memcmp(cloud->data() + 32 + 0x240 + 0x100, green, std::strlen(green)) == 0);
+    CHECK(Get32(*cloud, 32 + 0x40 + 12) != kOrange);
+    CHECK(ReadArchiveEntry(*built, "effect\\tex\\g006\\tx0006_BM", kTypeTexture).has_value());
+    CHECK(ReadArchiveEntry(*built, "effect\\tex\\g006\\tx0006", kTypeEffectAnim).has_value());
     const auto stream = ReadArchiveEntry(*built, FlameEffectPath('c', 0), kTypeEffectList);
     REQUIRE(stream.has_value());
     const char* renamed = "effect\\tex\\c006\\tx0006_BM";

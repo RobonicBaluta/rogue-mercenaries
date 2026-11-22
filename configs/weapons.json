@@ -1,5 +1,5 @@
 {
-  "_comment": "Base weapons are the game's own weapons; ids are what the adapter reports as weapon_id. Affix roll ranges are scaled by economy.json weapon_rarity.magnitude_mult. Units: *_pct percent, crit_chance fraction, supplies_on_kill supplies per kill (fractions add up kill by kill). Elements (2026-11-11, the user: the best tiers carried too many): a gun has one. A gun found or bought at Epic or above rolls it by weight (the better ones less often); a gun refined to Epic offers two by weight and a random one, any as likely, to choose from; at Legendary it evolves (its 'evolved' numbers). An Exotic gun adds one legendary effect (unique_affixes). stream_seconds is the flamethrower's (an enemy in its flame): Shock arcs from it every that many seconds, Cryo freezes it after that many. Radii are engine units (centimetres); dps_fraction and an arc's damage_fraction are fractions of the hit's damage, a blast's damage_fraction and a cloud's cloud_dps_fraction of the victim's maximum health. Against a boss an element only adds boss_bonus damage.",
+  "_comment": "Base weapons are the game's own weapons; ids are what the adapter reports as weapon_id. Affix roll ranges are scaled by economy.json weapon_rarity.magnitude_mult. Units: *_pct percent, crit_chance fraction, supplies_on_kill supplies per kill (fractions add up kill by kill). Elements (2026-11-11, the user: the best tiers carried too many): a gun has one. A gun found or bought at Epic or above rolls it by weight (the better ones less often); a gun refined to Epic offers two by weight and a random one, any as likely, to choose from; at Legendary it evolves (its 'evolved' numbers). An Exotic gun adds one legendary effect (unique_affixes). stream_seconds is the flamethrower's (an enemy in its flame): Shock arcs from it every that many seconds, Cryo freezes it after that many. The flamethrower's Incendiary burns at stream_dps_fraction of its flame's damage a second until stream_total_fraction of it is dealt; its Toxic adds a stack of stream_dps_fraction a second at most every stream_stack_seconds (up to stream_max_stacks), ticking once a second until the enemy dies. Radii are engine units (centimetres); dps_fraction and an arc's damage_fraction are fractions of the hit's damage, a blast's damage_fraction and a cloud's cloud_dps_fraction of the victim's maximum health. Against a boss an element only adds boss_bonus damage.",
   "schema_version": 1,
   "weapons": [
     {
@@ -271,13 +271,17 @@
       "dps_fraction": 0.25,
       "boss_bonus": 0.15,
       "weight": 30,
+      "stream_dps_fraction": 1.0,
+      "stream_total_fraction": 1.5,
       "evolved": {
         "name": "Inferno",
         "description": "hits set enemies on fire, hotter and longer, and the fire spreads to those around",
         "seconds": 5,
         "dps_fraction": 0.35,
         "spread_radius": 300,
-        "boss_bonus": 0.25
+        "boss_bonus": 0.25,
+        "stream_dps_fraction": 1.25,
+        "stream_total_fraction": 2.5
       }
     },
     {
@@ -357,6 +361,9 @@
       "taken_mult": 1.25,
       "boss_bonus": 0.15,
       "weight": 30,
+      "stream_dps_fraction": 0.06,
+      "stream_stack_seconds": 1,
+      "stream_max_stacks": 10,
       "evolved": {
         "name": "Plague",
         "description": "hits poison the enemy, and a poisoned enemy that dies poisons those around it",
@@ -365,7 +372,10 @@
         "taken_mult": 1.25,
         "radius": 400,
         "cloud_dps_fraction": 0.03,
-        "boss_bonus": 0.25
+        "boss_bonus": 0.25,
+        "stream_dps_fraction": 0.08,
+        "stream_stack_seconds": 1,
+        "stream_max_stacks": 10
       }
     }
   ]

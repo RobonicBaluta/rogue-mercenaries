@@ -96,6 +96,16 @@ struct ElementDef {
     // The flamethrower's stream (an enemy in its flame, the adapter): Cryo freezes it after this many
     // seconds in it, Shock arcs from it every this many seconds; Incendiary and Toxic hold their status.
     double stream_seconds = 0.0;
+    // The flamethrower's own (the user, 2026-11-22: "make flame and toxic element deal dot flame fast dot
+    // until X (based on the flamethrower base damage) toxic way lower % of base damage and slower but it
+    // doesn't go away and can be stacked (1 sec cooldown)"), of the flame's damage a second on that enemy:
+    // Incendiary burns at stream_dps_fraction a second until stream_total_fraction is dealt; Toxic adds a
+    // stack of stream_dps_fraction a second at most every stream_stack_seconds, up to stream_max_stacks,
+    // ticking once a second until the enemy dies. 0: the hit's burn or poison as for any gun.
+    double stream_dps_fraction = 0.0;
+    double stream_total_fraction = 0.0;
+    double stream_stack_seconds = 0.0;
+    int stream_max_stacks = 0;
 };
 
 /// Roll range for a regular affix (weapons.json "affixes"); scaled by rarity magnitude_mult.

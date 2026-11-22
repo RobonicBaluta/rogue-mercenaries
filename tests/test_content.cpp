@@ -331,3 +331,24 @@ TEST_CASE("every perk with a price fits it on its menu row", "[content]") {
         CHECK(p.name.size() + 3 + std::to_string(p.unlock_cost_credits).size() + 8 <= kMenuRowChars);  // "NAME   150 CREDITS"
     }
 }
+
+TEST_CASE("the flamethrower's burn is fast until its total and its poison stacks once a second", "[content]") {
+    // The user, 2026-11-22: "make flame and toxic element deal dot flame fast dot until X (based on the
+    // flamethrower base damage) toxic way lower % of base damage and slower but it doesn't go away and can
+    // be stacked (1 sec cooldown)".
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    for (const bool evolved : {false, true}) {
+        INFO(evolved);
+        const ElementDef* fire = r.content->FindElement(Element::Incendiary, evolved);
+        REQUIRE(fire != nullptr);
+        CHECK(fire->stream_dps_fraction >= 1.0);  // fast: at least the flame's own damage a second
+        CHECK(fire->stream_total_fraction > fire->stream_dps_fraction);
+        const ElementDef* toxic = r.content->FindElement(Element::Toxic, evolved);
+        REQUIRE(toxic != nullptr);
+        CHECK(toxic->stream_dps_fraction > 0.0);
+        CHECK(toxic->stream_dps_fraction <= 0.1 * fire->stream_dps_fraction);  // way lower
+        CHECK(toxic->stream_stack_seconds == 1.0);
+        CHECK(toxic->stream_max_stacks > 1);
+    }
+}
