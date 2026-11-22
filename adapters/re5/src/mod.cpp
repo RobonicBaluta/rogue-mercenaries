@@ -8139,9 +8139,14 @@ void DriveZeroHealth(double now) {
             g_directorDead.erase(unit);
             continue;
         }
-        // Only the director's own (a boss's parts and the stage's units are none of these), and U-8's
-        // spawns (uEmc5, 1 health; the user, 2026-11-22: "not the spawns neither").
-        if (!g_directorDead.count(unit) && !g->directorUnits.count(unit) && engine::ClassName(unit) != "uEmc5") continue;
+        // Only the director's own (a boss's parts and the stage's units are none of these), and the
+        // little ones a boss lets out: U-8's spawns (uEmc5, 1 health; the user, 2026-11-22: "not the
+        // spawns neither") and Uroboros Aheri's slimes (uEm42Slime, 300; "aheris little minions are not
+        // affected by the flamethrower": at zero from the flame, no hit, they went on).
+        if (!g_directorDead.count(unit) && !g->directorUnits.count(unit)) {
+            const std::string cls = engine::ClassName(unit);
+            if (cls != "uEmc5" && cls != "uEm42Slime") continue;
+        }
         if (unit == g->boss.unit || g_bossAddUnits.count(unit) || g_deadBossAdds.count(unit)) continue;
         seen.insert(unit);
         ZeroHealthTrack& t = g_zeroHealth.try_emplace(unit, ZeroHealthTrack{now, false}).first->second;
@@ -8736,9 +8741,9 @@ void AheriFlameHit(std::uintptr_t boss, int region, double amount, double now) {
         const int core = region / 0x3C - 1;
         char part[96];
         if (region < 0x3C) {
-            std::snprintf(part, sizeof(part), "her body (health %d)", engine::ReadHp(boss) ? engine::ReadHp(boss)->hp : -1);
+            std::snprintf(part, sizeof(part), "body (health %d)", engine::ReadHp(boss) ? engine::ReadHp(boss)->hp : -1);
         } else if (mainCore) {
-            std::snprintf(part, sizeof(part), "her main core (%d of 2000)", ReadOr<std::int32_t>(boss + 0x2154, 0));
+            std::snprintf(part, sizeof(part), "main core (%d of 2000)", ReadOr<std::int32_t>(boss + 0x2154, 0));
         } else {
             std::snprintf(part, sizeof(part), "core %d (health %d of %d)", core, ReadOr<std::int16_t>(boss + 0x1FC4 + core * 8, 0),
                           ReadOr<std::int16_t>(boss + 0x1FC6 + core * 8, 0));
@@ -8891,8 +8896,23 @@ void DriveFlameStream(double now) {
                 BossFlameDamage(enemy, amount, now);
                 continue;
             }
+            const auto before = engine::ReadHp(enemy);
             ElementDamage(enemy, amount, now, lookInPlace ? Reaction::Flyoff : Reaction::Fire);
             const auto hp = engine::ReadHp(enemy);
+            {
+                // The first flame hit on each kind of enemy a match, to tell what it takes.
+                static int generation = -1;
+                static std::set<std::string> told;
+                if (generation != g->matchGeneration) {
+                    generation = g->matchGeneration;
+                    told.clear();
+                }
+                const std::string cls = engine::ClassName(enemy);
+                if (told.size() < 24 && told.insert(cls).second) {
+                    RM_LOGI("flamethrower: %s in the flame, health %d -> %d of %d", cls.c_str(), before ? before->hp : -1, hp ? hp->hp : -1,
+                            hp ? hp->max : -1);
+                }
+            }
             if (lookInPlace && g_flameStreamElement == rm::Element::Shock && hp && hp->hp > 0) React(enemy, Reaction::Flash, now);
         }
     }

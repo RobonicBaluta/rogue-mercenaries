@@ -108,7 +108,7 @@ void FindCopies(const rm::music::StreamEntry& theme) {
             GetTickCount() - started);
     for (const std::uintptr_t c : g_copies) {
         std::string around;
-        for (int k = -5; k <= 3; ++k) {
+        for (int k = -12; k <= 12; ++k) {
             char part[12];
             std::snprintf(part, sizeof(part), " %08X", ReadOr<std::uint32_t>(c + static_cast<std::uintptr_t>(static_cast<std::intptr_t>(k * 4)), 0));
             around += part;
@@ -280,18 +280,22 @@ bool Locate(List& l) {
             for (std::size_t stride = 8; stride <= 0x100 && o + stride + 8 <= buf.size(); stride += 4) {
                 if (U32(buf, o + stride) != e[1].size || U32(buf, o + stride + 4) != e[1].length) continue;
                 const std::uintptr_t first = s + o;
-                bool all = true;
-                for (std::size_t i = 0; i < e.size() && all; ++i) {
-                    all = ReadOr<std::uint32_t>(first + i * stride, 0) == e[i].size && ReadOr<std::uint32_t>(first + i * stride + 4, 0) == e[i].length;
+                // Every entry but one (the theme's may hold another track's while it plays).
+                int mismatches = 0;
+                for (std::size_t i = 0; i < e.size() && mismatches <= 1; ++i) {
+                    const bool same = ReadOr<std::uint32_t>(first + i * stride, 0) == e[i].size && ReadOr<std::uint32_t>(first + i * stride + 4, 0) == e[i].length;
+                    mismatches += same ? 0 : 1;
                 }
-                if (!all) continue;
+                if (mismatches > 1) continue;
                 const auto fieldAt = [&](std::uint32_t rm::music::StreamEntry::*field) {
                     for (int off = -16; off < static_cast<int>(stride); off += 4) {
                         if (off == 0 || off == 4) continue;
-                        bool ok = true;
-                        for (std::size_t i = 0; i < e.size() && ok; ++i) {
-                            ok = ReadOr<std::uint32_t>(Off(first + i * stride, off), 0xDEADBEEFu) == e[i].*field;
+                        bool ok = false;
+                        int wrong = 0;
+                        for (std::size_t i = 0; i < e.size() && wrong <= 1; ++i) {
+                            wrong += ReadOr<std::uint32_t>(Off(first + i * stride, off), 0xDEADBEEFu) == e[i].*field ? 0 : 1;
                         }
+                        ok = wrong <= 1;
                         if (ok) return off;
                     }
                     return INT_MIN;
@@ -360,10 +364,26 @@ bool Apply(const Found& theme, const Found& track) {
     p.saved[2] = ReadOr<std::uint32_t>(Off(at, lay.channels), 0);
     p.saved[3] = ReadOr<std::uint32_t>(Off(at, lay.loopStart), 0);
     p.saved[4] = ReadOr<std::uint32_t>(Off(at, lay.loopEnd), 0);
-    if (p.saved[0] != theme.entry().size || p.saved[1] != theme.entry().length) {
-        RM_LOGW("music: the theme's entry holds %u/%u, not its own %u/%u; left alone", p.saved[0], p.saved[1], theme.entry().size, theme.entry().length);
+    // It holds a track's size and length (the theme's, or the last track's: 2026-11-22, it held
+    // b_bgm008's right after the theme's were put back, the game writing it again as it played);
+    // what it is put back to is the theme's own, from the file on disk.
+    bool known = false;
+    for (const List& other : g_lists) {
+        for (const rm::music::StreamEntry& e : other.entries) known = known || (e.size == p.saved[0] && e.length == p.saved[1]);
+    }
+    if (!known) {
+        RM_LOGW("music: the theme's entry holds %u/%u, no track's; left alone", p.saved[0], p.saved[1]);
         return false;
     }
+    if (p.saved[0] != theme.entry().size) {
+        RM_LOGI("music: the theme's entry held %u/%u (another track's) as the arena was armed", p.saved[0], p.saved[1]);
+    }
+    const rm::music::StreamEntry& own0 = theme.entry();
+    p.saved[0] = own0.size;
+    p.saved[1] = own0.length;
+    p.saved[2] = own0.channels;
+    p.saved[3] = own0.loop_start;
+    p.saved[4] = own0.loop_end;
     const std::uint32_t values[5] = {src.size, src.length, src.channels, src.loop_start, src.loop_end};
     Store(at, lay, values);
     p.on = true;
