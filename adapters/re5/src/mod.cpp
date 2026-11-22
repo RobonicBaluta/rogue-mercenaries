@@ -191,6 +191,7 @@ struct ModState {
     bool shopUiRequested = false;       // back to the SHOP screen when that screen closes
     bool organizeUiRequested = false;   // dev "organize" in co-op: the mod's grid screen (opened after the tick)
     bool elementPickRequested = false;  // the tester's special: its element screen (opened after the tick)
+    bool elementPickOpen = false;       // that screen is the one open (it may stay open in the fight)
     std::string notice;       // short line shown instead of the status (chest contents)
     int organizePick = -1;    // ORGANIZE: grid cell picked up (-1 = none)
     double noticeUntil = 0.0;
@@ -4137,15 +4138,30 @@ int GiveOrStash(const char* source, std::int64_t id, int count) {
     return placed + KeepInRunStash(item, count - placed, "did not fit");
 }
 
+// The hands take the gun of `cell` the way the weapon ring has them: the game's own weapon_change
+// action (cPlAction_pl_act_weapon_change; its start 0x00C8CC50 reads the hands' cell +0x2DD8, runs the
+// hands' motions for that gun and keeps the cell for its swap 0x00C72D60, mid-animation). The swap
+// alone (TakeOutOfHand) leaves the old gun's stance: the tester's flamethrower was held and "fired"
+// as a pistol (the user, 2026-11-22: "flamethrower it taken like its a pistol ... chris 'shoots' with it").
+bool ChangeWeaponTo(std::uintptr_t player, int cell) {
+    if (!player || cell < 0 || cell >= kGridCells) return false;
+    const auto ids = engine::ActionIdsOf(player, "cPlAction_pl_act_weapon_change");
+    if (ids.empty()) return false;
+    SafeStore<std::int32_t>(player + re5::off::kPlayerWeaponCell, cell);
+    return engine::StartAction(player, ids.front(), "cPlAction_pl_act_weapon_change");
+}
+
 // A build that starts with its own weapons only (SkinBuild::only_build_weapons; the tester, 2026-11-22:
-// "make my tester character have only the flamethrower"): once its first weapon is in the grid at the
-// run's start, the hands take it through the game's own change of weapon (a held record cannot be
-// cleared: it hangs the game), then every other gun and the pistol's rounds go. Once per run; given up
-// after 15 s of trying.
+// "make my tester character have only the flamethrower"): at every arena's start, once its first weapon
+// is in the grid, the hands take it (ChangeWeaponTo, again every 1.5 s until they hold it), and once
+// they do every other gun and the pistol's rounds go (a held record is never cleared: it hangs the
+// game). Given up after 20 s.
 struct OnlyBuildWeapons {
-    std::string runId;
+    int generation = -1;
     bool done = false;
     double since = 0.0;
+    double askedAt = -1.0e9;
+    int asks = 0;
 };
 OnlyBuildWeapons g_onlyBuild;
 bool TakeOutOfHand(std::uintptr_t player, std::uintptr_t slot, int cell);
@@ -4158,11 +4174,16 @@ void DriveOnlyBuildWeapons(double now) {
     if (!g->match.inMatch || !run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || run.SeatCount() > 1) return;
     const rm::SkinBuild& build = run.state().character.build;
     if (!build.only_build_weapons || !engine::Caps().inventory) return;
-    if (g_onlyBuild.runId != run.state().run_id) g_onlyBuild = {run.state().run_id, false, now};
+    if (g_onlyBuild.generation != g->matchGeneration) {
+        g_onlyBuild = {};
+        g_onlyBuild.generation = g->matchGeneration;
+        g_onlyBuild.since = now;
+    }
     if (g_onlyBuild.done) return;
-    if (now - g_onlyBuild.since > 15.0) {
+    if (now - g_onlyBuild.since > 20.0) {
         g_onlyBuild.done = true;
-        RM_LOGW("inventory: the build's own weapons only: gave up after 15 s (its first one never came into the grid, or the hands kept theirs)");
+        RM_LOGW("inventory: the build's own weapons only: gave up after 20 s (its first one never came into the grid, or the hands kept "
+                "theirs; %d weapon change(s) asked)", g_onlyBuild.asks);
         return;
     }
     std::vector<std::uint32_t> keep;
@@ -4188,9 +4209,16 @@ void DriveOnlyBuildWeapons(double now) {
         if (ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) == 1) held = slot;
     }
     if (first == 0 || firstCell < 0 || firstCell >= kGridCells) return;  // not in the grid yet
-    if (held != 0 && held != first) {
-        if (!TakeOutOfHand(player, held, firstCell)) return;  // again next tick
-        RM_LOGI("inventory: the hands took the build's %04X (cell %d), not %04X", keep.front(), firstCell + 1, SlotItemId(held));
+    if (held != first) {
+        if (now - g_onlyBuild.askedAt < 1.5) return;  // the change plays (its swap comes mid-animation)
+        g_onlyBuild.askedAt = now;
+        ++g_onlyBuild.asks;
+        const bool started = ChangeWeaponTo(player, firstCell);
+        if (g_onlyBuild.asks <= 4) {
+            RM_LOGI("inventory: the hands change to the build's %04X (cell %d) from %04X: the game's weapon change %s", keep.front(),
+                    firstCell + 1, held ? SlotItemId(held) : 0u, started ? "started" : "refused (again in 1.5 s)");
+        }
+        return;  // its record goes once the hands hold the build's gun
     }
     std::uint32_t ammo = 0;
     if (const rm::WeaponBaseDef* p = g->content->FindWeapon(run.state().loadout.weapon_id)) ammo = AmmoItemFor(p->category);
@@ -10197,7 +10225,11 @@ void UpdateMatchStatus() {
     const bool between = phase == rm::Phase::ArenaResults || phase == rm::Phase::RewardSelection ||
                          phase == rm::Phase::Shop || phase == rm::Phase::RouteSelection ||
                          phase == rm::Phase::RunComplete;
-    if (matchui::IsOpen() && (!run.HasActiveRun() || !between || !g->match.inMatch)) matchui::Close();
+    // The tester's element screen is opened in the fight (the user, 2026-11-22: "special menu instantly
+    // closes itself": this rule closed it the next frame).
+    if (!matchui::IsOpen()) g->elementPickOpen = false;
+    const bool elementPick = g->elementPickOpen && phase == rm::Phase::ArenaActive;
+    if (matchui::IsOpen() && (!run.HasActiveRun() || (!between && !elementPick) || !g->match.inMatch)) matchui::Close();
     matchui::Hud hud;
     int counter = -1;
     if (g->settings.nativeMatchUi && run.HasActiveRun() && g->match.inMatch) {
@@ -12868,7 +12900,10 @@ private:
         }
         if (g->elementPickRequested) {
             g->elementPickRequested = false;
-            if (!matchui::IsOpen()) matchui::Open(nativemenu::ScreenId::MatchTestElement);
+            if (!matchui::IsOpen()) {
+                g->elementPickOpen = true;
+                matchui::Open(nativemenu::ScreenId::MatchTestElement);
+            }
         }
     }
 
