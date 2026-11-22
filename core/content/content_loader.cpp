@@ -715,10 +715,43 @@ void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>&
                 if (!pl->is_object()) {
                     pd.Error("must be an object");
                 } else {
-                    CheckKeys(pd, *pl, {"fuel_pct", "refill_pct", "reach_m"});
-                    if (GetNumber(pd, *pl, "fuel_pct", w.per_level.fuel_pct, false)) CheckRange(pd, "fuel_pct", w.per_level.fuel_pct, 0.0, 200.0);
-                    if (GetNumber(pd, *pl, "refill_pct", w.per_level.refill_pct, false)) CheckRange(pd, "refill_pct", w.per_level.refill_pct, 0.0, 200.0);
-                    if (GetNumber(pd, *pl, "reach_m", w.per_level.reach_m, false)) CheckRange(pd, "reach_m", w.per_level.reach_m, 0.0, 5.0);
+                    CheckKeys(pd, *pl, {"fuel_pct", "refill_pct", "reach_m", "extra_every_levels", "blast_m", "blast_fraction", "free_round_pct",
+                                        "status_pct", "magazine", "ramp_pct", "ramp_seconds", "stagger_pct", "crit_pct", "pierce_pct",
+                                        "explode_every", "explode_radius_m", "explode_fraction", "chain_targets", "chain_m", "stun_s",
+                                        "stunned_damage_pct", "supplies_per_kill", "headshot_refund_pct"});
+                    WeaponLevelPerks& lp = w.per_level;
+                    const auto num = [&](const char* key, double& out, double hi) {
+                        if (GetNumber(pd, *pl, key, out, false)) CheckRange(pd, key, out, 0.0, hi);
+                    };
+                    num("fuel_pct", lp.fuel_pct, 200.0);
+                    num("refill_pct", lp.refill_pct, 200.0);
+                    num("reach_m", lp.reach_m, 5.0);
+                    GetIntRange(pd, *pl, "extra_every_levels", lp.extra_every_levels, false, 0, 10);
+                    num("blast_m", lp.blast_m, 5.0);
+                    num("blast_fraction", lp.blast_fraction, 2.0);
+                    num("free_round_pct", lp.free_round_pct, 50.0);
+                    num("status_pct", lp.status_pct, 50.0);
+                    GetIntRange(pd, *pl, "magazine", lp.magazine, false, 0, 50);
+                    num("ramp_pct", lp.ramp_pct, 100.0);
+                    num("ramp_seconds", lp.ramp_seconds, 30.0);
+                    num("stagger_pct", lp.stagger_pct, 50.0);
+                    num("crit_pct", lp.crit_pct, 25.0);
+                    num("pierce_pct", lp.pierce_pct, 100.0);
+                    GetIntRange(pd, *pl, "explode_every", lp.explode_every, false, 0, 50);
+                    num("explode_radius_m", lp.explode_radius_m, 10.0);
+                    num("explode_fraction", lp.explode_fraction, 5.0);
+                    GetIntRange(pd, *pl, "chain_targets", lp.chain_targets, false, 0, 10);
+                    num("chain_m", lp.chain_m, 10.0);
+                    num("stun_s", lp.stun_s, 10.0);
+                    num("stunned_damage_pct", lp.stunned_damage_pct, 100.0);
+                    num("supplies_per_kill", lp.supplies_per_kill, 5.0);
+                    num("headshot_refund_pct", lp.headshot_refund_pct, 100.0);
+                    if (lp.blast_m > 0.0 && !(lp.blast_fraction > 0.0)) pd.Error("blast_m needs a blast_fraction above 0");
+                    if (lp.ramp_pct > 0.0 && !(lp.ramp_seconds > 0.0)) pd.Error("ramp_pct needs ramp_seconds above 0");
+                    if (lp.explode_every > 0 && (!(lp.explode_radius_m > 0.0) || !(lp.explode_fraction > 0.0))) {
+                        pd.Error("explode_every needs explode_radius_m and explode_fraction above 0");
+                    }
+                    if (lp.chain_targets > 0 && !(lp.chain_m > 0.0)) pd.Error("chain_targets needs chain_m above 0");
                 }
             }
             GetBool(d, e, "build_only", w.build_only, false);

@@ -21,14 +21,40 @@ std::string_view WeaponCategoryName(WeaponCategory c);
 std::optional<WeaponCategory> ParseWeaponCategory(std::string_view name);
 
 /// An existing game weapon; the physical weapon stays the game's own.
-/// What each level above 1 adds to a gun besides its damage (weapons.json "per_level"; the flamethrower,
-/// 2026-11-22, the user: "yes level ups get more fuel and faster refil and longer reach"). The adapter
-/// applies them: its fuel's maximum, its refill a second, its flame's reach.
+/// What each level above 1 adds to a gun besides its damage (weapons.json "per_level"; 2026-11-22, the
+/// user's picks for the guns the game gives no levels: the flamethrower, the launchers, the Gatling, the
+/// longbow, the stun rod, the Px4 and the Samurai Edge). Every amount is a level's, times the levels
+/// above 1. The core applies crit_pct and supplies_per_kill; the adapter the rest.
 struct WeaponLevelPerks {
-    double fuel_pct = 0.0;    // +percent of its fuel's maximum a level
-    double refill_pct = 0.0;  // +percent of its refill a second a level
-    double reach_m = 0.0;     // + metres of its flame's reach a level
-    [[nodiscard]] bool Any() const { return fuel_pct > 0.0 || refill_pct > 0.0 || reach_m > 0.0; }
+    double fuel_pct = 0.0;    // the flamethrower: +percent of its fuel's maximum
+    double refill_pct = 0.0;  // +percent of its refill a second
+    double reach_m = 0.0;     // + metres of its flame's reach
+    int extra_every_levels = 0;     // a one-use gun (the rocket launcher): one more an arena every this many levels
+    double blast_m = 0.0;           // a launcher: those within this many metres of the hit take blast_fraction of it
+    double blast_fraction = 0.0;    // (not by level)
+    double free_round_pct = 0.0;    // a shot keeps its round, percent
+    double status_pct = 0.0;        // a hit burns or poisons (in turn), percent
+    int magazine = 0;               // rounds more in its magazine (the adapter tops it up after a reload)
+    double ramp_pct = 0.0;          // the Gatling: up to this percent more damage...
+    double ramp_seconds = 0.0;      // ...reached after this long firing (not by level)
+    double stagger_pct = 0.0;       // a hit staggers, percent
+    double crit_pct = 0.0;          // crit chance, percent
+    double pierce_pct = 0.0;        // the bow: the one behind the target takes this percent of the hit
+    int explode_every = 0;          // the bow: every this many hits at level 2 one explodes (one fewer a level, at least 2)
+    double explode_radius_m = 0.0;  // (not by level)
+    double explode_fraction = 0.0;  // of the hit's damage, to those around (not by level)
+    int chain_targets = 0;          // the stun rod: its stun jumps to this many more...
+    double chain_m = 0.0;           // ...within this many metres (not by level)
+    double stun_s = 0.0;            // its stun lasts this much longer
+    double stunned_damage_pct = 0.0;  // stunned enemies take this percent more from everything
+    double supplies_per_kill = 0.0;   // supplies a kill with it (fractions add up)
+    double headshot_refund_pct = 0.0; // a headshot gives its round back, percent
+    [[nodiscard]] bool Any() const {
+        return fuel_pct > 0.0 || refill_pct > 0.0 || reach_m > 0.0 || extra_every_levels > 0 || blast_m > 0.0 || free_round_pct > 0.0 ||
+               status_pct > 0.0 || magazine > 0 || ramp_pct > 0.0 || stagger_pct > 0.0 || crit_pct > 0.0 || pierce_pct > 0.0 ||
+               explode_every > 0 || chain_targets > 0 || stun_s > 0.0 || stunned_damage_pct > 0.0 || supplies_per_kill > 0.0 ||
+               headshot_refund_pct > 0.0;
+    }
 };
 
 struct WeaponBaseDef {

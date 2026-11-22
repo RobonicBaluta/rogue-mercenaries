@@ -283,7 +283,7 @@ TEST_CASE("the flamethrower's upgrade says what its level adds besides damage", 
             INFO(offer.detail);
             CHECK(offer.detail.find("fuel +") != std::string::npos);
             CHECK(offer.detail.find("refill +") != std::string::npos);
-            CHECK(offer.detail.find("reach +0.5 m") != std::string::npos);
+            CHECK(offer.detail.find("reach +1.25 m") != std::string::npos);  // 10 m at level 5 (the user, 2026-11-22)
         }
     }
     CHECK(seen);
@@ -292,4 +292,83 @@ TEST_CASE("the flamethrower's upgrade says what its level adds besides damage", 
         weapons["weapons"][0]["per_level"] = json{{"reach_m", 9.0}};
     }));
     CHECK(std::any_of(bad.errors.begin(), bad.errors.end(), [](const std::string& e) { return e.find("reach_m") != std::string::npos; }));
+}
+
+TEST_CASE("the special guns' levels: crit and supplies by level, the shipped perks, the loader's checks", "[shop][weapons]") {
+    // 2026-11-22, the user's picks for the guns the game gives no levels (weapons.json per_level).
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const auto perks = [&](const char* id) { return r.content->FindWeapon(id)->per_level; };
+    CHECK(perks("flamethrower").reach_m * 4 + 5.0 == Catch::Approx(10.0));  // "10m at 5"
+    CHECK(perks("rocket_launcher").extra_every_levels == 2);                // 2 rockets at level 3, 3 at 5
+    CHECK(perks("rocket_launcher").blast_m > 0.0);
+    CHECK(perks("rocket_launcher").free_round_pct == 0.0);                  // no refund
+    for (const char* id : {"grenade_launcher"}) {
+        CHECK(perks(id).free_round_pct > 0.0);
+        CHECK(perks(id).blast_m > 0.0);
+        CHECK(perks(id).status_pct > 0.0);
+        CHECK(perks(id).magazine > 0);
+    }
+    CHECK(perks("gatling").ramp_pct > 0.0);
+    CHECK(perks("gatling").stagger_pct > 0.0);
+    CHECK(perks("gatling").crit_pct > 0.0);
+    CHECK(perks("longbow").pierce_pct > 0.0);
+    CHECK(perks("longbow").explode_every > 0);
+    CHECK(perks("longbow").headshot_refund_pct == 0.0);                     // its arrows are infinite
+    CHECK(perks("stun_rod").chain_targets > 0);
+    CHECK(perks("stun_rod").stun_s > 0.0);
+    CHECK(perks("stun_rod").stunned_damage_pct > 0.0);
+    for (const char* id : {"px4", "samurai_edge"}) {
+        CHECK(perks(id).crit_pct > 0.0);
+        CHECK(perks(id).headshot_refund_pct > 0.0);
+        CHECK(perks(id).supplies_per_kill > 0.0);
+        CHECK(perks(id).magazine > 0);
+    }
+
+    // The core's two: a level 3 gun has 2 levels' crit chance and supplies a kill more than at level 1.
+    const auto sources = test::EditFixture([](json&, json& weapons, json&, json&, json&) {
+        for (json& w : weapons["weapons"]) {
+            if (w["id"] == "rifle") w["per_level"] = json{{"crit_pct", 5}, {"supplies_per_kill", 1.0}};
+        }
+    });
+    double crit[2] = {};
+    std::int64_t supplies[2] = {};
+    for (int i = 0; i < 2; ++i) {
+        test::Harness h(test::Load(sources));
+        REQUIRE(h.rc.StartRun("alpha", 1).ok());
+        REQUIRE(h.rc.BeginArena(0.0).ok());
+        WeaponInstance w = MakeStartingWeapon("rifle", "w_lv");
+        w.level = i == 0 ? 1 : 3;
+        REQUIRE(h.rc.DevGrantWeapon(w).ok());
+        HitContext hit;
+        hit.now = 1.0;
+        hit.weapon_id = "rifle";  // not one alpha starts with
+        hit.base_damage = 100.0;
+        crit[i] = h.rc.ComputeOutgoingMultiplier(hit).breakdown.crit_chance;
+        KillEvent k;
+        k.now = 2.0;
+        k.by_player = true;
+        k.weapon_id = "rifle";
+        k.enemy_id = "e1";
+        k.target_hp_max = 1000.0;
+        const KillOutcome out = h.rc.OnEnemyKilled(k);
+        REQUIRE(out.counted);
+        supplies[i] = out.supplies_awarded;
+    }
+    CHECK(crit[1] - crit[0] == Catch::Approx(0.10));
+    CHECK(supplies[1] - supplies[0] == 2);
+
+    // The loader: a blast needs its share, a chain its reach; magazines have a ceiling.
+    const auto errorsWith = [](const json& perLevel, const char* word) {
+        const ContentLoadResult bad = Content::LoadFromStrings(test::EditFixture([&](json&, json& weapons, json&, json&, json&) {
+            weapons["weapons"][0]["per_level"] = perLevel;
+        }));
+        return std::any_of(bad.errors.begin(), bad.errors.end(), [&](const std::string& e) { return e.find(word) != std::string::npos; });
+    };
+    CHECK(errorsWith(json{{"blast_m", 1.0}}, "blast_fraction"));
+    CHECK(errorsWith(json{{"chain_targets", 2}}, "chain_m"));
+    CHECK(errorsWith(json{{"magazine", 99}}, "magazine"));
+    CHECK(errorsWith(json{{"ramp_pct", 5}}, "ramp_seconds"));
+    CHECK(errorsWith(json{{"pierce", 5}}, "pierce"));  // an unknown key
+    CHECK_FALSE(errorsWith(json{{"crit_pct", 2.5}, {"headshot_refund_pct", 10}}, "per_level"));
 }

@@ -567,20 +567,26 @@ void RaiseForShopUpgrades(const GridCell& c, WeaponLevels& levels, int steps) {
             tables.reload[static_cast<std::size_t>(std::clamp(after.reload, 0, rm::kGunStatLevels - 1))]);
 }
 
+int MagazineBonus(std::uint32_t recordId);  // its levels' rounds more (weapons.json per_level magazine), below
+
 // A gun record's max (+0xC) is its full magazine at the capacity level it was made with (dev inv:
 // the SIG 556 at level 5 max 65, the M92F at 10 max 50). The game's reload reads the level live, the
 // inventory's reload stops at the max (the user, 2026-11-11: "when I reload normally it was 80, but
 // when I inventory reload it went to 65"), so the max follows the level the run gave it.
+// A gun the game gives no levels has its levels' bonus rounds on top (per_level magazine: the slot's
+// max is raised, and DriveGunLevelPerks moves them in from the stock after the game's own reload).
 void SyncGunMax(const GridCell& c) {
     const std::uint32_t raw = ReadOr<std::uint32_t>(c.record + re5::off::kSlotItemId, 0);
     if ((raw & 0xFF00) != 0x100 || raw >= 0x150 || ItemStackMax(c.id) != 0) return;
+    if (raw == 0x0121) return;  // the flamethrower: its fuel's maximum is RefuelFlamethrower's (its levels)
     const int level = ReadOr<std::uint8_t>(c.record + re5::off::kSlotUpgrades + 3, 0);
     if (level >= rm::kGunStatLevels) return;
     const int capacity = GunTables(raw).capacity[static_cast<std::size_t>(level)];
     const int max = ReadOr<std::int32_t>(c.record + re5::off::kSlotMax, 0);
-    if (capacity <= 0 || max <= 1 || capacity == max) return;  // no table entry, or no magazine (stun rod, rocket launcher)
-    SafeStore<std::int32_t>(c.record + re5::off::kSlotMax, capacity);
-    RM_LOGI("upgrades: %04X magazine %d -> %d (capacity level %d)", c.id, max, capacity, level);
+    const int bonus = capacity > 0 ? MagazineBonus(c.id) : 0;
+    if (capacity <= 0 || max <= 1 || capacity + bonus == max) return;  // no table entry, or no magazine (stun rod, rocket launcher)
+    SafeStore<std::int32_t>(c.record + re5::off::kSlotMax, capacity + bonus);
+    RM_LOGI("upgrades: %04X magazine %d -> %d (capacity level %d, +%d by its levels)", c.id, max, capacity + bonus, level, bonus);
 }
 
 void ApplyWeaponLevels() {
@@ -8869,6 +8875,576 @@ void DriveElements(double now) {
     }
 }
 
+// ---- The levels of the guns the game gives none (weapons.json per_level; the user, 2026-11-22) -------
+// The core adds their crit chance and their supplies a kill; the rest is played here. A hit's are
+// decided in the game's damage call (LevelPerksOnHit: its extra damage at once, the rest queued) and
+// played on the next tick (DriveLevelHits); the magazines, the free rounds and the extra rockets are
+// watched for each player every tick (DriveGunLevelPerks). Only the director's own units take them,
+// the boss only their damage (no stagger, stun or push).
+struct GunLevel {
+    const rm::WeaponBaseDef* base = nullptr;
+    int steps = 0;  // its levels above 1 in the run (the highest of the run's guns of that kind)
+    [[nodiscard]] const rm::WeaponLevelPerks& perks() const {
+        static const rm::WeaponLevelPerks none;
+        return base != nullptr ? base->per_level : none;
+    }
+};
+GunLevel RunGunLevel(const std::string& baseId) {
+    GunLevel out;
+    out.base = g->content->FindWeapon(baseId);
+    for (const rm::WeaponInstance& w : g->run->state().weapons) {
+        if (w.base_id == baseId) out.steps = std::max(out.steps, w.level - 1);
+    }
+    return out;
+}
+
+int MagazineBonus(std::uint32_t recordId) {
+    const rm::WeaponBaseDef* w = WeaponForItem(recordId);
+    if (w == nullptr || w->per_level.magazine <= 0 || !g->run->HasActiveRun()) return 0;
+    return w->per_level.magazine * RunGunLevel(w->id).steps;
+}
+
+bool LevelChance(double pctPerLevel, int steps) {
+    static std::mt19937 rng{std::random_device{}()};
+    return pctPerLevel > 0.0 && steps > 0 && std::uniform_real_distribution<double>(0.0, 1.0)(rng) < pctPerLevel / 100.0 * steps;
+}
+
+constexpr double kRampGap = 0.6;            // the Gatling: a pause this long between hits starts its ramp again
+constexpr double kBlastWindow = 0.25;       // a launcher's shot: the enemies its blast hits within this of the first
+constexpr double kRocketHitWindow = 2.5;    // the rocket's blast lands after the launcher left the hands
+constexpr int kRocketMinDamage = 1500;      // ...and only a hit this big is the rocket's (a pistol's is far less)
+constexpr double kRocketBackAfter = 2.0;    // an extra rocket: this long after the last one is gone
+constexpr double kHeadshotWindow = 0.4;     // a pistol's hit: its head reaction within this is a headshot
+constexpr double kRodStunBase = 2.0;        // the stun rod's own stun, about (its levels add to it)
+constexpr float kPierceReach = 800.0f;      // the bow: the one behind, up to 8 m behind the target...
+constexpr float kPierceWidth = 90.0f;       // ...and within 0.9 m of the arrow's line
+
+struct LevelSeatState {
+    double gatlingSince = 0.0, gatlingLastHit = -100.0;
+    double rocketHeldAt = -100.0;
+    int bowHits = 0;
+    int statusTurn = 0;
+    // A launcher's shot (its blast hits each enemy in it on its own): the enemies hit, the biggest hit.
+    bool blastOpen = false;
+    double blastAt = 0.0, blastDamage = 0.0, blastRadius = 0.0, blastFraction = 0.0;
+    std::string blastGun;
+    std::vector<std::pair<std::uintptr_t, std::array<float, 3>>> blastVictims;
+    // The equipped gun's magazine, tick by tick.
+    std::uintptr_t magSlot = 0;
+    std::uint32_t magItem = 0;
+    int magCount = -1;
+    // The rocket launcher's arena: rockets given (the restock's first), seen in this arena, gone since.
+    int rocketGeneration = -1, rocketsGiven = 0;
+    bool rocketSeen = false;
+    double rocketGoneSince = -1.0, rocketNextCheck = 0.0;
+};
+std::array<LevelSeatState, 4> g_levelSeats;
+LevelSeatState& LevelSeat() { return g_levelSeats[static_cast<std::size_t>(std::clamp(g_adapterSeat, 0, 3))]; }
+
+enum class LevelHitKind { Stagger, Status, Pierce, ArrowBlast, StunChain };
+struct LevelHit {
+    LevelHitKind kind = LevelHitKind::Stagger;
+    std::uintptr_t enemy = 0;
+    float at[3] = {};
+    float from[3] = {};  // the shooter (the bow's line)
+    double damage = 0.0;
+    double radius = 0.0;
+    double seconds = 0.0;
+    int count = 0;
+    bool poison = false;
+    std::string gun;
+};
+std::vector<LevelHit> g_levelHits;
+
+struct HeadshotCheck {
+    std::uintptr_t enemy = 0;
+    std::uintptr_t slot = 0;       // the pistol's record
+    std::uint32_t item = 0;        // and its item then
+    int actionAtHit = -1;
+    double until = 0.0;
+    double chance = 0.0;
+    std::string gun;
+};
+std::vector<HeadshotCheck> g_headshotChecks;
+
+// The stun rod's stun (and its chain's): it lasts until `until` (its levels' stun_s), the flash
+// grenade's stun started again whenever it is out of it before then.
+struct RodStun {
+    double hitAt = 0.0, until = 0.0;
+    int firstAction = -1;      // its action on the first tick after the hit (the rod's own reaction)
+    bool logged = false;
+};
+std::map<std::uintptr_t, RodStun> g_rodStuns;
+std::map<std::string, int> g_levelLogged;  // log lines per perk this match
+
+bool LevelLog(const std::string& what) { return g_levelLogged[what]++ < 10; }
+
+// Stunned: by the rod (or its chain) until its time, or in a stun reaction of its own.
+bool StunnedNow(std::uintptr_t enemy, double now) {
+    if (const auto it = g_rodStuns.find(enemy); it != g_rodStuns.end() && now < it->second.until) return true;
+    const std::string action = engine::CurrentActionName(enemy);
+    for (const char* stun : {"Flash", "Elec", "Stun", "Shock", "Spark", "Paraly"}) {
+        if (action.find(stun) != std::string::npos) return true;
+    }
+    return false;
+}
+
+// In the game's damage call: the hit's extra damage (the Gatling's ramp; a stunned target's, with a
+// levelled stun rod in the run), and what plays on the next tick.
+double LevelPerksOnHit(const OutgoingHit& hit, const rm::HitContext& ctx, double multiplier) {
+    if (hit.enemy == 0 || !g->run->HasActiveRun() || g->run->phase() != rm::Phase::ArenaActive) return 1.0;
+    const double now = ctx.now;
+    LevelSeatState& seat = LevelSeat();
+    const bool boss = hit.enemy == g->boss.unit;
+    double mult = 1.0;
+    {
+        const GunLevel rod = RunGunLevel("stun_rod");
+        if (rod.steps > 0 && rod.perks().stunned_damage_pct > 0.0 && !boss && StunnedNow(hit.enemy, now)) {
+            mult *= 1.0 + rod.perks().stunned_damage_pct / 100.0 * rod.steps;
+            if (LevelLog("stunned")) RM_LOGI("level perks: a stunned %s takes x%.2f", engine::ClassName(hit.enemy).c_str(), mult);
+        }
+    }
+    if (!ctx.weapon_id) return mult;
+    std::string gun = *ctx.weapon_id;
+    const bool melee = ctx.is_melee.value_or(false);
+    // The rocket's blast lands once the launcher is gone from the hands (it is thrown away when fired).
+    if (gun != "rocket_launcher" && !melee && now - seat.rocketHeldAt < kRocketHitWindow && hit.damage >= kRocketMinDamage) {
+        if (LevelLog("rocket_hit")) RM_LOGI("level perks: a %d hit %.1f s after the rocket launcher was held is the rocket's", hit.damage, now - seat.rocketHeldAt);
+        gun = "rocket_launcher";
+    }
+    if (gun == "rocket_launcher" || gun == "grenade_launcher") {
+        if (LevelLog("launcher_hit:" + gun)) {
+            RM_LOGI("level perks: a %s hit on %s, %d damage (x%.2f)", gun.c_str(), engine::ClassName(hit.enemy).c_str(), hit.damage, multiplier);
+        }
+    }
+    const GunLevel lv = RunGunLevel(gun);
+    if (lv.base == nullptr || lv.steps <= 0 || !lv.perks().Any()) return mult;
+    if (melee && gun != "stun_rod") return mult;  // a kick is no shot
+    const rm::WeaponLevelPerks& pl = lv.perks();
+    // The Gatling: more the longer it fires (a pause of kRampGap starts again).
+    if (pl.ramp_pct > 0.0 && pl.ramp_seconds > 0.0) {
+        if (now - seat.gatlingLastHit > kRampGap) seat.gatlingSince = now;
+        seat.gatlingLastHit = now;
+        const double ramp = pl.ramp_pct / 100.0 * lv.steps * std::min(1.0, (now - seat.gatlingSince) / pl.ramp_seconds);
+        mult *= 1.0 + ramp;
+    }
+    const double damage = hit.damage * multiplier * mult;
+    float at[3];
+    UnitPosition(hit.enemy, at);
+    const auto queue = [&](LevelHitKind kind) -> LevelHit& {
+        LevelHit h;
+        h.kind = kind;
+        h.enemy = hit.enemy;
+        std::copy(at, at + 3, h.at);
+        h.damage = damage;
+        h.gun = gun;
+        g_levelHits.push_back(std::move(h));
+        return g_levelHits.back();
+    };
+    if (!boss && LevelChance(pl.stagger_pct, lv.steps)) queue(LevelHitKind::Stagger);
+    if (LevelChance(pl.status_pct, lv.steps)) queue(LevelHitKind::Status).poison = (seat.statusTurn++ & 1) != 0;
+    // A launcher's wider blast: those just beyond the enemies its own blast hit (DriveLevelHits).
+    if (pl.blast_m > 0.0 && pl.blast_fraction > 0.0) {
+        if (!seat.blastOpen) {
+            seat.blastOpen = true;
+            seat.blastAt = now;
+            seat.blastDamage = 0.0;
+            seat.blastRadius = pl.blast_m * 100.0 * lv.steps;
+            seat.blastFraction = pl.blast_fraction;
+            seat.blastGun = gun;
+            seat.blastVictims.clear();
+        }
+        seat.blastDamage = std::max(seat.blastDamage, damage);
+        const bool known = std::any_of(seat.blastVictims.begin(), seat.blastVictims.end(), [&](const auto& v) { return v.first == hit.enemy; });
+        if (!known) seat.blastVictims.push_back({hit.enemy, {at[0], at[1], at[2]}});
+    }
+    // The bow: the one behind the target, and an exploding arrow every so many hits.
+    if (pl.pierce_pct > 0.0 && hit.attacker) {
+        LevelHit& h = queue(LevelHitKind::Pierce);
+        UnitPosition(hit.attacker, h.from);
+        h.damage = damage * pl.pierce_pct / 100.0 * lv.steps;
+    }
+    if (pl.explode_every > 0 && pl.explode_radius_m > 0.0) {
+        const int every = std::max(2, pl.explode_every - (lv.steps - 1));
+        if (++seat.bowHits >= every) {
+            seat.bowHits = 0;
+            LevelHit& h = queue(LevelHitKind::ArrowBlast);
+            h.radius = pl.explode_radius_m * 100.0;
+            h.damage = damage * pl.explode_fraction;
+        }
+    }
+    // The stun rod: its stun lasts longer and jumps to those around.
+    if (gun == "stun_rod" && !boss) {
+        const double stunFor = kRodStunBase + pl.stun_s * lv.steps;
+        if (pl.stun_s > 0.0 || pl.stunned_damage_pct > 0.0) {
+            RodStun& st = g_rodStuns[hit.enemy];
+            st.hitAt = now;
+            st.until = now + stunFor;
+            st.firstAction = -1;
+        }
+        if (pl.chain_targets > 0 && pl.chain_m > 0.0) {
+            LevelHit& h = queue(LevelHitKind::StunChain);
+            h.count = pl.chain_targets * lv.steps;
+            h.radius = pl.chain_m * 100.0;
+            h.seconds = stunFor;
+        }
+    }
+    // A pistol's headshot gives its round back (its head reaction within kHeadshotWindow).
+    if (pl.headshot_refund_pct > 0.0 && !boss) {
+        if (const std::uintptr_t slot = EquippedGunSlot()) {
+            HeadshotCheck c;
+            c.enemy = hit.enemy;
+            c.slot = slot;
+            c.item = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
+            c.actionAtHit = engine::CurrentActionId(hit.enemy);
+            c.until = now + kHeadshotWindow;
+            c.chance = pl.headshot_refund_pct / 100.0 * lv.steps;
+            c.gun = gun;
+            g_headshotChecks.erase(std::remove_if(g_headshotChecks.begin(), g_headshotChecks.end(),
+                                                  [&](const HeadshotCheck& o) { return o.enemy == hit.enemy; }),
+                                   g_headshotChecks.end());
+            g_headshotChecks.push_back(std::move(c));
+        }
+    }
+    return mult;
+}
+
+bool HeadAction(const std::string& action) {
+    return action.find("DmgHead") != std::string::npos || action.find("DmgGGHead") != std::string::npos ||
+           action.find("HeadExplosion") != std::string::npos;
+}
+
+// Each tick: the hits' queued perks, the launchers' wider blasts, the pistols' headshots, the rod's stuns.
+void DriveLevelHits(double now) {
+    if (!g->match.inMatch || g->run->phase() != rm::Phase::ArenaActive) {
+        g_levelHits.clear();
+        g_headshotChecks.clear();
+        g_rodStuns.clear();
+        g_levelLogged.clear();
+        for (LevelSeatState& s : g_levelSeats) s.blastOpen = false;
+        return;
+    }
+    const auto alive = [](std::uintptr_t u) {
+        const auto hp = engine::ReadHp(u);
+        return hp && hp->hp > 0;
+    };
+    std::vector<LevelHit> queued;
+    queued.swap(g_levelHits);
+    for (const LevelHit& h : queued) {
+        switch (h.kind) {
+            case LevelHitKind::Stagger:
+                if (alive(h.enemy) && React(h.enemy, Reaction::Yoroke, now) && LevelLog("stagger")) {
+                    RM_LOGI("level perks: %s staggers %s", h.gun.c_str(), engine::ClassName(h.enemy).c_str());
+                }
+                break;
+            case LevelHitKind::Status: {
+                if (!alive(h.enemy)) break;
+                rm::WeaponProc look;
+                look.kind = h.poison ? rm::ProcKind::Poison : rm::ProcKind::Burn;
+                look.element = h.poison ? "toxic" : "incendiary";
+                if (h.poison) {
+                    PoisonEnemy(h.enemy, h.damage * 0.06, 8.0, now);
+                } else {
+                    Ignite(h.enemy, h.damage * 0.1, 5.0, now);
+                }
+                PlayLook(look, h.enemy, now);
+                if (LevelLog("status")) {
+                    RM_LOGI("level perks: %s %s %s (%.0f a second)", h.gun.c_str(), h.poison ? "poisons" : "burns",
+                            engine::ClassName(h.enemy).c_str(), h.damage * (h.poison ? 0.06 : 0.1));
+                }
+                break;
+            }
+            case LevelHitKind::Pierce: {
+                float dir[3] = {h.at[0] - h.from[0], 0.0f, h.at[2] - h.from[2]};
+                const float len = std::sqrt(dir[0] * dir[0] + dir[2] * dir[2]);
+                if (len < 1.0f) break;
+                dir[0] /= len;
+                dir[2] /= len;
+                std::uintptr_t best = 0;
+                float bestT = 1.0e9f;
+                for (const auto& [enemy, d] : EnemiesNear(h.at, kPierceReach, h.enemy)) {
+                    (void)d;
+                    float p[3];
+                    UnitPosition(enemy, p);
+                    const float rx = p[0] - h.from[0], rz = p[2] - h.from[2];
+                    const float t = rx * dir[0] + rz * dir[2];
+                    if (t <= len + 10.0f || t > len + kPierceReach || std::fabs(p[1] - h.at[1]) > 200.0f) continue;
+                    const float px = rx - dir[0] * t, pz = rz - dir[2] * t;
+                    if (std::sqrt(px * px + pz * pz) > kPierceWidth || t >= bestT) continue;
+                    best = enemy;
+                    bestT = t;
+                }
+                if (best != 0) {
+                    DotDamage(best, h.damage, now, Reaction::Flyoff);
+                    if (LevelLog("pierce")) RM_LOGI("level perks: the arrow goes through to %s, %.0f damage", engine::ClassName(best).c_str(), h.damage);
+                }
+                break;
+            }
+            case LevelHitKind::ArrowBlast: {
+                int reached = 0;
+                if (alive(h.enemy)) DotDamage(h.enemy, h.damage, now, Reaction::Flyoff);
+                for (const auto& [enemy, d] : EnemiesNear(h.at, static_cast<float>(h.radius), h.enemy)) {
+                    (void)d;
+                    DotDamage(enemy, h.damage, now, Reaction::Flyoff);
+                    if (alive(enemy)) React(enemy, Reaction::Flyoff, now, true);
+                    ++reached;
+                }
+                if (LevelLog("arrow_blast")) RM_LOGI("level perks: the arrow explodes on %s, %.0f damage, %d around", engine::ClassName(h.enemy).c_str(), h.damage, reached);
+                break;
+            }
+            case LevelHitKind::StunChain: {
+                rm::WeaponProc look;
+                look.kind = rm::ProcKind::Shock;
+                look.element = "shock";
+                int left = h.count;
+                int reached = 0;
+                std::uintptr_t from = h.enemy;
+                for (const auto& [enemy, d] : EnemiesNear(h.at, static_cast<float>(h.radius), h.enemy)) {
+                    (void)d;
+                    if (left-- <= 0) break;
+                    AddArc(from, enemy, now, 0.35);
+                    PlayLook(look, enemy, now);
+                    from = enemy;
+                    RodStun& st = g_rodStuns[enemy];
+                    st.hitAt = now;
+                    st.until = now + h.seconds;
+                    st.firstAction = -1;
+                    if (React(enemy, Reaction::Flash, now, true)) ++reached;
+                }
+                if (LevelLog("stun_chain")) RM_LOGI("level perks: the rod's stun jumps from %s to %d (%d stunned)", engine::ClassName(h.enemy).c_str(), h.count - std::max(0, left), reached);
+                break;
+            }
+        }
+    }
+    // The launchers' shots whose blast is over: those just beyond it take a share of its biggest hit.
+    for (LevelSeatState& s : g_levelSeats) {
+        if (!s.blastOpen || now - s.blastAt < kBlastWindow) continue;
+        s.blastOpen = false;
+        std::set<std::uintptr_t> taken;
+        for (const auto& v : s.blastVictims) taken.insert(v.first);
+        int reached = 0;
+        for (const auto& [victim, pos] : s.blastVictims) {
+            (void)victim;
+            for (const auto& [enemy, d] : EnemiesNear(pos.data(), static_cast<float>(s.blastRadius), 0)) {
+                (void)d;
+                if (!taken.insert(enemy).second) continue;
+                DotDamage(enemy, s.blastDamage * s.blastFraction, now, Reaction::Flyoff);
+                if (alive(enemy)) React(enemy, Reaction::Flyoff, now, true);
+                ++reached;
+            }
+        }
+        if (LevelLog("blast:" + s.blastGun)) {
+            RM_LOGI("level perks: %s's blast hit %zu, %.1f m wider reached %d more (%.0f each)", s.blastGun.c_str(), s.blastVictims.size(),
+                    s.blastRadius / 100.0, reached, s.blastDamage * s.blastFraction);
+        }
+        s.blastVictims.clear();
+    }
+    // A pistol's hit followed by its head reaction: a headshot, its round back by chance.
+    for (auto it = g_headshotChecks.begin(); it != g_headshotChecks.end();) {
+        const int id = engine::CurrentActionId(it->enemy);
+        const std::string action = engine::CurrentActionName(it->enemy);
+        const bool head = HeadAction(action) && (id != it->actionAtHit || action.find("HeadExplosion") != std::string::npos);
+        if (!head && now < it->until) {
+            ++it;
+            continue;
+        }
+        if (head) {
+            const bool same = ReadOr<std::uint32_t>(it->slot + re5::off::kSlotItemId, 0) == it->item &&
+                              ReadOr<std::uint8_t>(it->slot + re5::off::kSlotValid, 0) == 1;
+            const int count = ReadOr<std::int32_t>(it->slot + re5::off::kSlotCount, 0);
+            const int max = ReadOr<std::int32_t>(it->slot + re5::off::kSlotMax, 0);
+            const bool refund = same && count < max && LevelChance(it->chance * 100.0, 1);
+            if (refund) SafeStore<std::int32_t>(it->slot + re5::off::kSlotCount, count + 1);
+            if (LevelLog("headshot")) {
+                RM_LOGI("level perks: a %s headshot on %s (%s)%s", it->gun.c_str(), engine::ClassName(it->enemy).c_str(), action.c_str(),
+                        refund ? ", its round back" : "");
+            }
+        }
+        it = g_headshotChecks.erase(it);
+    }
+    // The rod's stuns: started again (the flash grenade's) while out of a reaction before their time.
+    for (auto it = g_rodStuns.begin(); it != g_rodStuns.end();) {
+        RodStun& st = it->second;
+        if (now >= st.until || !alive(it->first)) {
+            it = g_rodStuns.erase(it);
+            continue;
+        }
+        const int id = engine::CurrentActionId(it->first);
+        if (st.firstAction < 0 && now - st.hitAt > 0.05) {
+            st.firstAction = id;
+            if (!st.logged && LevelLog("rod_reaction")) {
+                RM_LOGI("level perks: the stun rod's hit put %s in %s", engine::ClassName(it->first).c_str(), engine::CurrentActionName(it->first).c_str());
+            }
+            st.logged = true;
+        }
+        const std::string action = engine::CurrentActionName(it->first);
+        if (st.firstAction >= 0 && id != st.firstAction && action.find("Dmg") == std::string::npos) {
+            if (React(it->first, Reaction::Flash, now, true) && LevelLog("rod_longer")) {
+                RM_LOGI("level perks: %s stunned again, %.1f s after the rod's hit (%.1f s left)", engine::ClassName(it->first).c_str(),
+                        now - st.hitAt, st.until - now);
+            }
+        }
+        ++it;
+    }
+}
+
+// Rounds from the grid's stock of `ammo` (an emptied stack goes, as the game's own reload does).
+int TakeAmmo(std::uint32_t ammo, int want) {
+    int taken = 0;
+    for (const GridCell& c : ReadGrid()) {
+        if (!c.record || ammo == 0 || c.id != ammo || c.count <= 0 || taken >= want) continue;
+        const int take = std::min(want - taken, c.count);
+        if (c.count - take <= 0) {
+            ClearSlot(c.record);
+        } else {
+            SafeStore<std::int32_t>(c.record + re5::off::kSlotCount, c.count - take);
+        }
+        taken += take;
+    }
+    return taken;
+}
+
+// The Gatling's spin-up, for research (the user, 2026-11-22: "is there a way to make it spin faster?
+// ... the animation before it shoots"): while it is held, its unit (uWp15, found among the player's
+// pointers by its vtable) and the player's action and motion layers, logged when they change.
+constexpr std::uintptr_t kVtableWp15 = 0x01032330;  // uWp15's vtable (static analysis 2026-11-22)
+void DriveGatlingProbe(double now, const std::optional<std::string>& held) {
+    struct Probe {
+        std::uintptr_t unit = 0;
+        double nextSearch = 0.0, lastAt = 0.0;
+        int generation = -1, lines = 0;
+        std::string last;
+        bool missingLogged = false;
+    };
+    static std::array<Probe, 4> probes;
+    Probe& p = probes[static_cast<std::size_t>(std::clamp(g_adapterSeat, 0, 3))];
+    if (p.generation != g->matchGeneration) {
+        p = {};
+        p.generation = g->matchGeneration;
+    }
+    const auto player = engine::LocalPlayer();
+    if (!player || !held || *held != "gatling") {
+        p.unit = 0;
+        return;
+    }
+    if (p.unit && ReadOr<std::uintptr_t>(p.unit, 0) != kVtableWp15) p.unit = 0;
+    if (!p.unit && now >= p.nextSearch) {
+        p.nextSearch = now + 1.0;
+        for (std::size_t off = 0; off < 0x4000 && !p.unit; off += 4) {
+            const auto ptr = ReadOr<std::uintptr_t>(player + off, 0);
+            if (ptr < 0x00400000 || ptr > 0x7FFF0000 || (ptr & 3)) continue;
+            if (ReadOr<std::uintptr_t>(ptr, 0) == kVtableWp15) {
+                p.unit = ptr;
+                RM_LOGI("gatling probe: its unit %08X at the player's +%zX", static_cast<unsigned>(ptr), off);
+            }
+        }
+        if (!p.unit && !p.missingLogged) {
+            p.missingLogged = true;
+            RM_LOGI("gatling probe: no uWp15 among the player's pointers");
+        }
+    }
+    if (!p.unit || p.lines >= 400 || now - p.lastAt < 0.1) return;
+    const auto u = p.unit;
+    char text[512];
+    std::snprintf(text, sizeof(text),
+                  "state %u, +10E0 %d, +1D4D %u, spin %.3f, +1D30 %.3f, counter %d, cadence %.3f | player %s, layers %04X@%.2f %04X@%.2f %04X@%.2f",
+                  ReadOr<std::uint8_t>(u + 0x16, 0), ReadOr<std::int32_t>(u + 0x10E0, 0), ReadOr<std::uint8_t>(u + 0x1D4D, 0),
+                  ReadOr<float>(u + 0x1D2C, 0.0f), ReadOr<float>(u + 0x1D30, 0.0f), ReadOr<std::int32_t>(u + 0x1D38, 0),
+                  ReadOr<float>(u + 0x1D50, 0.0f), engine::CurrentActionName(player).c_str(),
+                  ReadOr<std::uint16_t>(player + 0x380 + 4, 0xFFFF), ReadOr<float>(player + 0x380 + 0x24, 0.0f),
+                  ReadOr<std::uint16_t>(player + 0x380 + 6 * 0xE0 + 4, 0xFFFF), ReadOr<float>(player + 0x380 + 6 * 0xE0 + 0x24, 0.0f),
+                  ReadOr<std::uint16_t>(player + 0x380 + 7 * 0xE0 + 4, 0xFFFF), ReadOr<float>(player + 0x380 + 7 * 0xE0 + 0x24, 0.0f));
+    if (p.last == text) return;
+    p.last = text;
+    p.lastAt = now;
+    ++p.lines;
+    RM_LOGI("gatling probe: %s, barrel %.2f", text, ReadOr<float>(u + 0x1D34, 0.0f));
+}
+
+// Each player's turn, every tick: the held gun's magazine (a free round, the bonus rounds after a
+// reload), the rocket launcher's extra rockets, the Gatling's research log.
+void DriveGunLevelPerks(double now) {
+    rm::RunController& run = *g->run;
+    if (!g->match.inMatch || !run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || !engine::Caps().inventory) return;
+    LevelSeatState& s = LevelSeat();
+    const auto held = EquippedWeaponBaseId();
+    if (held && *held == "rocket_launcher") s.rocketHeldAt = now;
+    DriveGatlingProbe(now, held);
+    // The magazine.
+    const std::uintptr_t slot = EquippedGunSlot();
+    const std::uint32_t raw = slot ? ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) : 0;
+    const int count = slot ? ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0) : -1;
+    if (slot != s.magSlot || raw != s.magItem) {
+        s.magSlot = slot;
+        s.magItem = raw;
+        s.magCount = count;
+    } else if (slot && s.magCount >= 0 && count != s.magCount) {
+        const int last = s.magCount;
+        s.magCount = count;
+        const rm::WeaponBaseDef* w = WeaponForItem(raw);
+        const GunLevel lv = w != nullptr ? RunGunLevel(w->id) : GunLevel{};
+        if (w != nullptr && lv.steps > 0) {
+            const rm::WeaponLevelPerks& pl = w->per_level;
+            const int max = ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0);
+            if (count == last - 1 && LevelChance(pl.free_round_pct, lv.steps)) {
+                SafeStore<std::int32_t>(slot + re5::off::kSlotCount, count + 1);
+                s.magCount = count + 1;
+                if (LevelLog("free_round")) RM_LOGI("level perks: %s kept its round (%d)", w->id.c_str(), count + 1);
+            } else if (count > last && pl.magazine > 0) {
+                // The game's reload fills to the gun's own capacity (SyncGunMax raised the max by the bonus).
+                const int bonus = pl.magazine * lv.steps;
+                if (count == max - bonus && count < max) {
+                    const bool infinite = (ReadOr<std::uint8_t>(slot + re5::off::kSlotLevelCapacity, 0) & re5::off::kSlotInfiniteBit) != 0;
+                    const int got = infinite ? max - count : TakeAmmo(HeldAmmoItem(), max - count);
+                    if (got > 0) {
+                        SafeStore<std::int32_t>(slot + re5::off::kSlotCount, count + got);
+                        s.magCount = count + got;
+                    }
+                    if (LevelLog("magazine")) {
+                        RM_LOGI("level perks: %s reloaded to %d, +%d of its %d bonus rounds%s", w->id.c_str(), count, got, bonus,
+                                infinite ? " (infinite)" : "");
+                    }
+                }
+            }
+        }
+    } else {
+        s.magCount = count;
+    }
+    // The rocket launcher: one more an arena every extra_every_levels levels, this long after the last is gone.
+    if (s.rocketGeneration != g->matchGeneration) {
+        s.rocketGeneration = g->matchGeneration;
+        s.rocketsGiven = 1;  // the restock's (RestockWeapons)
+        s.rocketSeen = false;
+        s.rocketGoneSince = -1.0;
+    }
+    if (now < s.rocketNextCheck) return;
+    s.rocketNextCheck = now + 0.5;
+    const GunLevel rocket = RunGunLevel("rocket_launcher");
+    const int every = rocket.perks().extra_every_levels;
+    if (rocket.base == nullptr || every <= 0 || rocket.base->game_item < 0) return;
+    const std::int64_t item = rocket.base->game_item;
+    const auto owned = run.RestockWeaponItems();
+    if (std::find(owned.begin(), owned.end(), item) == owned.end()) return;
+    const int perArena = 1 + rocket.steps / every;
+    if (g_inventoryBridge.Holds(item).value_or(true)) {
+        s.rocketSeen = true;
+        s.rocketGoneSince = -1.0;
+        return;
+    }
+    if (!s.rocketSeen || s.rocketsGiven >= perArena) return;
+    if (s.rocketGoneSince < 0.0) {
+        s.rocketGoneSince = now;
+        return;
+    }
+    if (now - s.rocketGoneSince < kRocketBackAfter) return;
+    const int placed = GiveOrStash("rocket", item, 1);
+    ++s.rocketsGiven;  // given or not, once: no retry every half second
+    s.rocketGoneSince = -1.0;
+    s.rocketSeen = false;
+    RM_LOGI("level perks: rocket launcher %d of %d this arena %s", s.rocketsGiven, perArena, placed > 0 ? "given" : "had no room");
+    if (placed > 0) g->toasts.Push("Rocket Launcher: " + std::to_string(s.rocketsGiven) + " of " + std::to_string(perArena) + " this arena");
+}
+
 // He turns to face a point at once, the game's way (engine::TurnTo); true when his rotation then
 // faces it (within kFacingCone), which is what the game's melee prompt needs.
 constexpr float kFacingCone = 0.94f;  // cos 20 degrees
@@ -12943,6 +13519,8 @@ private:
         }
         const auto result = g->run->ComputeOutgoingMultiplier(ctx);
         if (!result.procs.empty()) QueueProcs(hit.enemy, result.procs);
+        // The levels of the guns the game gives none (the Gatling's ramp, a stunned target; the rest queued).
+        const double levelMult = LevelPerksOnHit(hit, ctx, result.multiplier);
         // Which gun's hits carry which element, once a match each (2026-11-11, the user: "once the
         // flamethrower got an element my pistol also got it").
         {
@@ -12984,7 +13562,7 @@ private:
             }
             RM_LOGD("outgoing actions:%s", actions.c_str());
         }
-        return static_cast<float>(result.multiplier) * g->settings.devOutgoingMultiplier;
+        return static_cast<float>(result.multiplier * levelMult) * g->settings.devOutgoingMultiplier;
     }
 
     void EnemyHit(const EnemyHitResult& r) {
@@ -13170,8 +13748,10 @@ private:
             HideHolsteredFlamethrower(now);
             UpdateFlameStreamLook(now);
             DriveFlameStream(now);
+            DriveGunLevelPerks(now);
         }); }
         { ProfileScope p("tick:DriveElements"); DriveElements(now); }
+        { ProfileScope p("tick:DriveLevelHits"); DriveLevelHits(now); }
         { ProfileScope p("tick:DriveEffectGallery"); DriveEffectGallery(now); }
         { ProfileScope p("tick:UpdateModRedirects"); UpdateModRedirects(); }
         { ProfileScope p("tick:TraceTwinShots"); TraceTwinShots(now); }

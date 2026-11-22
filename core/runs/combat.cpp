@@ -165,6 +165,8 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
         const WeaponBaseDef* base = content_->FindWeapon(weapon->base_id);
         b.weapon_base_mult = base != nullptr ? base->base_damage_mult : 1.0;
         b.weapon_bonus += LevelDamageBonus(eco, weapon->level);
+        // A gun the game gives no levels: its crit chance by level (weapons.json per_level crit_pct).
+        if (base != nullptr) crit_chance += base->per_level.crit_pct / 100.0 * std::max(0, weapon->level - 1);
         b.weapon_instance_id = weapon->instance_id;
         for (const Affix& af : weapon->affixes) {
             switch (af.kind) {

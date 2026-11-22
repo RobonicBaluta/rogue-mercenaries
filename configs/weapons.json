@@ -1,5 +1,5 @@
 {
-  "_comment": "Base weapons are the game's own weapons; ids are what the adapter reports as weapon_id. Affix roll ranges are scaled by economy.json weapon_rarity.magnitude_mult. Units: *_pct percent, crit_chance fraction, supplies_on_kill supplies per kill (fractions add up kill by kill). Elements (2026-11-11, the user: the best tiers carried too many): a gun has one. A gun found or bought at Epic or above rolls it by weight (the better ones less often); a gun refined to Epic offers two by weight and a random one, any as likely, to choose from; at Legendary it evolves (its 'evolved' numbers). An Exotic gun adds one legendary effect (unique_affixes). stream_seconds is the flamethrower's (an enemy in its flame): Shock arcs from it every that many seconds, Cryo freezes it after that many. The flamethrower's Incendiary burns at stream_dps_fraction of its flame's damage a second until stream_total_fraction of it is dealt; its Toxic adds a stack of stream_dps_fraction a second at most every stream_stack_seconds (up to stream_max_stacks), ticking once a second until the enemy dies. Radii are engine units (centimetres); dps_fraction and an arc's damage_fraction are fractions of the hit's damage, a blast's damage_fraction and a cloud's cloud_dps_fraction of the victim's maximum health. Against a boss an element only adds boss_bonus damage.",
+  "_comment": "Base weapons are the game's own weapons; ids are what the adapter reports as weapon_id. Affix roll ranges are scaled by economy.json weapon_rarity.magnitude_mult. Units: *_pct percent, crit_chance fraction, supplies_on_kill supplies per kill (fractions add up kill by kill). Elements (2026-11-11, the user: the best tiers carried too many): a gun has one. A gun found or bought at Epic or above rolls it by weight (the better ones less often); a gun refined to Epic offers two by weight and a random one, any as likely, to choose from; at Legendary it evolves (its 'evolved' numbers). An Exotic gun adds one legendary effect (unique_affixes). stream_seconds is the flamethrower's (an enemy in its flame): Shock arcs from it every that many seconds, Cryo freezes it after that many. The flamethrower's Incendiary burns at stream_dps_fraction of its flame's damage a second until stream_total_fraction of it is dealt; its Toxic adds a stack of stream_dps_fraction a second at most every stream_stack_seconds (up to stream_max_stacks), ticking once a second until the enemy dies. Radii are engine units (centimetres); dps_fraction and an arc's damage_fraction are fractions of the hit's damage, a blast's damage_fraction and a cloud's cloud_dps_fraction of the victim's maximum health. Against a boss an element only adds boss_bonus damage (Incendiary and Toxic burn and poison it instead). per_level: what each level above 1 adds to a gun the game gives no levels (amounts a level; WeaponLevelPerks in weapons.h says each).",
   "schema_version": 1,
   "weapons": [
     {
@@ -80,14 +80,26 @@
       "name": "Px4",
       "category": "handgun",
       "base_damage_mult": 1.0,
-      "game_item": 287
+      "game_item": 287,
+      "per_level": {
+        "crit_pct": 2.5,
+        "headshot_refund_pct": 10,
+        "supplies_per_kill": 0.05,
+        "magazine": 2
+      }
     },
     {
       "id": "samurai_edge",
       "name": "Samurai Edge",
       "category": "handgun",
       "base_damage_mult": 1.05,
-      "game_item": 297
+      "game_item": 297,
+      "per_level": {
+        "crit_pct": 2.5,
+        "headshot_refund_pct": 10,
+        "supplies_per_kill": 0.05,
+        "magazine": 2
+      }
     },
     {
       "id": "m29",
@@ -144,7 +156,13 @@
       "category": "machine_gun",
       "base_damage_mult": 1.0,
       "build_only": true,
-      "game_item": 277
+      "game_item": 277,
+      "per_level": {
+        "ramp_pct": 6,
+        "ramp_seconds": 4,
+        "stagger_pct": 1,
+        "crit_pct": 2
+      }
     },
     {
       "id": "longbow",
@@ -152,7 +170,13 @@
       "category": "bow",
       "base_damage_mult": 1.0,
       "build_only": true,
-      "game_item": 271
+      "game_item": 271,
+      "per_level": {
+        "pierce_pct": 15,
+        "explode_every": 6,
+        "explode_radius_m": 2.5,
+        "explode_fraction": 0.75
+      }
     },
     {
       "id": "m93r",
@@ -168,7 +192,13 @@
       "category": "melee",
       "base_damage_mult": 1.0,
       "unlock_cost_credits": 100,
-      "game_item": 290
+      "game_item": 290,
+      "per_level": {
+        "chain_targets": 1,
+        "chain_m": 4,
+        "stun_s": 0.5,
+        "stunned_damage_pct": 5
+      }
     },
     {
       "id": "grenade_launcher",
@@ -176,7 +206,14 @@
       "category": "launcher",
       "base_damage_mult": 1.0,
       "unlock_cost_credits": 350,
-      "game_item": 293
+      "game_item": 293,
+      "per_level": {
+        "free_round_pct": 5,
+        "blast_m": 0.5,
+        "blast_fraction": 0.4,
+        "status_pct": 5,
+        "magazine": 1
+      }
     },
     {
       "id": "rocket_launcher",
@@ -185,7 +222,12 @@
       "base_damage_mult": 1.0,
       "unlock_cost_credits": 400,
       "game_item": 269,
-      "restocks": true
+      "restocks": true,
+      "per_level": {
+        "extra_every_levels": 2,
+        "blast_m": 0.75,
+        "blast_fraction": 0.5
+      }
     },
     {
       "id": "flamethrower",
@@ -197,7 +239,7 @@
       "per_level": {
         "fuel_pct": 20,
         "refill_pct": 25,
-        "reach_m": 0.5
+        "reach_m": 1.25
       }
     }
   ],

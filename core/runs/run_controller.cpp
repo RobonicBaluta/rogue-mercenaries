@@ -1481,6 +1481,10 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
                 for (const Affix& af : weapon->affixes) {
                     if (af.kind == AffixKind::SuppliesOnKill) per_kill += af.value;
                 }
+                // Its supplies by level (weapons.json per_level supplies_per_kill: the pistols).
+                if (const WeaponBaseDef* gun = content_->FindWeapon(weapon->base_id)) {
+                    per_kill += gun->per_level.supplies_per_kill * std::max(0, weapon->level - 1);
+                }
                 const std::int64_t amount = KillShare(per_kill * build_mult, kill_index);
                 if (amount > 0 && CreditSupplies(ArenaTx(a.arena, kill_tx + ":weapon"), amount, weapon->instance_id, false)) {
                     out.supplies_awarded += amount;
