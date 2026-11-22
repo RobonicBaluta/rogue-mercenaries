@@ -567,12 +567,11 @@ MOD_SKINS += [
                  portrait={'file': 'Leon jacket\\kreedpic.jpg', 'crop': [80, 0, 1200, 1200]})},
 ]
 # Rebecca's Winter (Winter Outfit by Angeltitilxyz, 2026-11-10): her one costume's file, so it stands in
-# for S.T.A.R.S. (slot 17), which keeps its own look. Its page was not found (Nexus refused the
-# listing that names it): the game's mod list until the user gives the link.
+# for S.T.A.R.S. (slot 17), which keeps its own look. Its page: Nexus mod 690 (the user, 2026-11-22).
 MOD_SKINS.append(
     {'character': 'rebecca', 'base': 'rebecca_stars', 'id': 'rebecca_winter', 'name': 'Winter',
      'mod': {'name': 'Winter Outfit Rebecca', 'author': 'Angeltitilxyz',
-             'url': 'https://www.nexusmods.com/residentevil5goldedition/mods/',
+             'url': 'https://www.nexusmods.com/residentevil5goldedition/mods/690',
              'files': [{'name': 'uPl07RebeccaNormal.arc', 'size': 46621903}],
              # Its preview: her bust on black.
              'portrait': {'file': 'screenshot.jpg', 'crop': [490, 0, 940, 940]}}})
