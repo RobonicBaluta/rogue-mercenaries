@@ -61,6 +61,7 @@ TEST_CASE("music: a stream list's entries, its battle tracks", "[music]") {
     REQUIRE(entries.size() == 3);
     CHECK(entries[0].path == made[0].path);
     CHECK(entries[0].Leaf() == "b_bgm001");
+    CHECK(entries[0].path_offset == 0x3C + 3 * 0x18);  // the paths after the entries
     CHECK(entries[0].size == 1763750);
     CHECK(entries[0].loop_end == 4113792);
     CHECK(entries[1].Loops() == false);

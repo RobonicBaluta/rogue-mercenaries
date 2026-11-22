@@ -21,6 +21,7 @@ struct StreamEntry {
     std::uint32_t length = 0;    // samples
     std::uint32_t channels = 0;
     std::uint32_t loop_start = kNoLoop, loop_end = kNoLoop;
+    std::uint32_t path_offset = 0;  // where its path is in the file (the entry's first field)
     [[nodiscard]] bool Loops() const { return loop_start != kNoLoop && loop_end != kNoLoop && loop_end > loop_start; }
     /// The file's name without its folders ("b_bgm001").
     [[nodiscard]] std::string Leaf() const;

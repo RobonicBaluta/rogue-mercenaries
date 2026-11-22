@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <climits>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -14,114 +13,51 @@
 
 #include "log.h"
 #include "memory.h"
-#include "re5_layout.h"
 #include "rm/music.h"
 
 namespace rmre5::music {
 namespace {
 
-// Where a list's entries are in the game's memory: entry 0's size field, the distance between
-// entries, and each field from an entry's size field (found by the values the file on disk holds).
-struct Layout {
-    bool found = false;
-    std::uintptr_t first = 0;
-    std::size_t stride = 0;
-    int length = 4, channels = 8, loopStart = 12, loopEnd = 16;
-};
-
 struct List {
-    const char* resource;  // the loaded list's resource path
-    const wchar_t* file;   // its file, under nativePC_MT
+    const wchar_t* file;  // its file, under nativePC_MT
     std::vector<rm::music::StreamEntry> entries;
-    Layout layout;
-    std::uintptr_t searchedIn = 0;  // the resource the layout was found in (looked for again in another)
-    bool missingLogged = false;
 };
 
-std::array<List, 2> g_lists = {List{"sound\\bgm\\st_bgm", L"sound\\bgm\\st_bgm.stq", {}, {}, 0, false},
-                               List{"sound\\bgm_dc\\st_bgm_dc", L"sound\\bgm_dc\\st_bgm_dc.stq", {}, {}, 0, false}};
+std::array<List, 2> g_lists = {List{L"sound\\bgm\\st_bgm.stq", {}}, List{L"sound\\bgm_dc\\st_bgm_dc.stq", {}}};
 bool g_loaded = false;
 std::filesystem::path g_game;  // ...\nativePC_MT
 std::filesystem::path g_dataDir;
-std::string g_theme;  // its path, lower case; empty while not learned
+std::string g_theme;  // its path, lower case
 bool g_themeRead = false;
 rm::music::Rotation g_rotation{(static_cast<std::uint64_t>(std::random_device{}()) << 32) | std::random_device{}()};
 int g_opensLogged = 0;
 double g_armedAt = -1.0e9;  // when the last arena's track was chosen
 
-// The theme's entry while another track plays in its place (its own values kept to put back).
+// The track in the theme's place (none while the theme is its own).
 struct Patch {
     bool on = false;
     int list = -1;
-    std::size_t index = 0;
-    std::uint32_t saved[5] = {};  // size, length, channels, loop start, loop end
+    std::size_t index = 0;  // the theme's entry
     std::string track;
     std::wstring tail, target;
-    // The copies the game keeps of the theme's numbers (TheCopies), each one's values before.
-    std::vector<std::pair<std::uintptr_t, std::array<std::uint32_t, 5>>> copies;
 };
 Patch g_patch;
 
-// The game's other copies of the theme's loop points (the user, 2026-11-22: "themes don't loop": with
-// the list's entry holding the track's numbers the track still played to its end and stopped, as it
-// would with the theme's loop end, past a shorter track's end). Found once in the process's own
-// writable memory by the theme's loop start and loop end side by side; the list's entry is one of them.
-// Each is the loop start's address; the dwords before it are checked for the length, the channels and
-// the size as the list lays them out (size, length, channels, loop start, loop end).
-std::vector<std::uintptr_t> g_copies;
-bool g_copiesSearched = false;
-
-void FindCopies(const rm::music::StreamEntry& theme) {
-    g_copiesSearched = true;
-    g_copies.clear();
-    const DWORD started = GetTickCount();
-    std::size_t scanned = 0;
-    std::vector<std::uint8_t> buf(0x10000 + 8);
-    SYSTEM_INFO si{};
-    GetSystemInfo(&si);
-    std::uintptr_t at = reinterpret_cast<std::uintptr_t>(si.lpMinimumApplicationAddress);
-    const std::uintptr_t top = reinterpret_cast<std::uintptr_t>(si.lpMaximumApplicationAddress);
-    while (at < top && g_copies.size() < 64) {
-        MEMORY_BASIC_INFORMATION mbi{};
-        if (VirtualQuery(reinterpret_cast<LPCVOID>(at), &mbi, sizeof(mbi)) == 0) break;
-        const std::uintptr_t base = reinterpret_cast<std::uintptr_t>(mbi.BaseAddress);
-        const std::uintptr_t end = base + mbi.RegionSize;
-        const DWORD prot = mbi.Protect & 0xFF;
-        const bool writable = prot == PAGE_READWRITE || prot == PAGE_EXECUTE_READWRITE;
-        if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE && writable && (mbi.Protect & PAGE_GUARD) == 0) {
-            for (std::uintptr_t chunk = base; chunk < end && g_copies.size() < 64; chunk += 0x10000) {
-                const std::size_t n = static_cast<std::size_t>(std::min<std::uintptr_t>(0x10000 + 8, end - chunk));
-                if (!SafeCopy(buf.data(), chunk, n)) continue;
-                scanned += n;
-                for (std::size_t o = 0; o + 8 <= n; o += 4) {
-                    std::uint32_t a = 0, b = 0;
-                    std::memcpy(&a, buf.data() + o, 4);
-                    if (a != theme.loop_start) continue;
-                    std::memcpy(&b, buf.data() + o + 4, 4);
-                    if (b == theme.loop_end && o < 0x10000) g_copies.push_back(chunk + o);
-                }
-            }
-        }
-        at = end;
-    }
-    RM_LOGI("music: %zu copies of the theme's loop points in %zu MB of the game's memory (%lu ms)", g_copies.size(), scanned >> 20,
-            GetTickCount() - started);
-    for (const std::uintptr_t c : g_copies) {
-        std::string around;
-        for (int k = -12; k <= 12; ++k) {
-            char part[12];
-            std::snprintf(part, sizeof(part), " %08X", ReadOr<std::uint32_t>(c + static_cast<std::uintptr_t>(static_cast<std::intptr_t>(k * 4)), 0));
-            around += part;
-        }
-        RM_LOGI("music:   at %08X:%s", static_cast<unsigned>(c), around.c_str());
-    }
-}
-
-// A copy's five values (size, length, channels, loop start, loop end) as the list lays them out; a
-// value of the copy that is not the theme's is left as it is.
-std::array<std::uintptr_t, 5> CopyFields(std::uintptr_t loopStart) {
-    return {loopStart - 12, loopStart - 8, loopStart - 4, loopStart, loopStart + 4};
-}
+// What the track takes in the game's memory (the user's runs, 2026-11-22, "themes don't loop"): every
+// copy of the theme's stream list (the file as it is on disk: per entry its path's offset, size, length,
+// channels, loop start, loop end; three of them in a match, the list's resource one of them) and every
+// info block holding the theme's numbers as length, channels, size, loop start, loop end (one). With
+// these the first arena's track looped. A search by the theme's loop points alone had also found the
+// mod's own data (its parsed list, its locals on the stack) and changed it, which broke the later
+// arenas: these are found by their layout, which none of the mod's has.
+struct GameCopies {
+    bool searched = false;
+    int list = -1;                      // the theme's list
+    std::vector<std::uintptr_t> lists;  // each copy's first entry
+    std::vector<std::uintptr_t> infos;  // each info block's length field
+};
+GameCopies g_copies;
+constexpr std::size_t kRecord = 0x18;
 
 std::string Lower(std::string s) {
     for (char& c : s) c = c == '/' ? '\\' : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -146,9 +82,11 @@ void LoadLists() {
             RM_LOGI("music: no %s", Narrow(l.file).c_str());
             continue;
         }
-        const std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         std::string error;
         l.entries = rm::music::ParseStreamList(bytes, &error);
+        // Its bytes go before the memory is given back: the search would take a freed copy for the game's.
+        std::fill(bytes.begin(), bytes.end(), std::uint8_t{0});
         int battle = 0;
         for (const auto& e : l.entries) battle += rm::music::IsBattleTrack(e) ? 1 : 0;
         RM_LOGI("music: %s, %zu tracks, %d battle tracks%s%s", Narrow(l.file).c_str(), l.entries.size(), battle, error.empty() ? "" : ": ",
@@ -196,196 +134,167 @@ bool FileExists(const std::filesystem::path& p) {
     return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
-std::uintptr_t FindResource(const char* path) {
-    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kResourceManager, 0);
-    if (!manager) return 0;
-    for (int i = 0; i < re5::addr::kResourceTableSlots; ++i) {
-        const auto r = ReadOr<std::uintptr_t>(manager + re5::addr::kResourceTable + static_cast<std::size_t>(i) * 4, 0);
-        if (!r) continue;
-        if (Lower(ReadCString(r + re5::addr::kResourcePath, 64)) == path) return r;
-    }
-    return 0;
+std::uint32_t At(std::uintptr_t a) { return ReadOr<std::uint32_t>(a, 0xDEADBEEFu); }
+
+// An entry's path field: its offset in the file, or (a list made ready) a pointer to its path.
+bool PathFieldIs(std::uint32_t v, const rm::music::StreamEntry& e) {
+    if (v == e.path_offset) return true;
+    return v >= 0x10000 && v < 0x7FFF0000 && Lower(ReadCString(v, 80)) == Lower(e.path);
 }
 
-// The loaded resources whose path has "bgm" (when a list is not found, to tell what it is called).
-std::string BgmResources() {
-    std::string out;
-    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kResourceManager, 0);
-    for (int i = 0; manager && i < re5::addr::kResourceTableSlots && out.size() < 400; ++i) {
-        const auto r = ReadOr<std::uintptr_t>(manager + re5::addr::kResourceTable + static_cast<std::size_t>(i) * 4, 0);
-        if (!r) continue;
-        const std::string p = ReadCString(r + re5::addr::kResourcePath, 64);
-        if (Lower(p).find("bgm") != std::string::npos) out += " " + p;
-    }
-    return out.empty() ? " none" : out;
+bool RecordIs(std::uintptr_t record, const rm::music::StreamEntry& e, bool numbers) {
+    if (!PathFieldIs(At(record), e)) return false;
+    return !numbers || (At(record + 4) == e.size && At(record + 8) == e.length);
 }
 
-std::vector<std::uint8_t> ReadRegion(std::uintptr_t at, std::size_t size) {
-    std::vector<std::uint8_t> out;
-    constexpr std::size_t kPage = 0x1000;
-    std::size_t done = 0;
-    while (done < size) {
-        const std::size_t chunk = std::min(kPage - ((at + done) & (kPage - 1)), size - done);
-        const std::size_t old = out.size();
-        out.resize(old + chunk);
-        if (!SafeCopy(out.data() + old, at + done, chunk)) {
-            out.resize(old);
-            break;
-        }
-        done += chunk;
-    }
-    return out;
-}
-
-// An address `off` bytes from `base` (an offset may be negative).
-std::uintptr_t Off(std::uintptr_t base, int off) { return base + static_cast<std::uintptr_t>(static_cast<std::intptr_t>(off)); }
-
-std::uint32_t U32(const std::vector<std::uint8_t>& b, std::size_t at) {
-    std::uint32_t v = 0;
-    std::memcpy(&v, b.data() + at, 4);
-    return v;
-}
-
-// The list's entries in memory: found by entry 0's size and length side by side, then entry 1's,
-// then every entry's; the other fields where every entry has its own value.
-bool Locate(List& l) {
-    const std::uintptr_t res = FindResource(l.resource);
-    if (!res) {
-        if (!l.missingLogged) RM_LOGI("music: %s is not in memory (loaded:%s)", l.resource, BgmResources().c_str());
-        l.missingLogged = true;
-        return false;
-    }
+// A copy of the list in memory whose first entry is at `first`: its first, second and last entries
+// as on disk, and the theme's entry by its path's offset (its numbers may be a track's).
+bool ListCopyAt(std::uintptr_t first, const List& l, std::size_t themeIndex) {
     const auto& e = l.entries;
-    if (e.size() < 2) return false;
-    if (l.layout.found && l.searchedIn == res && ReadOr<std::uint32_t>(l.layout.first + 4, 0) == e[0].length) return true;
-    l.searchedIn = res;
-    l.layout = {};
-    // The resource, what it points to, and what those point to (their first 0x100 bytes).
-    std::vector<std::uintptr_t> starts = {res};
-    const auto head = ReadRegion(res, 0x200);
-    const auto addPointers = [&starts](const std::vector<std::uint8_t>& bytes, std::size_t upTo) {
-        for (std::size_t o = 0; o + 4 <= std::min(bytes.size(), upTo); o += 4) {
-            const std::uint32_t d = U32(bytes, o);
-            if (d >= 0x10000 && d < 0x7FFF0000 && (d & 3) == 0 && std::find(starts.begin(), starts.end(), d) == starts.end()) starts.push_back(d);
-        }
-    };
-    addPointers(head, 0x200);
-    const std::size_t direct = starts.size();
-    for (std::size_t k = 1; k < direct && starts.size() < 2048; ++k) addPointers(ReadRegion(starts[k], 0x100), 0x100);
-    const std::size_t span = std::min<std::size_t>(e.size() * 0x40 + 0x200, 0x20000);
-    for (const std::uintptr_t s : starts) {
-        const auto buf = ReadRegion(s, span);
-        for (std::size_t o = 0; o + 8 <= buf.size(); o += 4) {
-            if (U32(buf, o) != e[0].size || U32(buf, o + 4) != e[0].length) continue;
-            for (std::size_t stride = 8; stride <= 0x100 && o + stride + 8 <= buf.size(); stride += 4) {
-                if (U32(buf, o + stride) != e[1].size || U32(buf, o + stride + 4) != e[1].length) continue;
-                const std::uintptr_t first = s + o;
-                // Every entry but one (the theme's may hold another track's while it plays).
-                int mismatches = 0;
-                for (std::size_t i = 0; i < e.size() && mismatches <= 1; ++i) {
-                    const bool same = ReadOr<std::uint32_t>(first + i * stride, 0) == e[i].size && ReadOr<std::uint32_t>(first + i * stride + 4, 0) == e[i].length;
-                    mismatches += same ? 0 : 1;
-                }
-                if (mismatches > 1) continue;
-                const auto fieldAt = [&](std::uint32_t rm::music::StreamEntry::*field) {
-                    for (int off = -16; off < static_cast<int>(stride); off += 4) {
-                        if (off == 0 || off == 4) continue;
-                        bool ok = false;
-                        int wrong = 0;
-                        for (std::size_t i = 0; i < e.size() && wrong <= 1; ++i) {
-                            wrong += ReadOr<std::uint32_t>(Off(first + i * stride, off), 0xDEADBEEFu) == e[i].*field ? 0 : 1;
-                        }
-                        ok = wrong <= 1;
-                        if (ok) return off;
-                    }
-                    return INT_MIN;
-                };
-                Layout found;
-                found.first = first;
-                found.stride = stride;
-                found.channels = fieldAt(&rm::music::StreamEntry::channels);
-                found.loopStart = fieldAt(&rm::music::StreamEntry::loop_start);
-                found.loopEnd = fieldAt(&rm::music::StreamEntry::loop_end);
-                if (found.channels == INT_MIN || found.loopStart == INT_MIN || found.loopEnd == INT_MIN) {
-                    RM_LOGW("music: %s's sizes are at %08X (every %zu bytes) but not all its other fields (channels %d, loop %d..%d)", l.resource,
-                            static_cast<unsigned>(first), stride, found.channels, found.loopStart, found.loopEnd);
-                    return false;
-                }
-                found.found = true;
-                l.layout = found;
-                RM_LOGI("music: %s in memory at %08X (resource %08X): %zu entries every %zu bytes, size +0, length +4, channels %+d, loop %+d..%+d",
-                        l.resource, static_cast<unsigned>(first), static_cast<unsigned>(res), e.size(), stride, found.channels, found.loopStart,
-                        found.loopEnd);
-                return true;
-            }
+    if (e.size() < 3 || themeIndex >= e.size()) return false;
+    for (const std::size_t i : {std::size_t{0}, std::size_t{1}, e.size() - 1}) {
+        if (i != themeIndex && !RecordIs(first + i * kRecord, e[i], true)) return false;
+    }
+    return RecordIs(first + themeIndex * kRecord, e[themeIndex], false);
+}
+
+// An info block holding one track's numbers (length, channels, size, loop start, loop end).
+bool InfoHolds(std::uintptr_t at, const rm::music::StreamEntry& e) {
+    return At(at) == e.length && At(at + 4) == e.channels && At(at + 8) == e.size && At(at + 12) == e.loop_start && At(at + 16) == e.loop_end;
+}
+bool InfoHoldsATrack(std::uintptr_t at) {
+    for (const List& l : g_lists) {
+        for (const auto& e : l.entries) {
+            if (InfoHolds(at, e)) return true;
         }
     }
-    std::string hex;
-    for (std::size_t o = 0; o < std::min<std::size_t>(head.size(), 0x60); o += 4) {
-        char part[12];
-        std::snprintf(part, sizeof(part), " %08X", U32(head, o));
-        hex += part;
-    }
-    RM_LOGW("music: %s (resource %08X) holds none of its entries' values; its first bytes:%s", l.resource, static_cast<unsigned>(res), hex.c_str());
     return false;
 }
 
-void Store(std::uintptr_t entry, const Layout& lay, const std::uint32_t values[5]) {
-    SafeStore<std::uint32_t>(entry, values[0]);
-    SafeStore<std::uint32_t>(Off(entry, lay.length), values[1]);
-    SafeStore<std::uint32_t>(Off(entry, lay.channels), values[2]);
-    SafeStore<std::uint32_t>(Off(entry, lay.loopStart), values[3]);
-    SafeStore<std::uint32_t>(Off(entry, lay.loopEnd), values[4]);
+void WriteRecord(std::uintptr_t first, std::size_t index, const rm::music::StreamEntry& v) {
+    const std::uintptr_t r = first + index * kRecord;
+    SafeStore<std::uint32_t>(r + 4, v.size);
+    SafeStore<std::uint32_t>(r + 8, v.length);
+    SafeStore<std::uint32_t>(r + 12, v.channels);
+    SafeStore<std::uint32_t>(r + 16, v.loop_start);
+    SafeStore<std::uint32_t>(r + 20, v.loop_end);
+}
+
+void WriteInfo(std::uintptr_t at, const rm::music::StreamEntry& v) {
+    SafeStore<std::uint32_t>(at, v.length);
+    SafeStore<std::uint32_t>(at + 4, v.channels);
+    SafeStore<std::uint32_t>(at + 8, v.size);
+    SafeStore<std::uint32_t>(at + 12, v.loop_start);
+    SafeStore<std::uint32_t>(at + 16, v.loop_end);
+}
+
+// Every copy of the list and every info block holding the theme's numbers (called with the theme's
+// numbers in place), in the process's own writable memory.
+void FindGameCopies(const Found& theme) {
+    const List& l = g_lists[static_cast<std::size_t>(theme.list)];
+    const auto& e = l.entries;
+    const rm::music::StreamEntry& t = theme.entry();
+    g_copies = {};
+    g_copies.searched = true;
+    g_copies.list = theme.list;
+    const DWORD started = GetTickCount();
+    std::size_t scanned = 0;
+    constexpr std::size_t kChunk = 0x10000, kOverlap = 0x20;
+    std::vector<std::uint8_t> buf(kChunk + kOverlap);
+    const auto own = reinterpret_cast<std::uintptr_t>(buf.data());
+    SYSTEM_INFO si{};
+    GetSystemInfo(&si);
+    std::uintptr_t at = reinterpret_cast<std::uintptr_t>(si.lpMinimumApplicationAddress);
+    const std::uintptr_t top = reinterpret_cast<std::uintptr_t>(si.lpMaximumApplicationAddress);
+    const auto add = [](std::vector<std::uintptr_t>& v, std::uintptr_t a) {
+        if (v.size() < 16 && std::find(v.begin(), v.end(), a) == v.end()) v.push_back(a);
+    };
+    while (at < top) {
+        MEMORY_BASIC_INFORMATION mbi{};
+        if (VirtualQuery(reinterpret_cast<LPCVOID>(at), &mbi, sizeof(mbi)) == 0) break;
+        const std::uintptr_t base = reinterpret_cast<std::uintptr_t>(mbi.BaseAddress);
+        const std::uintptr_t end = base + mbi.RegionSize;
+        const DWORD prot = mbi.Protect & 0xFF;
+        const bool writable = prot == PAGE_READWRITE || prot == PAGE_EXECUTE_READWRITE;
+        if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE && writable && (mbi.Protect & PAGE_GUARD) == 0) {
+            for (std::uintptr_t chunk = base; chunk < end; chunk += kChunk) {
+                const std::size_t n = static_cast<std::size_t>(std::min<std::uintptr_t>(kChunk + kOverlap, end - chunk));
+                if (chunk + n > own && chunk < own + buf.size()) continue;  // the search's own buffer
+                if (!SafeCopy(buf.data(), chunk, n)) continue;
+                scanned += n;
+                for (std::size_t o = 4; o + 20 <= n; o += 4) {
+                    std::uint32_t d = 0;
+                    std::memcpy(&d, buf.data() + o, 4);
+                    if (d == e[0].size) {
+                        std::uint32_t len = 0, path = 0;
+                        std::memcpy(&len, buf.data() + o + 4, 4);
+                        std::memcpy(&path, buf.data() + o - 4, 4);
+                        if (len == e[0].length && PathFieldIs(path, e[0]) && ListCopyAt(chunk + o - 4, l, theme.index)) add(g_copies.lists, chunk + o - 4);
+                    } else if (d == t.length) {
+                        std::uint32_t v[4] = {};
+                        std::memcpy(v, buf.data() + o + 4, 16);
+                        if (v[0] == t.channels && v[1] == t.size && v[2] == t.loop_start && v[3] == t.loop_end) add(g_copies.infos, chunk + o);
+                    }
+                }
+            }
+        }
+        at = end;
+    }
+    std::string where;
+    const auto hex = [](std::uintptr_t a) {
+        char text[12];
+        std::snprintf(text, sizeof(text), "%08X", static_cast<unsigned>(a));
+        return std::string(text);
+    };
+    for (const std::uintptr_t a : g_copies.lists) where += " list " + hex(a);
+    for (const std::uintptr_t a : g_copies.infos) where += " info " + hex(a);
+    RM_LOGI("music: %zu copies of the list and %zu info blocks in %zu MB of the game's memory (%lu ms):%s", g_copies.lists.size(),
+            g_copies.infos.size(), scanned >> 20, GetTickCount() - started, where.c_str());
+}
+
+// Each copy and info block takes `v`'s numbers (the theme's, or a track's); what no longer is one is
+// left alone. False when one is gone (looked for again).
+bool WriteCopies(const Found& theme, const rm::music::StreamEntry& v) {
+    const List& l = g_lists[static_cast<std::size_t>(theme.list)];
+    bool all = true;
+    for (const std::uintptr_t first : g_copies.lists) {
+        if (ListCopyAt(first, l, theme.index)) {
+            WriteRecord(first, theme.index, v);
+        } else {
+            all = false;
+        }
+    }
+    for (const std::uintptr_t info : g_copies.infos) {
+        if (InfoHoldsATrack(info)) {
+            WriteInfo(info, v);
+        } else {
+            all = false;
+        }
+    }
+    return all;
 }
 
 void Restore() {
     if (!g_patch.on) return;
-    List& l = g_lists[static_cast<std::size_t>(g_patch.list)];
-    if (Locate(l)) Store(l.layout.first + g_patch.index * l.layout.stride, l.layout, g_patch.saved);
-    for (const auto& [loopStart, before] : g_patch.copies) {
-        const auto fields = CopyFields(loopStart);
-        for (std::size_t k = 0; k < 5; ++k) SafeStore<std::uint32_t>(fields[k], before[k]);
-    }
+    const Found theme{g_patch.list, g_patch.index};
+    WriteCopies(theme, theme.entry());  // the theme's own numbers, from the file on disk
     RM_LOGI("music: the theme is its own again (it was %s)", g_patch.track.c_str());
     g_patch = {};
 }
 
 bool Apply(const Found& theme, const Found& track) {
     Restore();
-    List& l = g_lists[static_cast<std::size_t>(theme.list)];
     const rm::music::StreamEntry& src = track.entry();
     const std::filesystem::path file = g_game / (src.path + ".sngw");
-    if (!FileExists(file) || !Locate(l)) return false;
-    const Layout& lay = l.layout;
-    const std::uintptr_t at = lay.first + theme.index * lay.stride;
-    Patch p;
-    p.saved[0] = ReadOr<std::uint32_t>(at, 0);
-    p.saved[1] = ReadOr<std::uint32_t>(Off(at, lay.length), 0);
-    p.saved[2] = ReadOr<std::uint32_t>(Off(at, lay.channels), 0);
-    p.saved[3] = ReadOr<std::uint32_t>(Off(at, lay.loopStart), 0);
-    p.saved[4] = ReadOr<std::uint32_t>(Off(at, lay.loopEnd), 0);
-    // It holds a track's size and length (the theme's, or the last track's: 2026-11-22, it held
-    // b_bgm008's right after the theme's were put back, the game writing it again as it played);
-    // what it is put back to is the theme's own, from the file on disk.
-    bool known = false;
-    for (const List& other : g_lists) {
-        for (const rm::music::StreamEntry& e : other.entries) known = known || (e.size == p.saved[0] && e.length == p.saved[1]);
-    }
-    if (!known) {
-        RM_LOGW("music: the theme's entry holds %u/%u, no track's; left alone", p.saved[0], p.saved[1]);
+    if (!FileExists(file)) return false;
+    // With the theme's numbers in place: the copies known still there, else looked for again.
+    if (!g_copies.searched || g_copies.list != theme.list || !WriteCopies(theme, theme.entry()) || g_copies.lists.empty()) FindGameCopies(theme);
+    if (g_copies.lists.empty()) {
+        RM_LOGW("music: no copy of the theme's list in memory");
         return false;
     }
-    if (p.saved[0] != theme.entry().size) {
-        RM_LOGI("music: the theme's entry held %u/%u (another track's) as the arena was armed", p.saved[0], p.saved[1]);
-    }
-    const rm::music::StreamEntry& own0 = theme.entry();
-    p.saved[0] = own0.size;
-    p.saved[1] = own0.length;
-    p.saved[2] = own0.channels;
-    p.saved[3] = own0.loop_start;
-    p.saved[4] = own0.loop_end;
-    const std::uint32_t values[5] = {src.size, src.length, src.channels, src.loop_start, src.loop_end};
-    Store(at, lay, values);
+    WriteCopies(theme, src);
+    Patch p;
     p.on = true;
     p.list = theme.list;
     p.index = theme.index;
@@ -393,29 +302,6 @@ bool Apply(const Found& theme, const Found& track) {
     const std::string tail = Lower(theme.entry().path) + ".sngw";
     p.tail = fileredirect::NormaliseTail(std::wstring(tail.begin(), tail.end()));
     p.target = file.wstring();
-    // The game's other copies: each value that is the theme's takes the track's (looked for again when
-    // one no longer holds the theme's loop points).
-    const rm::music::StreamEntry& own = theme.entry();
-    const std::uint32_t themeValues[5] = {own.size, own.length, own.channels, own.loop_start, own.loop_end};
-    const auto stillThere = [&] {
-        for (const std::uintptr_t c : g_copies) {
-            if (ReadOr<std::uint32_t>(c, 0) != own.loop_start || ReadOr<std::uint32_t>(c + 4, 0) != own.loop_end) return false;
-        }
-        return true;
-    };
-    if (!g_copiesSearched || !stillThere()) FindCopies(own);
-    int changed = 0;
-    for (const std::uintptr_t c : g_copies) {
-        if (c == Off(at, lay.loopStart)) continue;  // the list's own entry (done above)
-        const auto fields = CopyFields(c);
-        std::array<std::uint32_t, 5> before{};
-        for (std::size_t k = 0; k < 5; ++k) before[k] = ReadOr<std::uint32_t>(fields[k], 0);
-        p.copies.push_back({c, before});
-        for (std::size_t k = 0; k < 5; ++k) {
-            if (before[k] == themeValues[k] && SafeStore<std::uint32_t>(fields[k], values[k])) ++changed;
-        }
-    }
-    if (!g_copies.empty()) RM_LOGI("music: %d values in %zu copies take %s's", changed, g_copies.size(), src.Leaf().c_str());
     g_patch = p;
     return true;
 }
@@ -476,8 +362,8 @@ void NextArena(bool enabled, double now) {
         RM_LOGW("music: %s could not take the theme's place; the theme plays", pick.c_str());
         return;
     }
-    RM_LOGI("music: this arena plays %s in the theme's place (%.0f s, %zu tracks take turns)", track->entry().Leaf().c_str(),
-            track->entry().length / 48000.0, pool.size());
+    RM_LOGI("music: this arena plays %s in the theme's place (%.0f s; %zu list copies and %zu info blocks; %zu tracks take turns)",
+            track->entry().Leaf().c_str(), track->entry().length / 48000.0, g_copies.lists.size(), g_copies.infos.size(), pool.size());
 }
 
 std::vector<fileredirect::Redirect> Redirects() {

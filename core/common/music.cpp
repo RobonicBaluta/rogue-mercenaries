@@ -47,6 +47,7 @@ std::vector<StreamEntry> ParseStreamList(const std::vector<std::uint8_t>& bytes,
         ReadU32(bytes, at + 16, e.loop_start);
         ReadU32(bytes, at + 20, e.loop_end);
         if (name >= bytes.size()) return fail("an entry's path is outside the file");
+        e.path_offset = name;
         const auto zero = std::find(bytes.begin() + name, bytes.end(), std::uint8_t{0});
         if (zero == bytes.end()) return fail("an entry's path has no end");
         e.path.assign(bytes.begin() + name, zero);
