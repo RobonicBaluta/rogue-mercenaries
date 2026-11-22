@@ -53,17 +53,27 @@ the script refuses a DLL of another version or a developer `adapter.json`). The 
 `Uninstall.bat`, `README.txt` (the tester's guide, from `installer\README.txt`), the scripts in `installer\`, the
 files they install (`files\`), licenses and `SHA256SUMS.txt`; no game files, profile or logs. `Install.bat` finds
 RE5 through Steam's library folders, checks `re5dx9.exe` against the supported build (asks before installing on
-another), copies the game's save to `%LOCALAPPDATA%\RogueMercenaries\save-backups`, keeps another mod's
-`dinput8.dll` in `RogueMercenaries\backup`, and records every file in `RogueMercenaries\install.json`. Running it again
+another), copies the game's save to `%LOCALAPPDATA%\RogueMercenaries\save-backups`, moves another mod's
+`dinput8.dll` into `plugins\previous-dinput8.dll` (where the mod loads it; one an earlier version kept in
+`RogueMercenaries\backup` moves there too), and records every file in `RogueMercenaries\install.json`. Running it again
 replaces an earlier install. `Uninstall.bat` (in the package or in the game's `RogueMercenaries` folder) removes exactly
 those files, puts the other `dinput8.dll` back, and asks before deleting progress and logs. A tester's progress starts
 empty: the mod's profile lives in `%LOCALAPPDATA%`, which the package never ships or touches.
 
 `-Manual` writes `RogueMercenaries-<version>[-unlocked]-manual.zip` with no script (a mod site's scan flagged the
-installer's): the ZIP's root is the game folder (`dinput8.dll`, `RogueMercenaries\`) and its README gives by-hand steps.
-`-Plugin` writes `...-plugin.zip`, the same with the DLL as `plugins\RogueMercenaries.dll`, for a game whose input fixes
-come with their own `dinput8.dll` plugin loader (a player, 2026-11-18: "it's practically impossible to play RE5 without
-these input fixes"). The DLL runs the mod however it is loaded (the game's `dinput8.dll`, a loader's `plugins` folder, an
+installer's): the ZIP's root is the game folder (`dinput8.dll`, `RogueMercenaries\`, `plugins\`) and its README gives
+by-hand steps. Since 0.2.6 it is the one release (the user: "can we make it that the releases is just one"): the
+`dinput8.dll` is a plugin loader too (`adapters/re5/src/plugin_host.cpp`). As the game's `dinput8.dll` it loads, from its
+`DllMain` (the other mods' own load time), every `.dll` and then every `.asi` of `plugins\`, then every `.asi` next to the
+game, in name order, leaving out itself and any `RogueMercenaries.dll`/`.asi` (the old plugin download); the first plugin
+that exports `DirectInput8Create` (another mod's `dinput8.dll`, e.g. an input fix wrapping the devices) gets the game's
+DirectInput, and a call it makes back into this DLL goes to the system's (no loop). Every package carries
+`plugins\README.txt`. The log lists each plugin (`plugin ...: loaded` / `left out` / `NOT loaded (error ...)`).
+`tools/plugin_host_test` checks it offline on a stand-in game folder with two dummy plugins
+(`build\win32\tools\plugin_host_test\Release\rm_plugin_host_test.exe`, exit code 0 = pass).
+`-Plugin` (no longer released) writes `...-plugin.zip`, the same with the DLL as `plugins\RogueMercenaries.dll`, for
+another loader's `plugins` folder (a player, 2026-11-18: "it's practically impossible to play RE5 without these input
+fixes"). The DLL runs the mod however it is loaded (the game's `dinput8.dll`, a loader's `plugins` folder, an
 ASI loader's `.asi`): it finds the game folder from the executable, says in its log how it was loaded, and only one copy
 runs if two are present. `tools/plugin_loader` (built as `build\win32\tools\plugin_loader\Release\dinput8.dll`, never
 shipped) is a test loader that does what those loaders are documented to do (`plugins\*.dll`, `*.asi`).

@@ -33,6 +33,7 @@ target_compile_options(rm_imgui PRIVATE /W0)
 set(RM_RE5_SOURCES
     src/dllmain.cpp
     src/proxy.cpp
+    src/plugin_host.cpp
     src/log.cpp
     src/crash.cpp
     src/memory.cpp
@@ -97,3 +98,23 @@ set_target_properties(rm_test_plugin_loader PROPERTIES
     OUTPUT_NAME dinput8
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tools/plugin_loader)
 target_compile_definitions(rm_test_plugin_loader PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+
+# Developer test only (never packaged): the plugin host on a stand-in game folder, with two dummy
+# plugins (one with DirectInput8Create, one without). Run rm_plugin_host_test.exe: exit code 0 = pass.
+set(RM_PLUGIN_HOST_TEST_DIR ${CMAKE_BINARY_DIR}/tools/plugin_host_test)
+add_library(rm_test_dummy_plugin SHARED
+    ${CMAKE_SOURCE_DIR}/tools/plugin_host_test/dummy_plugin.cpp
+    ${CMAKE_SOURCE_DIR}/tools/plugin_host_test/dummy_plugin.def)
+set_target_properties(rm_test_dummy_plugin PROPERTIES OUTPUT_NAME dummy_plugin RUNTIME_OUTPUT_DIRECTORY ${RM_PLUGIN_HOST_TEST_DIR})
+add_library(rm_test_plain_plugin SHARED ${CMAKE_SOURCE_DIR}/tools/plugin_host_test/dummy_plugin.cpp)
+set_target_properties(rm_test_plain_plugin PROPERTIES OUTPUT_NAME plain_plugin RUNTIME_OUTPUT_DIRECTORY ${RM_PLUGIN_HOST_TEST_DIR})
+target_compile_definitions(rm_test_plain_plugin PRIVATE DUMMY_PLAIN)
+add_executable(rm_plugin_host_test ${CMAKE_SOURCE_DIR}/tools/plugin_host_test/plugin_host_test.cpp src/plugin_host.cpp)
+set_target_properties(rm_plugin_host_test PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${RM_PLUGIN_HOST_TEST_DIR})
+target_include_directories(rm_plugin_host_test PRIVATE src)
+target_compile_features(rm_plugin_host_test PRIVATE cxx_std_20)
+foreach(t rm_test_dummy_plugin rm_test_plain_plugin rm_plugin_host_test)
+    target_compile_definitions(${t} PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+endforeach()
+target_link_libraries(rm_plugin_host_test PRIVATE uuid)
+add_dependencies(rm_plugin_host_test rm_test_dummy_plugin rm_test_plain_plugin)

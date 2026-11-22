@@ -8,6 +8,7 @@
 #include <string>
 
 #include "hooks.h"
+#include "plugin_host.h"
 #include "proxy.h"
 
 namespace {
@@ -56,8 +57,8 @@ HRESULT WINAPI Proxy_DirectInput8Create(HINSTANCE instance, DWORD version, REFII
         return E_FAIL;
     }
     rmre5::RecordDirectInputCreate(&riid);
-    using Fn = HRESULT(WINAPI*)(HINSTANCE, DWORD, REFIID, LPVOID*, LPUNKNOWN);
-    return reinterpret_cast<Fn>(g_create)(instance, version, riid, out, outer);
+    // Through another mod's dinput8.dll in plugins\ when there is one (plugin_host), else the system's.
+    return rmre5::plugins::DirectInput8Create(reinterpret_cast<rmre5::plugins::CreateFn>(g_create), instance, version, riid, out, outer);
 }
 
 HRESULT WINAPI Proxy_DllCanUnloadNow() {

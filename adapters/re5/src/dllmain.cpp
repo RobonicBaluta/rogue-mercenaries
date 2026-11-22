@@ -2,6 +2,7 @@
 
 #include <MinHook.h>
 
+#include <cstdio>
 #include <string>
 
 #include "crash.h"
@@ -25,6 +26,7 @@
 #include "host.h"
 #include "mod.h"
 #include "overlay.h"
+#include "plugin_host.h"
 #include "probe.h"
 #include "proxy.h"
 #include "settings.h"
@@ -57,6 +59,20 @@ DWORD StartMod() {
         const std::filesystem::path me(self);
         const bool proxy = me.parent_path() == paths.gameDir && _wcsicmp(me.filename().c_str(), L"dinput8.dll") == 0;
         RM_LOGI("loaded from %s (%s)", rm::PathText(me).c_str(), proxy ? "the game's dinput8.dll" : "a plugin of another loader");
+        // The other mods it loaded as the game's dinput8.dll (plugin_host, from DllMain).
+        if (proxy) {
+            const auto& entries = plugins::Entries();
+            if (entries.empty()) RM_LOGI("plugins: none (other RE5 mods' .dll and .asi files go in plugins\\)");
+            int loaded = 0;
+            for (const plugins::Entry& e : entries) {
+                if (e.loaded) ++loaded;
+                char error[48] = "";
+                if (!e.loaded && !e.skipped) std::snprintf(error, sizeof(error), " (error %lu / 0x%08lX)", e.error, e.error);
+                RM_LOGI("plugin %s: %s%s%s%s", rm::PathText(std::filesystem::path(e.path)).c_str(),
+                        e.loaded ? "loaded" : e.skipped ? "left out" : "NOT loaded", error, *e.why ? ", " : "", e.why);
+            }
+            if (!entries.empty()) RM_LOGI("plugins: %d of %zu loaded", loaded, entries.size());
+        }
     }
     RM_LOGI("game dir: %s", rm::PathText(paths.gameDir).c_str());
     RM_LOGI("data dir: %s", rm::PathText(paths.dataDir).c_str());
@@ -180,6 +196,17 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID reserved) {
             CloseHandle(once);
             g_module = nullptr;  // not the running copy: no shutdown on detach either
             return TRUE;
+        }
+        // As the game's dinput8.dll it is the plugin loader too: the other RE5 mods (plugins\*.dll,
+        // *.asi) load now, at the time their own dinput8.dll loader would have loaded them.
+        {
+            wchar_t exe[MAX_PATH] = {};
+            wchar_t self[MAX_PATH] = {};
+            GetModuleFileNameW(nullptr, exe, MAX_PATH);
+            GetModuleFileNameW(module, self, MAX_PATH);
+            std::wstring gameDir(exe);
+            gameDir.resize(gameDir.find_last_of(L"\\/") + 1);
+            if (_wcsicmp(self, (gameDir + L"dinput8.dll").c_str()) == 0) rmre5::plugins::LoadAll(module, gameDir);
         }
         if (HANDLE thread = CreateThread(nullptr, 0, &Worker, nullptr, 0, nullptr)) {
             CloseHandle(thread);

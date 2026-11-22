@@ -37,12 +37,10 @@ INSTALL
   The installer also copies your RE5 save to %LOCALAPPDATA%\RogueMercenaries\save-backups
   before anything else. The mod is designed never to write your game save during a run.
   Installing over an earlier version is fine, and your progress (Credits, unlocks) carries over.
-  If the game folder already has a dinput8.dll from another mod with a plugins folder next
-  to it (input fixes and Enhanced Movement come that way), do not run Install.bat: use the
-  Plugin version of Rogue Mercenaries instead (the download with plugins\RogueMercenaries.dll
-  in it), which keeps that mod. Only one dinput8.dll can be in the game folder, and two
-  cannot be merged into one; Install.bat would set the other mod's aside, and that mod
-  with it.
+  If the game folder already has a dinput8.dll from another mod (input fixes, Enhanced
+  Movement, a plugin loader), Install.bat moves it into the plugins folder as
+  previous-dinput8.dll: Rogue Mercenaries loads it from there, so that mod keeps running
+  (see OTHER RE5 MODS below). Uninstall.bat puts it back.
 
 OPTIONAL: COSTUME MODS
   A few skins wear a costume mod made by someone else (Excella Experimenter, Jill
@@ -56,6 +54,20 @@ OPTIONAL: COSTUME MODS
   folders changes. For Leon, unzip his Main Files too; for Wesker RE4 and Ada, all of
   their files (their voice lines). Do not install these with a mod
   manager: that replaces the original outfit everywhere.
+
+OTHER RE5 MODS (THE PLUGINS FOLDER)
+  Only one dinput8.dll can be in the game folder, and many RE5 mods (input fixes, Enhanced
+  Movement, plugin loaders) come as one. Rogue Mercenaries' dinput8.dll is a plugin loader
+  too: when the game starts it loads every .dll and .asi file in the plugins folder next to
+  re5dx9.exe (and .asi files next to re5dx9.exe), as the RE5 plugin loaders do.
+    - Another mod's dinput8.dll: move it into plugins and give it another name, for
+      example InputFix.dll. If it came with a plugins folder of its own, those files stay
+      in plugins. When it handles the controls itself, the game's input goes through it.
+    - A plugin (.dll) or an .asi file: put it into plugins.
+    - A plugins\RogueMercenaries.dll from an earlier download is not needed any more and is
+      left out; you can delete it.
+  The log (adapter.log, see WHEN SOMETHING BREAKS) lists every file loaded from plugins,
+  or why one was not.
 
 PLAY
   Start Resident Evil 5 from Steam. "Rogue Mercenaries" appears at the top right.

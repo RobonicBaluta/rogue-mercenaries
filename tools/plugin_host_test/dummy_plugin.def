@@ -1,0 +1,3 @@
+LIBRARY dummy_plugin
+EXPORTS
+    DirectInput8Create=Dummy_DirectInput8Create

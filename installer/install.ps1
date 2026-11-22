@@ -123,15 +123,34 @@ if (Test-Path -LiteralPath $manifestPath) {
         Say 'An earlier Rogue Mercenaries copy (installed by hand) is here; it is replaced.'
         Remove-Item -LiteralPath $targetDll -Force
     } else {
+        # Rogue Mercenaries' dinput8.dll loads the other mods in plugins\ (as the RE5 plugin
+        # loaders do), so that mod's dinput8.dll keeps running from there.
         Say ''
-        Say 'Another mod already uses dinput8.dll in the game folder. Only one can be active:'
-        Say 'it is moved to RogueMercenaries\backup and put back when you uninstall Rogue Mercenaries.'
+        Say 'Another mod already uses dinput8.dll in the game folder. Rogue Mercenaries loads the'
+        Say 'other mods in the plugins folder, so that dinput8.dll moves there and keeps running;'
+        Say 'it is put back when you uninstall Rogue Mercenaries.'
         if (-not (Ask 'Continue?')) { Say 'Nothing was installed.'; exit 1 }
-        New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
-        $dllBackup = 'RogueMercenaries\backup\dinput8.dll'
-        Move-Item -LiteralPath $targetDll -Destination (Join-Path $GameDir $dllBackup) -Force
-        Say "Kept aside: $dllBackup"
+        $dllBackup = ''
     }
+}
+# The other mod's dinput8.dll into plugins\ (also one an earlier version set aside in
+# RogueMercenaries\backup, where nothing loaded it).
+$pending = $null
+if (-not $dllBackup -and (Test-Path -LiteralPath $targetDll) -and -not (Test-OurDll $targetDll)) {
+    $pending = $targetDll
+} elseif ($dllBackup -like 'RogueMercenaries\backup\*') {
+    $pending = Join-Path $GameDir $dllBackup
+}
+if ($pending -and (Test-Path -LiteralPath $pending)) {
+    $pluginDir = Join-Path $GameDir 'plugins'
+    New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
+    $n = 1
+    do {
+        $dllBackup = if ($n -eq 1) { 'plugins\previous-dinput8.dll' } else { "plugins\previous-dinput8-$n.dll" }
+        $n++
+    } while (Test-Path -LiteralPath (Join-Path $GameDir $dllBackup))
+    Move-Item -LiteralPath $pending -Destination (Join-Path $GameDir $dllBackup) -Force
+    Say "The other mod's dinput8.dll: $dllBackup (Rogue Mercenaries loads it with the plugins)."
 }
 
 # 5. A copy of the game's save, in case anything goes wrong (the mod never writes it on purpose).

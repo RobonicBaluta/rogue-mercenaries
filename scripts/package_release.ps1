@@ -18,10 +18,15 @@ param(
 # steps, the licenses and the manifest inside RogueMercenaries\. The mod reads nothing the
 # installer writes (install.json is the uninstaller's).
 #
-# -Plugin builds RogueMercenaries-<version>[-unlocked]-plugin.zip: the -Manual layout with the
-# DLL as plugins\RogueMercenaries.dll, for players whose input fixes come with their own
-# dinput8.dll plugin loader (2026-11-18, a player: "Rick and Maluc's fix depends on that very
-# file"). The mod finds the game folder from the executable and runs once whichever way it loads.
+# Since 0.2.6 the release is the -Manual ZIP alone (the user, 2026-11-22: "can we make it that the
+# releases is just one"): its dinput8.dll is the plugin loader too (adapters/re5/src/plugin_host.cpp:
+# plugins\*.dll and *.asi, and *.asi next to the game), so another mod's dinput8.dll goes into
+# plugins\ beside it. Every package has a plugins folder with a note (plugins\README.txt).
+#
+# -Plugin (no longer released) builds RogueMercenaries-<version>[-unlocked]-plugin.zip: the -Manual
+# layout with the DLL as plugins\RogueMercenaries.dll, for another loader's plugins folder (2026-11-18,
+# a player: "Rick and Maluc's fix depends on that very file"). The mod finds the game folder from the
+# executable and runs once whichever way it loads.
 
 $ErrorActionPreference = 'Stop'
 if ($Plugin) { $Manual = $true }
@@ -60,11 +65,29 @@ New-Item -ItemType Directory -Force -Path (Join-Path $modFiles 'configs\hud_name
 New-Item -ItemType Directory -Force -Path (Join-Path $docs 'licenses') | Out-Null
 
 # What goes into the game folder.
+$pluginNote = $null
 if ($Plugin) {
     New-Item -ItemType Directory -Force -Path (Join-Path $files 'plugins') | Out-Null
     Copy-Item -LiteralPath $dllPath -Destination (Join-Path $files 'plugins\RogueMercenaries.dll')
 } else {
     Copy-Item -LiteralPath $dllPath -Destination (Join-Path $files 'dinput8.dll')
+    # The other mods' folder, with a note (the DLL loads every .dll and .asi in it).
+    New-Item -ItemType Directory -Force -Path (Join-Path $files 'plugins') | Out-Null
+    $pluginNote = @(
+        'OTHER RESIDENT EVIL 5 MODS GO HERE',
+        '',
+        'Rogue Mercenaries'' dinput8.dll loads every .dll and .asi file in this folder when the game',
+        'starts, as the RE5 plugin loaders do (and .asi files next to re5dx9.exe too).',
+        '',
+        '- A mod that comes as a dinput8.dll (input fixes, Enhanced Movement, a plugin loader): move',
+        '  its dinput8.dll in here and give it another name, for example InputFix.dll. If it came',
+        '  with a plugins folder of its own, those files go in here too.',
+        '- A mod that comes as a plugin (.dll) or an .asi file: put it in here.',
+        '',
+        'An old plugins\RogueMercenaries.dll from an earlier download is not needed any more and is',
+        'left out; you can delete it. The log (%LOCALAPPDATA%\RogueMercenaries\logs\adapter.log)',
+        'lists every file loaded from here, or why one was not.',
+        '') -join "`n"
 }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'configs\adapter.json') -Destination (Join-Path $modFiles 'adapter.json')
 if ($Unlocked) {
@@ -88,6 +111,7 @@ function Write-Text([string]$text, [string]$dst, [string]$version) {
     $text = $text.Replace("`r`n", "`n").Replace("`n", "`r`n").Replace('{VERSION}', $version)
     [System.IO.File]::WriteAllText($dst, $text, [System.Text.Encoding]::ASCII)
 }
+if ($pluginNote) { Write-Text $pluginNote (Join-Path $files 'plugins\README.txt') $Version }
 $installerSrc = Join-Path $repoRoot 'installer'
 if (-not $Manual) {
     # The installer: scripts with the version filled in, batch files with Windows line endings.
@@ -147,21 +171,21 @@ if ($Plugin) {
     $gone = 'If it is gone, allow it and copy RogueMercenaries.dll back into the plugins folder.'
 } else {
     $install = @('', 'INSTALL (BY HAND)') + $saveSteps + @(
-        '  4. If that folder already has a dinput8.dll from another mod: only one dinput8.dll can be',
-        '     there, and two cannot be merged into one. If there is a plugins folder next to it',
-        '     (input fixes and Enhanced Movement come that way), stop here and use the Plugin',
-        '     version of Rogue Mercenaries instead (the download with plugins\RogueMercenaries.dll',
-        '     in it): it keeps that mod. Otherwise move that dinput8.dll out first; that mod is',
-        '     then off.',
+        '  4. If that folder already has a dinput8.dll from another mod (input fixes, Enhanced',
+        '     Movement, a plugin loader): move it into the plugins folder (make one next to',
+        '     re5dx9.exe if there is none) and give it another name, for example InputFix.dll.',
+        '     Rogue Mercenaries'' dinput8.dll loads every .dll and .asi in plugins, as the RE5',
+        '     plugin loaders do, so that mod keeps running. A plugins\RogueMercenaries.dll from an',
+        '     earlier download can be deleted.',
         '  5. Copy everything in this ZIP into the game folder: dinput8.dll goes next to',
-        '     re5dx9.exe, and the RogueMercenaries folder beside it. When updating, replace the',
-        '     files.') + $keptProgress + @('') -join "`n"
+        '     re5dx9.exe, the RogueMercenaries and plugins folders beside it. When updating,',
+        '     replace the files.') + $keptProgress + @('') -join "`n"
     $uninstall = @('', 'UNINSTALL',
         '  Close the game, then delete dinput8.dll and the RogueMercenaries folder from the game',
         '  folder. Costume mods you put in RogueMercenaries\mods go with it: move that folder out',
-        '  first to keep them. If an earlier version was installed with Install.bat and another',
-        '  mod''s dinput8.dll was set aside, it is in RogueMercenaries\backup: move it back to the',
-        '  game folder. Put back any dinput8.dll you moved out yourself.',
+        '  first to keep them. If you moved another mod''s dinput8.dll into plugins, move it back',
+        '  next to re5dx9.exe and name it dinput8.dll again. If an earlier version was',
+        '  installed with Install.bat, that mod''s dinput8.dll may be in RogueMercenaries\backup.',
         '  Your progress and logs stay in %LOCALAPPDATA%\RogueMercenaries; delete that folder too',
         '  to remove everything.',
         '  Optional: Steam > Resident Evil 5 > Properties > Installed Files > Verify integrity.', '') -join "`n"

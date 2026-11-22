@@ -85,6 +85,9 @@ if ($m.dinput8_backup) {
         Say 'The other mod''s dinput8.dll is back in place.'
     }
 }
+# A plugins folder the install made, left empty, goes too (other mods' plugins stay).
+$pluginDir = Join-Path $GameDir 'plugins'
+if ((Test-Path -LiteralPath $pluginDir) -and -not (Get-ChildItem -LiteralPath $pluginDir -Force)) { Remove-Item -LiteralPath $pluginDir -Force }
 Remove-Item -LiteralPath $manifestPath -Force
 Remove-Item -LiteralPath (Join-Path $modDir 'uninstall.ps1') -Force -ErrorAction SilentlyContinue
 if (-not $FromGameFolder) { Remove-Item -LiteralPath (Join-Path $modDir 'Uninstall.bat') -Force -ErrorAction SilentlyContinue }
