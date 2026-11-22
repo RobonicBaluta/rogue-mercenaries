@@ -709,7 +709,18 @@ void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>&
             if (!ReadId(d, e, w.id)) continue;
             d = file.Sub(": weapon " + Q(w.id));
             CheckKeys(d, e, {"id", "name", "category", "base_damage_mult", "unlock_cost_credits", "enabled", "game_item",
-                             "build_only", "restocks"});
+                             "build_only", "restocks", "per_level"});
+            if (const auto pl = e.find("per_level"); pl != e.end()) {
+                const Diag pd = d.Sub(" per_level");
+                if (!pl->is_object()) {
+                    pd.Error("must be an object");
+                } else {
+                    CheckKeys(pd, *pl, {"fuel_pct", "refill_pct", "reach_m"});
+                    if (GetNumber(pd, *pl, "fuel_pct", w.per_level.fuel_pct, false)) CheckRange(pd, "fuel_pct", w.per_level.fuel_pct, 0.0, 200.0);
+                    if (GetNumber(pd, *pl, "refill_pct", w.per_level.refill_pct, false)) CheckRange(pd, "refill_pct", w.per_level.refill_pct, 0.0, 200.0);
+                    if (GetNumber(pd, *pl, "reach_m", w.per_level.reach_m, false)) CheckRange(pd, "reach_m", w.per_level.reach_m, 0.0, 5.0);
+                }
+            }
             GetBool(d, e, "build_only", w.build_only, false);
             GetBool(d, e, "restocks", w.restocks, false);
             if (GetInt(d, e, "game_item", w.game_item, false) && w.game_item < 0) d.Error("field 'game_item' must be >= 0");

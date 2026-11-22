@@ -21,6 +21,16 @@ std::string_view WeaponCategoryName(WeaponCategory c);
 std::optional<WeaponCategory> ParseWeaponCategory(std::string_view name);
 
 /// An existing game weapon; the physical weapon stays the game's own.
+/// What each level above 1 adds to a gun besides its damage (weapons.json "per_level"; the flamethrower,
+/// 2026-11-22, the user: "yes level ups get more fuel and faster refil and longer reach"). The adapter
+/// applies them: its fuel's maximum, its refill a second, its flame's reach.
+struct WeaponLevelPerks {
+    double fuel_pct = 0.0;    // +percent of its fuel's maximum a level
+    double refill_pct = 0.0;  // +percent of its refill a second a level
+    double reach_m = 0.0;     // + metres of its flame's reach a level
+    [[nodiscard]] bool Any() const { return fuel_pct > 0.0 || refill_pct > 0.0 || reach_m > 0.0; }
+};
+
 struct WeaponBaseDef {
     std::string id;  // stable id the adapter reports in HitContext/KillEvent ("m92f", ...)
     std::string name;
@@ -35,6 +45,7 @@ struct WeaponBaseDef {
     /// A one-use gun (the rocket launcher, discarded once fired): once the run owns it, one comes
     /// back at the start of every arena (the user, 2026-11-10). Selling it gives it up.
     bool restocks = false;
+    WeaponLevelPerks per_level;
 };
 
 /// The kinds are stored by number in a run's resume point: new kinds go at the end.

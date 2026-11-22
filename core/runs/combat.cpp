@@ -198,9 +198,11 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
                 default: break;  // kill and area effects: below and in OnEnemyKilled
             }
         }
-        // Against a boss an element is more damage instead of a status.
+        // Against a boss an element is more damage instead of a status; Incendiary and Toxic burn and poison
+        // a boss as anyone (the user, 2026-11-22: "add dot on bosses"), in place of their bonus.
         if (hit.target_is_boss) {
             for (const auto& [el, evolved] : GunElements(*weapon)) {
+                if (el == Element::Incendiary || el == Element::Toxic) continue;
                 if (const ElementDef* d = content_->FindElement(el, evolved)) b.weapon_bonus += d->boss_bonus;
             }
         }
@@ -224,6 +226,17 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
     out.multiplier = b.clamped;
     out.crit = b.crit;
     if (weapon != nullptr && !hit.target_is_boss) AddHitProcs(*weapon, hit.base_damage * out.multiplier, execute, out.procs);
+    if (weapon != nullptr && hit.target_is_boss) {
+        // A boss: only the burn and the poison of its elements (no arcs, freezes or legendary effects).
+        std::vector<WeaponProc> procs;
+        AddHitProcs(*weapon, hit.base_damage * out.multiplier, false, procs);
+        for (WeaponProc& p : procs) {
+            if ((p.kind == ProcKind::Burn || p.kind == ProcKind::IgniteAround || p.kind == ProcKind::Poison) && !p.element.empty()) {
+                if (p.kind == ProcKind::IgniteAround) p.kind = ProcKind::Burn;  // Inferno's spread is for those around a Majini
+                out.procs.push_back(std::move(p));
+            }
+        }
+    }
 
     if (hit.is_melee.value_or(false)) run_.last_melee_time = hit.now;
     ++run_.hits_computed;

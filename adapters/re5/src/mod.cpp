@@ -3741,6 +3741,22 @@ constexpr std::uint32_t kItemFlamethrower = 0x0121;
 constexpr double kRefuelDelay = 1.5;
 constexpr double kRefuelPerSecond = 2.5;  // empty to full in 40 s
 
+// The flamethrower's level (the run's flamethrower, 1 without one) and what its levels add besides
+// damage (weapons.json "per_level"; the user, 2026-11-22: "level ups get more fuel and faster refil and
+// longer reach"): its fuel's maximum, its refill a second, its flame's reach, each by the levels above 1.
+int FlamethrowerLevel() {
+    int level = 1;
+    for (const rm::WeaponInstance& w : g->run->state().weapons) {
+        if (w.base_id == "flamethrower") level = std::max(level, w.level);
+    }
+    return level;
+}
+rm::WeaponLevelPerks FlamethrowerPerks() {
+    const rm::WeaponBaseDef* w = g->content->FindWeapon("flamethrower");
+    return w != nullptr ? w->per_level : rm::WeaponLevelPerks{};
+}
+double FlameLevelFactor(double pctPerLevel) { return 1.0 + pctPerLevel / 100.0 * (FlamethrowerLevel() - 1); }
+
 // The flamethrower (uWp21) binds its tank and hose to the player's back every frame, whatever is
 // in hand (its update, 0x00BA4FF0; user playtest 2026-11-08: "it shows the model on the character at
 // all times, even when it has some other weapon on"). Out of hand its model is scaled down to
@@ -3869,14 +3885,20 @@ void RefuelFlamethrower(double now) {
         if (ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != kItemFlamethrower) continue;
         const int count = ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0);
         const auto record = ItemRecord(kItemFlamethrower);
-        const int full = std::max(1, record ? ReadOr<std::int32_t>(record + 8, 100) : 100);
+        // Its levels' fuel (per_level fuel_pct): the maximum the slot holds, and fills to.
+        const int full = std::max(1, static_cast<int>(std::lround((record ? ReadOr<std::int32_t>(record + 8, 100) : 100) *
+                                                                  FlameLevelFactor(FlamethrowerPerks().fuel_pct))));
+        if (ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0) != full) {
+            SafeStore<std::int32_t>(slot + re5::off::kSlotMax, full);
+            RM_LOGI("flamethrower: level %d, fuel up to %d", FlamethrowerLevel(), full);
+        }
         if (lastCount >= 0 && count < lastCount) {
             lastFiredAt = now;
             owed = 0.0;
         }
         lastCount = count;
         if (count >= full || now - lastFiredAt < kRefuelDelay) return;
-        owed += kRefuelPerSecond * g->run->state().character.build.fuel_regen_mult * dt;
+        owed += kRefuelPerSecond * g->run->state().character.build.fuel_regen_mult * FlameLevelFactor(FlamethrowerPerks().refill_pct) * dt;
         const int add = std::min(full - count, static_cast<int>(owed));
         if (add <= 0) return;
         owed -= add;
@@ -7945,7 +7967,7 @@ std::vector<std::pair<std::uintptr_t, float>> EnemiesNear(const float at[3], flo
 // Sets it burning (a new burn keeps the higher rate and the later end); true when it took its
 // on-fire reaction.
 bool Ignite(std::uintptr_t enemy, double dps, double seconds, double now) {
-    if (enemy == g->boss.unit || dps <= 0.0) return false;
+    if (enemy == 0 || dps <= 0.0) return false;  // a boss burns too (2026-11-22: "add dot on bosses")
     ElementStatus& st = g_elementStatus[enemy];
     const bool fresh = now >= st.burnUntil;
     st.burnDps = fresh ? dps : std::max(st.burnDps, dps);
@@ -7959,7 +7981,7 @@ bool Ignite(std::uintptr_t enemy, double dps, double seconds, double now) {
 // one burns keeps the higher rate and tops its total up. True when it took its on-fire reaction.
 constexpr double kFlameBurnTick = 0.2;
 bool FlameBurn(std::uintptr_t enemy, double dps, double total, double now) {
-    if (enemy == g->boss.unit || dps <= 0.0 || total <= 0.0) return false;
+    if (enemy == 0 || dps <= 0.0 || total <= 0.0) return false;
     ElementStatus& st = g_elementStatus[enemy];
     const bool fresh = st.flameBurnLeft <= 0.0;
     st.flameBurnDps = fresh ? dps : std::max(st.flameBurnDps, dps);
@@ -7975,7 +7997,7 @@ bool FlameBurn(std::uintptr_t enemy, double dps, double total, double now) {
 constexpr double kStackTick = 1.0;
 bool PoisonStack(std::uintptr_t enemy, double dps, double every, int maxStacks, double now, double cloudFraction, double cloudRadius,
                  double cloudSeconds) {
-    if (enemy == g->boss.unit || dps <= 0.0) return false;
+    if (enemy == 0 || dps <= 0.0) return false;
     ElementStatus& st = g_elementStatus[enemy];
     if (now - st.lastStackAt < every) return false;
     st.lastStackAt = now;
@@ -8088,7 +8110,7 @@ void PlayLook(const rm::WeaponProc& p, std::uintptr_t unit, double now) {
 // Poisons it (a new poison keeps the higher rate and the later end); with Plague's numbers its
 // death lets out a cloud. True when it took its acid reaction.
 bool PoisonEnemy(std::uintptr_t enemy, double dps, double seconds, double now, double cloudFraction = 0.0, double cloudRadius = 0.0) {
-    if (enemy == g->boss.unit || dps <= 0.0) return false;
+    if (enemy == 0 || dps <= 0.0) return false;  // a boss is poisoned too
     ElementStatus& st = g_elementStatus[enemy];
     const bool fresh = now >= st.poisonUntil;
     st.poisonDps = fresh ? dps : std::max(st.poisonDps, dps);
@@ -8165,7 +8187,7 @@ void ApplyProc(const QueuedProc& q, double now) {
             reached = 1;
             break;
         case rm::ProcKind::Poison: {
-            if (!alive(q.enemy) || q.enemy == g->boss.unit) {
+            if (!alive(q.enemy)) {
                 note = ", the target already dead";
                 break;
             }
@@ -8331,14 +8353,11 @@ void PlagueOnDeath(std::uintptr_t enemy, int maxHp, double now) {
 // flame passes almost none (its burn is no hit); its Majini kill was its on-fire reaction, which the
 // burns of the mod start without the game's fire. So each one in the flame takes, every
 // kStreamHitEvery, its share of the second here, scaled as a flamethrower hit (its level, affixes,
-// perks): kStreamDps (the game's flame took a Majini, 1000, in about 3.5 s), a bigger one
-// kStreamBigShare of its health (an Executioner, 18000, in about 17 s of flame, a Chainsaw Majini,
-// 6500, as long), the arena's boss kStreamBossShare (BossFlameDamage). Shock's stuns it (the flash
-// grenade's reaction) as the flame sets it flailing.
+// perks): kStreamDps, its base damage, on everyone (the game's flame took a Majini, 1000, in about
+// 3.5 s), the arena's boss through BossFlameDamage. Its burn and poison are worked out from it too.
+// Shock's stuns it (the flash grenade's reaction) as the flame sets it flailing.
 constexpr double kStreamDps = 300.0;
 constexpr double kStreamHitEvery = 0.2;
-constexpr double kStreamBigShare = 0.06;
-constexpr double kStreamBossShare = 0.025;
 std::string g_flameStreamPath;           // the look in place of the flame now ("" the flame)
 std::string g_flameStreamCompanion;      // with it in place of the flame's second list (the mod's own effects)
 bool g_flameStreamLoops = false;         // a recoloured flame: it keeps going by itself
@@ -8356,13 +8375,15 @@ FlameStreamState g_flameStreamState;
 
 // The run's flamethrower's own element with a look in settings flame_streams that is in memory
 // (its evolved one's first); looked at once a second, set for the local player's unit.
+float FlameReachFactor();  // its reach over its level 1 reach (below, with the flame)
+
 void UpdateFlameStreamLook(double now) {
     double& next = g_flameStreamState.nextLook;
     const int seat = g->run->ActiveSeat();
     if (now < next || g_flameUnit == 0 || !g->match.inMatch) {
         // The unit as it is now, every tick (a new match's flamethrower is another unit).
         SetFlameStream(seat, g_flameStreamPath.empty() || !g->match.inMatch ? 0 : g_flameUnit, g_flameStreamPath, g_flameStreamCompanion,
-                       g_flameStreamLoops, g_flameStreamLoops ? g->settings.flameStreamScale : 1.0f);
+                       g_flameStreamLoops, g_flameStreamLoops ? g->settings.flameStreamScale * FlameReachFactor() : 1.0f);
         if (now < next) return;
     }
     next = now + 1.0;
@@ -8409,7 +8430,8 @@ void UpdateFlameStreamLook(double now) {
     g_flameStreamCompanion = companion;
     g_flameStreamLoops = loops;
     g_flameStreamElement = element;
-    SetFlameStream(seat, path.empty() ? 0 : g_flameUnit, path, companion, loops, loops ? g->settings.flameStreamScale : 1.0f);
+    SetFlameStream(seat, path.empty() ? 0 : g_flameUnit, path, companion, loops,
+                   loops ? g->settings.flameStreamScale * FlameReachFactor() : 1.0f);
 }
 
 // A flamethrower hit's multiplier on `enemy` (the core's, as for the game's own flame hits).
@@ -8432,11 +8454,11 @@ double StreamMultiplier(std::uintptr_t enemy, double now) {
     return g->run->ComputeOutgoingMultiplier(ctx).multiplier;  // its procs: the stream's elements below
 }
 
-// A second of the flame on `enemy`, before its multiplier (kStreamDps, kStreamBigShare, kStreamBossShare).
+// A second of the flame, before its multiplier: its base damage, the same on everyone (the user,
+// 2026-11-22: "I was talking with base damage and you added % health damage, I don't like that").
 double StreamDpsOf(std::uintptr_t enemy) {
-    const auto hp = engine::ReadHp(enemy);
-    const double max = hp && hp->max > 0 ? hp->max : 1000.0;
-    return std::max(kStreamDps, max * (enemy == g->boss.unit ? kStreamBossShare : kStreamBigShare));
+    (void)enemy;
+    return kStreamDps;
 }
 
 // The flame on the arena's boss (ElementDamage leaves bosses out): through the game's SubHp, where
@@ -8456,7 +8478,9 @@ bool BossFlameDamage(std::uintptr_t boss, double amount, double now) {
 
 constexpr int kBigBones = 48;           // a big one's bones the flame is tested against
 constexpr int kBigEnemyHp = 6000;       // big: the boss, and one of this much health or more
-constexpr float kFlameReach = 500.0f;             // 5 m
+constexpr float kFlameReach = 500.0f;             // 5 m at level 1; per_level reach_m more a level
+float FlameReach() { return kFlameReach + static_cast<float>(FlamethrowerPerks().reach_m * 100.0 * (FlamethrowerLevel() - 1)); }
+float FlameReachFactor() { return FlameReach() / kFlameReach; }
 constexpr float kFlameCosHalfAngle = 0.866f;      // 30 degrees either side
 constexpr float kFlameHeight = 250.0f;
 constexpr double kStreamHitDamage = 120.0;
@@ -8506,10 +8530,11 @@ void DriveFlameStream(double now) {
     float at[3];
     UnitPosition(player, at);
     std::vector<std::pair<std::uintptr_t, float>> inFlame;
+    const float reach = FlameReach();
     const auto inCone = [&](const float p[3], float& dist) {
         const float dx = p[0] - at[0], dz = p[2] - at[2];
         const float d = std::sqrt(dx * dx + dz * dz);
-        if (d < 1.0f || d > kFlameReach || std::fabs(p[1] - at[1]) > kFlameHeight) return false;
+        if (d < 1.0f || d > reach || std::fabs(p[1] - at[1]) > kFlameHeight) return false;
         if ((dx * fx + dz * fz) / d < kFlameCosHalfAngle) return false;
         dist = d;
         return true;
@@ -8776,6 +8801,16 @@ void DriveEffectGallery(double now) {
     RM_LOGI("effect gallery: none of the %zu lists would start", lists.size());
 }
 
+// A burn's or a poison's tick: the boss's through his own path (BossFlameDamage: held at 1 while a phase
+// is left, nothing while down), anyone else's as the mod's elemental damage.
+void DotDamage(std::uintptr_t enemy, double amount, double now, Reaction onKill) {
+    if (enemy != 0 && enemy == g->boss.unit) {
+        BossFlameDamage(enemy, amount, now);
+        return;
+    }
+    ElementDamage(enemy, amount, now, onKill);
+}
+
 // Each tick: the queued procs, then the burns and poisons (every kElementTick).
 void DriveElements(double now) {
     if (!g->match.inMatch || g->run->phase() != rm::Phase::ArenaActive) {
@@ -8809,7 +8844,7 @@ void DriveElements(double now) {
             const double whole = std::floor(st.owed);
             if (whole >= 1.0) {
                 st.owed -= whole;
-                ElementDamage(it->first, whole, now, Reaction::Fire);
+                DotDamage(it->first, whole, now, Reaction::Fire);
             }
         }
         if (stacked && now >= st.nextStackTick) {
@@ -8818,7 +8853,7 @@ void DriveElements(double now) {
             const double whole = std::floor(st.owed);
             if (whole >= 1.0) {
                 st.owed -= whole;
-                ElementDamage(it->first, whole, now, Reaction::Acid);
+                DotDamage(it->first, whole, now, Reaction::Acid);
             }
         }
         if ((burning || poisoned) && now >= st.nextTick) {
@@ -8827,7 +8862,7 @@ void DriveElements(double now) {
             const double whole = std::floor(st.owed);
             if (whole >= 1.0) {
                 st.owed -= whole;
-                ElementDamage(it->first, whole, now, burning ? Reaction::Fire : Reaction::Acid);
+                DotDamage(it->first, whole, now, burning ? Reaction::Fire : Reaction::Acid);
             }
         }
         ++it;

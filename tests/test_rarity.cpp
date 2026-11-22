@@ -217,11 +217,14 @@ TEST_CASE("rarity remake: a hit's element procs scale with its damage; a boss ta
     CHECK(shock->targets == 2);
     CHECK(shock->radius == Approx(500.0));
 
-    // A boss: no status, the elements' boss_bonus as damage.
+    // A boss (2026-11-22, "add dot on bosses"): Incendiary burns it as anyone, Shock is its boss_bonus as
+    // damage (no arc).
     hit.target_is_boss = true;
     r = h.rc.ComputeOutgoingMultiplier(hit);
-    CHECK(r.procs.empty());
-    CHECK(r.multiplier == Approx(1.3));
+    REQUIRE(r.procs.size() == 1);
+    CHECK(r.procs[0].kind == ProcKind::Burn);
+    CHECK(r.procs[0].dps == Approx(0.25 * 200.0 * 1.15));
+    CHECK(r.multiplier == Approx(1.15));
 
     // A frozen and poisoned target takes more from anything, melee too.
     hit.target_is_boss = false;

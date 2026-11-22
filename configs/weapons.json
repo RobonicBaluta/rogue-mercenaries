@@ -193,7 +193,12 @@
       "category": "flamethrower",
       "base_damage_mult": 1.0,
       "unlock_cost_credits": 300,
-      "game_item": 289
+      "game_item": 289,
+      "per_level": {
+        "fuel_pct": 20,
+        "refill_pct": 25,
+        "reach_m": 0.5
+      }
     }
   ],
   "affixes": [

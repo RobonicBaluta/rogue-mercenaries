@@ -255,3 +255,41 @@ TEST_CASE("weapon upgrade purchase raises the level", "[shop]") {
         if (w.instance_id == target) CHECK(w.level == 2);
     }
 }
+
+TEST_CASE("the flamethrower's upgrade says what its level adds besides damage", "[shop]") {
+    // 2026-11-22, the user: "level ups get more fuel and faster refil and longer reach" (weapons.json per_level).
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const WeaponBaseDef* flame = r.content->FindWeapon("flamethrower");
+    REQUIRE(flame != nullptr);
+    CHECK(flame->per_level.fuel_pct > 0.0);
+    CHECK(flame->per_level.refill_pct > 0.0);
+    CHECK(flame->per_level.reach_m > 0.0);
+    CHECK_FALSE(r.content->FindWeapon("m92f")->per_level.Any());
+    // The tester holds the flamethrower alone, so the shop's upgrade is its own (a few seeds: an upgrade
+    // is not in every shop).
+    bool seen = false;
+    for (std::uint64_t seed = 1; seed < 40 && !seen; ++seed) {
+        test::Harness h(r.content);
+        h.rc.SetTesterCharacters(true);
+        REQUIRE(h.rc.StartRun("tester", seed).ok());
+        test::ClearArena(h.rc, 0.0);
+        REQUIRE(h.rc.ContinueToRewards().ok());
+        REQUIRE(h.rc.ChooseReward(0).ok());
+        if (h.rc.phase() != Phase::Shop) continue;
+        for (const auto& offer : h.rc.Snapshot(1.0).shop_offers) {
+            if (offer.title.rfind("Upgrade Flamethrower", 0) != 0) continue;
+            seen = true;
+            INFO(offer.detail);
+            CHECK(offer.detail.find("fuel +") != std::string::npos);
+            CHECK(offer.detail.find("refill +") != std::string::npos);
+            CHECK(offer.detail.find("reach +0.5 m") != std::string::npos);
+        }
+    }
+    CHECK(seen);
+    // Out of range: refused.
+    const ContentLoadResult bad = Content::LoadFromStrings(test::EditFixture([](json&, json& weapons, json&, json&, json&) {
+        weapons["weapons"][0]["per_level"] = json{{"reach_m", 9.0}};
+    }));
+    CHECK(std::any_of(bad.errors.begin(), bad.errors.end(), [](const std::string& e) { return e.find("reach_m") != std::string::npos; }));
+}

@@ -263,6 +263,25 @@ RunSnapshot RunController::Snapshot(double now) const {
                 const double atLevel = LevelDamageBonus(c.economy(), o.target_level);
                 const double afterUpgrade = LevelDamageBonus(c.economy(), o.target_level + 1);
                 v.detail = "Damage from its level " + Percent(atLevel) + " now, " + Percent(afterUpgrade) + " after";
+                // A gun with more than damage by level (the flamethrower's fuel, refill and reach).
+                for (const WeaponInstance& w : run_.weapons) {
+                    if (w.instance_id != o.target_instance_id) continue;
+                    const WeaponBaseDef* base = c.FindWeapon(w.base_id);
+                    if (base == nullptr || !base->per_level.Any()) break;
+                    const WeaponLevelPerks& pl = base->per_level;
+                    const int steps = o.target_level;  // the levels above 1 after the upgrade
+                    std::string more;
+                    const auto add = [&more](const std::string& part) { more += (more.empty() ? "" : ", ") + part; };
+                    if (pl.fuel_pct > 0.0) add("fuel +" + Percent(pl.fuel_pct / 100.0 * steps));
+                    if (pl.refill_pct > 0.0) add("refill +" + Percent(pl.refill_pct / 100.0 * steps));
+                    if (pl.reach_m > 0.0) {
+                        char reach[32];
+                        std::snprintf(reach, sizeof(reach), "reach +%.1f m", pl.reach_m * steps);
+                        add(reach);
+                    }
+                    v.detail += "; after: " + more;
+                    break;
+                }
                 break;
             }
             case ShopOfferKind::Weapon:
