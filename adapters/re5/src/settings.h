@@ -121,6 +121,9 @@ struct Settings {
     // Shock's arcs drawn as lightning between the enemies it jumps to, and from a Shock flamethrower
     // to the enemy in its flame (over the picture, where the game's camera shows them).
     bool elementArcs = true;
+    // Each arena of a run plays another track: the Mercenaries theme and the battle tracks take turns
+    // (music.h; 2026-11-22, the user: "cycle through the games battle themes").
+    bool musicRotation = true;
     // The mod's own effects (rm/effects.h, effects_pack.h): <data>\\generated\\rmEffects.arc built from
     // the game's archives at start and loaded with a run's. Off: the game's own looks only.
     bool customEffects = true;

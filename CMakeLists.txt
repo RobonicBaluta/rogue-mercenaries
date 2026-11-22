@@ -46,6 +46,7 @@ add_library(rm_core STATIC
     core/common/status.cpp
     core/common/inflate.cpp
     core/common/effects.cpp
+    core/common/music.cpp
     core/common/screen_fx.cpp
     core/rng/rng.cpp
     core/content/content_loader.cpp
@@ -109,6 +110,7 @@ if(RM_BUILD_TESTS)
         tests/test_run_map.cpp
         tests/test_inflate.cpp
         tests/test_effects.cpp
+        tests/test_music.cpp
         tests/test_builds.cpp
         tests/test_threat.cpp
         tests/test_rosters.cpp
@@ -121,12 +123,12 @@ if(RM_BUILD_TESTS)
     rm_project_warnings(rm_tests)
 
     set(RM_TEST_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/test_output)
-    foreach(tag rng content perks weapons economy shop rewards routes run persistence telemetry characters items director builds threat rosters ladder rarity fx)
+    foreach(tag rng content perks weapons economy shop rewards routes run persistence telemetry characters items director builds threat rosters ladder rarity fx music)
         add_test(NAME rm_tests.${tag} COMMAND rm_tests "[${tag}]" --reporter compact)
     endforeach()
     # Safety net: any test without one of the tags above still runs.
     add_test(NAME rm_tests.untagged
-        COMMAND rm_tests "~[rng]~[content]~[perks]~[weapons]~[economy]~[shop]~[rewards]~[routes]~[run]~[persistence]~[telemetry]~[zip]~[fx]"
+        COMMAND rm_tests "~[rng]~[content]~[perks]~[weapons]~[economy]~[shop]~[rewards]~[routes]~[run]~[persistence]~[telemetry]~[zip]~[fx]~[music]"
                 --allow-running-no-tests --reporter compact)
     # The ZIP tests also leave archives behind for an independent reader (Python zipfile).
     add_test(NAME rm_tests.zip COMMAND rm_tests "[zip]" --reporter compact)

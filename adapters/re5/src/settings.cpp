@@ -138,6 +138,7 @@ Settings LoadAdapterSettings(const Paths& paths, std::string* error) {
         settings.effectGallery = json.value("effect_gallery", settings.effectGallery);
         settings.customEffects = json.value("custom_effects", settings.customEffects);
         settings.elementArcs = json.value("element_arcs", settings.elementArcs);
+        settings.musicRotation = json.value("music_rotation", settings.musicRotation);
         settings.flameStreamScale = json.value("flame_stream_scale", settings.flameStreamScale);
         settings.flameStreamCompanion = json.value("flame_stream_companion", settings.flameStreamCompanion);
         MergeLooks(json, "element_effects", settings.elementEffects);  // "": no look for that kind

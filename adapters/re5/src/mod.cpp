@@ -42,6 +42,7 @@
 #include "log.h"
 #include "memory.h"
 #include "map_editor.h"
+#include "music.h"
 #include "menu_mouse.h"
 #include "menu_probe.h"
 #include "autopilot.h"
@@ -822,6 +823,7 @@ void ArmMap(int key, int costume) {
         plan.skip_lobby = (running && !g->coopLobbyNeeded) || AutoCoopLobby();
     }
     autopilot::Arm(plan);
+    music::NextArena(g->settings.musicRotation, Now());  // the next match's track
 }
 
 // The director map of the stage being played. maps.json keys Mercenaries maps by their stage
@@ -1444,6 +1446,10 @@ void UpdateModRedirects() {
         wearing.push_back(skin);
     }
     key += effects.empty() ? "" : "|effects";
+    // The arena's track in the Mercenaries theme's place (music.h).
+    const auto musicRedirects = music::Redirects();
+    redirects.insert(redirects.end(), musicRedirects.begin(), musicRedirects.end());
+    key += "|music:" + music::RedirectKey();
     if (key == g_modRedirectSkin) return;
     g_modRedirectSkin = key;
     if (!effects.empty()) {
@@ -13937,6 +13943,17 @@ private:
         { ProfileScope p("tick:DriveElements"); DriveElements(now); }
         { ProfileScope p("tick:DriveLevelHits"); DriveLevelHits(now); }
         { ProfileScope p("tick:DriveEffectGallery"); DriveEffectGallery(now); }
+        {
+            music::Context mc;
+            mc.enabled = g->settings.musicRotation;
+            mc.inRun = g->run->HasActiveRun();
+            mc.inMatch = g->match.inMatch;
+            mc.arenaOn = g->run->phase() == rm::Phase::ArenaActive;
+            mc.mercenariesMap = CurrentMapKey() < kFirstCampaignStage;
+            mc.dataDir = g->paths.dataDir;
+            mc.now = now;
+            music::Tick(mc);
+        }
         { ProfileScope p("tick:UpdateModRedirects"); UpdateModRedirects(); }
         { ProfileScope p("tick:TraceTwinShots"); TraceTwinShots(now); }
         { ProfileScope p("tick:DrivePartner"); DrivePartner(now); }

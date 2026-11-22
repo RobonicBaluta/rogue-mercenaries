@@ -29,5 +29,8 @@ void SetLogOpens(bool on);
 std::wstring NormaliseTail(const std::wstring& tail);
 /// The archives the game opened last, newest first (at most 16), as opened (a redirect's file).
 std::vector<std::wstring> RecentArchives();
+/// The music streams (.sngw) the game asked to open since the last call, oldest first, as the game
+/// named them (a redirect's own name, not its file); at most 32 kept.
+std::vector<std::wstring> TakeStreamOpens();
 
 }  // namespace rmre5::fileredirect

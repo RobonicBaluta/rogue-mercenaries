@@ -51,6 +51,17 @@ void NoteOpened(LPCWSTR path) {
     ++g_recentCount;
 }
 
+// The music streams the game asked for (music.cpp learns the Mercenaries theme from them).
+std::mutex g_streamMutex;
+std::vector<std::wstring> g_streams;
+
+void NoteStream(const std::wstring& path) {
+    const std::size_t n = path.size();
+    if (n < 5 || _wcsicmp(path.c_str() + n - 5, L".sngw") != 0) return;
+    std::lock_guard lock(g_streamMutex);
+    if (g_streams.size() < 32) g_streams.push_back(path);
+}
+
 std::shared_ptr<const std::vector<Redirect>> Current() {
     std::lock_guard lock(g_mutex);
     return g_redirects;
@@ -122,6 +133,7 @@ std::wstring Lookup(const std::wstring& path, DWORD access) {
 HANDLE WINAPI CreateFileWDetour(LPCWSTR name, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disposition, DWORD flags,
                                 HANDLE templ) {
     if (name != nullptr) {
+        if (!t_inside) NoteStream(name);
         const std::wstring target = Lookup(name, access);
         if (!target.empty()) {
             NoteOpened(target.c_str());
@@ -140,6 +152,7 @@ HANDLE WINAPI CreateFileADetour(LPCSTR name, DWORD access, DWORD share, LPSECURI
             std::wstring wide(static_cast<std::size_t>(n), L'\0');
             MultiByteToWideChar(CP_ACP, 0, name, -1, wide.data(), n);
             wide.resize(static_cast<std::size_t>(n - 1));
+            if (!t_inside) NoteStream(wide);
             const std::wstring target = Lookup(wide, access);
             if (!target.empty()) {
                 NoteOpened(target.c_str());
@@ -232,6 +245,13 @@ void SetLogOpens(bool on) {
 }
 
 std::wstring NormaliseTail(const std::wstring& tail) { return Lower(tail); }
+
+std::vector<std::wstring> TakeStreamOpens() {
+    std::lock_guard lock(g_streamMutex);
+    std::vector<std::wstring> out;
+    out.swap(g_streams);
+    return out;
+}
 
 std::vector<std::wstring> RecentArchives() {
     std::lock_guard lock(g_recentMutex);
