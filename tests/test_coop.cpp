@@ -126,6 +126,52 @@ TEST_CASE("co-op: the shop opens once every player chose, the route once every p
     CHECK(h.rc.state().phase == Phase::RouteSelection);
 }
 
+TEST_CASE("co-op: the players' shops and rewards hold different things", "[run]") {
+    // 2026-11-22, the user: "stores and rewards should be separated for each player, I saw we get the same
+    // things in the store". Every seat has its own offer, and what one is offered the other is not (the
+    // shop's heal, reroll and a held gun's upgrade aside), with the shipped content, over a few seeds.
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    int compared = 0;
+    for (std::uint64_t seed = 1; seed <= 12; ++seed) {
+        test::Harness h(r.content);
+        REQUIRE(h.rc.StartRun("chris", seed).ok());
+        REQUIRE(h.rc.AddSeat("sheva", "").ok());
+        test::ClearArena(h.rc, 1.0);
+        const auto keys = [&](int seat, bool rewards) {
+            SeatScope sc(h.rc, seat);
+            std::set<std::string> out;
+            if (rewards) {
+                for (const RewardChoice& c : h.rc.state().reward_offer) {
+                    if (c.kind == RewardKind::Weapon) out.insert("weapon:" + c.weapon.base_id);
+                    if (c.kind == RewardKind::Perk) out.insert("perk:" + c.perk_id);
+                    if (c.kind == RewardKind::Item) out.insert("item:" + c.item_id);
+                }
+            } else {
+                for (const ShopOffer& o : h.rc.state().shop_offers) {
+                    if (o.kind == ShopOfferKind::Weapon) out.insert("weapon:" + o.weapon.base_id);
+                    if (o.kind == ShopOfferKind::Perk) out.insert("perk:" + o.perk_id);
+                    if (o.kind == ShopOfferKind::Item) out.insert("item:" + o.item_id);
+                }
+            }
+            return out;
+        };
+        INFO("seed " << seed);
+        const auto rewardsA = keys(0, true), rewardsB = keys(1, true);
+        for (const std::string& k : rewardsA) CHECK(rewardsB.count(k) == 0);
+        REQUIRE(h.rc.ContinueToRewards().ok());
+        for (int seat = 0; seat < 2; ++seat) {
+            SeatScope sc(h.rc, seat);
+            if (!h.rc.state().reward_offer.empty()) REQUIRE(h.rc.ChooseReward(0).ok());
+        }
+        if (h.rc.state().phase != Phase::Shop) continue;
+        const auto shopA = keys(0, false), shopB = keys(1, false);
+        for (const std::string& k : shopA) CHECK(shopB.count(k) == 0);
+        compared += !shopA.empty() && !shopB.empty() ? 1 : 0;
+    }
+    CHECK(compared > 0);
+}
+
 TEST_CASE("co-op: a perk pays each player who has it", "[run]") {
     test::Harness h;
     REQUIRE(h.rc.StartRun("alpha", 8).ok());

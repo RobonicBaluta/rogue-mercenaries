@@ -137,6 +137,14 @@ const PerkDef* PickPerkNearRarity(Rng& rng, const std::vector<const PerkDef*>& p
     return nullptr;
 }
 
+bool OfferAvoided(const OfferContext& ctx, std::string_view kind, std::string_view id) {
+    if (ctx.avoid == nullptr) return false;
+    std::string key(kind);
+    key += ':';
+    key += id;
+    return ctx.avoid->count(key) != 0;
+}
+
 std::vector<RewardChoice> GenerateRewardOffer(Rng& rng, const OfferContext& ctx,
                                               const InstanceIdSource& next_instance_id) {
     std::vector<RewardChoice> out;
@@ -145,10 +153,12 @@ std::vector<RewardChoice> GenerateRewardOffer(Rng& rng, const OfferContext& ctx,
     const Capabilities all = Capabilities::All();
     const Capabilities& caps = ctx.capabilities != nullptr ? *ctx.capabilities : all;
     const RarityWeights weights = ShiftRarityWeights(eco.rewards.rarity_weights, ctx.rarity_shift);
-    const std::vector<const PerkDef*> perks = OfferablePerks(ctx);
+    // The other players' offers are left out while anything else is left (M10).
+    const std::vector<const PerkDef*> perks = WithoutAvoided(ctx, OfferablePerks(ctx), "perk", [](const PerkDef* p) { return p->id; });
     std::vector<const WeaponBaseDef*> weapons = OfferableWeapons(ctx);
     std::erase_if(weapons, [&ctx](const WeaponBaseDef* w) { return !UsableWeapon(ctx, *w); });  // rewards never offer a gun the build cannot use
-    const std::vector<const EquipmentDef*> items = OfferableItems(ctx);
+    weapons = WithoutAvoided(ctx, std::move(weapons), "weapon", [](const WeaponBaseDef* w) { return w->id; });
+    const std::vector<const EquipmentDef*> items = WithoutAvoided(ctx, OfferableItems(ctx), "item", [](const EquipmentDef* e) { return e->id; });
 
     StringSet taken;
     StringSet taken_items;

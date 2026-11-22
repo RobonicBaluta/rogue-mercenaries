@@ -51,7 +51,24 @@ struct OfferContext {
     const StringSet* placeable_weapons = nullptr;
     /// Weapons the run already holds: never offered again (rewards, shop, chests).
     const std::vector<WeaponInstance>* owned_weapons = nullptr;
+    /// M10: what the other players were offered ("weapon:<id>", "perk:<id>", "item:<id>"; 2026-11-22, the
+    /// user: "stores and rewards should be separated for each player"): skipped while anything else is left.
+    const StringSet* avoid = nullptr;
 };
+
+/// True when `kind`:`id` is one of ctx.avoid's.
+bool OfferAvoided(const OfferContext& ctx, std::string_view kind, std::string_view id);
+
+/// `pool` without what ctx.avoid names (`key` gives an entry's kind and id), unless that leaves nothing.
+template <class T, class KeyFn>
+std::vector<T> WithoutAvoided(const OfferContext& ctx, std::vector<T> pool, std::string_view kind, KeyFn&& key) {
+    if (ctx.avoid == nullptr || ctx.avoid->empty()) return pool;
+    std::vector<T> kept;
+    for (const T& entry : pool) {
+        if (!OfferAvoided(ctx, kind, key(entry))) kept.push_back(entry);
+    }
+    return kept.empty() ? pool : kept;
+}
 
 using InstanceIdSource = std::function<std::string()>;
 

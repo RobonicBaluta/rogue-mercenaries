@@ -85,6 +85,8 @@ std::vector<ShopOffer> GenerateShopOffers(Rng& rng, const OfferContext& ctx,
     // Never sell a gun the player already carries.
     std::vector<const WeaponBaseDef*> bases = OfferableWeapons(ctx);
     std::erase_if(bases, [&owned, &shop_weapon](const WeaponBaseDef* b) { return owned(b->id) || b->id == shop_weapon; });
+    // The other players' offers are left out while anything else is left (M10).
+    bases = WithoutAvoided(ctx, std::move(bases), "weapon", [](const WeaponBaseDef* b) { return b->id; });
     if (!bases.empty()) {
         const Rarity rarity = RollRarity(rng, weights);
         const WeaponBaseDef* base = bases[rng.Index(bases.size())];
@@ -98,7 +100,7 @@ std::vector<ShopOffer> GenerateShopOffers(Rng& rng, const OfferContext& ctx,
         out.push_back(std::move(o));
     }
 
-    const std::vector<const PerkDef*> pool = OfferablePerks(ctx);
+    const std::vector<const PerkDef*> pool = WithoutAvoided(ctx, OfferablePerks(ctx), "perk", [](const PerkDef* p) { return p->id; });
     StringSet taken;
     for (int i = 0; i < eco.shop.perk_offers; ++i) {
         const Rarity rarity = RollRarity(rng, weights);
@@ -113,7 +115,7 @@ std::vector<ShopOffer> GenerateShopOffers(Rng& rng, const OfferContext& ctx,
         out.push_back(std::move(o));
     }
 
-    std::vector<const EquipmentDef*> items = OfferableItems(ctx);
+    std::vector<const EquipmentDef*> items = WithoutAvoided(ctx, OfferableItems(ctx), "item", [](const EquipmentDef* e) { return e->id; });
     for (int i = 0; i < eco.shop.item_offers && !items.empty(); ++i) {
         const std::size_t pick = rng.Index(items.size());
         const EquipmentDef* e = items[pick];

@@ -759,6 +759,7 @@ private:
 
     RunState run_;
     std::optional<Streams> streams_;
+    mutable StringSet offer_avoid_;  // MakeOfferContext's: the other players' offers (M10)
     std::optional<RunSummary> last_summary_;
 };
 

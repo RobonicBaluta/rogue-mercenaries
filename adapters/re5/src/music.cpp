@@ -33,15 +33,20 @@ rm::music::Rotation g_rotation{(static_cast<std::uint64_t>(std::random_device{}(
 int g_opensLogged = 0;
 double g_armedAt = -1.0e9;  // when the last arena's track was chosen
 
-// The next arena's track waits until no track plays: the swap is made between matches (the user's
-// crash, 2026-11-22 21:16: armed as the match was ending, the playing b_bgm011, 94 s in, got b_bgm005's
-// shorter length and loop points under it; both sound threads faulted, in the game's decoders
-// 0x00455DC0 and 0x00670500, 0.4 s later). Made at the first tick 2 s after the match is
-// over; given up (the theme then plays) if the next match is on first.
+// The next arena's track waits until the track in the theme's place no longer plays (the user's crashes,
+// 2026-11-22 21:16 and 21:32: swapped as the match was ending, and again 2 s after its end, the playing
+// track, well into it, got a shorter one's length and loop points under it; the game's decoders faulted
+// (0x00455DC0, 0x00670500, 0x00454F88) 0.4 s later). It plays on after the match until the results
+// screen's music (bgm008, about 5 s on), then the stage screen's (bgm007), then the next match's theme
+// (about 1.7 s after that): the swap is made 1 s after the first other track the game opens once the
+// match is over, or at the second; given up (the last track then plays again, its file and numbers
+// together) if the next match is on first; made anyway 30 s after the match with none opened.
 struct Pending {
     bool on = false;
-    std::string pick;   // the theme's own path: the theme
+    std::string pick;    // the theme's own path: the theme
     bool sawEnd = false; // the match it was armed in is over
+    int others = 0;      // other tracks opened since
+    double otherAt = -1.0;
 };
 Pending g_pending;
 bool g_inMatch = false;
@@ -331,19 +336,25 @@ void Tick(const Context& c) {
         LoadLists();
         ReadTheme();
     }
+    const auto themeEntry = g_theme.empty() ? std::nullopt : FindEntry(g_theme);
     for (const std::wstring& w : opens) {
         std::string path = Lower(Narrow(w));
         const std::size_t sound = path.find("sound\\");
         if (sound != std::string::npos) path = path.substr(sound);
         if (path.size() > 5 && path.compare(path.size() - 5, 5, ".sngw") == 0) path.resize(path.size() - 5);
         const auto f = FindEntry(path);
-        if (g_opensLogged++ < 80) {
+        const bool theTheme = f && themeEntry && f->list == themeEntry->list && f->index == themeEntry->index;
+        if (g_opensLogged++ < 120) {
             RM_LOGI("music: the game opens %s (%s%s)", path.c_str(), !f ? "in no list" : f->entry().Loops() ? "loops" : "once",
-                    g_patch.on && f && f->list == g_patch.list && f->index == g_patch.index ? (", read as " + g_patch.track).c_str() : "");
+                    g_patch.on && theTheme ? (", read as " + g_patch.track).c_str() : "");
+        }
+        // Another track of the lists after the match: the one in the theme's place is giving way.
+        if (f && !theTheme && g_pending.on && g_pending.sawEnd && !c.inMatch) {
+            if (g_pending.others++ == 0) g_pending.otherAt = c.now;
         }
     }
-    // Between matches only: the armed track once the match is over, the theme's own numbers back once
-    // no run is on (two minutes after the last arena was armed).
+    // Between matches only: the armed track once the one in the theme's place has given way, the theme's
+    // own numbers back once no run is on (two minutes after the last arena was armed).
     if (c.inMatch && !g_inMatch) {
         if (g_pending.on && g_pending.sawEnd) {
             RM_LOGW("music: the match began before %s could be swapped in; the theme as it is", g_pending.pick.c_str());
@@ -356,9 +367,12 @@ void Tick(const Context& c) {
     }
     g_inMatch = c.inMatch;
     if (c.inMatch) return;
-    if (g_pending.on && c.now - g_matchOverAt >= 2.0) {
+    const bool givenWay = g_pending.others >= 2 || (g_pending.otherAt >= 0.0 && c.now - g_pending.otherAt >= 1.0);
+    if (g_pending.on && g_pending.sawEnd && (givenWay || c.now - g_matchOverAt >= 30.0)) {
         const std::string pick = g_pending.pick;
+        const int others = g_pending.others;
         g_pending = {};
+        RM_LOGI("music: %.1f s after the match, %d other tracks opened: the swap", c.now - g_matchOverAt, others);
         ApplyPick(pick);
     }
     if (g_patch.on && (!c.enabled || (!c.inRun && c.now - g_armedAt > 120.0))) Restore();

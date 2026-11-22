@@ -136,6 +136,24 @@ OfferContext RunController::MakeOfferContext(double rarity_shift) const {
     ctx.rarity_shift = rarity_shift + run_.character.build.rarity_shift;
     const RouteDef* route = Route();
     ctx.reward_mult = (route != nullptr ? route->reward_mult : 1.0) * run_.character.build.supplies_mult;
+    // M10: what the other players were offered, their shop and their rewards (the user, 2026-11-22: "stores
+    // and rewards should be separated for each player"): left out while anything else is left.
+    offer_avoid_.clear();
+    for (std::size_t i = 0; i < run_.seats.size(); ++i) {
+        if (static_cast<int>(i) == run_.active_seat) continue;
+        const PlayerSeat& other = run_.seats[i];
+        for (const ShopOffer& o : other.shop_offers) {
+            if (o.kind == ShopOfferKind::Weapon) offer_avoid_.insert("weapon:" + o.weapon.base_id);
+            if (o.kind == ShopOfferKind::Perk) offer_avoid_.insert("perk:" + o.perk_id);
+            if (o.kind == ShopOfferKind::Item) offer_avoid_.insert("item:" + o.item_id);
+        }
+        for (const RewardChoice& c : other.reward_offer) {
+            if (c.kind == RewardKind::Weapon) offer_avoid_.insert("weapon:" + c.weapon.base_id);
+            if (c.kind == RewardKind::Perk) offer_avoid_.insert("perk:" + c.perk_id);
+            if (c.kind == RewardKind::Item) offer_avoid_.insert("item:" + c.item_id);
+        }
+    }
+    ctx.avoid = offer_avoid_.empty() ? nullptr : &offer_avoid_;
     return ctx;
 }
 
