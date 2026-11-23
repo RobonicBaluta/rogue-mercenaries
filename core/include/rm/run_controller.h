@@ -61,6 +61,7 @@ enum class ProcKind {
     Overkill,      // `damage` to the nearest other enemy within `radius`
     Refill,        // the gun's magazine is full again
     PoisonCloud,   // the adapter's: a Plague-poisoned enemy died, every enemy within `radius` is poisoned (dps, seconds)
+    FreezeAround,  // a Cryo gun's kill: each enemy within `radius` freezes for `seconds` by `chance` (its own roll)
 };
 std::string_view ProcKindName(ProcKind k);
 
@@ -80,6 +81,7 @@ struct WeaponProc {
     /// this fraction of its maximum health a second poisons those within cloud_radius.
     double cloud_dps_fraction = 0.0;
     double cloud_radius = 0.0;
+    double chance = 0.0;  // FreezeAround: each enemy's
 };
 
 /// A gun refined to Epic waiting for its element (RunController::ChooseElement).

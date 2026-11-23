@@ -77,6 +77,10 @@ OTHER RE5 MODS (THE PLUGINS FOLDER)
       in plugins. When it handles the controls itself, the game's input goes through it;
       with several such mods, through each in turn.
     - A plugin (.dll) or an .asi file: put it into plugins.
+    - Enhanced Movement: its dinput8.dll is only a plugin loader, which this one already
+      is: leave it out. The mod itself is its plugins\RE5EnhancedMovement.dll (and
+      RE5EnhancedMovement.ini): put both into plugins. Its nativePC_MT folder goes into
+      the game folder, next to re5dx9.exe, as its own install does.
     - A plugins\RogueMercenaries.dll from an earlier download is not needed any more and is
       left out; you can delete it.
   The log (adapter.log, see WHEN SOMETHING BREAKS) lists every file loaded from plugins,

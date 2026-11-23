@@ -71,6 +71,10 @@ struct WeaponBaseDef {
     /// A one-use gun (the rocket launcher, discarded once fired): once the run owns it, one comes
     /// back at the start of every arena (the user, 2026-11-10). Selling it gives it up.
     bool restocks = false;
+    /// Its elements' per-hit chances (Shock, Cryo) times this: a slow gun's few hits (the longbow, a magnum,
+    /// a bolt rifle) proc about as often in a fight as a fast one's (the user, 2026-11-23, on Sheva's bow:
+    /// "the normal electric idk, sometimes does something").
+    double proc_chance_mult = 1.0;
     WeaponLevelPerks per_level;
 };
 
@@ -130,6 +134,10 @@ struct ElementDef {
     double shatter_freeze_seconds = 0.0; // Cryo: a shatter freezes those it hits this long
     double cloud_dps_fraction = 0.0;     // Toxic: a poisoned enemy's death poisons those within radius (of its max health a second)
     int chain = 0;                       // Explosive: a blast's kills blow up too, this many times over
+    // Cryo: a kill with the gun freezes each enemy within kill_freeze_radius by this chance, for `seconds`
+    // (the user, 2026-11-23: "make cryo get a chance to freeze enemies when killing with it (per enemy around)").
+    double kill_freeze_chance = 0.0;
+    double kill_freeze_radius = 0.0;
     // The flamethrower's stream (an enemy in its flame, the adapter): Cryo freezes it after this many
     // seconds in it, Shock arcs from it every this many seconds; Incendiary and Toxic hold their status.
     double stream_seconds = 0.0;

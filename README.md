@@ -68,7 +68,10 @@ by-hand steps. Since 0.2.6 it is the one release (the user: "can we make it that
 game, in name order, leaving out itself and any `RogueMercenaries.dll`/`.asi` (the old plugin download); the first plugin
 that exports `DirectInput8Create` (another mod's `dinput8.dll`, e.g. an input fix wrapping the devices) gets the game's
 DirectInput, and a call it makes back into this DLL goes to the next such plugin, after the last to the system's (no
-loop; since 0.2.71 every one of them in turn). Since 0.2.71 a `plugins\dinput8.dll` loads under its own name, each
+loop; since 0.2.71 every one of them in turn). Enhanced Movement (Nexus 1142) is two parts: its `dinput8.dll` is only a
+plugin loader (left out: this DLL is one), the mod is `plugins\RE5EnhancedMovement.dll` with its `.ini` (into `plugins\`), and
+its motion files go into the game's `nativePC_MT` (a player, 2026-11-23, renamed its `dinput8.dll` into `plugins\` and had no
+ENHANCED MOVEMENT options: that loads only its loader). Since 0.2.71 a `plugins\dinput8.dll` loads under its own name, each
 folder in `plugins\` adds its `dinput8.dll` and `.asi` files (a mod as it comes), and a plugin's own DLLs beside it are
 found (`LoadLibraryExW`, `LOAD_WITH_ALTERED_SEARCH_PATH`). Every package carries
 `plugins\README.txt`. The log lists each plugin (`plugin ...: loaded` / `left out` / `NOT loaded (error ...)`).

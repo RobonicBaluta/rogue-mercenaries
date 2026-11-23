@@ -65,7 +65,8 @@
       "name": "S75",
       "category": "rifle",
       "base_damage_mult": 1.0,
-      "game_item": 261
+      "game_item": 261,
+      "proc_chance_mult": 1.6
     },
     {
       "id": "l_hawk",
@@ -73,7 +74,8 @@
       "category": "magnum",
       "base_damage_mult": 1.0,
       "unlock_cost_credits": 500,
-      "game_item": 282
+      "game_item": 282,
+      "proc_chance_mult": 1.6
     },
     {
       "id": "px4",
@@ -106,14 +108,16 @@
       "name": "S and W M29",
       "category": "magnum",
       "base_damage_mult": 1.0,
-      "game_item": 267
+      "game_item": 267,
+      "proc_chance_mult": 1.6
     },
     {
       "id": "m500",
       "name": "S and W M500",
       "category": "magnum",
       "base_damage_mult": 1.1,
-      "game_item": 283
+      "game_item": 283,
+      "proc_chance_mult": 1.8
     },
     {
       "id": "hydra",
@@ -141,14 +145,16 @@
       "name": "H and K PSG-1",
       "category": "rifle",
       "base_damage_mult": 1.1,
-      "game_item": 284
+      "game_item": 284,
+      "proc_chance_mult": 1.3
     },
     {
       "id": "dragunov",
       "name": "Dragunov SVD",
       "category": "rifle",
       "base_damage_mult": 1.0,
-      "game_item": 288
+      "game_item": 288,
+      "proc_chance_mult": 1.3
     },
     {
       "id": "gatling",
@@ -176,7 +182,8 @@
         "explode_every": 6,
         "explode_radius_m": 2.5,
         "explode_fraction": 0.75
-      }
+      },
+      "proc_chance_mult": 1.6
     },
     {
       "id": "m93r",
@@ -335,9 +342,9 @@
       "element": "shock",
       "name": "Shock",
       "description": "a hit may stun the enemy and arc to two more",
-      "chance": 0.25,
-      "damage_fraction": 0.6,
-      "radius": 500,
+      "chance": 0.3,
+      "damage_fraction": 0.75,
+      "radius": 650,
       "targets": 2,
       "boss_bonus": 0.15,
       "weight": 20,
@@ -377,8 +384,12 @@
         "radius": 350,
         "shatter_freeze_seconds": 3,
         "boss_bonus": 0.25,
-        "stream_seconds": 1.2
-      }
+        "stream_seconds": 1.2,
+        "kill_freeze_chance": 0.6,
+        "kill_freeze_radius": 700
+      },
+      "kill_freeze_chance": 0.35,
+      "kill_freeze_radius": 500
     },
     {
       "element": "explosive",

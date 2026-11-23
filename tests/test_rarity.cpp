@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 
 #include "rm/run_resume.h"
+#include "rm/unlock_all.h"
 #include "test_support.h"
 
 using namespace rm;
@@ -758,4 +759,78 @@ TEST_CASE("elements: the shipped ones each evolve, the rarer ones weigh less", "
     CHECK(rules[RarityIndex(Rarity::Legendary)].unique_count == 0);
     CHECK(rules[RarityIndex(Rarity::Exotic)].unique_count == 1);
     CHECK(rules[RarityIndex(Rarity::Exotic)].element_count == 1);
+}
+
+// The user, 2026-11-23: "check sheva's bow, some enchantments seem very underwhelming, storm work like intended but
+// the normal electric idk, sometimes does something, make cryo get a chance to freeze enemies when killing with it
+// (per enemy around)".
+TEST_CASE("a Cryo gun's kill freezes those around by chance, never at a boss", "[weapons][rarity]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const ElementDef* cryo = r.content->FindElement(Element::Cryo);
+    const ElementDef* zero = r.content->FindElement(Element::Cryo, true);
+    REQUIRE(cryo != nullptr);
+    REQUIRE(zero != nullptr);
+    CHECK(cryo->kill_freeze_chance > 0.0);
+    CHECK(cryo->kill_freeze_radius > 0.0);
+    CHECK(zero->kill_freeze_chance > cryo->kill_freeze_chance);
+    Profile open;
+    UnlockEverything(open, *r.content);
+    test::Harness h(r.content, open);
+    REQUIRE(h.rc.StartRun("chris", 3).ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    REQUIRE(h.rc.DevGrantWeapon(Gun("h_and_k_mp5", "w_ice", Rarity::Epic, {Element::Cryo})).ok());
+    KillEvent k;
+    k.now = 2.0;
+    k.by_player = true;
+    k.weapon_id = "h_and_k_mp5";
+    k.enemy_id = "e1";
+    k.target_hp_max = 1000.0;
+    const KillOutcome out = h.rc.OnEnemyKilled(k);
+    const WeaponProc* f = FindProc(out.procs, ProcKind::FreezeAround);
+    REQUIRE(f != nullptr);
+    CHECK(f->chance == Approx(cryo->kill_freeze_chance));
+    CHECK(f->radius == Approx(cryo->kill_freeze_radius));
+    CHECK(f->seconds == Approx(cryo->seconds));
+    CHECK(f->element == "cryo");
+    k.enemy_id = "e2";
+    k.target_is_boss = true;
+    CHECK(FindProc(h.rc.OnEnemyKilled(k).procs, ProcKind::FreezeAround) == nullptr);
+    k.enemy_id = "e3";
+    k.target_is_boss = false;
+    k.weapon_id = "m92f";  // a gun without Cryo
+    CHECK(FindProc(h.rc.OnEnemyKilled(k).procs, ProcKind::FreezeAround) == nullptr);
+}
+
+TEST_CASE("a slow gun's elements proc more often per hit (proc_chance_mult)", "[weapons][rarity]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const WeaponBaseDef* bow = r.content->FindWeapon("longbow");
+    REQUIRE(bow != nullptr);
+    CHECK(bow->proc_chance_mult > 1.0);
+    CHECK(r.content->FindWeapon("vz61")->proc_chance_mult == Approx(1.0));
+    Profile open;
+    UnlockEverything(open, *r.content);
+    test::Harness h(r.content, open);
+    REQUIRE(h.rc.StartRun("chris", 3).ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    REQUIRE(h.rc.DevGrantWeapon(Gun("longbow", "w_bow", Rarity::Epic, {Element::Shock})).ok());
+    REQUIRE(h.rc.DevGrantWeapon(Gun("vz61", "w_smg", Rarity::Epic, {Element::Shock})).ok());
+    const auto shocks = [&h](const char* gun) {
+        int n = 0;
+        for (int i = 0; i < 1000; ++i) {
+            HitContext hit;
+            hit.now = 1.0 + i * 0.01;
+            hit.weapon_id = std::string(gun);
+            hit.base_damage = 100.0;
+            if (FindProc(h.rc.ComputeOutgoingMultiplier(hit).procs, ProcKind::Shock) != nullptr) ++n;
+        }
+        return n;
+    };
+    const double base = r.content->FindElement(Element::Shock)->chance;
+    const int smg = shocks("vz61");
+    const int longbow = shocks("longbow");
+    INFO("vz61 " << smg << ", longbow " << longbow << " of 1000");
+    CHECK(smg == Approx(1000 * base).margin(60));
+    CHECK(longbow == Approx(1000 * base * bow->proc_chance_mult).margin(60));
 }

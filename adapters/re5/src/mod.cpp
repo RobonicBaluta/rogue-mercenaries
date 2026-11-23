@@ -8811,6 +8811,20 @@ void ApplyProc(const QueuedProc& q, double now) {
             reached = 1;
             break;
         }
+        case rm::ProcKind::FreezeAround: {
+            // A Cryo gun's kill: each enemy around freezes by its own roll (never a boss).
+            static std::mt19937 freezeRng{std::random_device{}()};
+            std::uniform_real_distribution<double> roll(0.0, 1.0);
+            for (const auto& [enemy, d] : EnemiesNear(q.at, static_cast<float>(p.radius), q.enemy)) {
+                (void)d;
+                if (enemy == g->boss.unit || !alive(enemy) || roll(freezeRng) >= p.chance) continue;
+                g_elementStatus[enemy].frozenUntil = now + p.seconds;
+                React(enemy, Reaction::Ice, now, true);
+                PlayLook(p, enemy, now);
+                ++reached;
+            }
+            break;
+        }
         case rm::ProcKind::Shock:
         case rm::ProcKind::Arc: {
             if (p.kind == rm::ProcKind::Shock && alive(q.enemy)) {

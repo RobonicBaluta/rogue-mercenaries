@@ -21,6 +21,7 @@ std::string_view ProcKindName(ProcKind k) {
         case ProcKind::Overkill: return "overkill";
         case ProcKind::Refill: return "refill";
         case ProcKind::PoisonCloud: return "poison_cloud";
+        case ProcKind::FreezeAround: return "freeze_around";
     }
     return "burn";
 }
@@ -283,6 +284,8 @@ void RunController::AddHitProcs(const WeaponInstance& weapon, double dealt, bool
     const auto roll = [this](double chance) {
         return chance >= 1.0 || (chance > 0.0 && streams_->combat.NextDouble() < chance);
     };
+    const WeaponBaseDef* base = content_->FindWeapon(weapon.base_id);
+    const double procMult = base != nullptr ? base->proc_chance_mult : 1.0;  // a slow gun's few hits proc more often
     for (const auto& [el, evolved] : GunElements(weapon)) {
         const ElementDef* d = content_->FindElement(el, evolved);
         if (d == nullptr) continue;
@@ -309,14 +312,14 @@ void RunController::AddHitProcs(const WeaponInstance& weapon, double dealt, bool
                 }
                 break;
             case Element::Shock:
-                if (!roll(d->chance)) continue;
+                if (!roll(d->chance * procMult)) continue;
                 p.kind = ProcKind::Shock;
                 p.damage = dealt * d->damage_fraction;
                 p.radius = d->radius;
                 p.targets = d->targets;
                 break;
             case Element::Cryo:
-                if (!roll(d->chance)) continue;
+                if (!roll(d->chance * procMult)) continue;
                 p.kind = ProcKind::Freeze;
                 p.seconds = d->seconds;
                 break;
@@ -386,6 +389,18 @@ void RunController::AddKillProcs(const KillEvent& kill, const WeaponInstance* we
         const ElementDef* d = content_->FindElement(el, evolved);
         if (d == nullptr) continue;
         if (el == Element::Explosive) blast(ProcKind::Explode, *d, evolved);
+        // A Cryo gun's kill: each enemy around may freeze (its own roll, the adapter's).
+        if (el == Element::Cryo && d->kill_freeze_chance > 0.0 && d->kill_freeze_radius > 0.0) {
+            WeaponProc p;
+            p.kind = ProcKind::FreezeAround;
+            p.source = d->name;
+            p.element = std::string(ElementName(el));
+            p.evolved = evolved;
+            p.radius = d->kill_freeze_radius;
+            p.seconds = d->seconds;
+            p.chance = d->kill_freeze_chance;
+            out.procs.push_back(std::move(p));
+        }
     }
     for (const Affix& af : weapon->affixes) {
         const UniqueAffixDef* u = af.unique_id.empty() ? nullptr : content_->FindUnique(af.unique_id);

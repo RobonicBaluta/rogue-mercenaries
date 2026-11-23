@@ -632,7 +632,8 @@ std::vector<std::string> AffixImpliedCaps(AffixKind kind) {
 void ParseElementNumbers(const Diag& d, const json& e, ElementDef& el, bool evolved) {
     std::vector<std::string_view> keys = {"name", "description", "chance", "seconds", "dps_fraction", "damage_fraction",
                                           "damage_cap", "radius", "targets", "taken_mult", "boss_bonus", "stream_seconds",
-                                          "stream_dps_fraction", "stream_total_fraction", "stream_stack_seconds", "stream_max_stacks"};
+                                          "stream_dps_fraction", "stream_total_fraction", "stream_stack_seconds", "stream_max_stacks",
+                                          "kill_freeze_chance", "kill_freeze_radius"};
     if (evolved) {
         for (std::string_view k : {"spread_radius", "shatter_freeze_seconds", "cloud_dps_fraction", "chain"}) keys.push_back(k);
     } else {
@@ -672,6 +673,9 @@ void ParseElementNumbers(const Diag& d, const json& e, ElementDef& el, bool evol
         CheckRange(d, "cloud_dps_fraction", el.cloud_dps_fraction, 0.0, 1.0);
     }
     GetIntRange(d, e, "chain", el.chain, false, 0, 5);
+    if (GetNumber(d, e, "kill_freeze_chance", el.kill_freeze_chance, false)) CheckRange(d, "kill_freeze_chance", el.kill_freeze_chance, 0.0, 1.0);
+    if (GetNumber(d, e, "kill_freeze_radius", el.kill_freeze_radius, false)) CheckRange(d, "kill_freeze_radius", el.kill_freeze_radius, 0.0, 5000.0);
+    if ((el.kill_freeze_chance > 0.0) != (el.kill_freeze_radius > 0.0)) d.Error("kill_freeze_chance and kill_freeze_radius go together");
     // What each element needs to do anything.
     switch (el.element) {
         case Element::Incendiary:
@@ -709,7 +713,7 @@ void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>&
             if (!ReadId(d, e, w.id)) continue;
             d = file.Sub(": weapon " + Q(w.id));
             CheckKeys(d, e, {"id", "name", "category", "base_damage_mult", "unlock_cost_credits", "enabled", "game_item",
-                             "build_only", "restocks", "per_level"});
+                             "build_only", "restocks", "per_level", "proc_chance_mult"});
             if (const auto pl = e.find("per_level"); pl != e.end()) {
                 const Diag pd = d.Sub(" per_level");
                 if (!pl->is_object()) {
@@ -762,6 +766,9 @@ void ParseWeapons(const Diag& file, const json& doc, std::vector<WeaponBaseDef>&
                      "handgun, shotgun, smg, rifle, machine_gun, magnum, bow");
             if (GetNumber(d, e, "base_damage_mult", w.base_damage_mult, false)) {
                 CheckRange(d, "base_damage_mult", w.base_damage_mult, 0.1, 10.0);
+            }
+            if (GetNumber(d, e, "proc_chance_mult", w.proc_chance_mult, false)) {
+                CheckRange(d, "proc_chance_mult", w.proc_chance_mult, 0.1, 5.0);
             }
             if (GetInt(d, e, "unlock_cost_credits", w.unlock_cost_credits, false) && w.unlock_cost_credits < 0) {
                 d.Error("field 'unlock_cost_credits' must be >= 0");
