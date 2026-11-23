@@ -11,9 +11,9 @@ Reads every rm_events*.jsonl in the given log folders and prints:
 Usage (from the repository root):
   python scripts/test_matrix.py                         the PC's logs (%LOCALAPPDATA%\\RogueMercenaries\\logs)
   python scripts/test_matrix.py DIR=proton ...          more folders; =host names their host for runs from
-                                                        before 0.3.1 (whose run_started has no "host")
+                                                        0.3.0 and before (whose run_started has no "host")
   python scripts/test_matrix.py --since 2026-11-24      only runs started that day or later
-  python scripts/test_matrix.py --version 0.3.1         only runs of that release (0.3.1 on: the release's own number)
+  python scripts/test_matrix.py --version X.Y.Z         only runs of that release (after 0.3.0: the release's own number)
 """
 import argparse
 import glob

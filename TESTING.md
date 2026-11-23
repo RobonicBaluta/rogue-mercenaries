@@ -130,7 +130,7 @@ telemetry, so playing is all it takes:
     python scripts/test_matrix.py C:\deck-logs=proton  more folders (the Deck's AppData\Local\RogueMercenaries\logs copied over)
     python scripts/test_matrix.py --since 2026-11-24   only recent runs
 
-Since 0.3.1 every run_started says where it ran: `host` (windows or proton, with `host_version`),
+From the release after 0.3.0 every run_started says where it ran: `host` (windows or proton, with `host_version`),
 `loader` (dinput8: the game's dinput8.dll; plugin: another loader's), `plugins` (the other mods
 it loaded), `unlocked`, and `mod_version` is the release's (it was the core library's 0.1.0-dev);
 older runs take the host named after the folder. A cell is `Ndone` (N runs finished), `aN` (the
