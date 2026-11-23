@@ -2912,8 +2912,10 @@ private:
                     }
                     if (skinDef != nullptr && skinDef->mod) {
                         item.label += "   MOD";
+                        // Its mod's own picture once its mod is found, locked or not (the user on the Deck, 2026-11-23: "sheva
+                        // doesn't show its mod picture, shows fairy tale is that because its not recognized?": it was locked).
                         const auto pic = g_modPortraits.find(s.id);
-                        if (s.gate == rm::CharacterGate::Selectable && pic != g_modPortraits.end()) item.portrait = pic->second;
+                        if (s.gate != rm::CharacterGate::NotInstalled && pic != g_modPortraits.end()) item.portrait = pic->second;
                     }
                     if (s.gate == rm::CharacterGate::NotInstalled && skinDef != nullptr && skinDef->mod) {
                         // Not installed: where to get it (the menu's two help lines of 54).
