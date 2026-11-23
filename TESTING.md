@@ -24,6 +24,10 @@ Use a maintained C++ test framework if one is available; otherwise use a small s
 
 Run at least 10,000 distinct seeds and report run count, invalid encounters, average supplies, credits/run, perk appearance rates, rarity distribution, max/percentile damage multipliers, zero/negative balance checks and progression IDs that are never reachable. Fix or explain any invalid state before calling the simulation acceptable.
 
+Local co-op: `rm_sim --players 2` plays each run with two players (the core's seats; the model in
+`research/sim/coop-2026-11-24.md`). CTest runs 300 long runs of each (`rm_sim_solo`, `rm_sim_coop`):
+both must end with every invariant passing.
+
 ## Adapter tests
 
 Use a fake adapter to exercise event ordering and absent capabilities. Adapter tests must verify that unknown health/enemy counts remain unknown, repeated observations do not double-award rewards, and failed engine commands do not commit core state.

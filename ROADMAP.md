@@ -390,9 +390,13 @@ times the bosses' health (tuned with `rm_sim`); two mod skins on the same base s
    enemies for 20) and boss health scaling; a player at zero health is down while the other stands:
    the death camera (0x0076D9F0) and the game over flag (cleared at the match's game-over check
    0x00719F10, whoever set it) are held while a human player has health, the fallen lies there,
-   the run counts them down and the next arena brings them back with half their health. Open: both
-   down in game, `rm_sim` co-op balance.
-8. F7, progress and telemetry for both players: unlocks, run counts, events tagged by player.
+   the run counts them down and the next arena brings them back with half their health. Both down
+   seen in game 2026-11-21 (the run ends, RUN OVER). `rm_sim --players 2` (2026-11-24,
+   `research/sim/coop-2026-11-24.md`): in the model co-op is far easier (marathon 94 against 42
+   percent); about 2.5 times the enemies and 1.8 times as many at once would match solo: the user's call.
+8. F7, progress and telemetry for both players: unlocks, run counts, events tagged by player. Done:
+   every event of a co-op run carries its player's `seat`, a completed run counts for both players'
+   characters (`runs_completed_as`), unlocks are the one profile's (the design).
 9. F8, ship: README co-op section, tests, version and both packages; the user's two-controller
    playtest.
 

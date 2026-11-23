@@ -162,6 +162,13 @@ if(RM_BUILD_SIM)
     add_executable(rm_sim simulation/rm_sim.cpp)
     target_link_libraries(rm_sim PRIVATE rm_core rm_json)
     rm_project_warnings(rm_sim)
+    # Its invariants (exit 0) over a few runs, solo and in local co-op, on the shipped configs.
+    if(RM_BUILD_TESTS)
+        add_test(NAME rm_sim_solo COMMAND rm_sim --runs 300 --seed 3 --config ${CMAKE_SOURCE_DIR}/configs
+                 --out ${CMAKE_BINARY_DIR}/sim-test-solo --length long)
+        add_test(NAME rm_sim_coop COMMAND rm_sim --runs 300 --seed 3 --config ${CMAKE_SOURCE_DIR}/configs
+                 --out ${CMAKE_BINARY_DIR}/sim-test-coop --length long --players 2)
+    endif()
     # The mod's effects archive from a game's archives, as the adapter builds it (to check by hand).
     add_executable(rm_fxgen tools/fxgen.cpp)
     target_link_libraries(rm_fxgen PRIVATE rm_core)

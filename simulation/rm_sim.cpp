@@ -6,6 +6,7 @@
 // Options: --capabilities all|none|<comma list>  --policy mix|random|greedy|safe
 //          --hit-scale X (enemies hit X times as often: calibrates the model's difficulty)
 //          --log-runs N (write JSONL telemetry for the first N runs)  --date YYYY-MM-DD
+//          --players 2 (local co-op: two players in each run, the core's seats)
 // Exit code: 0 = all invariants hold, 1 = an invariant failed, 2 = usage/config error.
 
 #include <algorithm>
@@ -79,6 +80,13 @@ constexpr double kThrowSeconds = 6.0;
 // The backup partner revives a player bleeding out once per arena (seen in game 2026-11-03), at
 // this share of maximum health.
 constexpr double kPartnerReviveHp = 0.25;
+// Local co-op (--players 2; the user's item 10, 2026-11-24: "co-op balance in the simulator").
+// Estimates like the rest: the two players' kill rates add up; the enemies alive at once (economy
+// coop.alive_mult) split their hits between the players standing; a player at zero health while the
+// other stands is helped up this often in the game's dying state (back at kCoopHelpHp), else down
+// until the next arena, which brings them back at coop.revive_health (the core's seats).
+constexpr double kCoopHelpChance = 0.5;
+constexpr double kCoopHelpHp = 0.25;
 
 enum class Policy { Random, Greedy, Safe };
 const char* PolicyName(Policy p) {
@@ -102,6 +110,7 @@ struct Options {
     double hit_scale = 1.0;  // enemies hit this much more often (calibration)
     int log_runs = 0;
     std::string date;
+    int players = 1;  // 2: local co-op
 };
 
 bool ParseArgs(int argc, char** argv, Options& o) {
@@ -135,12 +144,14 @@ bool ParseArgs(int argc, char** argv, Options& o) {
             o.log_runs = std::stoi(v);
         } else if (a == "--date" && next(v)) {
             o.date = v;
+        } else if (a == "--players" && next(v)) {
+            o.players = std::stoi(v);
         } else {
             return false;
         }
     }
     if (o.refine != "off" && o.refine != "normal" && o.refine != "saver") return false;
-    return o.runs > 0 && o.hit_scale > 0.0 && (o.policy == "mix" || o.policy == "random" || o.policy == "greedy" || o.policy == "safe");
+    return o.runs > 0 && o.hit_scale > 0.0 && (o.players == 1 || o.players == 2) && (o.policy == "mix" || o.policy == "random" || o.policy == "greedy" || o.policy == "safe");
 }
 
 Capabilities ParseCaps(const std::string& spec) {
@@ -318,6 +329,8 @@ struct Stats {
     std::int64_t cheat_deaths = 0, heals_applied = 0;
     std::vector<float> raw_mult, clamped_mult;
     std::map<std::string, std::int64_t> unlock_run;  // "kind:id" -> run index of purchase
+    // Co-op (--players 2): falls, a partner's help in the dying state, a fallen player back next arena.
+    std::int64_t coop_falls = 0, coop_helped = 0, coop_back_next_arena = 0, coop_one_standing_clears = 0;
 };
 
 class Simulator {
@@ -330,6 +343,11 @@ public:
 private:
     void PlayRun(RunController& rc, int index, Policy policy);
     bool PlayArena(RunController& rc, Rng& player, double& t, double& hp, double skill, int index);
+    void PlayCoopRun(RunController& rc, int index, Policy policy, Rng& player, const std::string& second_character,
+                     const std::string& second_skin);
+    bool PlayCoopArena(RunController& rc, Rng& player, double& t);
+    void UseSeat(RunController& rc, int seat);
+    void CountHeldUniques(const RunController& rc);
     void ChooseReward(RunController& rc, Rng& player, Policy policy);
     void Shop(RunController& rc, Rng& player, Policy policy, double& hp);
     void ChooseRoute(RunController& rc, Rng& player, Policy policy);
@@ -353,6 +371,19 @@ private:
     std::vector<BuildRef> builds_;
     BuildStats* build_ = nullptr;   // the run being played
     std::map<std::int64_t, int> items_;  // healing items held this run (game item -> count)
+    // Co-op: each player's model; items_ and build_ are the active seat's (UseSeat swaps them).
+    struct SeatSim {
+        double hp = 0.0, skill = 1.0;
+        double power = 1.0, power_sum = 0.0;
+        std::int64_t power_n = 0;
+        double partner = 0.0, kill_credits = 0.0, next_throw = 0.0;
+        bool revived = false;  // the backup partner's revive (once an arena)
+        bool down = false;
+        BuildStats* build = nullptr;
+        std::map<std::int64_t, int> items;  // while another seat is active
+    };
+    std::array<SeatSim, 2> seats_{};
+    int seat_ = 0;
 };
 
 double Simulator::HpMax(const RunController& rc) const {
@@ -747,7 +778,13 @@ void Simulator::ChooseRoute(RunController& rc, Rng& player, Policy policy) {
     // A safer and a harder tier, except once the run map's tiers reach the highest (its last
     // layers repeat it: rm::GenerateRunMap).
     const bool at_top = !tiers.empty() && *tiers.begin() == content_->MaxRouteTier();
-    if (choices.size() < 2 || choices.size() > 3 || (tiers.size() < 2 && !at_top)) ++s_.invalid_route_choice;
+    // The ladder's boss layers (2026-11-07) offer the length's bosses (one, or an easy and a hard
+    // one) and the finale one: any tiers, one to three choices.
+    const bool bosses = !choices.empty() && std::all_of(choices.begin(), choices.end(), [this](const RouteChoice& c) {
+        const MapDef* m = content_->FindMapByStage(c.map_key);
+        return m != nullptr && m->boss.has_value();
+    });
+    if (bosses ? choices.size() > 3 : (choices.size() < 2 || choices.size() > 3 || (tiers.size() < 2 && !at_top))) ++s_.invalid_route_choice;
     if (choices.empty()) return;
     std::size_t pick = 0;
     if (policy == Policy::Random) {
@@ -845,6 +882,30 @@ void Simulator::PlayRun(RunController& rc, int index, Policy policy) {
     build_->name = rc.state().character.build.name;
     ++build_->runs;
     items_.clear();
+    if (opts_.players == 2) {
+        // The second player: another character's build, its perks equipped the same way.
+        std::size_t k = (static_cast<std::size_t>(index) * 7 + 3) % builds_.size();
+        for (std::size_t tries = 0; tries < builds_.size() && builds_[k].character == character; ++tries) k = (k + 1) % builds_.size();
+        const BuildRef& b2 = builds_[k];
+        for (const PerkCategory category : {PerkCategory::Style, PerkCategory::Supply, PerkCategory::Support}) {
+            std::vector<const PerkDef*> pool;
+            for (const PerkDef& p : content_->perks()) {
+                if (p.category == category && p.enabled) pool.push_back(&p);
+            }
+            loadout.Shuffle(pool);
+            for (const PerkDef* p : pool) {
+                if (rc.EquipPerk(b2.character, p->id).ok()) break;
+            }
+        }
+        if (!rc.AddSeat(b2.character, b2.skin).ok()) {
+            std::cerr << "AddSeat failed for run " << index << " (" << b2.character << " " << b2.skin << ")\n";
+            rc.AbandonRun(0.0);
+            (void)rc.EndRun();
+            return;
+        }
+        PlayCoopRun(rc, index, policy, player, b2.character, b2.skin);
+        return;
+    }
     CollectItems(rc);  // supply perks' starting items
     const double skill = player.UniformReal(kSkillMin, kSkillMax);
     double hp = HpMax(rc);
@@ -868,6 +929,7 @@ void Simulator::PlayRun(RunController& rc, int index, Policy policy) {
     }
     std::size_t topGuns = 0;
     for (const WeaponInstance& w : rc.state().weapons) topGuns += RarityIndex(w.rarity) >= RarityIndex(Rarity::Legendary) ? 1u : 0u;
+    CountHeldUniques(rc);
     if (rc.HasActiveRun() && rc.phase() != Phase::RunComplete && rc.phase() != Phase::RunFailed) rc.AbandonRun(t);
     const Result<RunSummary> summary = rc.EndRun();
     if (!summary.ok()) {
@@ -902,12 +964,351 @@ void Simulator::PlayRun(RunController& rc, int index, Policy policy) {
     BuyUnlocks(rc, index);
 }
 
+// The unique affixes on the guns held at the run's end (an Exotic gun's come from refines).
+void Simulator::CountHeldUniques(const RunController& rc) {
+    for (const WeaponInstance& w : rc.state().weapons) {
+        for (const Affix& a : w.affixes) {
+            if (!a.unique_id.empty()) ++s_.unique_rolls[a.unique_id];
+        }
+    }
+}
+
+void Simulator::UseSeat(RunController& rc, int seat) {
+    if (seat != seat_) {
+        seats_[static_cast<std::size_t>(seat_)].items = std::move(items_);
+        items_ = std::move(seats_[static_cast<std::size_t>(seat)].items);
+        seats_[static_cast<std::size_t>(seat)].items.clear();
+        seat_ = seat;
+    }
+    build_ = seats_[static_cast<std::size_t>(seat)].build;
+    (void)rc.ActivateSeat(seat);
+}
+
+// One co-op run (--players 2): the solo run's loop with both players, each choosing their own
+// reward and shopping in turn (the core's seats), the route chosen once.
+void Simulator::PlayCoopRun(RunController& rc, int index, Policy policy, Rng& player, const std::string& second_character,
+                            const std::string& second_skin) {
+    BuildStats* first = build_;
+    BuildStats& b2 = s_.builds[second_skin];
+    seat_ = 0;
+    for (int s = 0; s < 2; ++s) {
+        SeatSim& seat = seats_[static_cast<std::size_t>(s)];
+        seat = SeatSim{};
+        seat.build = s == 0 ? first : &b2;
+        UseSeat(rc, s);
+        if (s == 1) {
+            b2.character = second_character;
+            b2.skin = second_skin;
+            b2.name = rc.state().character.build.name;
+            ++b2.runs;
+        }
+        CollectItems(rc);  // supply perks' starting items
+        seat.skill = player.UniformReal(kSkillMin, kSkillMax);
+        seat.hp = HpMax(rc);
+    }
+    UseSeat(rc, 0);
+    double t = 0.0;
+    while (rc.HasActiveRun()) {
+        const Phase phase = rc.phase();
+        if (phase == Phase::RunComplete || phase == Phase::RunFailed) break;
+        if (rc.state().arena_index + 1 == rc.state().arena_count) ++first->reached_last;
+        if (!PlayCoopArena(rc, player, t)) break;
+        UseSeat(rc, 0);
+        rc.ContinueToRewards();
+        for (int s = 0; s < 2; ++s) {
+            UseSeat(rc, s);
+            if (rc.phase() == Phase::RewardSelection) ChooseReward(rc, player, policy);
+            CollectItems(rc);
+        }
+        if (rc.phase() == Phase::Shop) {
+            for (int s = 0; s < 2; ++s) {
+                UseSeat(rc, s);
+                Shop(rc, player, policy, seats_[static_cast<std::size_t>(s)].hp);
+                CollectItems(rc);
+            }
+            // The route as the adapter's vote settles it: with the last player's seat active, the one the
+            // choices (and a curse) were rolled for when the last player left the shop.
+            UseSeat(rc, 1);
+            ChooseRoute(rc, player, policy);
+            for (int s = 0; s < 2; ++s) {
+                UseSeat(rc, s);
+                SeatSim& seat = seats_[static_cast<std::size_t>(s)];
+                seat.hp = std::min(HpMax(rc), seat.hp + kRegenBetweenArenas * HpMax(rc) / kHpMax);
+            }
+            t += 30.0;
+        }
+        CheckBalances(rc);
+    }
+    for (int s = 0; s < 2; ++s) {
+        UseSeat(rc, s);
+        CountHeldUniques(rc);
+    }
+    UseSeat(rc, 0);
+    if (rc.HasActiveRun() && rc.phase() != Phase::RunComplete && rc.phase() != Phase::RunFailed) rc.AbandonRun(t);
+    const Result<RunSummary> summary = rc.EndRun();
+    if (!summary.ok()) {
+        std::cerr << "EndRun failed for co-op run " << index << ": " << summary.status().message << "\n";
+        return;
+    }
+    const RunSummary& sum = summary.value();
+    for (BuildStats* b : {first, &b2}) {
+        if (sum.completed) ++b->completed;
+        b->arenas_cleared += sum.arenas_cleared;
+        b->credits += sum.credits_banked;
+        b->supplies_earned += sum.supplies_earned;
+    }
+    if (sum.completed) {
+        ++s_.completed;
+        ++s_.completed_by_policy[PolicyName(policy)];
+        s_.credits_banked_completed += sum.credits_banked;
+    } else {
+        ++s_.failed;
+        ++s_.death_arena_hist[sum.arenas_cleared + 1];
+        s_.credits_banked_failed += sum.credits_banked;
+    }
+    const std::size_t cleared = static_cast<std::size_t>(std::max(0, sum.arenas_cleared));
+    if (s_.arenas_cleared_hist.size() <= cleared) s_.arenas_cleared_hist.resize(cleared + 1, 0);
+    s_.arenas_cleared_hist[cleared]++;
+    s_.supplies_earned += sum.supplies_earned;
+    s_.supplies_spent += sum.supplies_spent;
+    s_.credits_banked += sum.credits_banked;
+    const Result<RunSummary> again = rc.EndRun();
+    ++s_.duplicate_attempts;
+    if (again.ok() && again->credits_banked != 0) ++s_.duplicate_grants;
+    items_.clear();
+    for (SeatSim& seat : seats_) seat.items.clear();
+    build_ = first;
+    BuyUnlocks(rc, index);
+}
+
+// One co-op arena: PlayArena's model for each player standing, both killing at once.
+bool Simulator::PlayCoopArena(RunController& rc, Rng& player, double& t) {
+    UseSeat(rc, 0);
+    const Status begin = rc.BeginArena(t);
+    if (!begin.ok()) {
+        if (begin.code == ErrorCode::InvalidEncounter) ++s_.invalid_route;
+        return false;
+    }
+    for (const int s : rc.ConsumeRevivedSeats()) {
+        UseSeat(rc, s);
+        SeatSim& seat = seats_[static_cast<std::size_t>(s)];
+        seat.down = false;
+        seat.hp = content_->economy().coop.revive_health * HpMax(rc);
+        ++s_.coop_back_next_arena;
+    }
+    UseSeat(rc, 0);
+    const RouteDef* route = content_->FindRoute(rc.state().route_id);
+    if (route == nullptr) {
+        ++s_.invalid_route;
+        return false;
+    }
+    if (route->enemy_budget <= 0) ++s_.invalid_budget;
+    ++s_.arenas_played;
+    const int tier = std::clamp(route->difficulty_tier, 1, 3);
+    const int max_events = route->enemy_budget * 6 + 20;
+    const bool melee_known = caps_.Has(cap::kMeleeDetect);
+    const int chests = content_->economy().chests.per_arena + rc.state().character.build.extra_chests;
+    const double alive_mult = content_->economy().coop.alive_mult;
+    int chests_tried = 0, kills = 0, enemy_serial = 0;
+    for (SeatSim& seat : seats_) {
+        seat.power = 1.0;
+        seat.power_sum = 0.0;
+        seat.power_n = 0;
+        seat.partner = 0.0;
+        seat.kill_credits = 0.0;
+        seat.next_throw = t;
+        seat.revived = false;
+    }
+    bool fell = false;
+
+    for (int ev = 0; ev < max_events && !rc.IsArenaComplete(); ++ev) {
+        int standing = 0;
+        for (const SeatSim& seat : seats_) standing += seat.down ? 0 : 1;
+        if (standing == 0) return false;
+        std::array<double, 2> rate{};
+        double total = 0.0;
+        for (int s = 0; s < 2; ++s) {
+            SeatSim& seat = seats_[static_cast<std::size_t>(s)];
+            if (seat.down) continue;
+            UseSeat(rc, s);
+            seat.kill_credits += UseSpecials(rc, t, seat.partner);
+            if (t >= seat.next_throw) {
+                const double k = ThrowItem();
+                if (k > 0.0) {
+                    seat.kill_credits += k;
+                    seat.next_throw = t + kThrowSeconds;
+                }
+            }
+            const double speed = seat.power * seat.skill * (seat.partner > 0.0 ? kPartnerKillSpeed : 1.0);
+            rate[static_cast<std::size_t>(s)] = std::max(0.25, speed) / kBaseKillSeconds;
+            total += rate[static_cast<std::size_t>(s)];
+        }
+        // The next kill: both players at once; a special's or a throw's kill comes at once.
+        double dt = std::max(0.5, -std::log(1.0 - player.NextDouble()) / total);
+        int killer = -1;
+        for (int s = 0; s < 2 && killer < 0; ++s) {
+            SeatSim& seat = seats_[static_cast<std::size_t>(s)];
+            if (!seat.down && seat.kill_credits >= 1.0) {
+                seat.kill_credits -= 1.0;
+                dt = 0.5;
+                killer = s;
+            }
+        }
+        if (killer < 0) {
+            const double pick = player.NextDouble() * total;
+            killer = (!seats_[0].down && pick < rate[0]) || seats_[1].down ? 0 : 1;
+        }
+
+        // Incoming hits during dt: the enemies at once (alive_mult) split between the players standing.
+        for (int s = 0; s < 2; ++s) {
+            SeatSim& seat = seats_[static_cast<std::size_t>(s)];
+            if (seat.down) continue;
+            UseSeat(rc, s);
+            const double hit_rate = kIncomingHitsPerSecond * opts_.hit_scale * kTierHitScale[static_cast<std::size_t>(tier)] / seat.skill;
+            const double expected_hits = hit_rate * dt * (seat.partner > 0.0 ? kPartnerIncoming : 1.0) * alive_mult / standing;
+            int hits = 0;
+            for (double l = std::exp(-expected_hits), q = player.NextDouble(); q > l; q *= player.NextDouble()) ++hits;
+            for (int h = 0; h < hits && !seat.down; ++h) {
+                const double now = t + dt * (h + 1) / (hits + 1);
+                const double amount = player.UniformReal(kHitDamageMin, kHitDamageMax);
+                const double max = HpMax(rc);
+                const IncomingResult in = rc.ComputeIncoming(IncomingContext{now, amount, seat.hp, max});
+                const double before = seat.hp;
+                if (in.prevent_death) {
+                    seat.hp = in.leave_hp;
+                    ++s_.cheat_deaths;
+                } else {
+                    seat.hp = std::max(0.0, seat.hp - amount * in.multiplier);
+                }
+                if (build_ != nullptr) {
+                    build_->incoming_raw += amount;
+                    build_->incoming_dealt += before - seat.hp > 0 ? before - seat.hp : 0.0;
+                }
+                rc.OnPlayerDamaged(DamageEvent{now, before - seat.hp > 0 ? before - seat.hp : 0.0, before, seat.hp, max});
+                CollectItems(rc);
+                UseHealingItem(rc, now, seat.hp);
+                if (seat.hp > 0.0) continue;
+                if (seat.partner > 0.0 && !seat.revived) {
+                    seat.revived = true;  // the backup partner
+                    seat.hp = kPartnerReviveHp * max;
+                    if (build_ != nullptr) ++build_->revives;
+                    continue;
+                }
+                const bool other_up = !seats_[static_cast<std::size_t>(1 - s)].down;
+                if (other_up && player.Chance(kCoopHelpChance)) {
+                    seat.hp = kCoopHelpHp * max;  // helped up in the dying state
+                    ++s_.coop_helped;
+                    continue;
+                }
+                seat.down = true;
+                fell = true;
+                ++s_.coop_falls;
+                rc.OnPlayerDied(now);
+                if (rc.phase() == Phase::RunFailed) {
+                    t += dt;
+                    return false;
+                }
+            }
+        }
+        if (seats_[static_cast<std::size_t>(killer)].down) killer = 1 - killer;  // fell meanwhile: the other's kill
+
+        // The killer's hits on the next enemy, then the kill.
+        UseSeat(rc, killer);
+        SeatSim& ks = seats_[static_cast<std::size_t>(killer)];
+        const std::string enemy = "e" + std::to_string(++enemy_serial);
+        const auto& weapons = rc.state().weapons;
+        std::optional<std::string> weapon_id;
+        if (caps_.Has(cap::kWeaponId) && !weapons.empty()) weapon_id = weapons[player.Index(weapons.size())].base_id;
+        const int n_hits = static_cast<int>(player.UniformInt(3, 6));
+        bool last_melee = false;
+        for (int k = 0; k < n_hits; ++k) {
+            HitContext hit;
+            hit.now = t + dt * (k + 1) / (n_hits + 1);
+            hit.base_damage = 100.0;
+            hit.target_hp = 100.0 * (1.0 - static_cast<double>(k) / n_hits);
+            hit.target_hp_max = 100.0;
+            hit.weapon_id = weapon_id;
+            last_melee = melee_known && player.Chance(kMeleeHitChance);
+            if (melee_known) hit.is_melee = last_melee;
+            hit.player_hp = ks.hp;
+            hit.player_hp_max = HpMax(rc);
+            const OutgoingResult r = rc.ComputeOutgoingMultiplier(hit);
+            s_.raw_mult.push_back(static_cast<float>(r.breakdown.raw));
+            s_.clamped_mult.push_back(static_cast<float>(r.multiplier));
+            ++s_.hits;
+            if (build_ != nullptr) {
+                build_->outgoing_mult += r.multiplier;
+                ++build_->hits;
+            }
+            if (r.breakdown.raw != r.breakdown.clamped) ++s_.clamped_hits;
+            if (r.crit) ++s_.crits;
+            ks.power_sum += r.multiplier;
+            ++ks.power_n;
+        }
+        ks.power = ks.power_sum / static_cast<double>(ks.power_n);
+        t += dt;
+
+        KillEvent kill;
+        kill.now = t;
+        kill.by_player = !player.Chance(kPartnerKillChance);
+        kill.weapon_id = weapon_id;
+        if (melee_known) kill.was_melee = last_melee;
+        kill.enemy_id = enemy;
+        kill.enemy_class = kEnemyClass;
+        rc.OnEnemyKilled(kill);
+        if (kill.by_player && player.Chance(kDuplicateReportChance)) rc.OnEnemyKilled(kill);
+        const std::int64_t drops_as = rc.state().character.build.drops_as;
+        if (drops_as >= 0) {
+            if (player.Chance(kAnyDropChance)) ++items_[drops_as];
+        } else if (player.Chance(kHerbDropChance)) {
+            ++items_[kItemGreenHerb];
+        }
+        ++kills;
+        while (chests_tried < chests && kills * (chests + 1) >= route->enemy_budget * (chests_tried + 1)) {
+            ++chests_tried;
+            const Result<ChestReward> chest = rc.OpenChest(t);  // the killer's, the one nearest
+            if (build_ != nullptr && chest.ok()) ++(chest->locked ? build_->chests_locked : build_->chests_opened);
+        }
+        for (int s = 0; s < 2; ++s) {
+            SeatSim& seat = seats_[static_cast<std::size_t>(s)];
+            if (seat.down) continue;
+            UseSeat(rc, s);
+            ApplyHeals(rc, seat.hp);
+            CollectItems(rc);
+            seat.hp = std::min(seat.hp, HpMax(rc));
+        }
+        CheckBalances(rc);
+    }
+    UseSeat(rc, 0);
+    if (!rc.IsArenaComplete()) {
+        ++s_.incomplete_arena;
+        rc.AbandonRun(t);
+        return false;
+    }
+    const Result<ArenaResult> result = rc.CompleteArena(t + 1.0);
+    if (!result.ok()) {
+        ++s_.incomplete_arena;
+        return false;
+    }
+    if (fell) ++s_.coop_one_standing_clears;
+    ++s_.ratings[std::string(RatingName(result->rating))];
+    t += 2.0;
+    return true;
+}
+
 int Simulator::Run() {
-    // Every selectable character's every selectable skin: each skin is its own build.
+    // Every character's every skin a player can earn (the simulated profile below has them all;
+    // mod skins need their files: not here): each skin is its own build.
+    StringSet earned;
     for (const CharacterDef& c : content_->characters()) {
-        if (CheckCharacter(&c, {}) != CharacterGate::Selectable) continue;
+        earned.insert(c.id);
+        for (const SkinDef& skin : c.skins) earned.insert(skin.id);
+    }
+    for (const CharacterDef& c : content_->characters()) {
+        // The tester's character (an install's test_character) is no player's build.
+        if (CheckCharacter(&c, earned) != CharacterGate::Selectable || c.tester_only) continue;
         for (const SkinDef& s : c.skins) {
-            if (CheckSkin(s, {}) == CharacterGate::Selectable) builds_.push_back({c.id, s.id});
+            if (CheckSkin(s, earned) == CharacterGate::Selectable && !s.mod.has_value()) builds_.push_back({c.id, s.id});
         }
     }
     if (builds_.empty()) {
@@ -945,6 +1346,8 @@ int Simulator::Run() {
     for (const auto& length : content_->economy().ladder.lengths) {
         if (!length.unlocked_by.empty()) everyone.stats.bosses_beaten.insert(length.unlocked_by);
     }
+    // Exotic guns (and their unique affixes) once the boss that opens them is beaten.
+    if (!content_->economy().refine.exotic_unlocked_by.empty()) everyone.stats.bosses_beaten.insert(content_->economy().refine.exotic_unlocked_by);
     g_refineMode = opts_.refine == "saver" ? RefineMode::Saver : opts_.refine == "normal" ? RefineMode::Normal : RefineMode::Off;
     RunController rc(content_, std::move(everyone), ro);
 
@@ -993,11 +1396,16 @@ int Simulator::WriteReports(const SimSink& sink, double seconds) {
         if (key != "choose_reward:already_chosen" && key != "purchase:grant_failed") unexpected_errors += n;
     }
 
-    // Content never offered across all runs.
+    // Content never offered across all runs. A character no simulated build plays (the tester's, one
+    // whose every skin needs mod files) and its own perks are expected never to come up.
+    std::set<std::string> played;
+    for (const BuildRef& b : builds_) played.insert(b.character);
     std::vector<std::string> unreachable;
     std::vector<std::string> disabled;
     for (const PerkDef& p : content_->perks()) {
-        if (!p.enabled) {
+        const bool unplayed = !p.characters.empty() && std::none_of(p.characters.begin(), p.characters.end(),
+                                                                   [&](const std::string& c) { return played.count(c) > 0; });
+        if (!p.enabled || unplayed) {
             disabled.push_back("perk:" + p.id);
             continue;
         }
@@ -1040,7 +1448,7 @@ int Simulator::WriteReports(const SimSink& sink, double seconds) {
         }
     }
     for (const CharacterDef& c : content_->characters()) {
-        if (!c.enabled) {
+        if (!c.enabled || !played.count(c.id)) {
             disabled.push_back("character:" + c.id);
         } else if (!s_.runs_by_character.count(c.id)) {
             unreachable.push_back("character:" + c.id);
@@ -1096,7 +1504,9 @@ int Simulator::WriteReports(const SimSink& sink, double seconds) {
     j["date"] = opts_.date;
     j["command"] = "rm_sim --runs " + std::to_string(opts_.runs) + " --seed " + std::to_string(opts_.seed) +
                    " --config " + opts_.config + " --out " + opts_.out + " --capabilities " + opts_.capabilities +
-                   " --policy " + opts_.policy + (opts_.hit_scale != 1.0 ? " --hit-scale " + Fmt(opts_.hit_scale, 2) : std::string());
+                   " --policy " + opts_.policy + (opts_.hit_scale != 1.0 ? " --hit-scale " + Fmt(opts_.hit_scale, 2) : std::string()) +
+                   (opts_.length.empty() ? std::string() : " --length " + opts_.length) +
+                   (opts_.players != 1 ? " --players " + std::to_string(opts_.players) : std::string());
     j["capabilities"] = caps_.ToString();
     j["player_model"] = {{"hp_max", kHpMax}, {"base_kill_seconds", kBaseKillSeconds},
                          {"incoming_hits_per_second", kIncomingHitsPerSecond * opts_.hit_scale},
@@ -1104,6 +1514,14 @@ int Simulator::WriteReports(const SimSink& sink, double seconds) {
                          {"hit_damage", {kHitDamageMin, kHitDamageMax}}, {"partner_kill_chance", kPartnerKillChance},
                          {"duplicate_report_chance", kDuplicateReportChance}, {"melee_hit_chance", kMeleeHitChance},
                          {"regen_between_arenas", kRegenBetweenArenas}, {"skill_range", {kSkillMin, kSkillMax}}};
+    j["players"] = opts_.players;
+    if (opts_.players > 1) {
+        j["coop"] = {{"falls", s_.coop_falls}, {"helped_up", s_.coop_helped}, {"back_next_arena", s_.coop_back_next_arena},
+                     {"arenas_cleared_after_a_fall", s_.coop_one_standing_clears},
+                     {"model", {{"help_chance", kCoopHelpChance}, {"help_hp", kCoopHelpHp},
+                                {"enemy_mult", content_->economy().coop.enemy_mult}, {"alive_mult", content_->economy().coop.alive_mult},
+                                {"boss_hp_mult", content_->economy().coop.boss_hp_mult}, {"revive_health", content_->economy().coop.revive_health}}}};
+    }
     j["runs"] = s_.runs;
     j["completed"] = s_.completed;
     j["failed"] = s_.failed;
@@ -1236,7 +1654,12 @@ int Simulator::WriteReports(const SimSink& sink, double seconds) {
     md << "| Damage multiplier clamped: p50 / p99 / p99.9 / max | " << Fmt(clamped.p50, 3) << " / " << Fmt(clamped.p99, 3)
        << " / " << Fmt(clamped.p999, 3) << " / " << Fmt(clamped.max, 3) << " |\n";
     md << "| Hits simulated (clamped, crits) | " << s_.hits << " (" << s_.clamped_hits << ", " << s_.crits << ") |\n";
-    md << "| Cheat-death saves / heal requests applied | " << s_.cheat_deaths << " / " << s_.heals_applied << " |\n\n";
+    md << "| Cheat-death saves / heal requests applied | " << s_.cheat_deaths << " / " << s_.heals_applied << " |\n";
+    if (opts_.players > 1) {
+        md << "| Co-op: falls / helped up / back next arena / arenas cleared after a fall | " << s_.coop_falls << " / " << s_.coop_helped
+           << " / " << s_.coop_back_next_arena << " / " << s_.coop_one_standing_clears << " |\n";
+    }
+    md << "\n";
 
     md << "## Invariants\n\n| Check | Value | Result |\n|---|---|---|\n";
     for (const Check& c : checks) md << "| " << c.name << " | " << c.value << " | " << (c.pass ? "PASS" : "FAIL") << " |\n";
@@ -1337,7 +1760,7 @@ int Simulator::WriteReports(const SimSink& sink, double seconds) {
     md << "## Unreachable and disabled content\n\n";
     md << "Enabled content never offered across all runs: " << (unreachable.empty() ? "none" : "") ;
     for (std::size_t i = 0; i < unreachable.size(); ++i) md << (i ? ", " : "") << "`" << unreachable[i] << "`";
-    md << ".\n\nDisabled (reserved, expected never offered): ";
+    md << ".\n\nDisabled, reserved or for a character no build plays (expected never offered): ";
     for (std::size_t i = 0; i < disabled.size(); ++i) md << (i ? ", " : "") << "`" << disabled[i] << "`";
     md << (disabled.empty() ? "none" : "") << ".\n\n";
 
