@@ -148,7 +148,7 @@ struct RunStats {
     double defense = 0.0;     // less incoming damage
     double max_health = 0.0;  // maximum health (the adapter scales it)
     double crit = 0.0;        // crit chance
-    double move_speed = 0.0;  // movement speed (the adapter moves her that much further)
+    double move_speed = 0.0;  // movement speed (the adapter plays the walk and run that much faster)
     double heal = 0.0;        // healing items heal more
     double supplies = 0.0;    // supplies gained
     int gains = 0;

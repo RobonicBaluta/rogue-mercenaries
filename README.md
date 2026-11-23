@@ -147,7 +147,7 @@ of the newer ones are a rule with a cost. Written 2026-11-04 and waiting for a p
 | Chris | B.S.A.A. Veteran | Clearing an arena restocks a first aid spray. | free, the default |
 | Chris | Pocket Grenades | Every 4 kills put a hand grenade in your pocket. | 120 credits |
 | Chris | Boulder Puncher | Melee hits deal two and a half times the damage, handguns 25 percent less. | 150 credits |
-| Chris | Iron Grip | Throws off a Majini that grabs him at once, but every heal is 25 percent smaller. | 200 credits |
+| Chris | Iron Grip | Throws off whatever grabs him at once (Majini, the big axe men, chainsaws, the Village's creature, the Uroboros; not the Wesker bosses' blows), but every heal is 25 percent smaller. | 200 credits |
 | Sheva | Field Training | Each kill heals 2 percent of max health. | free, the default |
 | Sheva | Flash Tactics | Every 3 kills hand you a flash grenade. | 120 credits |
 | Sheva | Scavenger | Ammo and herbs she picks up become ammo for the gun in her hands. | 150 credits |

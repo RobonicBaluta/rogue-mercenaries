@@ -701,6 +701,11 @@ constexpr std::size_t kMotionLayerCount = 0x374;
 constexpr std::size_t kMotionLayer0Id = 0x384;
 constexpr std::size_t kMotionLayer0Frame = 0x398;
 constexpr std::size_t kMotionLayer0Frames = 0x39C;
+// Layer n's playback speed (float) at kMotionLayer0Speed + n * kMotionLayerStride. The player's walk
+// (0x00C7A220) and run (0x00C7A6E0) start their motions on layers 0..2 once, with their speed, and
+// move him by those motions' root tracks; the turn in place (0x00C7AD30) sets layer 0's every frame.
+constexpr std::size_t kMotionLayer0Speed = 0x3A4;
+constexpr std::size_t kMotionLayerStride = 0xE0;
 constexpr std::size_t kModelJointCount = 0x314;
 constexpr std::size_t kModelBoneToJoint = 0x31C;  // byte table: a motion track's bone id -> joint (0xFF none)
 constexpr std::size_t kVtableChangeAction = 0xDC;

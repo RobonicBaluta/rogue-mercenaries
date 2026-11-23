@@ -72,7 +72,7 @@ PROXIMITY, GREEN_HERB_GROUND, GREEN_HERB, MIXED_HERB = 0x010A, 0x0301, 0x0305, 0
 perks += [
     perk('chris_boulder_puncher', 'Boulder Puncher', 'Chris. Melee hits deal two and a half times the damage, handguns 25 percent less.', 'style',
          [], ['chris'], cost=150, rarity='rare', tags=['melee'], build={'melee_damage': 1.5, 'category_damage': {'handgun': -0.25}}),
-    perk('chris_iron_grip', 'Iron Grip', 'Chris. Throws off a Majini that grabs him at once, but every heal is 25 percent smaller.', 'style',
+    perk('chris_iron_grip', 'Iron Grip', 'Chris. Throws off whatever grabs him at once, but every heal is 25 percent smaller.', 'style',
          [], ['chris'], cost=200, rarity='epic', tags=['survival'], build={'break_grabs': True, 'heal_mult': 0.75}),
     perk('sheva_scavenger', 'Scavenger', 'Sheva. Ammo and herbs she picks up become ammo for the gun in her hands.', 'style',
          [], ['sheva'], cost=150, rarity='rare', tags=['items'], build={'drops_as_held_ammo': True}),

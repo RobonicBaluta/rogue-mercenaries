@@ -313,7 +313,7 @@
     {
       "id": "chris_iron_grip",
       "name": "Iron Grip",
-      "description": "Chris. Throws off a Majini that grabs him at once, but every heal is 25 percent smaller.",
+      "description": "Chris. Throws off whatever grabs him at once, but every heal is 25 percent smaller.",
       "category": "style",
       "rarity": "epic",
       "tags": [

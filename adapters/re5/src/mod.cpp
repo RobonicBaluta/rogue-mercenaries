@@ -11513,14 +11513,55 @@ void StepSpecial(double now) {
     }
 }
 
-// Chris's Iron Grip (a build's break_grabs): a grab is broken at once. In a grab the player's
-// action is the grabber's hold of him (cEm10ActNeckHang_PL, cEm10ActBackHold_PL, ...: the
-// grabber at the action's +0xC, the player at +8, 0x00C29370); the hold lets him go itself when
-// the grabber leaves its grab (a Majini's action 0x99, the hold's move 0x00C26FB0), so the
-// grabber is thrown off with the game's own reaction. Only Majini (uEm10's family) have the
-// reactions known; any other grabber is logged and left to the game.
+// Grab immunity (a build's break_grabs: Chris's Iron Grip, Ada's Grapple Gun; dev "grabs break"):
+// a grab ends at once because the grabber's own grab is ended (the user, 2026-11-23: "end the
+// grabber's own action, which frees the player"). In a grab the player's action is the grabber's
+// hold of him (a cEmNN..._PL class). How each family's hold lets him go, from its update (vtable
+// slot +0x28, decompiled 2026-11-23):
+//  - Majini (cEm10 NeckHang, BackHold, ...; 0x00C26FB0, grabber at +0xC): once the grabber leaves its
+//    grab (seen in game with Iron Grip since 2026-11-04). It is thrown off with its own reaction.
+//  - the big axe men (cEm20 AtkHanging 0x00873D90, AtkExecCatch 0x00875A90; grabber at +0xC): once the
+//    grabber's action (+0x10E0) is no longer the grab (0x18, 0x30). Their AtkExecKill (0x00876420)
+//    checks nothing: a kill under way is left to the game (the catch before it is broken).
+//  - the chainsaw men (cEm22 AtkCutting 0x0087C5E0, AtkCutsDown 0x0087C9F0; grabber at +0xC): only once
+//    the grabber is gone, then the hold starts the player's action 0. Here: the grabber's reaction,
+//    then the player's action 0 as the hold would.
+//  - the Village's creature (cEm0b AtkCatchHit 0x00853BD0; its grabber at +0x24, the player at +0x20):
+//    once the grabber's +0x1B5C bit 10 is clear or it is gone, then the player's action 0x83. Here:
+//    the grabber's reaction, then that action.
+//  - the Uroboros (uEm40, uEm41) and Uroboros Wesker (cEm82 drill): their own escape (kLethalHolds).
+// Any other hold (the Wesker bosses' blows, Jill's) is logged and left to the game.
 constexpr std::size_t kHoldGrabber = 0x0C;
+struct GrabFamily {
+    const char* family;        // the hold's class prefix
+    std::size_t grabberAt;     // where the hold keeps its grabber
+    const char* reactions[3];  // the grabber's own reactions (its action table's classes), tried in turn
+    int releaseAction;         // -1: the hold lets go itself; else the player's action its own release starts
+};
+constexpr GrabFamily kGrabFamilies[] = {
+    {"cEm10", kHoldGrabber, {"cEm10ActDmgFlyoff", "cEm10ActDmgYoroke", nullptr}, -1},
+    {"cEm20", kHoldGrabber, {"cEm20ActDmgKneelDown", "cEm20ActDmg", "cEm20ActDmgSpin"}, -1},
+    {"cEm22", kHoldGrabber, {"cEm22ActDmgStaggers", "cEm22ActDmg", nullptr}, 0},
+    {"cEm0b", 0x24, {"cEm0bActDmgBlown", "cEm0bActDmgS", nullptr}, 0x83},
+};
 std::uintptr_t g_grabBroken = 0;  // the hold action handled last (one try per grab)
+
+// The grabber's first reaction of `f` that starts ("" when none did).
+std::string StartGrabberReaction(std::uintptr_t grabber, const GrabFamily& f) {
+    for (const char* cls : f.reactions) {
+        if (cls == nullptr) break;
+        const auto ids = engine::ActionIdsOf(grabber, cls);
+        if (!ids.empty() && engine::StartAction(grabber, ids.front(), cls)) return cls;
+    }
+    return {};
+}
+
+// The player's action `id` started as a hold's own release does (by its class in his table).
+bool StartPlayerAction(std::uintptr_t player, int id) {
+    const auto names = engine::ActionNames(player);
+    if (id < 0 || static_cast<std::size_t>(id) >= names.size() || names[static_cast<std::size_t>(id)].empty()) return false;
+    return engine::StartAction(player, id, names[static_cast<std::size_t>(id)].c_str());
+}
 
 void DriveGrabBreak(double now) {
     rm::RunController& run = *g->run;
@@ -11531,18 +11572,44 @@ void DriveGrabBreak(double now) {
     if (!local) return;
     const auto action = ReadOr<std::uintptr_t>(local + re5::off::kPlayerAction, 0);
     const std::string name = action ? engine::ClassName(action) : std::string();
-    const bool hold = name.size() > 3 && name.compare(name.size() - 3, 3, "_PL") == 0 && name.find("Escape") == std::string::npos;
+    const bool hold = name.size() > 3 && name.compare(name.size() - 3, 3, "_PL") == 0 && name.find("Esc") == std::string::npos;
     if (!hold) {
         g_grabBroken = 0;
         return;
     }
     if (action == g_grabBroken) return;
     g_grabBroken = action;
-    const auto grabber = ReadOr<std::uintptr_t>(action + kHoldGrabber, 0);
+    const std::string family = name.substr(0, 5);
+    const auto freed = [&](const char* how) {
+        g->notice = "GRAB BROKEN";
+        g->noticeUntil = now + 1.2;
+        RM_LOGI("grab immunity: %s %s", name.c_str(), how);
+    };
+    // Uroboros Wesker's drill (his hold keeps no grabber the mod knows): the arena's boss lets go
+    // through its own release once its DrillWait holds him.
+    if (family == "cEm82") {
+        const std::uintptr_t boss = g->boss.unit;
+        const BossHold* h = boss ? LethalHold(engine::CurrentActionName(boss)) : nullptr;
+        if (h == nullptr) {
+            g_grabBroken = 0;  // not yet holding him: asked again on the next frame
+            return;
+        }
+        if (ReleaseHold(boss, *h)) {
+            freed("let go (his release)");
+        } else {
+            RM_LOGI("grab immunity: %s kept (no release found)", name.c_str());
+        }
+        return;
+    }
+    const GrabFamily* f = nullptr;
+    for (const GrabFamily& k : kGrabFamilies) {
+        if (family == k.family) f = &k;
+    }
+    const auto grabber = ReadOr<std::uintptr_t>(action + (f ? f->grabberAt : kHoldGrabber), 0);
     const std::string cls = grabber ? engine::ClassName(grabber) : std::string();
     const auto hp = grabber ? engine::ReadHp(grabber) : std::nullopt;
     if (cls.rfind("uEm", 0) != 0 || !hp || hp->hp <= 0) {
-        RM_LOGI("iron grip: %s, no grabber found (%s); left to the game", name.c_str(), cls.empty() ? "none" : cls.c_str());
+        RM_LOGI("grab immunity: %s, no grabber found (%s); left to the game", name.c_str(), cls.empty() ? "none" : cls.c_str());
         return;
     }
     // A Uroboros' grab: let go through its own escape once it holds him (kLethalHolds); while it
@@ -11553,22 +11620,32 @@ void DriveGrabBreak(double now) {
             g_grabBroken = 0;
             return;
         }
-        const bool let = ReleaseHold(grabber, *h);
-        RM_LOGI("iron grip: %s by %s %s", name.c_str(), cls.c_str(), let ? "let go (its escape)" : "kept its hold (no escape found)");
-        if (let) {
-            g->notice = "IRON GRIP";
-            g->noticeUntil = now + 1.2;
+        if (ReleaseHold(grabber, *h)) {
+            freed(("by " + cls + ": let go (its escape)").c_str());
+        } else {
+            RM_LOGI("grab immunity: %s by %s kept its hold (no escape found)", name.c_str(), cls.c_str());
         }
         return;
     }
-    const bool thrown = engine::StartAction(grabber, re5::off::kEm10DmgFlyoff, ReactionClass(re5::off::kEm10DmgFlyoff)) ||
-                        engine::StartAction(grabber, re5::off::kEm10DmgYoroke, ReactionClass(re5::off::kEm10DmgYoroke));
-    RM_LOGI("iron grip: %s by %s %s", name.c_str(), cls.c_str(),
-            thrown ? ("thrown off (" + engine::CurrentActionName(grabber) + ")").c_str() : "kept its grab (no known reaction)");
-    if (thrown) {
-        g->notice = "IRON GRIP";
-        g->noticeUntil = now + 1.2;
+    if (f == nullptr) {
+        RM_LOGI("grab immunity: %s by %s, a hold the mod does not know; left to the game", name.c_str(), cls.c_str());
+        return;
     }
+    if (name == "cEm20ActAtkExecKill_PL") {
+        RM_LOGI("grab immunity: %s by %s, its kill already under way; left to the game", name.c_str(), cls.c_str());
+        return;
+    }
+    const std::string reaction = StartGrabberReaction(grabber, *f);
+    const bool released = f->releaseAction >= 0 && StartPlayerAction(local, f->releaseAction);
+    if (reaction.empty() && !released) {
+        RM_LOGI("grab immunity: %s by %s kept its grab (no reaction started, the player not released)", name.c_str(), cls.c_str());
+        return;
+    }
+    std::string how = "by " + cls + ": " + (reaction.empty() ? std::string("no reaction") : "thrown off (" + reaction + ")");
+    if (f->releaseAction >= 0) {
+        how += released ? ", the player let go (his action " + std::to_string(f->releaseAction) + ")" : ", the player's release refused";
+    }
+    freed(how.c_str());
 }
 
 // Game tick: each special's combo starts it during an arena; the move runs its course. While a
@@ -11790,69 +11867,106 @@ void SampleHitStates(double now) {
     }
 }
 
-// Excella's speed (a run stat, M8): while she walks or runs she covers that much more ground,
-// each step checked against walls and the floor like Wesker's moves.
+// Speed (a run stat: Excella's melee kills; a cryo elite's chill takes it away). True speed since
+// 2026-11-23 (the user's item 8; it was a warp along each step): while the player walks, runs or
+// backs up, his body's motions (layers 0..2, re5_layout kMotionLayer0Speed) play that much faster,
+// and their root tracks carry him that much further, walls and floors the game's own. A layer's
+// speed the game set (a new motion) is its base; the base comes back when he stops moving. Each
+// arena logs the ground he covered while running, for the playtest's numbers.
 struct SpeedTrack {
     std::uintptr_t player = 0;
+    float base[3] = {};
+    float wrote[3] = {};
+    bool active = false;
+    // The run's ground speed this arena (units a second): measured from his position each tick.
     float last[3] = {};
-    bool have = false;
+    bool haveLast = false;
+    double lastAt = -1.0, runSeconds = 0.0, runUnits = 0.0;
+    int arena = -1;
+    bool logged = false;
 };
 SpeedTrack g_speed;
-constexpr float kSpeedStepMax = 60.0f;   // a longer step between ticks is not walking (a warp)
-constexpr float kSpeedExtraMax = 25.0f;  // the most added in one tick
-constexpr float kSpeedFloor = 50.0f;     // the floor ahead within half a metre of her own
+constexpr int kSpeedLayers = 3;
+constexpr double kSpeedMultMin = 0.3, kSpeedMultMax = 2.0;
+constexpr double kSpeedLogAfter = 8.0;  // seconds of running before the arena's line
+
+std::uintptr_t LayerSpeedAt(std::uintptr_t player, int layer) {
+    return player + re5::off::kMotionLayer0Speed + static_cast<std::size_t>(layer) * re5::off::kMotionLayerStride;
+}
+
+void RestoreLayerSpeeds() {
+    if (!g_speed.active) return;
+    g_speed.active = false;
+    if (!g_speed.player) return;
+    for (int n = 0; n < kSpeedLayers; ++n) {
+        const std::uintptr_t at = LayerSpeedAt(g_speed.player, n);
+        if (ReadOr<float>(at, -1.0f) == g_speed.wrote[n]) SafeStore(at, g_speed.base[n]);  // still ours: back to the game's
+    }
+}
 
 void ApplyMoveSpeed() {
     rm::RunController& run = *g->run;
+    const double now = Now();
     // The build's speed, less a cryo elite's chill (its hits; the user's elites, 2026-11-23).
-    const double bonus = (run.HasActiveRun() ? run.state().stats.move_speed : 0.0) - EliteChill(g_adapterSeat, Now());
+    const double bonus = (run.HasActiveRun() ? run.state().stats.move_speed : 0.0) - EliteChill(g_adapterSeat, now);
+    const double mult = std::clamp(1.0 + bonus, kSpeedMultMin, kSpeedMultMax);
     const auto local = engine::LocalPlayer();
-    if (bonus == 0.0 || !local || run.phase() != rm::Phase::ArenaActive || !g->match.inMatch || !g_move.kind.empty()) {
-        g_speed.have = false;
-        return;
+    const bool arena = local && run.HasActiveRun() && run.phase() == rm::Phase::ArenaActive && g->match.inMatch;
+    const std::string action = arena ? engine::CurrentActionName(local) : std::string();
+    const bool running = action.rfind("cPlAction_pl_act_run", 0) == 0;
+    const bool moving = running || action.rfind("cPlAction_pl_act_walk", 0) == 0 || action.rfind("cPlAction_pl_act_back", 0) == 0;
+    const bool still = !arena || GamePaused() || ItemScreenOpen();
+
+    // The arena's run speed (measured whatever the speed: the line without a bonus is the baseline).
+    if (arena && run.state().arena_index != g_speed.arena) {
+        g_speed.arena = run.state().arena_index;
+        g_speed.runSeconds = g_speed.runUnits = 0.0;
+        g_speed.logged = false;
+        g_speed.haveLast = false;
     }
-    float pos[3];
-    for (int k = 0; k < 3; ++k) pos[k] = ReadOr<float>(local + re5::off::kUnitPosition + k * 4, 0.0f);
-    auto keep = [&](const float at[3]) {
+    if (arena) {
+        float pos[3];
+        for (int k = 0; k < 3; ++k) pos[k] = ReadOr<float>(local + re5::off::kUnitPosition + k * 4, 0.0f);
+        if (g_speed.haveLast && g_speed.player == local && running && !still && g_speed.lastAt >= 0.0) {
+            const double dt = now - g_speed.lastAt;
+            const float dx = pos[0] - g_speed.last[0], dz = pos[2] - g_speed.last[2];
+            const double step = std::sqrt(dx * dx + dz * dz);
+            if (dt > 0.0 && dt < 0.25 && step < 200.0) {  // a longer gap or jump is not running (a warp, a load)
+                g_speed.runSeconds += dt;
+                g_speed.runUnits += step;
+            }
+        }
+        for (int k = 0; k < 3; ++k) g_speed.last[k] = pos[k];
+        g_speed.haveLast = true;
+        g_speed.lastAt = now;
+        if (!g_speed.logged && g_speed.runSeconds >= kSpeedLogAfter) {
+            g_speed.logged = true;
+            RM_LOGI("move speed: arena %d, x%.2f (bonus %+.3f), running %.0f units/s over %.1f s", g_speed.arena, mult, bonus,
+                    g_speed.runUnits / g_speed.runSeconds, g_speed.runSeconds);
+        }
+    }
+
+    if (local != g_speed.player) {
+        RestoreLayerSpeeds();
         g_speed.player = local;
-        for (int k = 0; k < 3; ++k) g_speed.last[k] = at[k];
-        g_speed.have = true;
-    };
-    if (!g_speed.have || g_speed.player != local) {
-        keep(pos);
+        g_speed.haveLast = false;
+    }
+    if (!moving || still || mult == 1.0 || !g_move.kind.empty()) {
+        RestoreLayerSpeeds();
         return;
     }
-    const float dx = pos[0] - g_speed.last[0], dz = pos[2] - g_speed.last[2];
-    const float step = std::sqrt(dx * dx + dz * dz);
-    const std::string action = engine::CurrentActionName(local);
-    const bool moving = action.rfind("cPlAction_pl_act_walk", 0) == 0 || action.rfind("cPlAction_pl_act_run", 0) == 0 ||
-                        action.rfind("cPlAction_pl_act_back", 0) == 0;
-    if (!moving || step < 1.0f || step > kSpeedStepMax || GamePaused() || ItemScreenOpen()) {
-        keep(pos);
-        return;
+    for (int n = 0; n < kSpeedLayers; ++n) {
+        const std::uintptr_t at = LayerSpeedAt(local, n);
+        const float s = ReadOr<float>(at, -1.0f);
+        if (!(s > 0.0f && s < 10.0f)) {  // no motion there, or not a speed
+            g_speed.wrote[n] = -1.0f;
+            continue;
+        }
+        if (!g_speed.active || s != g_speed.wrote[n]) g_speed.base[n] = s;  // the game's own (a new motion)
+        const float want = static_cast<float>(g_speed.base[n] * mult);
+        g_speed.wrote[n] = SafeStore(at, want) ? want : -1.0f;
     }
-    const float ux = dx / step, uz = dz / step;
-    if (bonus < 0.0) {
-        // Slowed: back along the step just taken (where the player stood a moment ago: no wall check needed).
-        const float back = step * static_cast<float>(std::min(0.9, -bonus));
-        const float to[3] = {pos[0] - ux * back, pos[1], pos[2] - uz * back};
-        engine::WarpUnit(local, to);
-        keep(to);
-        return;
-    }
-    const float extra = std::min(step * static_cast<float>(bonus), kSpeedExtraMax);
-    const float a[3] = {pos[0], pos[1] + kChestHeight, pos[2]};
-    const float b[3] = {pos[0] + ux * (extra + kWallMargin), pos[1] + kChestHeight, pos[2] + uz * (extra + kWallMargin)};
-    const auto wall = engine::CastSegment(a, b);
-    float floorY = 0.0f;
-    if (!wall || wall->Blocked() || !FloorAt(pos[0] + ux * extra, pos[1], pos[2] + uz * extra, floorY) ||
-        std::fabs(floorY - pos[1]) > kSpeedFloor) {
-        keep(pos);
-        return;
-    }
-    const float to[3] = {pos[0] + ux * extra, floorY, pos[2] + uz * extra};
-    engine::WarpUnit(local, to);
-    keep(to);
+    g_speed.active = true;
 }
 
 // ---- M10: each player's specials, moves, weapon card and flamethrower --------------------------
