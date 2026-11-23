@@ -6,24 +6,26 @@ param(
     [switch]$Plugin     # by hand, as another dinput8.dll loader's plugin: plugins\RogueMercenaries.dll
 )
 
-# Builds dist\RogueMercenaries-<version>.zip for testers: Install.bat / Uninstall.bat (the
+# Builds dist\RogueMercenaries-<version>-installer.zip (not released; the user's own installs): Install.bat / Uninstall.bat (the
 # scripts in installer\), the files they install (files\: dinput8.dll and the RogueMercenaries
 # folder with the player adapter.json, the content configs and icons), README.txt, third-party
 # licenses and a SHA-256 manifest. Never includes game files, a mod profile, logs or a
 # developer config. The version defaults to kModVersion in adapters\re5\src\version.h.
 #
-# -Manual builds RogueMercenaries-<version>[-unlocked]-manual.zip instead: no script or batch
+# -Manual builds RogueMercenaries-<version>[-unlocked].zip instead, the release: no script or batch
 # file (a mod site's scan flagged the installer's package, 2026-11-18), the ZIP's root laid out as
 # the game folder (dinput8.dll, RogueMercenaries\), the README with by-hand install and uninstall
 # steps, the licenses and the manifest inside RogueMercenaries\. The mod reads nothing the
 # installer writes (install.json is the uninstaller's).
 #
-# Since 0.2.6 the release is the -Manual ZIP alone (the user, 2026-11-22: "can we make it that the
-# releases is just one"): its dinput8.dll is the plugin loader too (adapters/re5/src/plugin_host.cpp:
-# plugins\*.dll and *.asi, and *.asi next to the game), so another mod's dinput8.dll goes into
-# plugins\ beside it. Every package has a plugins folder with a note (plugins\README.txt).
+# Its dinput8.dll is the plugin loader too (adapters/re5/src/plugin_host.cpp: plugins\*.dll and *.asi,
+# and *.asi next to the game), so another mod's dinput8.dll goes into plugins\ beside it. Every package
+# has a plugins folder with a note (plugins\README.txt). From 0.2.6 to 0.2.72 it was the one release; since
+# 0.3.0 the plugin one is released beside it (the user, 2026-11-23: "we go back to dual releases, but we
+# will stop calling the other one manual, just release and the plugin version and the unlocked ones around";
+# a player keeping the QoL fix's dinput8.dll: "I would much rather all other mods be loaded as plugins").
 #
-# -Plugin (no longer released) builds RogueMercenaries-<version>[-unlocked]-plugin.zip: the -Manual
+# -Plugin builds RogueMercenaries-<version>[-unlocked]-plugin.zip: the -Manual
 # layout with the DLL as plugins\RogueMercenaries.dll, for another loader's plugins folder (2026-11-18,
 # a player: "Rick and Maluc's fix depends on that very file"). The mod finds the game folder from the
 # executable and runs once whichever way it loads.
@@ -47,7 +49,7 @@ if ($player.developer_mode) { throw 'configs\adapter.json has developer_mode on;
 
 $name = "RogueMercenaries-$Version"
 if ($Unlocked) { $name += '-unlocked' }
-if ($Plugin) { $name += '-plugin' } elseif ($Manual) { $name += '-manual' }
+if ($Plugin) { $name += '-plugin' } elseif (-not $Manual) { $name += '-installer' }
 $stage = Join-Path $repoRoot "build\package\$name"
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
 if ($Manual) {
@@ -80,14 +82,19 @@ if ($Plugin) {
         'Rogue Mercenaries'' dinput8.dll loads every .dll and .asi file in this folder when the game',
         'starts, as the RE5 plugin loaders do (and .asi files next to re5dx9.exe too).',
         '',
-        '- A mod that comes as a dinput8.dll (input fixes, Enhanced Movement, a plugin loader): move',
-        '  its dinput8.dll in here and give it another name, for example InputFix.dll. If it came',
-        '  with a plugins folder of its own, those files go in here too.',
+        '- A mod that comes as a dinput8.dll (input fixes, a plugin loader): move its dinput8.dll',
+        '  in here, under its own name or another (for example InputFix.dll). If it came with a',
+        '  plugins folder of its own, those files go in here too.',
+        '- Enhanced Movement: its dinput8.dll is only a plugin loader; leave it out. Put its',
+        '  plugins\RE5EnhancedMovement.dll and RE5EnhancedMovement.ini in here, and its nativePC_MT',
+        '  folder into the game folder.',
         '- A mod that comes as a plugin (.dll) or an .asi file: put it in here.',
         '',
-        'An old plugins\RogueMercenaries.dll from an earlier download is not needed any more and is',
-        'left out; you can delete it. The log (%LOCALAPPDATA%\RogueMercenaries\logs\adapter.log)',
-        'lists every file loaded from here, or why one was not.',
+        'Would you rather keep another mod''s dinput8.dll in the game folder? Download the Plugin',
+        'version of Rogue Mercenaries instead. Its plugins\RogueMercenaries.dll is not needed with',
+        'this dinput8.dll and is left out; you can delete it. The log',
+        '(%LOCALAPPDATA%\RogueMercenaries\logs\adapter.log) lists every file loaded from here, or why',
+        'one was not.',
         '') -join "`n"
 }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'configs\adapter.json') -Destination (Join-Path $modFiles 'adapter.json')
@@ -150,9 +157,9 @@ $keptProgress = @(
 if ($Plugin) {
     $install = @('', 'INSTALL (WITH ANOTHER dinput8.dll MOD)',
         '  Only one dinput8.dll can be in the game folder, and two cannot be merged into one. Many',
-        '  RE5 mods (input fixes, Enhanced Movement) come as a dinput8.dll that also loads other mods',
-        '  from a plugins folder. This package runs Rogue Mercenaries as one of those plugins, so',
-        '  that mod keeps its dinput8.dll.') + $saveSteps + @(
+        '  RE5 mods (the QoL fix, input fixes) come as a dinput8.dll that also loads other mods from',
+        '  a plugins folder. This package runs Rogue Mercenaries as one of those plugins, so that',
+        '  mod keeps its dinput8.dll, and an update is the same files copied over again.') + $saveSteps + @(
         '  4. Look next to dinput8.dll in that folder:',
         '     - There is a plugins folder: copy everything in this ZIP into the game folder.',
         '       RogueMercenaries.dll goes into the plugins folder, and the RogueMercenaries folder',
@@ -179,8 +186,11 @@ if ($Plugin) {
         '     Movement, a plugin loader): move it into the plugins folder (make one next to',
         '     re5dx9.exe if there is none) and give it another name, for example InputFix.dll.',
         '     Rogue Mercenaries'' dinput8.dll loads every .dll and .asi in plugins, as the RE5',
-        '     plugin loaders do, so that mod keeps running. A plugins\RogueMercenaries.dll from an',
-        '     earlier download can be deleted.',
+        '     plugin loaders do, so that mod keeps running. (Or keep that dinput8.dll where it',
+        '     is and download the Plugin version of Rogue Mercenaries instead.) Enhanced',
+        '     Movement: leave its dinput8.dll out (only a loader) and put its',
+        '     plugins\RE5EnhancedMovement.dll and .ini into plugins. A plugins\RogueMercenaries.dll',
+        '     from the Plugin version can be deleted.',
         '  5. Copy everything in this ZIP into the game folder: dinput8.dll goes next to',
         '     re5dx9.exe, the RogueMercenaries and plugins folders beside it. When updating,',
         '     replace the files.') + $keptProgress + @('') -join "`n"

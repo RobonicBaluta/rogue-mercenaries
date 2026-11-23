@@ -81,8 +81,11 @@ OTHER RE5 MODS (THE PLUGINS FOLDER)
       is: leave it out. The mod itself is its plugins\RE5EnhancedMovement.dll (and
       RE5EnhancedMovement.ini): put both into plugins. Its nativePC_MT folder goes into
       the game folder, next to re5dx9.exe, as its own install does.
-    - A plugins\RogueMercenaries.dll from an earlier download is not needed any more and is
-      left out; you can delete it.
+    - New in 0.3.0: would you rather keep another mod's dinput8.dll (the QoL fix, an input
+      fix) in the game folder? Download the Plugin version of Rogue Mercenaries instead: it
+      goes into that mod's plugins folder as RogueMercenaries.dll, and an update is the
+      same files copied over again. With this package's dinput8.dll, a
+      plugins\RogueMercenaries.dll from the Plugin version is left out; you can delete it.
   The log (adapter.log, see WHEN SOMETHING BREAKS) lists every file loaded from plugins,
   or why one was not.
 
@@ -152,6 +155,14 @@ PLAY
     - New in 0.2.72: Ada has no bow any more. Her Red Dress starts with a rare PSG-1
       (rifles hit 40 percent harder), and her supply perk, now Machine Pistol, gives a
       VZ61 and 60 rounds.
+    - New in 0.3.0, Safari Chris (Mine Layer): only grenades become proximity bombs, from
+      drops, chests, the shop, rewards and perks alike; ammo and herbs stay. Bombs stack to
+      10, one more comes every 8 kills, they hit 50 percent harder with a wider blast, and
+      a bomb's kill is his. His guns deal 25 percent less, and explosions hurt him half.
+    - New in 0.3.0: Shock and Cryo go off more often on the slow guns (the longbow, the
+      magnums, the bolt rifles), Shock arcs further and harder, and a kill with a Cryo gun
+      may freeze each enemy around it (more often with Absolute Zero).
+    - New in 0.3.0: after Uroboros Wesker, the next stage comes (it never loaded).
     - Dying or beating the run's last boss ends the run and banks your Credits.
 
 TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPHA.30

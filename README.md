@@ -48,7 +48,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_core.ps1
 powershell -ExecutionPolicy Bypass -File scripts\package_release.ps1
 ```
 
-This writes `dist\RogueMercenaries-<version>.zip` (the version is `kModVersion` in `adapters\re5\src\version.h`;
+This writes `dist\RogueMercenaries-<version>-installer.zip` (not released since 0.3.0: the user's own installs; the version is `kModVersion` in `adapters\re5\src\version.h`;
 the script refuses a DLL of another version or a developer `adapter.json`). The ZIP holds one folder: `Install.bat`,
 `Uninstall.bat`, `README.txt` (the tester's guide, from `installer\README.txt`), the scripts in `installer\`, the
 files they install (`files\`), licenses and `SHA256SUMS.txt`; no game files, profile or logs. `Install.bat` finds
@@ -60,9 +60,11 @@ replaces an earlier install. `Uninstall.bat` (in the package or in the game's `R
 those files, puts the other `dinput8.dll` back, and asks before deleting progress and logs. A tester's progress starts
 empty: the mod's profile lives in `%LOCALAPPDATA%`, which the package never ships or touches.
 
-`-Manual` writes `RogueMercenaries-<version>[-unlocked]-manual.zip` with no script (a mod site's scan flagged the
+`-Manual` writes `RogueMercenaries-<version>[-unlocked].zip`, the release, with no script (a mod site's scan flagged the
 installer's): the ZIP's root is the game folder (`dinput8.dll`, `RogueMercenaries\`, `plugins\`) and its README gives
-by-hand steps. Since 0.2.6 it is the one release (the user: "can we make it that the releases is just one"): the
+by-hand steps. From 0.2.6 to 0.2.72 it was the one release; since 0.3.0 `-Plugin`'s `...-plugin.zip` is released beside it
+(the user: "we go back to dual releases, but we will stop calling the other one manual"), for a player who keeps another
+loader's `dinput8.dll` (the QoL fix). The
 `dinput8.dll` is a plugin loader too (`adapters/re5/src/plugin_host.cpp`). As the game's `dinput8.dll` it loads, from its
 `DllMain` (the other mods' own load time), every `.dll` and then every `.asi` of `plugins\`, then every `.asi` next to the
 game, in name order, leaving out itself and any `RogueMercenaries.dll`/`.asi` (the old plugin download); the first plugin
@@ -77,7 +79,7 @@ found (`LoadLibraryExW`, `LOAD_WITH_ALTERED_SEARCH_PATH`). Every package carries
 `plugins\README.txt`. The log lists each plugin (`plugin ...: loaded` / `left out` / `NOT loaded (error ...)`).
 `tools/plugin_host_test` checks it offline on a stand-in game folder with two dummy plugins
 (`build\win32\tools\plugin_host_test\Release\rm_plugin_host_test.exe`, exit code 0 = pass).
-`-Plugin` (no longer released) writes `...-plugin.zip`, the same with the DLL as `plugins\RogueMercenaries.dll`, for
+`-Plugin` (released again since 0.3.0) writes `...-plugin.zip`, the same with the DLL as `plugins\RogueMercenaries.dll`, for
 another loader's `plugins` folder (a player, 2026-11-18: "it's practically impossible to play RE5 without these input
 fixes"). The DLL runs the mod however it is loaded (the game's `dinput8.dll`, a loader's `plugins` folder, an
 ASI loader's `.asi`): it finds the game folder from the executable, says in its log how it was loaded, and only one copy
