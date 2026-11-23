@@ -954,9 +954,17 @@ void RunUnpack(std::filesystem::path archive, std::filesystem::path dest) {
     if (ok) {
         RM_LOGI("mods: %s unpacked (tar)", name.c_str());
     } else if (_wcsicmp(archive.extension().c_str(), L".zip") == 0) {
-        // The mod's own reader: one entry in memory at a time, none over 512 MiB (a 32-bit game).
+        // The mod's own reader: one entry in memory at a time, none over 512 MiB, and one archive at a time
+        // (a 32-bit game: seven costume mods at once held several hundred MiB); out of memory fails it.
+        static std::mutex ownUnzip;
+        std::lock_guard one(ownUnzip);
         std::size_t files = 0;
-        const rm::Status status = rm::ExtractZip(archive, dest, 512ull * 1024 * 1024, &files);
+        rm::Status status;
+        try {
+            status = rm::ExtractZip(archive, dest, 512ull * 1024 * 1024, &files);
+        } catch (const std::exception& e) {
+            status = rm::Status::Error(rm::ErrorCode::IoError, std::string("out of memory or a file error (") + e.what() + ")");
+        }
         ok = status.ok();
         if (ok) {
             RM_LOGI("mods: %s unpacked by the mod (%zu files; tar %s, code %lu)", name.c_str(), files,
