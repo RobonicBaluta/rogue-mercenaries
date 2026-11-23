@@ -2,6 +2,27 @@
 
 Evidence is written on every completed item. `[~]` means partially verified (the gap is stated). `[blocked]` means a specific external prerequisite prevents progress; it is not used for untested work. Update this file when evidence changes.
 
+## Next, in the user's order (2026-11-23, from the backlog board https://claude.ai/artifact/QbnDY3wWMw2r3FDMFKCu6x)
+
+The user's picks, as pasted ("Next, in this order"); their notes in quotes.
+
+1. [x] Map editor for players: "Keep it for development only". Decision recorded; packages keep it off.
+2. [ ] Twin Fury with real bullets: build the shot's attack from the player (uPlayer +0x1358); "try to make it come out of the smgs and not from the front of the character, you have Boss jill as an example".
+3. [ ] The guns' unused stats: new upgrade lines (fire speed, piercing).
+4. [ ] Native textures and HUD layout: native inventory icons for the elements and mod guns. "We need to think how to add new items that are perk related for boring or uninteresting skin specific perk".
+5. [ ] More of the game's effects: elite auras.
+6. [ ] More campaign and DLC arenas: points made with the map editor.
+7. [ ] Elite enemies: "Elite enemies get unlocked once you beat stage 12, those get an element like our weapons, and all of them have a special effect that you'll have to overcome, nothing of getting inmunity or negating damage or geeting more hp. we are talking enemy getting harder but not more annoying necessarily".
+8. [ ] Grab immunity and true move speed: end the grabber's own action, which frees the player.
+9. [ ] The full test matrix (M9).
+10. [ ] Finishing co-op.
+11. [ ] Tidy the task list.
+12. [ ] Save the profile in the background.
+13. [ ] Small engine unknowns.
+14. [ ] Online co-op: "Check and make a plan".
+
+Later: infinite ammo as a reward; the second Jill, the gunner (uEm83); boss music, or your own tracks; new items made from the game's own.
+
 ## Phase 0 — Environment and documentation
 
 - [x] Inspect the workspace and installed games/tools. Evidence: Windows 11 Pro x64; Steam manifest app 21690 is installed under `G:\SteamLibrary`; Build Tools 2022, x86 MSVC, Windows SDK, bundled CMake, Git, Python 3.11 and .NET 10 found. See `research/capabilities.md`.
