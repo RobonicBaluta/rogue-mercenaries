@@ -175,7 +175,7 @@
           "build": {
             "name": "Hunter",
             "icon": "bow",
-            "summary": "Starts with her longbow and a quiver of arrows. Arrows hit 50 percent harder.",
+            "summary": "Starts with her longbow. Arrows hit 50 percent harder.",
             "starting_weapon": "longbow",
             "extra_weapons": [
               "longbow"

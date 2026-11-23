@@ -1368,7 +1368,7 @@
     {
       "id": "sheva_tribal_trait",
       "name": "Quiver",
-      "description": "Tribal Sheva starts with 20 arrows, finds 10 more on every arena clear, and each kill heals 1.5 percent.",
+      "description": "Tribal Sheva: each kill heals 1.5 percent.",
       "category": "skin",
       "rarity": "common",
       "tags": [
@@ -1376,16 +1376,6 @@
       ],
       "max_stacks": 1,
       "effects": [
-        {
-          "kind": "item_on_start",
-          "game_item": 523,
-          "amount": 20
-        },
-        {
-          "kind": "item_on_arena_clear",
-          "game_item": 523,
-          "amount": 10
-        },
         {
           "kind": "heal_on_kill",
           "amount_fraction_of_max": 0.015

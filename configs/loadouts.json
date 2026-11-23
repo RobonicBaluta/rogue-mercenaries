@@ -130,15 +130,6 @@
       "bundle": 2
     },
     {
-      "id": "arrows",
-      "name": "Arrows",
-      "cost": 5,
-      "max": 1,
-      "game_item": 523,
-      "price": 0,
-      "bundle": 10
-    },
-    {
       "id": "explosive_rounds",
       "name": "Explosive Rounds",
       "cost": 10,

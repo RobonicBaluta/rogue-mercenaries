@@ -6,7 +6,10 @@ HAND, INCENDIARY, FLASH, SPRAY, HANDGUN_AMMO = 0x0106, 0x0107, 0x0108, 0x0304, 0
 M92F, ITHACA, MP5, LHAWK, SHELLS, MG_AMMO, MAGNUM_AMMO = 0x0102, 0x0104, 0x0113, 0x011A, 0x0203, 0x0202, 0x0209
 VZ61, M500, M29, PSG1, DRAGUNOV, RIFLE_AMMO = 0x0103, 0x011B, 0x010B, 0x011C, 0x0120, 0x0204
 M93R = 0x011E
-LONGBOW, ARROWS = 0x010F, 0x020B
+# The longbow takes no ammo item: the game's item table (0x011B5170, 0x140 bytes an item) gives
+# WP0F BOW 0x0200, "none", at +0x1C, like the knife and the rocket launcher (2026-11-24); 0x020B is not
+# its arrows (a stack of one), so nothing hands it out.
+LONGBOW = 0x010F
 
 
 def perk(pid, name, desc, category, effects, characters=None, cost=0, rarity='common', tags=None, enabled=True, build=None):
@@ -170,10 +173,9 @@ skin_traits = {
                        [{'kind': 'cheat_death', 'per_arena': 1, 'leave_hp_fraction': 0.3}]),
     'chris_stars_trait': ('S.T.A.R.S. Restock', 'S.T.A.R.S. Chris restocks a first aid spray on every arena clear.',
                           [{'kind': 'item_on_arena_clear', 'game_item': 0x0304, 'amount': 1}]),
-    'sheva_tribal_trait': ('Quiver', 'Tribal Sheva starts with 20 arrows, finds 10 more on every arena clear, and each kill heals 1.5 percent.',
-                           [{'kind': 'item_on_start', 'game_item': 0x020B, 'amount': 20},
-                            {'kind': 'item_on_arena_clear', 'game_item': 0x020B, 'amount': 10},
-                            {'kind': 'heal_on_kill', 'amount_fraction_of_max': 0.015}]),
+    # Its 20 arrows and 10 an arena were 0x020B, not the longbow's (it takes no ammo item): gone 2026-11-24.
+    'sheva_tribal_trait': ('Quiver', 'Tribal Sheva: each kill heals 1.5 percent.',
+                           [{'kind': 'heal_on_kill', 'amount_fraction_of_max': 0.015}]),
 }
 # Excella's Ambition (the user, 2026-11-11: "excella is too powerful"): the caps of 2026-11-07 less 10
 # percent, and a pace by run length. Killing every enemy by melee on the smallest arenas a run can
@@ -236,7 +238,7 @@ BUILDS = {
     },
     'sheva_tribal': {
         'name': 'Hunter', 'icon': 'bow',
-        'summary': 'Starts with her longbow and a quiver of arrows. Arrows hit 50 percent harder.',
+        'summary': 'Starts with her longbow. Arrows hit 50 percent harder.',
         'starting_weapon': 'longbow', 'extra_weapons': ['longbow'], 'category_damage': {'bow': 0.5},
     },
     'jill_bsaa': {
@@ -702,7 +704,6 @@ l = json.load(open('configs/loadouts.json'))
 l['budget'] = 0
 CATALOG_EXTRA = [
     {'id': 'proximity_bomb', 'name': 'Proximity Bomb', 'cost': 15, 'max': 2, 'game_item': 0x010A, 'price': 20, 'bundle': 2},
-    {'id': 'arrows', 'name': 'Arrows', 'cost': 5, 'max': 1, 'game_item': 0x020B, 'price': 0, 'bundle': 10},
     # The grenade launcher's explosive rounds, offered while the run holds it (the launcher is one
     # game item per round type loaded; acid and nitrogen rounds would change it).
     {'id': 'explosive_rounds', 'name': 'Explosive Rounds', 'cost': 10, 'max': 2, 'game_item': 0x0206, 'price': 25, 'bundle': 3,

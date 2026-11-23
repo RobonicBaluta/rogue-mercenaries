@@ -618,8 +618,12 @@ constexpr std::uintptr_t kFnSaveFileWrite = 0x007D4510;
 constexpr std::uintptr_t kFnAppRequest = 0x00726120;
 constexpr std::uintptr_t kFnGameoverDecide = 0x00A00550;
 constexpr std::uintptr_t kGameoverDecideDelay = 0x00FF02FC;
-// void aGame::NotifyItemGet(int item, int count): the game's "item acquired"
-// notice (uIdItemGet00) with the item's own name and icon.
+// void aGame::NotifyItemGet(int player, int item): the game's "item acquired" notice (uIdItemGet00)
+// with the item's own name and icon. The first argument is the picking player's number (uPlayer
+// +0x2D9C, kPlayerNumber), not the item: uPlayer::PickUpItem (0x007E9DF0) calls it so for a
+// treasure (category 5), after 0x00768C10 with the same two (decompiled 2026-11-24). It stores them
+// at +0xF8/+0xFC and sets app flag 0x100. Passing an item id as the player was the split-screen crash
+// of 2026-11-21 (a pad read with that "player").
 constexpr std::uintptr_t kFnGameNotifyItem = 0x00719B60;
 // void uIdMenu::DrawHelp(int message, int y): help line under a menu, shared by
 // most uId* screens. The Play menu draws rows at y = (item + 3) * 50 and its

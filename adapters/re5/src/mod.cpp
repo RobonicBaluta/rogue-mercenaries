@@ -4023,8 +4023,8 @@ std::uint32_t AmmoItemFor(rm::WeaponCategory category) {
         case rm::WeaponCategory::MachineGun: return 0x0202;
         case rm::WeaponCategory::Rifle: return 0x0204;
         case rm::WeaponCategory::Magnum: return 0x0209;
-        case rm::WeaponCategory::Bow: return 0x020B;
         case rm::WeaponCategory::Launcher: return 0x0206;  // the grenade launcher's explosive rounds
+        case rm::WeaponCategory::Bow:  // no ammo item (the game's item table: WP0F BOW +0x1C 0x0200)
         case rm::WeaponCategory::Melee:
         case rm::WeaponCategory::Flamethrower: return 0;  // none
         default: return re5::addr::kItemHandgunAmmo;
@@ -4755,8 +4755,8 @@ std::vector<const rm::WeaponBaseDef*> TestWeaponOptions() {
     return out;
 }
 
-// The rounds that come with a tester's gun (none for the rocket launcher, the flamethrower, the stun rod;
-// the longbow's arrows never fit the grid and it never runs out).
+// The rounds that come with a tester's gun (none for the rocket launcher, the flamethrower, the stun rod,
+// the longbow: none takes an ammo item).
 std::uint32_t TesterAmmoFor(const rm::WeaponBaseDef& w) {
     if (w.category == rm::WeaponCategory::Bow || w.id == "rocket_launcher") return 0;
     return AmmoItemFor(w.category);
@@ -14743,21 +14743,22 @@ void PollDevCommand(double now) {
                     static_cast<unsigned>(slot));
         }
     } else if (command.rfind("notify ", 0) == 0) {
-        // "notify <hex item> <count>": the game's own "item acquired" notice.
+        // "notify <hex item>": the game's own "item acquired" notice, for the acting player. Its call is
+        // (player number, item) as the game's pickup makes it (re5_layout kFnGameNotifyItem); the item
+        // in the player's place crashed split screen (2026-11-21).
         std::istringstream words(command.substr(7));
         std::string idText;
-        int count = 1;
-        words >> idText >> count;
+        words >> idText;
         const auto item = static_cast<int>(std::strtoul(idText.c_str(), nullptr, 16));
-        // aGame (the method's own class): the Mercenaries timer object passed here before crashed the
-        // game in split screen (2026-11-21, a pad read with a garbage index).
         const auto game = GameTask();
-        if (!engine::Caps().inventory || !game) {
-            RM_LOGW("dev notify: game object or signatures not available");
+        const auto local = engine::LocalPlayer();
+        if (!engine::Caps().inventory || !game || !local) {
+            RM_LOGW("dev notify: game object, player or signatures not available");
         } else {
-            using NotifyFn = void(__thiscall*)(std::uintptr_t game, int item, int count);
-            reinterpret_cast<NotifyFn>(re5::addr::kFnGameNotifyItem)(game, item, count);
-            RM_LOGW("dev notify item %04X x%d", item, count);
+            const int player = ReadOr<std::uint8_t>(local + re5::off::kPlayerNumber, 0);
+            using NotifyFn = void(__thiscall*)(std::uintptr_t game, int player, int item);
+            reinterpret_cast<NotifyFn>(re5::addr::kFnGameNotifyItem)(game, player, item);
+            RM_LOGW("dev notify item %04X for player %d", item, player + 1);
         }
     } else if (command.rfind("pokeb ", 0) == 0) {
         // "pokeb <hex addr> <hex byte>"
