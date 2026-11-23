@@ -185,7 +185,26 @@ std::uint32_t Adler32(const std::vector<std::uint8_t>& bytes) {
     return (b << 16) | a;
 }
 
+// Every block up to the last one's end.
+bool Blocks(BitReader& in, std::vector<std::uint8_t>& out, std::size_t limit) {
+    for (bool last = false; !last;) {
+        last = in.Get(1) != 0;
+        const std::uint32_t type = in.Get(2);
+        if (in.overrun) return false;
+        const bool ok = type == 0 ? Stored(in, out, limit) : type == 1 ? Fixed(in, out, limit) : type == 2 ? Dynamic(in, out, limit) : false;
+        if (!ok) return false;
+    }
+    return true;
+}
+
 }  // namespace
+
+bool RawInflate(const std::uint8_t* data, std::size_t size, std::vector<std::uint8_t>& out, std::size_t limit) {
+    out.clear();
+    if (data == nullptr || size == 0) return false;
+    BitReader in{data, size};
+    return Blocks(in, out, limit);
+}
 
 bool ZlibInflate(const std::uint8_t* data, std::size_t size, std::vector<std::uint8_t>& out, std::size_t limit) {
     out.clear();
@@ -194,13 +213,7 @@ bool ZlibInflate(const std::uint8_t* data, std::size_t size, std::vector<std::ui
     const unsigned flg = data[1];
     if ((cmf & 0x0Fu) != 8 || (cmf >> 4) > 7 || ((cmf << 8) | flg) % 31 != 0 || (flg & 0x20u) != 0) return false;
     BitReader in{data + 2, size - 2};
-    for (bool last = false; !last;) {
-        last = in.Get(1) != 0;
-        const std::uint32_t type = in.Get(2);
-        if (in.overrun) return false;
-        const bool ok = type == 0 ? Stored(in, out, limit) : type == 1 ? Fixed(in, out, limit) : type == 2 ? Dynamic(in, out, limit) : false;
-        if (!ok) return false;
-    }
+    if (!Blocks(in, out, limit)) return false;
     in.Align();
     std::uint32_t expected = 0;
     for (int i = 0; i < 4; ++i) expected = (expected << 8) | in.Get(8);

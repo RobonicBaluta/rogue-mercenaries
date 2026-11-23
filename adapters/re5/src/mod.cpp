@@ -72,6 +72,7 @@
 #include "rm/unlock_all.h"
 #include "rm/telemetry.h"
 #include "rm/common.h"
+#include "rm/zip.h"
 
 namespace rmre5 {
 namespace {
@@ -914,7 +915,8 @@ std::filesystem::path ModsFolder() { return g->paths.modDir / L"mods"; }
 // as much as we can"). A .zip, .7z or .rar put in the mods folder as it was downloaded is unpacked into
 // a folder of its name by Windows' own tar (bsdtar/libarchive, in Windows 10 and 11), in a process of
 // its own (never in the game's memory), once (a .rm-unpacked note in that folder). Its result shows on
-// the MOD screen; the next scan finds the files.
+// the MOD screen; the next scan finds the files. Where there is no tar (Proton on a Steam Deck has none,
+// 2026-11-23) or it fails, a .zip is unpacked by the mod's own reader (rm::ExtractZip) in that thread.
 struct Unpack {
     std::filesystem::path archive, dest;
     bool done = false, ok = false;
@@ -938,14 +940,34 @@ void RunUnpack(std::filesystem::path archive, std::filesystem::path dest) {
     PROCESS_INFORMATION pi{};
     DWORD code = 0xFFFFFFFFu;
     bool ok = false;
-    if (CreateProcessW(tar.c_str(), command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, dest.c_str(), &si, &pi)) {
+    const bool haveTar = GetFileAttributesW(tar.c_str()) != INVALID_FILE_ATTRIBUTES;
+    const std::string name = rm::PathText(archive.filename());
+    if (haveTar && CreateProcessW(tar.c_str(), command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, dest.c_str(), &si, &pi)) {
         const DWORD waited = WaitForSingleObject(pi.hProcess, 15 * 60 * 1000);
         if (waited == WAIT_OBJECT_0) GetExitCodeProcess(pi.hProcess, &code);
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
         ok = waited == WAIT_OBJECT_0 && code == 0;
     } else {
-        code = GetLastError();
+        code = haveTar ? GetLastError() : ERROR_FILE_NOT_FOUND;
+    }
+    if (ok) {
+        RM_LOGI("mods: %s unpacked (tar)", name.c_str());
+    } else if (_wcsicmp(archive.extension().c_str(), L".zip") == 0) {
+        // The mod's own reader: one entry in memory at a time, none over 512 MiB (a 32-bit game).
+        std::size_t files = 0;
+        const rm::Status status = rm::ExtractZip(archive, dest, 512ull * 1024 * 1024, &files);
+        ok = status.ok();
+        if (ok) {
+            RM_LOGI("mods: %s unpacked by the mod (%zu files; tar %s, code %lu)", name.c_str(), files,
+                    haveTar ? "failed" : "missing", static_cast<unsigned long>(code));
+        } else {
+            RM_LOGW("mods: could not unpack %s: %s (tar %s, code %lu)", name.c_str(), status.message.c_str(),
+                    haveTar ? "failed" : "missing", static_cast<unsigned long>(code));
+        }
+    } else {
+        RM_LOGW("mods: could not unpack %s (tar %s, code %lu)", name.c_str(), haveTar ? "failed" : "missing",
+                static_cast<unsigned long>(code));
     }
     if (ok) {
         std::ofstream note(dest / L".rm-unpacked");
@@ -1025,7 +1047,16 @@ const rm::SkinDef* FindModSkin(const std::string& id, const rm::CharacterDef** o
     return nullptr;
 }
 
-// Every mod skin whose files are all in the mods folder (by name, any case, and the size listed).
+// An MT Framework archive: "ARC\0" first.
+bool IsArcFile(const std::filesystem::path& p) {
+    std::ifstream in(p, std::ios::binary);
+    char magic[4] = {};
+    in.read(magic, 4);
+    return in.gcount() == 4 && magic[0] == 'A' && magic[1] == 'R' && magic[2] == 'C' && magic[3] == '\0';
+}
+
+// Every mod skin whose files are all in the mods folder (by name, any case, and the size listed; or,
+// with none at that size, another version of it: see below).
 void ScanModSkins() {
     std::map<std::string, std::vector<std::filesystem::path>> byName;  // lowercase file name -> paths
     std::error_code ec;
@@ -1035,6 +1066,22 @@ void ScanModSkins() {
         for (auto it = std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, ec);
              !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
             if (it->is_regular_file(ec)) byName[LowerAscii(rm::PathText(it->path().filename()))].push_back(it->path());
+        }
+    }
+    // The files some mod skin takes at its listed size: never another skin's other version.
+    std::set<std::filesystem::path> exact;
+    for (const rm::CharacterDef& c : g->content->characters()) {
+        for (const rm::SkinDef& s : c.skins) {
+            if (!s.mod) continue;
+            for (const rm::SkinModFile& f : s.mod->files) {
+                const auto named = byName.find(LowerAscii(f.name));
+                if (named == byName.end() || (f.size <= 0 && f.sizes.empty())) continue;
+                for (const auto& p : named->second) {
+                    std::error_code sizeError;
+                    const auto size = std::filesystem::file_size(p, sizeError);
+                    if (!sizeError && f.Accepts(static_cast<std::int64_t>(size))) exact.insert(p);
+                }
+            }
         }
     }
     std::map<std::string, std::vector<fileredirect::Redirect>> found;
@@ -1048,6 +1095,7 @@ void ScanModSkins() {
             std::vector<fileredirect::Redirect> redirects;
             std::string missing;
             bool inGame = false;
+            bool otherVersion = false;
             for (const rm::SkinModFile& f : s.mod->files) {
                 static const std::vector<std::filesystem::path> kNone;
                 const auto named = byName.find(LowerAscii(f.name));
@@ -1074,7 +1122,21 @@ void ScanModSkins() {
                     }
                 }
                 if (!match) {
-                    missing += " " + f.name + (named != byName.end() ? " (another version: its size differs)" : "");
+                    // Another version of the mod (an update, or a file changed: the user, 2026-11-23, "in case
+                    // someone has a slightly updated mod so it still works"): a same-named archive in the mods
+                    // folder that is an MT Framework archive and no mod skin takes at its listed size, the
+                    // first in path order. The size only tells a mod's own variants apart and a mod skin's file
+                    // from another's; an archive's header is the same as the game's own file's.
+                    for (const auto& p : ordered) {
+                        if (!exact.count(p) && IsArcFile(p)) {
+                            match = p;
+                            otherVersion = true;
+                            break;
+                        }
+                    }
+                }
+                if (!match) {
+                    missing += " " + f.name + (named != byName.end() ? " (not an archive, or another skin's)" : "");
                     continue;
                 }
                 const std::string tail = "Image\\Archive\\" + f.name;
@@ -1146,7 +1208,10 @@ void ScanModSkins() {
             }
             g_modMissing[s.id] = missing.empty() ? std::string() : missing.substr(1);
             g_modInGame[s.id] = missing.empty() && inGame;
-            line += " " + s.id + (missing.empty() ? (inGame ? " installed (in the game's own files)" : " installed") : " missing" + missing) + ";";
+            line += " " + s.id +
+                    (missing.empty() ? (inGame ? " installed (in the game's own files)" : otherVersion ? " installed (another version: a size differs)" : " installed")
+                                     : " missing" + missing) +
+                    ";";
             if (missing.empty() && s.mod->files.size() == 1 && found.count(s.id) && !found[s.id].empty()) {
                 const std::filesystem::path chosen(found[s.id].front().target);
                 line.pop_back();

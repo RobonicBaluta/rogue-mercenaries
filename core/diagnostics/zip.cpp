@@ -1,10 +1,14 @@
 #include "rm/zip.h"
 
+#include <algorithm>
 #include <array>
 #include <fstream>
 #include <limits>
+#include <optional>
+#include <string_view>
 #include <system_error>
 #include "rm/common.h"
+#include "rm/inflate.h"
 
 namespace rm {
 namespace {
@@ -129,6 +133,136 @@ Status WriteStoredZip(const std::filesystem::path& path, const std::vector<ZipEn
     }
     std::filesystem::rename(tmp, path, ec);
     if (ec) return Status::Error(ErrorCode::IoError, "cannot replace " + rm::PathText(path) + ": " + ec.message());
+    return Status::Success();
+}
+
+namespace {
+
+std::uint32_t Get16(const std::uint8_t* p) { return static_cast<std::uint32_t>(p[0]) | (static_cast<std::uint32_t>(p[1]) << 8); }
+std::uint32_t Get32(const std::uint8_t* p) { return Get16(p) | (Get16(p + 2) << 16); }
+
+struct CentralEntry {
+    std::string name;
+    std::uint32_t flags = 0, method = 0, crc = 0, packed = 0, size = 0, offset = 0;
+};
+
+// A ZIP entry's name as a path below the destination, or nothing when it would leave it.
+std::optional<std::filesystem::path> SafeRelative(std::string name) {
+    for (char& c : name) {
+        if (c == '\\') c = '/';
+    }
+    if (name.empty() || name.front() == '/') return std::nullopt;
+    std::filesystem::path out;
+    std::size_t start = 0;
+    while (start <= name.size()) {
+        const std::size_t end = std::min(name.find('/', start), name.size());
+        const std::string part = name.substr(start, end - start);
+        start = end + 1;
+        if (part.empty() || part == ".") continue;
+        if (part == ".." || part.find(':') != std::string::npos) return std::nullopt;
+        out /= std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(part.data()), part.size()));
+    }
+    if (out.empty()) return std::nullopt;
+    return out;
+}
+
+bool ReadAt(std::ifstream& in, std::uint64_t at, std::uint8_t* to, std::size_t n) {
+    in.clear();
+    in.seekg(static_cast<std::streamoff>(at));
+    in.read(reinterpret_cast<char*>(to), static_cast<std::streamsize>(n));
+    return static_cast<std::size_t>(in.gcount()) == n;
+}
+
+}  // namespace
+
+Status ExtractZip(const std::filesystem::path& zip, const std::filesystem::path& dest, std::uint64_t entry_limit, std::size_t* files) {
+    if (files) *files = 0;
+    std::ifstream in(zip, std::ios::binary);
+    if (!in) return Status::Error(ErrorCode::IoError, "cannot open " + PathText(zip));
+    std::error_code ec;
+    const std::uint64_t total = std::filesystem::file_size(zip, ec);
+    if (ec || total < 22) return Status::Error(ErrorCode::ParseError, "not a ZIP");
+
+    // The end record: within the last 64 KiB + 22 bytes (its comment's room).
+    const std::size_t tailSize = static_cast<std::size_t>(std::min<std::uint64_t>(total, 0xFFFFu + 22u));
+    std::vector<std::uint8_t> tail(tailSize);
+    if (!ReadAt(in, total - tailSize, tail.data(), tailSize)) return Status::Error(ErrorCode::IoError, "cannot read " + PathText(zip));
+    std::size_t eocd = std::string::npos;
+    for (std::size_t i = tailSize - 22 + 1; i-- > 0;) {
+        if (Get32(&tail[i]) == 0x06054B50u) {
+            eocd = i;
+            break;
+        }
+    }
+    if (eocd == std::string::npos) return Status::Error(ErrorCode::ParseError, "not a ZIP (no end record)");
+    const std::uint8_t* e = &tail[eocd];
+    const std::uint32_t count = Get16(e + 10), cdSize = Get32(e + 12), cdOffset = Get32(e + 16);
+    if (Get16(e + 4) != 0 || Get16(e + 6) != 0 || Get16(e + 8) != count) return Status::Error(ErrorCode::ParseError, "a ZIP split in parts");
+    if (count == 0xFFFFu || cdSize == 0xFFFFFFFFu || cdOffset == 0xFFFFFFFFu) return Status::Error(ErrorCode::ParseError, "a ZIP64 archive");
+    if (static_cast<std::uint64_t>(cdOffset) + cdSize > total) return Status::Error(ErrorCode::ParseError, "a broken ZIP (central directory)");
+
+    std::vector<std::uint8_t> cd(cdSize);
+    if (cdSize > 0 && !ReadAt(in, cdOffset, cd.data(), cdSize)) return Status::Error(ErrorCode::IoError, "cannot read " + PathText(zip));
+    std::vector<CentralEntry> entries;
+    for (std::size_t at = 0, i = 0; i < count; ++i) {
+        if (at + 46 > cd.size() || Get32(&cd[at]) != 0x02014B50u) return Status::Error(ErrorCode::ParseError, "a broken ZIP (entry)");
+        const std::uint8_t* c = &cd[at];
+        CentralEntry entry;
+        entry.flags = Get16(c + 8);
+        entry.method = Get16(c + 10);
+        entry.crc = Get32(c + 16);
+        entry.packed = Get32(c + 20);
+        entry.size = Get32(c + 24);
+        const std::uint32_t nameLen = Get16(c + 28), extraLen = Get16(c + 30), commentLen = Get16(c + 32);
+        entry.offset = Get32(c + 42);
+        if (at + 46 + nameLen > cd.size()) return Status::Error(ErrorCode::ParseError, "a broken ZIP (name)");
+        entry.name.assign(reinterpret_cast<const char*>(c + 46), nameLen);
+        at += 46 + nameLen + extraLen + commentLen;
+        if (entry.packed == 0xFFFFFFFFu || entry.size == 0xFFFFFFFFu || entry.offset == 0xFFFFFFFFu) {
+            return Status::Error(ErrorCode::ParseError, "a ZIP64 entry: " + entry.name);
+        }
+        if (entry.flags & 1u) return Status::Error(ErrorCode::ParseError, "an encrypted entry: " + entry.name);
+        const bool folder = !entry.name.empty() && (entry.name.back() == '/' || entry.name.back() == '\\');
+        if (!folder && entry.method != 0 && entry.method != 8) {
+            return Status::Error(ErrorCode::ParseError, "an entry packed another way (method " + std::to_string(entry.method) + "): " + entry.name);
+        }
+        if (!SafeRelative(entry.name)) return Status::Error(ErrorCode::InvalidArgument, "an entry outside its folder: " + entry.name);
+        if (entry_limit > 0 && entry.size > entry_limit) return Status::Error(ErrorCode::InvalidArgument, "an entry too big: " + entry.name);
+        entries.push_back(std::move(entry));
+    }
+
+    std::filesystem::create_directories(dest, ec);
+    std::vector<std::uint8_t> packed;
+    std::vector<std::uint8_t> plain;
+    for (const CentralEntry& entry : entries) {
+        const std::filesystem::path target = dest / *SafeRelative(entry.name);
+        if (entry.name.back() == '/' || entry.name.back() == '\\') {
+            std::filesystem::create_directories(target, ec);
+            continue;
+        }
+        std::uint8_t local[30];
+        if (!ReadAt(in, entry.offset, local, sizeof(local)) || Get32(local) != 0x04034B50u) {
+            return Status::Error(ErrorCode::ParseError, "a broken ZIP (local header): " + entry.name);
+        }
+        const std::uint64_t data = static_cast<std::uint64_t>(entry.offset) + 30u + Get16(local + 26) + Get16(local + 28);
+        if (data + entry.packed > total) return Status::Error(ErrorCode::ParseError, "a broken ZIP (data): " + entry.name);
+        packed.resize(entry.packed);
+        if (entry.packed > 0 && !ReadAt(in, data, packed.data(), packed.size())) return Status::Error(ErrorCode::IoError, "cannot read " + entry.name);
+        if (entry.method == 0) {
+            if (entry.packed != entry.size) return Status::Error(ErrorCode::ParseError, "a broken ZIP (stored size): " + entry.name);
+            plain.swap(packed);
+        } else if (!RawInflate(packed.data(), packed.size(), plain, entry.size) || plain.size() != entry.size) {
+            return Status::Error(ErrorCode::ParseError, "a broken ZIP (deflate): " + entry.name);
+        }
+        const std::string_view bytes(reinterpret_cast<const char*>(plain.data()), plain.size());
+        if (Crc32(bytes) != entry.crc) return Status::Error(ErrorCode::ParseError, "a damaged entry (CRC): " + entry.name);
+        std::filesystem::create_directories(target.parent_path(), ec);
+        std::ofstream out(target, std::ios::binary | std::ios::trunc);
+        out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        out.close();
+        if (!out) return Status::Error(ErrorCode::IoError, "cannot write " + PathText(target));
+        if (files) ++*files;
+    }
     return Status::Success();
 }
 

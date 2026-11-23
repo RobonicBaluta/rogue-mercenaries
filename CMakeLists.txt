@@ -109,6 +109,7 @@ if(RM_BUILD_TESTS)
         tests/test_supplies.cpp
         tests/test_run_map.cpp
         tests/test_inflate.cpp
+        tests/test_unzip.cpp
         tests/test_effects.cpp
         tests/test_music.cpp
         tests/test_builds.cpp
