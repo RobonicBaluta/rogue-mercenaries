@@ -34,6 +34,7 @@ struct EnemyHitResult {
 
 struct IncomingHit {
     std::uintptr_t player = 0;
+    std::uintptr_t attacker = 0;  // the hit's maker (its record's, uCharacter +0x129C); 0 outside a hit
     int damage = 0;
     int hp = 0;
     int maxHp = 0;

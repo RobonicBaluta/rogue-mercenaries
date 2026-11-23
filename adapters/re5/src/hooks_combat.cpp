@@ -624,6 +624,11 @@ void __fastcall PlayerSubHpDetour(std::uintptr_t self, void*, std::int16_t amoun
     const auto before = engine::ReadHp(self);
     IncomingHit hit;
     hit.player = self;
+    // The hit being taken (the player's hit record, uCharacter +0x129C, its byte +0x48 set while it is live:
+    // the reactions' 0x00B7B730 reads the same): who made it (Safari Chris's blasts, 2026-11-23).
+    if (const auto record = ReadOr<std::uintptr_t>(self + re5::off::kEnemyHitRecord, 0); record && ReadOr<std::uint8_t>(record + 0x48, 0) != 0) {
+        hit.attacker = engine::HitAttacker(record);
+    }
     hit.damage = amount;
     hit.hp = before ? before->hp : 0;
     hit.maxHp = before ? before->max : 0;

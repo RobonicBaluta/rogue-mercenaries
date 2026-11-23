@@ -33,7 +33,7 @@
           "build": {
             "name": "Mine Layer",
             "icon": "mine",
-            "summary": "Grenades become proximity bombs, stacking to 10. Bombs hit 50 percent harder and wider. Health x1.25.",
+            "summary": "Grenades are bombs, +1 per 8 kills: 10 a stack, x1.5, wider. Guns x0.75. Blasts on him x0.5. Health x1.25.",
             "items_as": {
               "0x106": "0x10a",
               "0x107": "0x10a",
@@ -45,7 +45,21 @@
             "mine_damage": 0.5,
             "mine_blast_m": 2.5,
             "mine_blast_fraction": 0.6,
-            "max_health_mult": 1.25
+            "max_health_mult": 1.25,
+            "kill_item": "0x10a",
+            "kill_item_every": 8,
+            "explosion_damage_mult": 0.5,
+            "category_damage": {
+              "handgun": -0.25,
+              "shotgun": -0.25,
+              "smg": -0.25,
+              "machine_gun": -0.25,
+              "rifle": -0.25,
+              "magnum": -0.25,
+              "bow": -0.25,
+              "launcher": -0.25,
+              "flamethrower": -0.25
+            }
           },
           "unlock_kind": "runs_completed_as",
           "unlock_character": "chris",

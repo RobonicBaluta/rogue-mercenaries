@@ -989,7 +989,8 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                      "special_2", "stack_mult", "never_offered", "drops_as_held_ammo", "pickup_as", "break_grabs",
                      "shop_weapon", "shop_weapon_price", "gun_elements", "arena_element", "refine_every_shop",
                      "refine_price_mult", "fuel_regen_mult", "pistol_in_hand", "more_starting_weapons", "infinite_ammo",
-                     "only_build_weapons", "items_as", "mine_damage", "mine_blast_m", "mine_blast_fraction"});
+                     "only_build_weapons", "items_as", "mine_damage", "mine_blast_m", "mine_blast_fraction", "kill_item", "kill_item_every",
+                     "kill_item_amount", "explosion_damage_mult"});
     GetString(d, b, "shop_weapon", out.shop_weapon, false);
     if (GetStringList(d, b, "gun_elements", out.gun_elements, false)) {
         for (const std::string& e : out.gun_elements) {
@@ -1162,6 +1163,24 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
     if (GetNumber(d, b, "mine_blast_m", out.mine_blast_m, false)) CheckRange(d, "mine_blast_m", out.mine_blast_m, 0.0, 10.0);
     if (GetNumber(d, b, "mine_blast_fraction", out.mine_blast_fraction, false)) {
         CheckRange(d, "mine_blast_fraction", out.mine_blast_fraction, 0.0, 1.0);
+    }
+    if (const json* ki = Get(b, "kill_item")) {
+        out.kill_item = ItemIdValue(*ki);
+        if (out.kill_item < 0 || out.kill_item > 0xFFFF) d.Error("kill_item is not a game item id");
+    }
+    std::int64_t every = 0;
+    if (GetInt(d, b, "kill_item_every", every, false)) {
+        CheckRange(d, "kill_item_every", static_cast<double>(every), 1, 100);
+        out.kill_item_every = static_cast<int>(every);
+    }
+    std::int64_t amount = 1;
+    if (GetInt(d, b, "kill_item_amount", amount, false)) {
+        CheckRange(d, "kill_item_amount", static_cast<double>(amount), 1, 20);
+        out.kill_item_amount = static_cast<int>(amount);
+    }
+    if ((out.kill_item >= 0) != (out.kill_item_every > 0)) d.Error("kill_item and kill_item_every go together");
+    if (GetNumber(d, b, "explosion_damage_mult", out.explosion_damage_mult, false)) {
+        CheckRange(d, "explosion_damage_mult", out.explosion_damage_mult, 0.0, 1.0);
     }
     ParseWeaponFilter(d, b, "never_offered", out.never_offered);
     ParseWeaponFilter(d, b, "infinite_ammo", out.infinite_ammo);
@@ -2473,6 +2492,12 @@ private:
                 const auto& eq = c.loadouts().equipment;
                 if (std::none_of(eq.begin(), eq.end(), [&b](const EquipmentDef& e) { return e.game_item == b.drops_as; })) {
                     d.Error("drops_as names a game item no loadouts.json equipment hands out");
+                }
+            }
+            if (b.kill_item >= 0) {
+                const auto& eq = c.loadouts().equipment;
+                if (std::none_of(eq.begin(), eq.end(), [&b](const EquipmentDef& e) { return e.game_item == b.kill_item; })) {
+                    d.Error("kill_item names a game item no loadouts.json equipment hands out");
                 }
             }
             for (const auto& [from, to] : b.items_as) {

@@ -1140,3 +1140,50 @@ TEST_CASE("items_as is checked when loaded", "[builds]") {
     CHECK(HasError(LoadErrors(json{{"mine_blast_fraction", 2.0}}), "mine_blast_fraction"));
     CHECK(LoadErrors(json{{"items_as", {{"263", 262}}}, {"mine_damage", 0.5}, {"mine_blast_m", 2.5}, {"mine_blast_fraction", 0.6}}).empty());
 }
+
+// Safari Chris's own bombs, his guns weaker, explosions on him halved (the user, 2026-11-23: "he should also get
+// less damage from explosions and some way to generate mines, also he should deal less damage from other weapon types").
+TEST_CASE("Safari Chris makes a bomb every 8 kills, takes half from explosions, and his guns are weaker", "[builds]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const SkinDef* safari = FindSkin(*r.content->FindCharacter("chris"), "chris_safari");
+    REQUIRE(safari != nullptr);
+    const SkinBuild& b = safari->build;
+    CHECK(b.kill_item == 0x010A);
+    CHECK(b.kill_item_every == 8);
+    CHECK(b.explosion_damage_mult == Catch::Approx(0.5));
+    for (const char* gun : {"handgun", "shotgun", "smg", "machine_gun", "rifle", "magnum", "bow", "launcher", "flamethrower"}) {
+        INFO(gun);
+        const auto it = b.category_damage.find(gun);
+        REQUIRE(it != b.category_damage.end());
+        CHECK(it->second == Catch::Approx(-0.25));
+    }
+    CHECK(b.category_damage.find("melee") == b.category_damage.end());  // kicks and the knife as they were
+}
+
+TEST_CASE("a build's kill_item comes every so many of the player's kills", "[builds]") {
+    test::Harness h(test::Load(BuildSources(json{{"kill_item", 262}, {"kill_item_every", 2}, {"kill_item_amount", 3}})));
+    REQUIRE(h.rc.StartRun("alpha", 4, "alpha_build").ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    const auto given = [&h] {
+        const auto& grants = h.rc.state().item_grants;
+        return std::count_if(grants.begin(), grants.end(), [](const ItemGrant& g) { return g.game_item == 262 && g.count == 3 && g.source == "build"; });
+    };
+    for (int i = 0; i < 4; ++i) {
+        KillEvent k;
+        k.now = 1.0 + i;
+        k.by_player = true;
+        k.enemy_id = "kill" + std::to_string(i);
+        h.rc.OnEnemyKilled(k);
+        CHECK(given() == (i + 1) / 2);
+    }
+    KillEvent other;  // a kill that is no player's counts for nothing
+    other.now = 9.0;
+    other.by_player = false;
+    other.enemy_id = "other";
+    h.rc.OnEnemyKilled(other);
+    CHECK(given() == 2);
+    CHECK(HasError(LoadErrors(json{{"kill_item", 262}}), "kill_item and kill_item_every go together"));
+    CHECK(HasError(LoadErrors(json{{"kill_item", "0x0999"}, {"kill_item_every", 3}}), "kill_item names a game item no loadouts.json equipment"));
+    CHECK(HasError(LoadErrors(json{{"explosion_damage_mult", 1.5}}), "explosion_damage_mult"));
+}

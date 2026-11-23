@@ -216,9 +216,14 @@ BUILDS = {
     # bought from shop or given by chest, but should get ammo"; "the blast should be bigger").
     'chris_safari': {
         'name': 'Mine Layer', 'icon': 'mine',
-        'summary': 'Grenades become proximity bombs, stacking to 10. Bombs hit 50 percent harder and wider. Health x1.25.',
+        # A bomb every 8 kills, explosions hurt him half, his guns a quarter weaker (the user, 2026-11-23: "he should
+        # also get less damage from explosions and some way to generate mines, also he should deal less damage from
+        # other weapon types").
+        'summary': 'Grenades are bombs, +1 per 8 kills: 10 a stack, x1.5, wider. Guns x0.75. Blasts on him x0.5. Health x1.25.',
         'items_as': {hex(HAND): hex(PROXIMITY), hex(INCENDIARY): hex(PROXIMITY), hex(FLASH): hex(PROXIMITY)},
         'stack_max': {'0x010A': 10}, 'mine_damage': 0.5, 'mine_blast_m': 2.5, 'mine_blast_fraction': 0.6, 'max_health_mult': 1.25,
+        'kill_item': hex(PROXIMITY), 'kill_item_every': 8, 'explosion_damage_mult': 0.5,
+        'category_damage': {c: -0.25 for c in ('handgun', 'shotgun', 'smg', 'machine_gun', 'rifle', 'magnum', 'bow', 'launcher', 'flamethrower')},
     },
     'chris_stars': {
         'name': 'Field Kit', 'icon': 'medkit',

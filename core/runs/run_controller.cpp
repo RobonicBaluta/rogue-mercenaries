@@ -2077,6 +2077,18 @@ void RunController::ApplyBuildKill(const KillEvent& kill, KillOutcome& out) {
             Emit(std::move(e));
         }
     }
+    // An item every so many kills (Safari Chris: a bomb every 8; the user, 2026-11-23: "some way to generate mines"),
+    // counted with the perks' every_kills (saved with the run).
+    if (build.kill_item >= 0 && build.kill_item_every > 0 && caps_.Has(cap::kInventory)) {
+        int& kills = run_.perk_kill_counts["build:kill_item"];
+        if (++kills % build.kill_item_every == 0) {
+            const int count = std::max(1, build.kill_item_amount);
+            run_.item_grants.push_back(ItemGrant{build.kill_item, count, "build"});
+            Event e = MakeEvent(EventType::PerkTriggered);
+            e.Add("source", "build").Add("trigger", "kill_item").Add("game_item", build.kill_item).Add("count", count);
+            Emit(std::move(e));
+        }
+    }
     // Keys from the listed enemy classes.
     const EconomyConfig::Keys& keys = content_->economy().keys;
     if (keys.enabled && kill.enemy_class && run_.keys < keys.max && keys.drop_chance > 0.0) {

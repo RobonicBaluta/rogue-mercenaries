@@ -122,6 +122,14 @@ struct SkinBuild {
     double mine_damage = 0.0;
     double mine_blast_m = 0.0;
     double mine_blast_fraction = 0.0;
+    /// An item every so many of the player's kills (Safari Chris: a bomb every 8; the user, 2026-11-23:
+    /// "some way to generate mines"); -1 = none.
+    std::int64_t kill_item = -1;
+    int kill_item_every = 0;
+    int kill_item_amount = 1;
+    /// The damage explosions do to the player (the adapter: a hit by no character, a bomb's, a grenade's,
+    /// a barrel's, a rocket's), times this (Safari Chris: 0.5; "he should also get less damage from explosions").
+    double explosion_damage_mult = 1.0;
     bool break_grabs = false;        // a grab is broken at once: the grabber is thrown off (Majini)
     /// Base id the shop always offers, with no unlock, until the run holds it (Heavy Metal's
     /// Gatling), at shop_weapon_price supplies (0: the common weapon price).

@@ -14374,10 +14374,21 @@ private:
         // health: a hit to 0 reported its death here and Uroboros Wesker never took his second form
         // (the user's fight, 2026-11-22: 438 -> 0, killed).
         if (r.enemy == g->boss.unit && BossGoesDown(r.enemy, Now())) return;
-        SeatTurn turn(r.attackerIsLocal ? SeatTurn::OfUnit(r.attacker) : 0);
+        // A proximity bomb's kill is the Mine Layer's (its supplies, its streak, its bomb every 8 kills): the first
+        // player of the run whose build has the bombs' damage or blast; no gun in hand made it.
+        int bombSeat = -1;
+        if (!r.attackerIsLocal && r.attacker != 0 && engine::ClassName(r.attacker) == "uWp0a") {
+            int seat = 0;
+            ForEachSeatTurn([&] {
+                const rm::SkinBuild& b = g->run->state().character.build;
+                if (bombSeat < 0 && (b.mine_damage > 0.0 || b.mine_blast_m > 0.0)) bombSeat = seat;
+                ++seat;
+            });
+        }
+        SeatTurn turn(r.attackerIsLocal ? SeatTurn::OfUnit(r.attacker) : std::max(0, bombSeat));
         rm::KillEvent kill;
         kill.now = Now();
-        kill.by_player = r.attackerIsLocal;
+        kill.by_player = r.attackerIsLocal || bombSeat >= 0;
         if (r.attackerIsLocal) {
             kill.weapon_id = EquippedWeaponBaseId();
             kill.was_melee = engine::InMeleeAction(r.attacker);
@@ -14444,6 +14455,19 @@ private:
         if (g->settings.probeHits && g->run->phase() == rm::Phase::ArenaActive) {
             RM_LOGD("incoming core=%.4f (raw %.4f) prevent_death=%d dev=%.2f", result.multiplier,
                     result.raw_multiplier, result.prevent_death, g->settings.devIncomingMultiplier);
+        }
+        // An explosion (a hit by no character: a bomb, a grenade, a barrel, a rocket, dynamite) on a build that takes
+        // less of it (Safari Chris: the user, 2026-11-23, "he should also get less damage from explosions").
+        if (hit.attacker != 0 && g->run->HasActiveRun()) {
+            const std::string by = engine::ClassName(hit.attacker);
+            const bool blast = by.rfind("uWp", 0) == 0 || by.rfind("uOm", 0) == 0;
+            static std::set<std::string> seen;  // each maker once in the log: which classes hit the player
+            if (seen.insert(by).second) RM_LOGI("incoming: a hit by %s (%s)", by.c_str(), blast ? "an explosion or a thrown thing" : "a character");
+            const double cut = g->run->state().character.build.explosion_damage_mult;
+            if (blast && cut < 1.0 && !invulnerable) {
+                decision.multiplier = static_cast<float>(decision.multiplier * cut);
+                if (LevelLog("explosion_cut")) RM_LOGI("incoming: %s's hit %d x%.2f (the build's explosions)", by.c_str(), hit.damage, cut);
+            }
         }
         decision.preventDeath = result.prevent_death;
         decision.leaveHp = std::max(1, static_cast<int>(std::lround(result.leave_hp)));
