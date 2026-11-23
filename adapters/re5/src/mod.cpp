@@ -997,6 +997,17 @@ std::map<std::string, std::string> g_modMissing;
 std::map<std::string, bool> g_modInGame;
 std::string g_modSetupSkin;  // the MOD screen's skin
 
+// A mod skin whose mod the last scan did not find (locked or not: the user, 2026-11-23, "this mod thing
+// should also happen when you don't have it unlocked": its mod can be got ready before it opens).
+bool ModMissing(const std::string& skinId) {
+    const auto it = g_modMissing.find(skinId);
+    return it != g_modMissing.end() && !it->second.empty();
+}
+bool ModReady(const std::string& skinId) {
+    const auto it = g_modMissing.find(skinId);
+    return it != g_modMissing.end() && it->second.empty();
+}
+
 std::string LowerAscii(std::string s) {
     for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return s;
@@ -2352,11 +2363,20 @@ private:
                     } else if (c.gate == rm::CharacterGate::Locked) {
                         item.locked = true;
                         item.help = c.unlock_text.empty() ? "Locked." : c.unlock_text + ".";
+                        std::string modSkin;  // its first mod skin whose mod is missing
+                        if (def != nullptr) {
+                            for (const rm::SkinDef& sd : def->skins) {
+                                if (sd.mod && ModMissing(sd.id) && modSkin.empty()) modSkin = sd.id;
+                            }
+                        }
+                        const std::string mod = modSkin.empty() || c.unlock_cost_credits > 0 ? "" : " Press to get its mod ready.";
                         if (c.challenge.target > 0) {
                             item.help += "\n" + std::to_string(c.challenge.current) + " of " +
-                                         std::to_string(c.challenge.target) + " done.";
+                                         std::to_string(c.challenge.target) + " done." + mod;
                         } else if (c.unlock_cost_credits > 0) {
                             item.help += "\nUnlock for " + Plural(c.unlock_cost_credits, "credit") + ".";
+                        } else if (!mod.empty()) {
+                            item.help += "\n" + mod.substr(1);
                         }
                     } else {
                         item.locked = true;
@@ -2622,11 +2642,29 @@ private:
                 const auto missing = g_modMissing.find(skin->id);
                 const bool ready = missing != g_modMissing.end() && missing->second.empty();
                 const std::string unpack = UnpackNote();
-                std::string status = ready ? "Found: it is ready to wear."
+                // Locked yet (the skin or its character): the mod is got ready for when it opens.
+                std::string lockedText;
+                bool locked = false;
+                for (const rm::CharacterAvailability& ca : run.Characters()) {
+                    for (const rm::SkinAvailability& sa : ca.skins) {
+                        if (sa.id != skin->id) continue;
+                        if (sa.gate == rm::CharacterGate::Locked) {
+                            locked = true;
+                            lockedText = sa.unlock_text;
+                        } else if (ca.gate == rm::CharacterGate::Locked) {
+                            locked = true;
+                            lockedText = ca.unlock_text;
+                        }
+                    }
+                }
+                if (locked) screen.header += "   LOCKED";
+                std::string status = ready && locked ? "Found: it is ready for when you unlock it."
+                                     : ready ? "Found: it is ready to wear."
                                      : !unpack.empty() ? unpack
                                      : missing != g_modMissing.end() ? "Not found yet: " + missing->second + "."
                                                                      : "Not found yet.";
                 if (ready && g_modInGame[skin->id]) status = "Found in the game's own files: it is ready.";
+                if (locked && !ready && !lockedText.empty()) status += " Locked: " + lockedText + ".";
                 Item page;
                 page.label = "OPEN ITS PAGE";
                 page.help = Plain(skin->mod->name) + (skin->mod->author.empty() ? "" : ", by " + Plain(skin->mod->author)) +
@@ -2637,7 +2675,7 @@ private:
                 folder.help = "Put the download in there as it is: a ZIP is unzipped\nfor you. Installed in the game already: it is found too.";
                 screen.items.push_back(std::move(folder));
                 Item check;
-                check.label = ready ? "BACK TO SKINS" : "CHECK AGAIN";
+                check.label = ready ? "BACK" : "CHECK AGAIN";
                 check.help = Plain(status);
                 screen.items.push_back(std::move(check));
                 break;
@@ -2824,10 +2862,14 @@ private:
                     } else {
                         item.locked = true;
                         item.help = s.unlock_text.empty() ? "Locked." : s.unlock_text + ".";
-                        if (s.challenge.target > 0) {
-                            item.help += "\n" + std::to_string(s.challenge.current) + " of " +
-                                         std::to_string(s.challenge.target) + " done.";
-                        }
+                        const std::string progress =
+                            s.challenge.target > 0 ? std::to_string(s.challenge.current) + " of " + std::to_string(s.challenge.target) + " done." : "";
+                        const bool modSkin = skinDef != nullptr && skinDef->mod;
+                        const std::string mod = !modSkin            ? ""
+                                                : ModMissing(s.id)   ? "Press to get its mod ready."
+                                                : ModReady(s.id)     ? "Its mod is ready."
+                                                                     : "";
+                        if (!progress.empty() || !mod.empty()) item.help += "\n" + progress + (progress.empty() || mod.empty() ? "" : " ") + mod;
                     }
                     screen.items.push_back(std::move(item));
                 }
@@ -3001,6 +3043,16 @@ private:
                     d.next = ScreenId::Skins;
                 } else if (c.gate == rm::CharacterGate::Locked && c.unlock_cost_credits > 0) {
                     purchase(rm::UnlockKind::Character, c.id, c.unlock_cost_credits);
+                } else if (c.gate == rm::CharacterGate::Locked) {
+                    // Locked, with a mod skin whose mod is missing: its MOD screen, to get it ready meanwhile.
+                    g_modSetupSkin.clear();
+                    if (const rm::CharacterDef* def = run.content().FindCharacter(c.id)) {
+                        for (const rm::SkinDef& sd : def->skins) {
+                            if (sd.mod && ModMissing(sd.id) && g_modSetupSkin.empty()) g_modSetupSkin = sd.id;
+                        }
+                    }
+                    d.outcome = g_modSetupSkin.empty() ? Outcome::Denied : Outcome::Push;
+                    d.next = ScreenId::ModSetup;
                 } else {
                     d.outcome = Outcome::Denied;
                 }
@@ -3285,7 +3337,7 @@ private:
                     const auto missing = g_modMissing.find(skin->id);
                     const bool ready = missing != g_modMissing.end() && missing->second.empty();
                     if (ready) {
-                        g->toasts.Push(Plain(skin->name) + " is ready");
+                        g->toasts.Push(Plain(skin->name) + ": its mod is ready");
                         d.outcome = Outcome::Back;
                     } else {
                         d.outcome = Outcome::Refresh;
@@ -3382,8 +3434,9 @@ private:
                 } else if (skins[index].gate == rm::CharacterGate::Selectable) {
                     g->selectedSkin = skins[index].id;
                     d.outcome = Outcome::Refresh;
-                } else if (skins[index].gate == rm::CharacterGate::NotInstalled) {
-                    // A mod skin without its mod: the MOD screen (its page, the mods folder, a check).
+                } else if (skins[index].gate == rm::CharacterGate::NotInstalled ||
+                           (skins[index].gate == rm::CharacterGate::Locked && ModMissing(skins[index].id))) {
+                    // A mod skin without its mod, locked or not: the MOD screen (its page, the mods folder, a check).
                     g_modSetupSkin = skins[index].id;
                     d.outcome = Outcome::Push;
                     d.next = ScreenId::ModSetup;
