@@ -1027,6 +1027,23 @@ bool JointPosition(std::uintptr_t unit, int bone, float out[3]) {
     return true;
 }
 
+bool UnitWorldPosition(std::uintptr_t unit, float out[3]) {
+    if (!g_caps.jointPosition || !unit || !out) return false;
+    using JointPositionFn = void(__thiscall*)(std::uintptr_t unit, float* out, int bone, const float* offset);
+    alignas(16) static const float kNoOffset[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    alignas(16) float at[4] = {};
+    __try {
+        reinterpret_cast<JointPositionFn>(re5::addr::kFnJointPosition)(unit, at, -1, kNoOffset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;  // a unit without the matrix: the caller has its own way
+    }
+    for (int k = 0; k < 3; ++k) {
+        if (!(at[k] == at[k]) || at[k] < -1.0e7f || at[k] > 1.0e7f) return false;
+        out[k] = at[k];
+    }
+    return true;
+}
+
 bool DeleteUnit(std::uintptr_t unit) {
     const auto del = unit ? VtableSlot(unit, kVtableUnitDelete) : 0;
     if (!del) return false;

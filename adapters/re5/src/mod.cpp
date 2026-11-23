@@ -8116,32 +8116,56 @@ void DisarmTwinGuns(const char* why) {
     if (any) RM_LOGI("twin guns: put away (%s)", why);
 }
 
-// Both guns fire once along (fx, fz) from beside her hands; their shots hurt nobody. Returns the shots.
+// Both guns fire once along (fx, fz), each from the gun itself; the game's shots hurt nobody, so each
+// shot's hit is the mod's (TwinShotHit, from the muzzle and direction kept here). Returns the shots.
 constexpr int kTwinMuzzleBones[2] = {11, 6};  // the boss's: gun 0 at bone 11, gun 1 at bone 6
+constexpr float kTwinSpread = 0.10f;          // radians either side: the stream sprays a little
+float g_twinMuzzle[2][3] = {};
+float g_twinDir[2][3] = {};
+bool g_twinFired[2] = {false, false};
 int FireTwinGunsOnce(std::uintptr_t local, float fx, float fz) {
+    g_twinFired[0] = g_twinFired[1] = false;
     if (!local || g_twinGunsGeneration != g->matchGeneration) return 0;
-    const float dir[3] = {fx, 0.0f, fz};
+    static std::mt19937 spreadRng{std::random_device{}()};
+    std::uniform_real_distribution<float> spread(-kTwinSpread, kTwinSpread);
     world::WatchCreated("uWp86");
     int fired = 0;
+    float feet[3];
+    UnitPosition(local, feet);
     for (int n = 0; n < 2; ++n) {
         if (!g_twinGuns[n]) continue;
-        // From her hands, as the boss's leave hers (0x0093C2E0: bones 11 and 6). A point 0.6 m in
-        // front of her looked wrong: the shots came from in front of her (user playtest 2026-11-07).
+        const float a = spread(spreadRng);
+        const float dir[3] = {fx * std::cos(a) - fz * std::sin(a), 0.0f, fx * std::sin(a) + fz * std::cos(a)};
+        // From the gun in her hand (its own matrix: the user, 2026-11-23, "try to make it come out of the smgs
+        // and not from the front of the character, you have Boss jill as an example"). The boss's bone ids 11 and
+        // 6 are mapped through each model's own bone table, so on the player they were not her hands. A point
+        // 0.6 m in front of her looked wrong too (user playtest 2026-11-07).
         float muzzle[3];
-        if (!engine::JointPosition(local, kTwinMuzzleBones[n], muzzle)) {
+        bool fromGun = engine::UnitWorldPosition(g_twinGuns[n], muzzle);
+        if (fromGun) {
+            const float dx = muzzle[0] - feet[0], dy = muzzle[1] - feet[1], dz = muzzle[2] - feet[2];
+            fromGun = dx * dx + dz * dz < 150.0f * 150.0f && dy > 20.0f && dy < 220.0f;  // in her reach, above her feet
+        }
+        if (!fromGun && !engine::JointPosition(local, kTwinMuzzleBones[n], muzzle)) {
             const float side = n == 0 ? 25.0f : -25.0f;  // her right and left hands
             muzzle[0] = ReadOr<float>(local + re5::off::kUnitPosition, 0.0f) + fx * 30.0f + fz * side;
             muzzle[1] = ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f) + 120.0f;
             muzzle[2] = ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f) + fz * 30.0f - fx * side;
         }
         static int traced = 0;
-        if (traced < 4 && g->settings.developerMode) {
+        if (traced < 4) {
             ++traced;
-            RM_LOGI("twin guns: gun %d shot from %.0f %.0f %.0f (her feet at %.0f %.0f %.0f)", n, muzzle[0], muzzle[1], muzzle[2],
-                    ReadOr<float>(local + re5::off::kUnitPosition, 0.0f), ReadOr<float>(local + re5::off::kUnitPosition + 4, 0.0f),
-                    ReadOr<float>(local + re5::off::kUnitPosition + 8, 0.0f));
+            RM_LOGI("twin guns: gun %d shot from %.0f %.0f %.0f (%s; her feet at %.0f %.0f %.0f)", n, muzzle[0], muzzle[1], muzzle[2],
+                    fromGun ? "the gun" : "her hand's bone", feet[0], feet[1], feet[2]);
         }
-        fired += engine::FireTwinGun(g_twinGuns[n], muzzle, dir) ? 1 : 0;
+        if (engine::FireTwinGun(g_twinGuns[n], muzzle, dir)) {
+            ++fired;
+            g_twinFired[n] = true;
+            for (int k = 0; k < 3; ++k) {
+                g_twinMuzzle[n][k] = muzzle[k];
+                g_twinDir[n][k] = dir[k];
+            }
+        }
     }
     for (const std::uintptr_t s : world::TakeCreated()) SafeStore<std::uint32_t>(s + 0x1CA0, 0xFFFFFFFFu);
     world::WatchCreated("");
@@ -9940,6 +9964,48 @@ bool HeadAction(const std::string& action) {
            action.find("HeadExplosion") != std::string::npos;
 }
 
+// One twin gun shot's hit (Twin Fury, the user, 2026-11-23: "Twin Fury with real bullets"): the first living
+// enemy along its line from the muzzle, within kSmgRange and kTwinShotWidth of it, takes `damage` (its first
+// hit staggers it, the killing one blows it away), as the sweep's old pulses did to all in a cone.
+constexpr float kTwinShotWidth = 70.0f;  // 0.7 m either side of the line
+constexpr float kTwinShotRange = 1400.0f;
+struct TwinShotResult {
+    std::uintptr_t enemy = 0;
+    bool killed = false;
+};
+TwinShotResult TwinShotHit(const float muzzle[3], const float dir[3], int damage, std::set<std::uintptr_t>& staggered, double now) {
+    TwinShotResult r;
+    float bestT = kTwinShotRange;
+    for (const auto& [enemy, d] : EnemiesNear(muzzle, kTwinShotRange, 0)) {
+        (void)d;
+        const auto hp = engine::ReadHp(enemy);
+        if (!hp || hp->hp <= 0) continue;
+        float p[3];
+        UnitPosition(enemy, p);
+        const float vx = p[0] - muzzle[0], vz = p[2] - muzzle[2];
+        const float t = vx * dir[0] + vz * dir[2];  // along the line (dir is level and unit length)
+        if (t <= 0.0f || t >= bestT) continue;
+        const float side = std::fabs(vx * dir[2] - vz * dir[0]);
+        if (side > kTwinShotWidth) continue;
+        if (p[1] > muzzle[1] + 100.0f || p[1] < muzzle[1] - 300.0f) continue;  // another floor
+        bestT = t;
+        r.enemy = enemy;
+    }
+    if (!r.enemy) return r;
+    const auto hp = engine::ReadHp(r.enemy);
+    r.killed = hp && damage >= hp->hp;
+    if (r.killed) engine::StartAction(r.enemy, re5::off::kEm10DmgFlyoff, ReactionClass(re5::off::kEm10DmgFlyoff));
+    if (!director::Damage(r.enemy, damage)) {
+        r.enemy = 0;
+        return r;
+    }
+    g_specialVictims[r.enemy] = now;
+    if (!r.killed && !staggered.count(r.enemy) && engine::StartAction(r.enemy, re5::off::kEm10DmgYoroke, ReactionClass(re5::off::kEm10DmgYoroke))) {
+        staggered.insert(r.enemy);
+    }
+    return r;
+}
+
 // Each tick: the hits' queued perks, the launchers' wider blasts, the pistols' headshots, the rod's stuns.
 void DriveLevelHits(double now) {
     if (!g->match.inMatch || g->run->phase() != rm::Phase::ArenaActive) {
@@ -11116,11 +11182,27 @@ void StepSpecial(double now) {
         float tx = g_move.dirX, tz = g_move.dirZ;
         PlayerFacing(local, tx, tz);
         g_move.twinShots += FireTwinGunsOnce(local, tx, tz);
+        // Each shot hits the first enemy in its line: a pulse's damage shared out over the shots that replace it
+        // (two guns every kTwinShotEvery for one pulse every kSmgPulse), a little more for losing the cone.
+        const int perShot = std::max(1, static_cast<int>(std::lround(g_move.damage * kTwinShotEvery / kSmgPulse * 0.6)));
+        for (int n = 0; n < 2; ++n) {
+            if (!g_twinFired[n]) continue;
+            const TwinShotResult hit = TwinShotHit(g_twinMuzzle[n], g_twinDir[n], perShot, g_move.staggered, now);
+            if (hit.enemy) {
+                ++g_move.hits;
+                static int logged = 0;
+                if (logged < 6) {
+                    ++logged;
+                    RM_LOGI("twin guns: gun %d's shot hit %s for %d%s", n, engine::ClassName(hit.enemy).c_str(), perShot, hit.killed ? " (killed)" : "");
+                }
+            }
+        }
     }
     if (now < g_move.nextPulse) return;
     if (g_move.kind == "dual_smg") {
         g_move.nextPulse = now + kSmgPulse;
         ++g_move.pulses;
+        if (g_move.twinGuns) return;  // the guns' own shots hit (TwinShotHit); the cone is the fallback without them
         float fx = g_move.dirX, fz = g_move.dirZ;
         PlayerFacing(local, fx, fz);  // she turns while she fires
         // Health alone fell as if a ray hit them, and they dropped once their own action ended

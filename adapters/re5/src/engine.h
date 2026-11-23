@@ -237,6 +237,9 @@ bool FireTwinGun(std::uintptr_t gun, const float muzzle[3], const float dir[3]);
 /// boss Jill's guns use for their muzzles: her bones 11 and 6, the hands); a bone the model lacks
 /// gives the origin offset. False without the capability `jointPosition` or on a fault.
 bool JointPosition(std::uintptr_t unit, int bone, float out[3]);
+/// The unit's own world position, through the same game function with a negative id (its matrix at +0xA0):
+/// an attached unit's (a gun in a hand) where it is drawn.
+bool UnitWorldPosition(std::uintptr_t unit, float out[3]);
 /// The enemy's own hit check (re5::off::kVtableMayHurt) with a hit of `amount` on `region`, as the
 /// game's ApplyDamage asks it: its answer (1: the hit takes health; its low byte), nothing when it faulted.
 std::optional<std::uint32_t> EnemyMayHurt(std::uintptr_t enemy, int region, int amount);
