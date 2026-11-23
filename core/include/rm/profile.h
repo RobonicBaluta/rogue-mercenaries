@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -106,9 +107,28 @@ struct ProfileLoadResult {
 class ProfileStore {
 public:
     explicit ProfileStore(std::filesystem::path main_path, IEventSink* sink = nullptr);
+    ~ProfileStore();
+    ProfileStore(const ProfileStore&) = delete;
+    ProfileStore& operator=(const ProfileStore&) = delete;
 
     ProfileLoadResult Load();
+    /// Writes now (after any background save still waiting), and says how it went.
     Status Save(const Profile& profile);
+
+    // Background saves (the user's item 12, 2026-11-24: "Save the profile in the background"; the
+    // synchronous save cost the game a 4.2 ms frame). With it on, SaveInBackground serializes the
+    // profile at once (a copy of it as it is now) and a worker thread writes it the way Save does
+    // (.tmp, the .bak kept while valid, the rename); a newer save replaces one still waiting. Save and
+    // Load wait for the worker first, so the files are written in the order asked. The worker's events
+    // (ProfileSaved, a backup error) and failures come out on the caller's thread in PumpBackground.
+    void SetBackground(bool on);
+    [[nodiscard]] bool background() const { return worker_ != nullptr; }
+    /// With background saves off: Save.
+    Status SaveInBackground(const Profile& profile);
+    /// Waits until every background save asked for is written.
+    void Flush();
+    /// Emits the finished background saves' events through the sink; returns their failures.
+    std::vector<Status> PumpBackground();
 
     [[nodiscard]] const std::filesystem::path& main_path() const { return main_; }
     [[nodiscard]] std::filesystem::path backup_path() const;
@@ -116,8 +136,13 @@ public:
     void set_sink(IEventSink* sink) { sink_ = sink; }
 
 private:
+    struct Written;
+    /// Save's file work for a serialized profile. `emit`: its events now (else into `out`).
+    Status WriteText(const std::string& text, std::int64_t credits, bool emit, Written* out);
+    struct Worker;
     std::filesystem::path main_;
     IEventSink* sink_ = nullptr;
+    std::unique_ptr<Worker> worker_;
 };
 
 }  // namespace rm

@@ -42,6 +42,7 @@ DiagnosticSink g_sink;
 void ModInit(const Paths&, const Settings& settings) { g_settings = settings; }
 void ModCapabilitiesReady() {}
 void ModShutdown() {}
+void ModFlush() {}
 HookSink* ModSink() { return &g_sink; }
 
 void ModDraw() {

@@ -14,6 +14,7 @@
 #include "imgui_impl_dx9.h"
 #include "imgui_impl_win32.h"
 #include "dev_audio.h"
+#include "mod.h"
 #include "dev_capture.h"
 #include "log.h"
 
@@ -81,6 +82,7 @@ bool IsInputMessage(UINT msg) {
 LRESULT CALLBACK WndProc(HWND window, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_CLOSE) {
         RestoreDevAudioOnExit();
+        ModFlush();  // the profile's background save before the game goes
     }
     if (msg == WM_KEYDOWN && static_cast<int>(wParam) == g_toggleKey.load() && !(lParam & (1 << 30))) {
         Toggle();

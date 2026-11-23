@@ -15638,6 +15638,9 @@ void ModInit(const Paths& paths, const Settings& settings) {
     }
     g->store = std::make_unique<rm::ProfileStore>(profilePath, g->fanout.get());
     auto profile = g->store->Load();
+    // A run's saves are written on the store's own thread (the user's item 12: no frame waits on the
+    // disk); a purchase's still waits for its file. WM_CLOSE and the shutdown flush it (ModFlush).
+    g->store->SetBackground(true);
     if (settings.everythingUnlocked) {
         rm::UnlockEverything(profile.profile, *g->content);
         RM_LOGI("profile: everything unlocked, on its own file (%s); the normal progress is not used", rm::PathText(profilePath).c_str());
@@ -15709,7 +15712,10 @@ void ModCapabilitiesReady() {
     ScanModSkins();
 }
 
-void ModShutdown() {
+void ModShutdown() { ModFlush(); }
+
+void ModFlush() {
+    if (g && g->store) g->store->Flush();
     if (g && g->jsonl) g->jsonl->Flush();
 }
 

@@ -1,10 +1,13 @@
 #include "rm/profile.h"
 
 #include <algorithm>
+#include <condition_variable>
 #include <cstdio>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <system_error>
+#include <thread>
 
 #include <nlohmann/json.hpp>
 
@@ -402,8 +405,117 @@ std::string_view ProfileSourceName(ProfileSource s) {
     return "default";
 }
 
+// What a write did, for the caller's thread to report (a background save's events wait for PumpBackground).
+struct ProfileStore::Written {
+    Status status = Status::Success();
+    std::string backup_error;  // the .bak copy failed (the save itself may still be fine)
+    std::size_t bytes = 0;
+    std::int64_t credits = 0;
+};
+
+struct ProfileStore::Worker {
+    std::mutex mutex;
+    std::condition_variable wake, idle;
+    std::optional<std::pair<std::string, std::int64_t>> pending;  // the text to write and its credits
+    bool busy = false;
+    bool stop = false;
+    std::vector<Written> finished;
+    std::thread thread;
+};
+
 ProfileStore::ProfileStore(std::filesystem::path main_path, IEventSink* sink)
     : main_(std::move(main_path)), sink_(sink) {}
+
+ProfileStore::~ProfileStore() { SetBackground(false); }
+
+void ProfileStore::SetBackground(bool on) {
+    if (on == background()) return;
+    if (!on) {
+        {
+            std::lock_guard lock(worker_->mutex);
+            worker_->stop = true;  // the worker writes what still waits, then ends
+        }
+        worker_->wake.notify_all();
+        worker_->thread.join();
+        std::unique_ptr<Worker> done = std::move(worker_);
+        for (const Written& w : done->finished) {
+            if (!w.status.ok() && sink_ != nullptr) {
+                Event e;
+                e.type = EventType::Error;
+                e.level = EventLevel::Error;
+                e.Add("operation", "profile_save_background").Add("message", w.status.message);
+                sink_->OnEvent(e);
+            }
+        }
+        return;
+    }
+    worker_ = std::make_unique<Worker>();
+    Worker* w = worker_.get();
+    w->thread = std::thread([this, w] {
+        std::unique_lock lock(w->mutex);
+        for (;;) {
+            w->wake.wait(lock, [w] { return w->pending.has_value() || w->stop; });
+            if (!w->pending) break;  // stopping with nothing left
+            auto job = std::move(*w->pending);
+            w->pending.reset();
+            w->busy = true;
+            lock.unlock();
+            Written out;
+            out.status = WriteText(job.first, job.second, false, &out);
+            lock.lock();
+            w->busy = false;
+            w->finished.push_back(std::move(out));
+            w->idle.notify_all();
+        }
+        w->idle.notify_all();
+    });
+}
+
+Status ProfileStore::SaveInBackground(const Profile& profile) {
+    if (!background()) return Save(profile);
+    std::string text = SerializeProfile(profile);
+    {
+        std::lock_guard lock(worker_->mutex);
+        worker_->pending.emplace(std::move(text), profile.credits.balance());  // replaces one still waiting
+    }
+    worker_->wake.notify_one();
+    return Status::Success();
+}
+
+void ProfileStore::Flush() {
+    if (!background()) return;
+    std::unique_lock lock(worker_->mutex);
+    worker_->idle.wait(lock, [this] { return !worker_->pending && !worker_->busy; });
+}
+
+std::vector<Status> ProfileStore::PumpBackground() {
+    std::vector<Status> failures;
+    if (!background()) return failures;
+    std::vector<Written> finished;
+    {
+        std::lock_guard lock(worker_->mutex);
+        finished.swap(worker_->finished);
+    }
+    for (const Written& w : finished) {
+        if (sink_ != nullptr && !w.backup_error.empty()) {
+            Event e;
+            e.type = EventType::Error;
+            e.level = EventLevel::Error;
+            e.Add("operation", "profile_backup").Add("message", w.backup_error);
+            sink_->OnEvent(e);
+        }
+        if (!w.status.ok()) {
+            failures.push_back(w.status);
+        } else if (sink_ != nullptr) {
+            Event e;
+            e.type = EventType::ProfileSaved;
+            e.level = EventLevel::Debug;
+            e.Add("path", rm::PathText(main_)).Add("credits", w.credits).Add("bytes", w.bytes).Add("background", true);
+            sink_->OnEvent(e);
+        }
+    }
+    return failures;
+}
 
 std::filesystem::path ProfileStore::backup_path() const {
     fs::path p = main_;
@@ -418,6 +530,7 @@ std::filesystem::path ProfileStore::temp_path() const {
 }
 
 ProfileLoadResult ProfileStore::Load() {
+    Flush();
     ProfileLoadResult result;
     auto emit_error = [this](const std::string& op, const std::string& message, const fs::path& path,
                              const fs::path& preserved) {
@@ -485,7 +598,11 @@ ProfileLoadResult ProfileStore::Load() {
 }
 
 Status ProfileStore::Save(const Profile& profile) {
-    const std::string text = SerializeProfile(profile);
+    Flush();  // a background save still waiting goes first
+    return WriteText(SerializeProfile(profile), profile.credits.balance(), true, nullptr);
+}
+
+Status ProfileStore::WriteText(const std::string& text, std::int64_t credits, bool emit, Written* out) {
     std::error_code ec;
     if (main_.has_parent_path()) fs::create_directories(main_.parent_path(), ec);
 
@@ -499,7 +616,8 @@ Status ProfileStore::Save(const Profile& profile) {
         std::string previous;
         if (ReadWhole(main_, previous) && ParseProfile(previous).ok()) {
             fs::copy_file(main_, backup_path(), fs::copy_options::overwrite_existing, ec);
-            if (ec && sink_ != nullptr) {
+            if (ec && out != nullptr) out->backup_error = ec.message();
+            if (ec && emit && sink_ != nullptr) {
                 Event e;
                 e.type = EventType::Error;
                 e.level = EventLevel::Error;
@@ -513,11 +631,15 @@ Status ProfileStore::Save(const Profile& profile) {
     if (ec) {
         return Status::Error(ErrorCode::PersistenceFailed, "cannot replace " + rm::PathText(main_) + ": " + ec.message());
     }
-    if (sink_ != nullptr) {
+    if (out != nullptr) {
+        out->bytes = text.size();
+        out->credits = credits;
+    }
+    if (emit && sink_ != nullptr) {
         Event e;
         e.type = EventType::ProfileSaved;
         e.level = EventLevel::Debug;
-        e.Add("path", rm::PathText(main_)).Add("credits", profile.credits.balance()).Add("bytes", text.size());
+        e.Add("path", rm::PathText(main_)).Add("credits", credits).Add("bytes", text.size());
         sink_->OnEvent(e);
     }
     return Status::Success();

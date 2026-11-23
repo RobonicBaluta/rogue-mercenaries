@@ -412,3 +412,90 @@ TEST_CASE("a suspended run goes on from its resume point, the arena played again
     REQUIRE(h.rc.StartRun("alpha", 8).ok());
     CHECK_FALSE(h.rc.CanResumeRun());
 }
+
+// Background saves (the user's item 12, 2026-11-24: "Save the profile in the background").
+TEST_CASE("background saves write the latest profile, in the order asked", "[persistence]") {
+    test::TempDir dir("background");
+    MemorySink sink;
+    ProfileStore store(dir.path() / "profile.json", &sink);
+    (void)store.Load();
+    store.SetBackground(true);
+    REQUIRE(store.background());
+    Profile p = SampleProfile();
+    for (int kills = 100; kills <= 140; kills += 10) {
+        p.stats.total_kills = kills;
+        REQUIRE(store.SaveInBackground(p).ok());  // returns at once; a newer one replaces one still waiting
+    }
+    store.Flush();
+    CHECK(ParseProfile(test::ReadText(store.main_path()))->profile.stats.total_kills == 140);
+    CHECK_FALSE(fs::exists(store.temp_path()));
+    CHECK(store.PumpBackground().empty());
+    CHECK(sink.Count(EventType::ProfileSaved) >= 1);  // emitted here, on the caller's thread
+    CHECK(sink.Count(EventType::ProfileSaved) <= 5);
+
+    // A save that waits for its file goes after the background one still pending.
+    p.stats.total_kills = 150;
+    REQUIRE(store.SaveInBackground(p).ok());
+    p.stats.total_kills = 160;
+    REQUIRE(store.Save(p).ok());
+    CHECK(ParseProfile(test::ReadText(store.main_path()))->profile.stats.total_kills == 160);
+    CHECK(ParseProfile(test::ReadText(store.backup_path()))->profile.stats.total_kills == 150);
+    // Load waits for the worker too.
+    p.stats.total_kills = 170;
+    REQUIRE(store.SaveInBackground(p).ok());
+    CHECK(store.Load().profile.stats.total_kills == 170);
+
+    // Turned off: what waits is written first.
+    p.stats.total_kills = 180;
+    REQUIRE(store.SaveInBackground(p).ok());
+    store.SetBackground(false);
+    CHECK_FALSE(store.background());
+    CHECK(ParseProfile(test::ReadText(store.main_path()))->profile.stats.total_kills == 180);
+    CHECK(ErrorEvents(sink) == 0);
+}
+
+TEST_CASE("a background save that fails is reported on the caller's thread", "[persistence]") {
+    test::TempDir dir("background-fail");
+    // The profile's folder is a file: nothing can be written there.
+    const fs::path blocker = dir.path() / "not-a-folder";
+    { std::ofstream(blocker) << "x"; }
+    MemorySink sink;
+    ProfileStore store(blocker / "profile.json", &sink);
+    store.SetBackground(true);
+    REQUIRE(store.SaveInBackground(SampleProfile()).ok());
+    store.Flush();
+    const std::vector<Status> failed = store.PumpBackground();
+    REQUIRE(failed.size() == 1);
+    CHECK(failed[0].code == ErrorCode::PersistenceFailed);
+    CHECK(sink.Count(EventType::ProfileSaved) == 0);
+    CHECK(store.PumpBackground().empty());  // reported once
+}
+
+TEST_CASE("a run's saves go to the background, a purchase's waits for its file", "[persistence]") {
+    test::TempDir dir("background-run");
+    const fs::path main = dir.path() / "profile.json";
+    std::int64_t banked = 0;
+    {
+        ProfileStore store(main);
+        Profile rich = store.Load().profile;
+        REQUIRE(rich.credits.Credit("bank:test_seed", 100000) == TxResult::Applied);
+        test::Harness h(test::LoadFixture(), rich, Capabilities::All(), &store);
+        store.SetBackground(true);
+        // The purchase's save is on disk when the purchase returns (no Flush).
+        REQUIRE(h.rc.PurchaseUnlock(UnlockKind::Character, "gamma").ok());
+        CHECK(ParseProfile(test::ReadText(main))->profile.unlocked_characters.count("gamma") == 1);
+        REQUIRE(h.rc.StartRun("alpha", 99).ok());
+        test::ClearArena(h.rc, 0.0);
+        REQUIRE(h.rc.AbandonRun(50.0).ok());
+        Result<RunSummary> sum = h.rc.EndRun();
+        REQUIRE(sum.ok());
+        banked = sum->credits_banked;
+        store.Flush();
+        CHECK(ParseProfile(test::ReadText(main))->profile.credits.balance() == h.rc.profile().credits.balance());
+        CHECK(banked > 0);
+        CHECK_FALSE(ParseProfile(test::ReadText(main))->profile.active_run.has_value());
+        banked = h.rc.profile().credits.balance();
+    }  // the store's worker ends with it
+    ProfileStore again(main);
+    CHECK(again.Load().profile.credits.balance() == banked);
+}

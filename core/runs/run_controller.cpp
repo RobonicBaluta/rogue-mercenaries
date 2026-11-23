@@ -96,7 +96,11 @@ Status RunController::Fail(std::string_view operation, ErrorCode code, std::stri
 
 Status RunController::SaveProfile(std::string_view reason) {
     if (store_ == nullptr) return Status::Success();
-    Status s = store_->Save(profile_);
+    for (const Status& failed : store_->PumpBackground()) EmitError("profile_save:background", failed);
+    // A purchase rolls back when its save fails, so it waits for the file; the rest (a run's saves,
+    // in the middle of play) go to the store's worker when it has one.
+    const bool wait = reason == "unlock";
+    Status s = wait ? store_->Save(profile_) : store_->SaveInBackground(profile_);
     if (!s.ok()) EmitError(std::string("profile_save:") + std::string(reason), s);
     return s;
 }
