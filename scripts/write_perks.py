@@ -211,10 +211,14 @@ def excella_pace():
 
 # ---- Skin builds (characters.json skin "build", core/include/rm/characters.h SkinBuild). ----
 BUILDS = {
+    # Grenades only become bombs, wherever they come from (drops, chests, the shop, rewards, perks); ammo and the
+    # rest stay (the user, 2026-11-23: "safari chris should pick only change mines from grenades and stuff, also when
+    # bought from shop or given by chest, but should get ammo"; "the blast should be bigger").
     'chris_safari': {
         'name': 'Mine Layer', 'icon': 'mine',
-        'summary': 'Every chest and every enemy drop is a proximity bomb, and they stack up to 10. 25 percent more health.',
-        'drops_as': '0x010A', 'stack_max': {'0x010A': 10}, 'max_health_mult': 1.25,
+        'summary': 'Grenades become proximity bombs, stacking to 10. Bombs hit 50 percent harder and wider. Health x1.25.',
+        'items_as': {hex(HAND): hex(PROXIMITY), hex(INCENDIARY): hex(PROXIMITY), hex(FLASH): hex(PROXIMITY)},
+        'stack_max': {'0x010A': 10}, 'mine_damage': 0.5, 'mine_blast_m': 2.5, 'mine_blast_fraction': 0.6, 'max_health_mult': 1.25,
     },
     'chris_stars': {
         'name': 'Field Kit', 'icon': 'medkit',

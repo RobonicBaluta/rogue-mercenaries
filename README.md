@@ -173,7 +173,7 @@ the others are written and wait for a playtest (2026-11-03).
 
 | Character | Skin | Build | What it does |
 |---|---|---|---|
-| Chris | Safari | Mine Layer | Chests and enemy drops are proximity bombs (an ammo, herb or grenade pickup becomes one); they stack to 10. Health x1.25. |
+| Chris | Safari | Mine Layer | Grenades (hand, incendiary, flash) become proximity bombs wherever they come from: picked up, a chest, a reward, the shop (which lists the bomb) and perks; ammo and the rest stay. Bombs stack to 10 (each slot's own maximum is raised too), hit 50 percent harder, and enemies within 2.5 m of one a bomb hit take 60 percent of its biggest hit. Health x1.25. |
 | Chris | S.T.A.R.S. | Field Kit | A first aid spray on every arena clear. |
 | Chris | Warrior | Brute Force | Only shotguns, handguns and magnums are offered; they hit 25 percent harder. |
 | Chris | Heavy Metal | Heavy Gunner | Starts with the pistol only; every shop sells the Gatling gun for 100 supplies until he has it (no unlock); ammo stacks three times as high. |

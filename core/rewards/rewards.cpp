@@ -91,6 +91,17 @@ std::vector<const WeaponBaseDef*> OfferableWeapons(const OfferContext& ctx) {
     return out;
 }
 
+const EquipmentDef* ItemAs(const OfferContext& ctx, const EquipmentDef* e) {
+    if (e == nullptr || ctx.build == nullptr || ctx.content == nullptr) return e;
+    for (const auto& [from, to] : ctx.build->items_as) {
+        if (from != e->game_item) continue;
+        for (const EquipmentDef& other : ctx.content->loadouts().equipment) {
+            if (other.game_item == to) return &other;
+        }
+    }
+    return e;
+}
+
 std::vector<const EquipmentDef*> OfferableItems(const OfferContext& ctx) {
     std::vector<const EquipmentDef*> out;
     if (ctx.content == nullptr) return out;
@@ -105,7 +116,9 @@ std::vector<const EquipmentDef*> OfferableItems(const OfferContext& ctx) {
              }))) {
             continue;
         }
-        out.push_back(&e);
+        // The build's own item in its place (Safari Chris: a bomb for a grenade), once.
+        const EquipmentDef* given = ItemAs(ctx, &e);
+        if (std::find(out.begin(), out.end(), given) == out.end()) out.push_back(given);
     }
     return out;
 }

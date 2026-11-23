@@ -112,6 +112,16 @@ struct SkinBuild {
     bool drops_as_held_ammo = false; // ammo and recovery items picked up become ammo for the gun in hand
     /// Game item picked up -> the item given instead (JSON keys and values may be hex).
     std::vector<std::pair<std::int64_t, std::int64_t>> pickup_as;
+    /// Game item -> the item the run gets in its place wherever it comes from: picked up, a chest, a reward,
+    /// the shop (which lists the item given) and the perks' items (Safari Chris, 2026-11-23: "should pick only
+    /// change mines from grenades and stuff, also when bought from shop or given by chest, but should get ammo").
+    std::vector<std::pair<std::int64_t, std::int64_t>> items_as;
+    /// Proximity bombs (the adapter tells their hits by the bomb's unit): this much more damage (a fraction),
+    /// and a wider blast: those within mine_blast_m metres of an enemy the blast hit take mine_blast_fraction
+    /// of its biggest hit.
+    double mine_damage = 0.0;
+    double mine_blast_m = 0.0;
+    double mine_blast_fraction = 0.0;
     bool break_grabs = false;        // a grab is broken at once: the grabber is thrown off (Majini)
     /// Base id the shop always offers, with no unlock, until the run holds it (Heavy Metal's
     /// Gatling), at shop_weapon_price supplies (0: the common weapon price).

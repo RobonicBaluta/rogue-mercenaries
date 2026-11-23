@@ -1085,3 +1085,58 @@ TEST_CASE("the tester picks the gun it holds and its level", "[builds]") {
     REQUIRE(other.rc.DevSetWeaponLevel(pistol, 3).ok());
     CHECK(other.rc.state().weapons.front().level == 3);
 }
+
+// Safari Chris (the user, 2026-11-23: "safari chris should pick only change mines from grenades and stuff, also
+// when bought from shop or given by chest, but should get ammo"): grenades become bombs wherever they come from,
+// and nothing else does.
+TEST_CASE("Safari Chris's grenades are bombs wherever they come from, and nothing else is", "[builds]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const CharacterDef* chris = r.content->FindCharacter("chris");
+    REQUIRE(chris != nullptr);
+    const SkinDef* safari = FindSkin(*chris, "chris_safari");
+    REQUIRE(safari != nullptr);
+    const SkinBuild& b = safari->build;
+    CHECK(b.drops_as < 0);  // ammo and the rest stay what they are
+    CHECK(b.items_as.size() == 3);
+    CHECK(b.mine_damage > 0.0);
+    CHECK(b.mine_blast_m > 0.0);
+    CHECK(std::count(b.stack_max.begin(), b.stack_max.end(), std::pair<std::int64_t, int>{0x010A, 10}) == 1);
+
+    // The shop, rewards and chests take their items from OfferableItems: bombs in the grenades' place.
+    const Capabilities caps = Capabilities::All();
+    OfferContext ctx;
+    ctx.content = r.content.get();
+    ctx.capabilities = &caps;
+    const auto has = [](const std::vector<const EquipmentDef*>& items, std::int64_t item) {
+        return std::any_of(items.begin(), items.end(), [item](const EquipmentDef* e) { return e->game_item == item; });
+    };
+    const auto plain = OfferableItems(ctx);
+    CHECK(has(plain, 0x0106));
+    ctx.build = &b;
+    const auto items = OfferableItems(ctx);
+    CHECK_FALSE(has(items, 0x0106));
+    CHECK_FALSE(has(items, 0x0107));
+    CHECK_FALSE(has(items, 0x0108));
+    CHECK(has(items, 0x010A));
+    CHECK(std::count_if(items.begin(), items.end(), [](const EquipmentDef* e) { return e->game_item == 0x010A; }) == 1);
+    CHECK(has(items, 0x0201));  // handgun rounds stay rounds
+    CHECK(items.size() + 3 >= plain.size());
+
+    // A perk's grenades too (Grenade Pouch: two at the run's start).
+    Profile open;
+    UnlockEverything(open, *r.content);
+    test::Harness h(r.content, open);
+    REQUIRE(h.rc.EquipPerk("chris", "supply_grenades").ok());
+    REQUIRE(h.rc.StartRun("chris", 5, "chris_safari").ok());
+    const auto& grants = h.rc.state().item_grants;
+    CHECK(std::none_of(grants.begin(), grants.end(), [](const ItemGrant& g) { return g.game_item == 0x0106; }));
+    CHECK(std::any_of(grants.begin(), grants.end(), [](const ItemGrant& g) { return g.game_item == 0x010A && g.count == 2; }));
+}
+
+TEST_CASE("items_as is checked when loaded", "[builds]") {
+    CHECK(HasError(LoadErrors(json{{"items_as", {{"263", "0x0999"}}}}), "items_as gives a game item no loadouts.json equipment"));
+    CHECK(HasError(LoadErrors(json{{"items_as", {{"263", 263}}}}), "must name another game item id"));
+    CHECK(HasError(LoadErrors(json{{"mine_blast_fraction", 2.0}}), "mine_blast_fraction"));
+    CHECK(LoadErrors(json{{"items_as", {{"263", 262}}}, {"mine_damage", 0.5}, {"mine_blast_m", 2.5}, {"mine_blast_fraction", 0.6}}).empty());
+}

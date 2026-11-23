@@ -4331,6 +4331,30 @@ void HideHolsteredFlamethrower(double now) {
     RM_LOGI("flamethrower: %s", hide ? "out of hand, its model hidden" : "in hand, its model shown");
 }
 
+// The build's stack sizes on the slots themselves: a slot keeps the maximum it was made with (Safari Chris's
+// bombs stood in cells of 4 and 5 with the item table at 10; the user on the Deck, 2026-11-23: "it doesn't
+// stack mines up to 10 like advertised"), so each of the player's slots of a stack_max item is raised to it.
+void SyncBuildStackSlots() {
+    if (!g->match.inMatch || !g->run->HasActiveRun()) return;
+    const rm::SkinBuild& build = g->run->state().character.build;
+    if (build.stack_max.empty()) return;
+    const auto player = engine::LocalPlayer();
+    if (!player) return;
+    const auto inv = player + re5::off::kPlayerInventory;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+        const auto id = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
+        for (const auto& [item, max] : build.stack_max) {
+            if (static_cast<std::uint32_t>(item) != id) continue;
+            const int have = ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0);
+            if (have <= 0 || have >= max) continue;
+            SafeStore<std::int32_t>(slot + re5::off::kSlotMax, max);
+            RM_LOGI("build: a slot of %04X stacks to %d (it held %d at most)", id, max, have);
+        }
+    }
+}
+
 void RefuelFlamethrower(double now) {
     int& lastCount = g_refuel.lastCount;
     double& lastFiredAt = g_refuel.lastFiredAt;
@@ -4955,6 +4979,9 @@ void ArenaBegan(double now) {
         if (build.drops_as_held_ammo) drops.heldAmmo = &HeldAmmoItem;
         drops.ownAmmo = &PartnerAmmoSwap;  // acts only while the mod's partner is out (Josh's backup)
         for (const auto& [from, to] : build.pickup_as) {
+            drops.swaps.emplace_back(static_cast<std::uint16_t>(from), static_cast<std::uint16_t>(to));
+        }
+        for (const auto& [from, to] : build.items_as) {  // Safari Chris: a grenade picked up is a bomb
             drops.swaps.emplace_back(static_cast<std::uint16_t>(from), static_cast<std::uint16_t>(to));
         }
         world::SetDropRules(drops);
@@ -9780,6 +9807,57 @@ double LevelPerksOnHit(const OutgoingHit& hit, const rm::HitContext& ctx, double
     return mult;
 }
 
+// A proximity bomb's blast (the Mine Layer build's wider one): the enemies it hit, its biggest hit.
+struct MineBlast {
+    bool open = false;
+    double at = 0.0, damage = 0.0, radius = 0.0, fraction = 0.0;
+    std::vector<std::pair<std::uintptr_t, std::array<float, 3>>> victims;
+};
+MineBlast g_mineBlast;
+
+// A hit whose attacker is a proximity bomb's unit (uWp0a, the item 0x010A's: 109 hits "by=uWp0a" in the Deck's
+// Safari run, 2026-11-23), while a player of the run has a build with mine_damage or mine_blast_m: its damage
+// multiplier, and its enemy noted for the wider blast (DriveLevelHits lands it). 1 for any other hit (the
+// user: "I don't know if it does more damage, also the blast should be bigger"). Hold g->mutex.
+double MineHit(const OutgoingHit& hit) {
+    if (hit.enemy == 0 || hit.attacker == 0 || !g->match.inMatch || !g->run->HasActiveRun() ||
+        g->run->phase() != rm::Phase::ArenaActive) {
+        return 1.0;
+    }
+    if (engine::ClassName(hit.attacker) != "uWp0a") return 1.0;
+    double bonus = 0.0, radius = 0.0, fraction = 0.0;
+    ForEachSeatTurn([&] {  // whose bomb it is is not known: the best of the run's players' builds
+        const rm::SkinBuild& b = g->run->state().character.build;
+        bonus = std::max(bonus, b.mine_damage);
+        if (b.mine_blast_m * 100.0 > radius && b.mine_blast_fraction > 0.0) {
+            radius = b.mine_blast_m * 100.0;
+            fraction = b.mine_blast_fraction;
+        }
+    });
+    if (bonus <= 0.0 && radius <= 0.0) return 1.0;
+    const double now = Now();
+    if (radius > 0.0) {
+        if (!g_mineBlast.open) {
+            g_mineBlast = {};
+            g_mineBlast.open = true;
+            g_mineBlast.at = now;
+            g_mineBlast.radius = radius;
+            g_mineBlast.fraction = fraction;
+        }
+        g_mineBlast.damage = std::max(g_mineBlast.damage, hit.damage * (1.0 + bonus));
+        const bool known = std::any_of(g_mineBlast.victims.begin(), g_mineBlast.victims.end(), [&](const auto& v) { return v.first == hit.enemy; });
+        if (!known) {
+            float at[3];
+            UnitPosition(hit.enemy, at);
+            g_mineBlast.victims.push_back({hit.enemy, {at[0], at[1], at[2]}});
+        }
+    }
+    if (LevelLog("mine_hit")) {
+        RM_LOGI("mines: a bomb's hit on %s, %d damage x%.2f", engine::ClassName(hit.enemy).c_str(), hit.damage, 1.0 + bonus);
+    }
+    return 1.0 + bonus;
+}
+
 bool HeadAction(const std::string& action) {
     return action.find("DmgHead") != std::string::npos || action.find("DmgGGHead") != std::string::npos ||
            action.find("HeadExplosion") != std::string::npos;
@@ -9793,6 +9871,7 @@ void DriveLevelHits(double now) {
         g_rodStuns.clear();
         g_levelLogged.clear();
         for (LevelSeatState& s : g_levelSeats) s.blastOpen = false;
+        g_mineBlast.open = false;
         return;
     }
     const auto alive = [](std::uintptr_t u) {
@@ -9909,6 +9988,28 @@ void DriveLevelHits(double now) {
                     s.blastRadius / 100.0, reached, s.blastDamage * s.blastFraction);
         }
         s.blastVictims.clear();
+    }
+    // A proximity bomb's blast that is over: those just beyond it take a share of its biggest hit (mine_blast_m).
+    if (g_mineBlast.open && now - g_mineBlast.at >= kBlastWindow) {
+        g_mineBlast.open = false;
+        std::set<std::uintptr_t> taken;
+        for (const auto& v : g_mineBlast.victims) taken.insert(v.first);
+        int reached = 0;
+        for (const auto& [victim, pos] : g_mineBlast.victims) {
+            (void)victim;
+            for (const auto& [enemy, d] : EnemiesNear(pos.data(), static_cast<float>(g_mineBlast.radius), 0)) {
+                (void)d;
+                if (!taken.insert(enemy).second) continue;
+                DotDamage(enemy, g_mineBlast.damage * g_mineBlast.fraction, now, Reaction::Flyoff);
+                if (alive(enemy)) React(enemy, Reaction::Flyoff, now, true);
+                ++reached;
+            }
+        }
+        if (LevelLog("mine_blast")) {
+            RM_LOGI("mines: a bomb's blast hit %zu, %.1f m wider reached %d more (%.0f each)", g_mineBlast.victims.size(),
+                    g_mineBlast.radius / 100.0, reached, g_mineBlast.damage * g_mineBlast.fraction);
+        }
+        g_mineBlast.victims.clear();
     }
     // A pistol's hit followed by its head reaction: a headshot, its round back by chance.
     for (auto it = g_headshotChecks.begin(); it != g_headshotChecks.end();) {
@@ -14177,7 +14278,10 @@ private:
                 g_bossLastHit = {Now(), !hit.attackerIsLocal || launcher};
             }
         }
-        if (!hit.attackerIsLocal) return 1.0f;
+        if (!hit.attackerIsLocal) {  // grenades, bombs and barrels: a Mine Layer's bombs hit harder (MineHit)
+            std::lock_guard lock(g->mutex);
+            return static_cast<float>(MineHit(hit));
+        }
         std::lock_guard lock(g->mutex);
         SeatTurn turn(SeatTurn::OfUnit(hit.attacker));
         rm::HitContext ctx;
@@ -14426,6 +14530,7 @@ private:
             WatchEquippedWeapon(now);
             ApplyMoveSpeed();
             RefuelFlamethrower(now);
+            SyncBuildStackSlots();
             HideHolsteredFlamethrower(now);
             UpdateFlameStreamLook(now);
             DriveFlameStream(now);

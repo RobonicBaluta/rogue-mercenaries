@@ -38,6 +38,8 @@ struct RewardChoice {
 struct EquipmentDef;
 
 /// Run/profile facts used by reward and shop generation.
+struct SkinBuild;
+
 struct OfferContext {
     const Content* content = nullptr;
     const CharacterDef* character = nullptr;
@@ -54,7 +56,12 @@ struct OfferContext {
     /// M10: what the other players were offered ("weapon:<id>", "perk:<id>", "item:<id>"; 2026-11-22, the
     /// user: "stores and rewards should be separated for each player"): skipped while anything else is left.
     const StringSet* avoid = nullptr;
+    /// The run's build: its items_as turn the items offered into the ones given (null = none).
+    const SkinBuild* build = nullptr;
 };
+
+/// The equipment the build hands out for `e` (its items_as), else `e`.
+const EquipmentDef* ItemAs(const OfferContext& ctx, const EquipmentDef* e);
 
 /// True when `kind`:`id` is one of ctx.avoid's.
 bool OfferAvoided(const OfferContext& ctx, std::string_view kind, std::string_view id);

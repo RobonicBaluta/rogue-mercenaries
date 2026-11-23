@@ -123,6 +123,16 @@ bool RunController::WeaponIdMode() const { return caps_.Has(cap::kWeaponId); }
 
 std::string RunController::NextInstanceId() { return "w" + std::to_string(run_.next_weapon_serial++); }
 
+namespace {
+// The game item the build hands out for `item` (its items_as: Safari Chris's bombs for grenades), else `item`.
+std::int64_t ItemAsGameItem(const SkinBuild& build, std::int64_t item) {
+    for (const auto& [from, to] : build.items_as) {
+        if (from == item) return to;
+    }
+    return item;
+}
+}  // namespace
+
 OfferContext RunController::MakeOfferContext(double rarity_shift) const {
     OfferContext ctx;
     ctx.content = content_.get();
@@ -134,6 +144,7 @@ OfferContext RunController::MakeOfferContext(double rarity_shift) const {
     ctx.owned_weapons = &run_.weapons;
     ctx.owned_perks = &run_.perks;
     ctx.rarity_shift = rarity_shift + run_.character.build.rarity_shift;
+    ctx.build = &run_.character.build;
     const RouteDef* route = Route();
     ctx.reward_mult = (route != nullptr ? route->reward_mult : 1.0) * run_.character.build.supplies_mult;
     // M10: what the other players were offered, their shop and their rewards (the user, 2026-11-22: "stores
@@ -231,7 +242,7 @@ Status RunController::GrantPerk(std::string_view perk_id, std::string_view sourc
         for (const EffectDef& ef : def->effects) {
             if (ef.kind != EffectKind::ItemOnRunStart) continue;
             const EffectParams p = ef.AtStacks(stacks);
-            const auto game_item = static_cast<std::int64_t>(std::lround(p.game_item));
+            const auto game_item = ItemAsGameItem(run_.character.build, static_cast<std::int64_t>(std::lround(p.game_item)));
             run_.item_grants.push_back(ItemGrant{game_item, std::max(1, static_cast<int>(std::lround(p.amount))), def->id});
             // A gun is one of the run's guns too, as the build's starting gun is: its level, the
             // upgrades and refines, the build's elements and its stats (2026-11-19, the user: "the
@@ -1493,7 +1504,7 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
                         if (++kills % every != 0) continue;
                         if (p.chance > 0.0 && p.chance < 1.0 && streams_->loot.NextDouble() >= p.chance) continue;
                         run_.item_grants.push_back(
-                            ItemGrant{static_cast<std::int64_t>(std::lround(p.game_item)),
+                            ItemGrant{ItemAsGameItem(run_.character.build, static_cast<std::int64_t>(std::lround(p.game_item))),
                                       std::max(1, static_cast<int>(std::lround(p.amount))), id});
                         out.triggered.push_back(id);
                     }
@@ -1581,6 +1592,12 @@ Status RunController::PlaceWeaponItem(const WeaponInstance& weapon, std::string_
 Status RunController::GrantItem(std::string_view equipment_id, int count, std::string_view source) {
     const EquipmentDef* def = content_->loadouts().FindEquipment(equipment_id);
     if (def == nullptr) return Status::Error(ErrorCode::NotEligible, "unknown item " + std::string(equipment_id));
+    {  // the build's own item in its place (items_as: Safari Chris's bombs), from wherever it comes
+        OfferContext ctx;
+        ctx.content = content_.get();
+        ctx.build = &run_.character.build;
+        def = ItemAs(ctx, def);
+    }
     if (def->game_item < 0) return Status::Error(ErrorCode::NotEligible, "item " + def->id + " has no game item");
     if (!caps_.Has(cap::kInventory)) return Status::Error(ErrorCode::NotEligible, "inventory capability is not available");
     int placed = std::max(1, count);
@@ -1787,7 +1804,7 @@ Result<ArenaResult> RunController::CompleteArena(double now) {
             for (const EffectDef& ef : def->effects) {
                 if (ef.kind == EffectKind::ItemOnArenaClear && caps_.Has(cap::kInventory)) {
                     const EffectParams p = ef.AtStacks(stacks);
-                    run_.item_grants.push_back(ItemGrant{static_cast<std::int64_t>(std::lround(p.game_item)),
+                    run_.item_grants.push_back(ItemGrant{ItemAsGameItem(run_.character.build, static_cast<std::int64_t>(std::lround(p.game_item))),
                                                          std::max(1, static_cast<int>(std::lround(p.amount))), id});
                     Event t = MakeEvent(EventType::PerkTriggered);
                     t.Add("source", id).Add("trigger", "arena_clear");

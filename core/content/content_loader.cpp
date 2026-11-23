@@ -989,7 +989,7 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                      "special_2", "stack_mult", "never_offered", "drops_as_held_ammo", "pickup_as", "break_grabs",
                      "shop_weapon", "shop_weapon_price", "gun_elements", "arena_element", "refine_every_shop",
                      "refine_price_mult", "fuel_regen_mult", "pistol_in_hand", "more_starting_weapons", "infinite_ammo",
-                     "only_build_weapons"});
+                     "only_build_weapons", "items_as", "mine_damage", "mine_blast_m", "mine_blast_fraction"});
     GetString(d, b, "shop_weapon", out.shop_weapon, false);
     if (GetStringList(d, b, "gun_elements", out.gun_elements, false)) {
         for (const std::string& e : out.gun_elements) {
@@ -1140,6 +1140,28 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
                 }
             }
         }
+    }
+    if (const json* ia = Get(b, "items_as")) {
+        if (!ia->is_object()) {
+            d.Error("field 'items_as' must be an object");
+        } else {
+            for (const auto& [key, v] : ia->items()) {
+                const std::int64_t from = itemKey(key);
+                const std::int64_t to = ItemIdValue(v);
+                if (from < 0) {
+                    d.Error("items_as key " + Q(key) + " is not a game item id");
+                } else if (to < 0 || to > 0xFFFF || to == from) {
+                    d.Error("items_as " + Q(key) + " must name another game item id");
+                } else {
+                    out.items_as.emplace_back(from, to);
+                }
+            }
+        }
+    }
+    if (GetNumber(d, b, "mine_damage", out.mine_damage, false)) CheckRange(d, "mine_damage", out.mine_damage, 0.0, 10.0);
+    if (GetNumber(d, b, "mine_blast_m", out.mine_blast_m, false)) CheckRange(d, "mine_blast_m", out.mine_blast_m, 0.0, 10.0);
+    if (GetNumber(d, b, "mine_blast_fraction", out.mine_blast_fraction, false)) {
+        CheckRange(d, "mine_blast_fraction", out.mine_blast_fraction, 0.0, 1.0);
     }
     ParseWeaponFilter(d, b, "never_offered", out.never_offered);
     ParseWeaponFilter(d, b, "infinite_ammo", out.infinite_ammo);
@@ -2451,6 +2473,14 @@ private:
                 const auto& eq = c.loadouts().equipment;
                 if (std::none_of(eq.begin(), eq.end(), [&b](const EquipmentDef& e) { return e.game_item == b.drops_as; })) {
                     d.Error("drops_as names a game item no loadouts.json equipment hands out");
+                }
+            }
+            for (const auto& [from, to] : b.items_as) {
+                (void)from;
+                const auto& eq = c.loadouts().equipment;
+                const std::int64_t item = to;
+                if (std::none_of(eq.begin(), eq.end(), [item](const EquipmentDef& e) { return e.game_item == item; })) {
+                    d.Error("items_as gives a game item no loadouts.json equipment hands out");
                 }
             }
             // A special that acts in the fight needs a limit; the tester's element screen (element_pick) is no move.
