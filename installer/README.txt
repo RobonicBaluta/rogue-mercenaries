@@ -48,7 +48,9 @@ OPTIONAL: COSTUME MODS
   Ada Wong are characters from mods. None
   of them come with this package, and the mod plays fine without them: SKINS lists such
   a skin in red. Press it for its MOD screen: OPEN ITS PAGE (download it there, and
-  endorse its creator), OPEN THE MODS FOLDER, and CHECK AGAIN. The mods folder is
+  endorse its creator), OPEN THE MODS FOLDER, and CHECK AGAIN. New in 0.2.71: a skin
+  or character still locked opens it too, so its mod is ready when you unlock it. The
+  mods folder is
     Resident Evil 5\RogueMercenaries\mods
   Put the download in there as it is (new in 0.2.71): a .zip (or .7z, .rar) is unzipped
   for you into a folder of its name, and any folders inside it are fine. Only the costume
@@ -134,6 +136,10 @@ PLAY
     - New in 0.2.7: every arena plays another of the game's battle tracks; the Mercenaries
       theme comes round now and then. "music_rotation": false in adapter.json keeps the
       theme in every arena. The arena's time no longer runs while the game is paused.
+    - New in 0.2.71: the "recharge flamethrower" prompt (in Public Assembly's three-storey
+      house) no longer takes your flamethrower away. The fat Majini (Mines, Prison), the
+      tribal big Majini (Village, Ruins), the Gatling Majini and the megaphone Majini
+      come with their health from the game's own Mercenaries, not a Majini's.
     - Dying or beating the run's last boss ends the run and banks your Credits.
 
 TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPHA.30
