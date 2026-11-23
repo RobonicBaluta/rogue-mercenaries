@@ -1170,8 +1170,8 @@
     },
     {
       "id": "ada_bowgun",
-      "name": "Bowgun",
-      "description": "Ada starts with the longbow and 20 arrows.",
+      "name": "Machine Pistol",
+      "description": "Ada starts with a VZ61 and 60 rounds.",
       "category": "supply",
       "rarity": "rare",
       "tags": [
@@ -1181,20 +1181,20 @@
       "effects": [
         {
           "kind": "item_on_start",
-          "game_item": 271,
+          "game_item": 259,
           "amount": 1
         },
         {
           "kind": "item_on_start",
-          "game_item": 523,
-          "amount": 20
+          "game_item": 514,
+          "amount": 60
         }
       ],
       "characters": [
         "ada"
       ],
       "unlock_cost_credits": 150,
-      "icon": "bow"
+      "icon": "smg"
     },
     {
       "id": "excella_rifle",

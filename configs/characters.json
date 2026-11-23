@@ -988,12 +988,12 @@
           },
           "build": {
             "name": "Separate Ways",
-            "icon": "bow",
-            "summary": "Starts with a rare longbow. Bows hit 40 percent harder, and every pickup is ammo for the gun in hand.",
-            "starting_weapon": "longbow",
+            "icon": "rifle",
+            "summary": "Starts with a rare PSG-1. Rifles hit 40 percent harder, and every pickup is ammo for the gun in hand.",
+            "starting_weapon": "psg1",
             "starting_weapon_rarity": "rare",
             "category_damage": {
-              "bow": 0.4
+              "rifle": 0.4
             },
             "drops_as_held_ammo": true,
             "pistol_in_hand": true

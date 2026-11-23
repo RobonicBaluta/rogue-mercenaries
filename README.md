@@ -223,7 +223,11 @@ saying whose mod it is; pressing it opens its MOD screen (since 0.2.71): OPEN IT
 and CHECK AGAIN, with what is still missing; a skin or character still locked opens it too, so the mod is ready when it
 opens. Put the download into `Resident Evil 5\RogueMercenaries\mods` as it is (a `.zip`, `.7z` or `.rar` there is
 unpacked into a folder of its name with Windows' own `tar`, since 0.2.71) or unzipped (any folder below it); a costume
-already installed into the game's `nativePC_MT` (a mod manager's install) is found too. The skin can then be worn, with its
+already installed into the game's `nativePC_MT` (a mod manager's install) is found too. Since 0.2.72 a `.zip` is unpacked by
+the mod itself where Windows' `tar` is missing (Proton on a Steam Deck has none: `rm::ExtractZip`, each entry CRC-checked,
+the archive refused whole for an entry leaving its folder; `.7z` and `.rar` still need `tar`), a same-named archive (`ARC\0`)
+at another size is taken as another version of the mod when no file has the listed size and no other skin takes it, and
+SKINS and CHARACTERS show a found mod's own picture while its skin or character is still locked. The skin can then be worn, with its
 own build, and SKINS shows the mod's own picture (its character select bust, or its preview). The mod's files are read from that folder only while you wear its skin: nothing
 in the game's own folders is changed, the original outfit keeps its look, and deleting the folder removes the mod.
 Use this folder, not a mod manager: one that installs the mod into the game replaces the original outfit everywhere.
@@ -243,16 +247,17 @@ by Cond3mned, Kreed, Nealktorce, Yumiko, Freyr95 and Cixon). Unzip all of it (he
 She wears Sheva's Default, Clubbin and Tribal slots (those outfits stay Sheva's) and moves like Sheva. The mod's Px4
 file is the game's Px4 (the same model, sounds and effects) with new hand movements for it: while she is played her
 Px4 is held its way. The mod says its hair is off in two of the outfits. Without the mod CHARACTERS lists her
-in red, and pressing her opens the mod's page; it has no preview, so SKINS shows Sheva's bust unless a picture is put
-in the mod's folder as `ada_agent.png`, `ada_assignment.png` or `ada_red_dress.png` (a square bust; transparency is
-kept). Her own perks: **Butterfly**
+in red, and pressing her opens the mod's page; it has no preview, so since 0.2.72 the package brings her three pictures
+(`configs/portraits`: the user's renders, cut out) and SKINS and CHARACTERS show them once the mod is found; a picture
+put in the mod's folder as `ada_agent.png`, `ada_assignment.png` or `ada_red_dress.png` (a square bust; transparency is
+kept) is shown in its place. Her own perks: **Butterfly**
 (her trait: shots deal 30 percent more to enemies under half their health), **Grapple Gun** (she slips every grab, a
 melee kill pays 1 supply, heals 20 percent smaller), **Double Agent** (10 more supplies an arena, 15 percent more
 damage taken), **Assassin** (15 percent of hits critical for two and a half times, 85 percent health), and the
-supply **Bowgun** (the longbow and 20 arrows). Her skins: **Agent** (Intel Network: her Px4, a free NEW STOCK and
+supply **Machine Pistol** (a VZ61 and 60 rounds; the longbow until 0.2.72). Her skins: **Agent** (Intel Network: her Px4, a free NEW STOCK and
 better rarities in every shop, handguns 25 percent harder, supplies x0.85), **Assignment** (a rare MP5, machine guns
-and rifles 25 percent harder, health x0.9) and **Red Dress** (Separate Ways: a rare longbow, bows 40 percent harder,
-every pickup ammo for the gun in hand).
+and rifles 25 percent harder, health x0.9) and **Red Dress** (Separate Ways: a rare PSG-1, rifles 40 percent harder,
+every pickup ammo for the gun in hand; a rare longbow and bows until 0.2.72).
 
 **Leon S. Kennedy** (a character of his own, from [Leon Definitive Edition](https://www.nexusmods.com/residentevil5goldedition/mods/223)
 by kreed and izacky). Unzip all of it, its *Main Files* too (his voice lines): without them he cannot be picked. He

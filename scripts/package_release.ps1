@@ -62,6 +62,7 @@ if ($Manual) {
 }
 New-Item -ItemType Directory -Force -Path (Join-Path $modFiles 'configs\icons') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $modFiles 'configs\hud_names') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $modFiles 'configs\portraits') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $docs 'licenses') | Out-Null
 
 # What goes into the game folder.
@@ -105,6 +106,9 @@ Get-ChildItem -LiteralPath (Join-Path $repoRoot 'configs\icons') -Filter '*.png'
 # The HUD's character names (hud_names.json and its tiles, scripts/hud_names.py).
 Get-ChildItem -LiteralPath (Join-Path $repoRoot 'configs\hud_names') -File | Where-Object { $_.Extension -in '.png', '.json' } |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $modFiles 'configs\hud_names') }
+# Mod skins' pictures their downloads do not have (Ada's: the user's renders), used when the mod's folder has none.
+Get-ChildItem -LiteralPath (Join-Path $repoRoot 'configs\portraits') -Filter '*.png' -File |
+    ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $modFiles 'configs\portraits') }
 
 # Text files: Windows line endings, the version filled in.
 function Write-Text([string]$text, [string]$dst, [string]$version) {

@@ -145,7 +145,8 @@ perks += [
     perk('rebecca_rifle', 'Rookie Marksman', 'Rebecca starts with a PSG-1 and 10 rounds.', 'supply', [item_start(PSG1), item_start(RIFLE_AMMO, 10)], ['rebecca'], cost=150, rarity='rare', tags=['weapon']),
     perk('leon_matilda', 'Matilda', 'Leon starts with an M93R and 30 handgun rounds.', 'supply', [item_start(M93R), item_start(HANDGUN_AMMO, 30)],
          ['leon'], cost=150, rarity='rare', tags=['weapon']),
-    perk('ada_bowgun', 'Bowgun', 'Ada starts with the longbow and 20 arrows.', 'supply', [item_start(LONGBOW), item_start(ARROWS, 20)],
+    # Its id kept from the bow it was (a player who bought it keeps it): her RE4 TMP, as near as RE5 has.
+    perk('ada_bowgun', 'Machine Pistol', 'Ada starts with a VZ61 and 60 rounds.', 'supply', [item_start(VZ61), item_start(MG_AMMO, 60)],
          ['ada'], cost=150, rarity='rare', tags=['weapon']),
     perk('excella_rifle', 'Private Security', 'Excella starts with a Dragunov and 10 rounds.', 'supply', [item_start(DRAGUNOV), item_start(RIFLE_AMMO, 10)], ['excella'], cost=150, rarity='rare', tags=['weapon']),
 ]
@@ -324,8 +325,10 @@ BUILDS = {
         'refine_every_shop': True, 'refine_price_mult': 0.5, 'free_shop_rerolls': 1, 'rarity_shift': 0.3, 'supplies_mult': 0.8,
     },
     # Ada's three (the Ada Bundle in Sheva's Default, Clubbin and Tribal slots, 2026-11-17): a red-topped
-    # agent with her network, RE4's Assignment Ada in black, and RE4's red dress (Separate Ways) with a
-    # bow for her crossbow. A slot whose costume holds another gun hands her its pistol (pistol_in_hand).
+    # agent with her network, RE4's Assignment Ada in black, and RE4's red dress (Separate Ways) with the
+    # semi-auto rifle she covers Leon with there (no bow: the user, 2026-11-23, "ada with the "crossbow" or
+    # whatever, drop it, make something else"). A slot whose costume holds another gun hands her its pistol
+    # (pistol_in_hand).
     'ada_agent': {
         'name': 'Intel Network', 'icon': 'radio',
         # The Px4, held her way (the bundle's uWp1f: the game's Px4, with new hand movements for it).
@@ -340,9 +343,9 @@ BUILDS = {
         'max_health_mult': 0.9, 'pistol_in_hand': True,
     },
     'ada_red_dress': {
-        'name': 'Separate Ways', 'icon': 'bow',
-        'summary': 'Starts with a rare longbow. Bows hit 40 percent harder, and every pickup is ammo for the gun in hand.',
-        'starting_weapon': 'longbow', 'starting_weapon_rarity': 'rare', 'category_damage': {'bow': 0.4}, 'drops_as_held_ammo': True,
+        'name': 'Separate Ways', 'icon': 'rifle',
+        'summary': 'Starts with a rare PSG-1. Rifles hit 40 percent harder, and every pickup is ammo for the gun in hand.',
+        'starting_weapon': 'psg1', 'starting_weapon_rarity': 'rare', 'category_damage': {'rifle': 0.4}, 'drops_as_held_ammo': True,
         'pistol_in_hand': True,
     },
     # The tester (the user, 2026-11-22: "can you give me a character just for me, who has infinite
@@ -423,7 +426,7 @@ ICONS = {
     'rebecca_chemist': 'herb', 'rebecca_steady_nerves': 'rifle', 'excella_hostile_takeover': 'credits',
     'excella_golden_parachute': 'parachute',
     'leon_roundhouse': 'boot', 'leon_suplex': 'fist', 'leon_agent_training': 'crosshair', 'leon_matilda': 'handgun',
-    'ada_butterfly': 'star', 'ada_grapple': 'chain', 'ada_double_agent': 'credits', 'ada_assassin': 'crosshair', 'ada_bowgun': 'bow',
+    'ada_butterfly': 'star', 'ada_grapple': 'chain', 'ada_double_agent': 'credits', 'ada_assassin': 'crosshair', 'ada_bowgun': 'smg',
 }
 for p in perks:
     if p['id'] in ICONS:

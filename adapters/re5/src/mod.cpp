@@ -1192,6 +1192,7 @@ void ScanModSkins() {
                     std::replace(wantTail.begin(), wantTail.end(), '/', '\\');
                     const std::string fileName = wantTail.substr(wantTail.find_last_of('\\') == std::string::npos ? 0 : wantTail.find_last_of('\\') + 1);
                     const auto pictures = byName.find(fileName);
+                    bool pictured = false;
                     if (pictures != byName.end()) {
                         for (const auto& p : pictures->second) {
                             const auto inside = p.lexically_relative(modRoot);
@@ -1207,8 +1208,23 @@ void ScanModSkins() {
                             }
                             portraits::SetModPortrait(portraitSlot, std::move(pic));
                             g_modPortraits[s.id] = portraitSlot;
+                            pictured = true;
                             break;
                         }
+                    }
+                    // Not in the mod's download (Ada's pictures are the user's renders, 2026-11-23: "people don't
+                    // have the images you made so take care of that! those zips don't contain them"): the one
+                    // shipped under that name in configs\portraits.
+                    const std::filesystem::path shipped = g->paths.configDir / L"portraits" / std::filesystem::path(fileName);
+                    std::error_code there;
+                    if (!pictured && s.mod->portrait->entry.empty() && std::filesystem::is_regular_file(shipped, there)) {
+                        portraits::ModPortrait pic;
+                        pic.file = shipped;
+                        if (s.mod->portrait->crop.size() == 4) {
+                            for (int k = 0; k < 4; ++k) pic.crop[static_cast<std::size_t>(k)] = s.mod->portrait->crop[static_cast<std::size_t>(k)];
+                        }
+                        portraits::SetModPortrait(portraitSlot, std::move(pic));
+                        g_modPortraits[s.id] = portraitSlot;
                     }
                 }
                 found[s.id] = std::move(redirects);
@@ -2420,7 +2436,13 @@ private:
                         for (const auto& s : c.skins) {
                             if (worn == nullptr && s.gate == rm::CharacterGate::Selectable) worn = &s;
                         }
-                        const auto pic = worn != nullptr ? g_modPortraits.find(worn->id) : g_modPortraits.end();
+                        // Locked (no skin to wear yet): its first skin whose mod is found, so the player sees the mod is
+                        // recognized (the user, 2026-11-23: "make so the images load when the mods are loaded? so people
+                        // can be sure? ... someone has this issue with ADA too"; a locked Ada showed Sheva's costume).
+                        for (const auto& s : c.skins) {
+                            if (worn == nullptr && ModReady(s.id) && g_modPortraits.count(s.id)) worn = &s;
+                        }
+                        const auto pic = worn != nullptr && ModReady(worn->id) ? g_modPortraits.find(worn->id) : g_modPortraits.end();
                         if (pic != g_modPortraits.end()) item.portrait = pic->second;
                     }
                     if (c.gate == rm::CharacterGate::NotInstalled && firstMod != nullptr) {
@@ -2442,12 +2464,20 @@ private:
                                 if (sd.mod && ModMissing(sd.id) && modSkin.empty()) modSkin = sd.id;
                             }
                         }
-                        const std::string mod = modSkin.empty() || c.unlock_cost_credits > 0 ? "" : " Press to get its mod ready.";
+                        bool ready = false;  // its mod skins' mods all found
+                        if (def != nullptr) {
+                            for (const rm::SkinDef& sd : def->skins) {
+                                if (sd.mod) ready = ModReady(sd.id) || ready;
+                            }
+                        }
+                        const std::string mod = !modSkin.empty() && c.unlock_cost_credits <= 0 ? " Press to get its mod ready."
+                                                : modSkin.empty() && ready                   ? " Its mod is ready."
+                                                                                             : "";
                         if (c.challenge.target > 0) {
                             item.help += "\n" + std::to_string(c.challenge.current) + " of " +
                                          std::to_string(c.challenge.target) + " done." + mod;
                         } else if (c.unlock_cost_credits > 0) {
-                            item.help += "\nUnlock for " + Plural(c.unlock_cost_credits, "credit") + ".";
+                            item.help += "\nUnlock for " + Plural(c.unlock_cost_credits, "credit") + "." + mod;
                         } else if (!mod.empty()) {
                             item.help += "\n" + mod.substr(1);
                         }
@@ -2915,7 +2945,7 @@ private:
                         // Its mod's own picture once its mod is found, locked or not (the user on the Deck, 2026-11-23: "sheva
                         // doesn't show its mod picture, shows fairy tale is that because its not recognized?": it was locked).
                         const auto pic = g_modPortraits.find(s.id);
-                        if (s.gate != rm::CharacterGate::NotInstalled && pic != g_modPortraits.end()) item.portrait = pic->second;
+                        if (ModReady(s.id) && pic != g_modPortraits.end()) item.portrait = pic->second;
                     }
                     if (s.gate == rm::CharacterGate::NotInstalled && skinDef != nullptr && skinDef->mod) {
                         // Not installed: where to get it (the menu's two help lines of 54).

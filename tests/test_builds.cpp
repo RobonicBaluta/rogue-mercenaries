@@ -894,9 +894,11 @@ TEST_CASE("Ada Wong wears Sheva's three outfits, each skin with its build", "[bu
         test::Harness h(r.content, open);
         h.rc.SetInstalledModSkins({"ada_red_dress"});
         REQUIRE(h.rc.StartRun("ada", 7, "ada_red_dress").ok());
-        const auto bow = has(h.rc.state(), "longbow");
-        REQUIRE(bow != h.rc.state().weapons.end());
-        CHECK(bow->rarity == Rarity::Rare);
+        const auto rifle = has(h.rc.state(), "psg1");  // RE4's semi-auto rifle, no bow (2026-11-23)
+        REQUIRE(rifle != h.rc.state().weapons.end());
+        CHECK(rifle->rarity == Rarity::Rare);
+        CHECK(has(h.rc.state(), "longbow") == h.rc.state().weapons.end());
+        CHECK(h.rc.state().character.build.drops_as_held_ammo);
     }
     test::Harness without(r.content, open);
     CHECK_FALSE(without.rc.StartRun("ada", 7, "ada_agent").ok());

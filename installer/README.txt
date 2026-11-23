@@ -59,6 +59,11 @@ OPTIONAL: COSTUME MODS
   voice lines). A costume mod you already installed into the game (with Fluffy Mod
   Manager, or by hand into nativePC_MT) is found too, but then the original outfit wears
   it everywhere.
+  New in 0.2.72: on a Steam Deck a .zip is unzipped too (unzip a .7z or .rar there
+  yourself); an updated version of a mod is found even when its files changed size; and
+  once a mod is found, SKINS and CHARACTERS show its own picture, even while that skin
+  or character is still locked. Ada's pictures come with this download (her mod has
+  none).
 
 OTHER RE5 MODS (THE PLUGINS FOLDER)
   Only one dinput8.dll can be in the game folder, and many RE5 mods (input fixes, Enhanced
@@ -140,6 +145,9 @@ PLAY
       house) no longer takes your flamethrower away. The fat Majini (Mines, Prison), the
       tribal big Majini (Village, Ruins), the Gatling Majini and the megaphone Majini
       come with their health from the game's own Mercenaries, not a Majini's.
+    - New in 0.2.72: Ada has no bow any more. Her Red Dress starts with a rare PSG-1
+      (rifles hit 40 percent harder), and her supply perk, now Machine Pistol, gives a
+      VZ61 and 60 rounds.
     - Dying or beating the run's last boss ends the run and banks your Credits.
 
 TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPHA.30
