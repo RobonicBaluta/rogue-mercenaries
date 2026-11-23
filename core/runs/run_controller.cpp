@@ -1358,6 +1358,13 @@ Status RunController::BeginArena(double now) {
             }
             ArenaThreat threat = content_->economy().enemy_threat.ForArena(run_.arena_index, route->difficulty_tier);
             threat.boss_hp_mult = BossHpMult(map_stage_) * (together ? coop.boss_hp_mult : 1.0);
+            // Elites, once the profile holds their unlock (the 12th arena's boss beaten).
+            const EconomyConfig::Elites& el = content_->economy().elites;
+            const int arenaNumber = run_.arena_index + 1;
+            if (el.chance > 0.0 && !el.elements.empty() && profile_.stats.bosses_beaten.count(el.unlock) != 0 && arenaNumber >= el.from_arena) {
+                threat.elite_chance = std::min(el.max_chance, el.chance + el.chance_per_arena * (arenaNumber - el.from_arena));
+                threat.elite_elements = el.elements;
+            }
             MapDef arena = *map;
             if (together) {
                 // Two players: more of them at once too (the map's cap and the arena's threat cap).
@@ -1476,7 +1483,8 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
             const std::string kill_tx = (add ? "add" : "kill") + std::to_string(kill_index);
             // Every per-kill amount is exact (KillShare), the build's multiplier in it.
             const double build_mult = run_.character.build.supplies_mult * (1.0 + run_.stats.supplies);
-            const std::int64_t base = KillShare(eco.supplies.per_kill * reward_mult * build_mult, kill_index);
+            const double elite_mult = kill.elite ? eco.elites.supplies_mult : 1.0;  // an elite pays more
+            const std::int64_t base = KillShare(eco.supplies.per_kill * reward_mult * build_mult * elite_mult, kill_index);
             if (CreditSupplies(ArenaTx(a.arena, kill_tx + ":base"), base, "kill", false)) out.supplies_awarded += base;
 
             for (const auto& [id, stacks] : run_.perks) {

@@ -1871,7 +1871,7 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     const Diag d = file.Sub("");
     CheckKeys(d, doc, {"schema_version", "run", "rewards", "weapon_rarity", "upgrades", "supplies",
                        "credits", "rating", "damage", "shop", "run_map", "chests", "keys", "enemy_threat",
-                       "run_rosters", "ladder", "refine", "coop", "enemy_health", "_comment"});
+                       "run_rosters", "ladder", "refine", "coop", "enemy_health", "elites", "_comment"});
     if (const json* h = Get(doc, "enemy_health")) {
         const Diag hd = d.Sub(": enemy_health");
         if (!h->is_object()) {
@@ -2092,6 +2092,49 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
             std::int64_t players = eco.coop.max_players;
             if (GetInt(cd, *s, "max_players", players, false)) CheckRange(cd, "max_players", static_cast<double>(players), 1, 2);
             eco.coop.max_players = static_cast<int>(players);
+        }
+    }
+    if (Get(doc, "elites") != nullptr) {
+        if (const json* s = Section(d, doc, "elites")) {
+            const Diag ed = d.Sub(": elites");
+            auto& el = eco.elites;
+            CheckKeys(ed, *s, {"_comment", "unlock", "from_arena", "chance", "chance_per_arena", "max_chance", "elements", "supplies_mult",
+                               "aura_every", "burn_seconds", "burn_fraction", "shock_every", "shock_charge", "shock_radius", "shock_fraction",
+                               "chill_seconds", "chill_slow", "blast_delay", "blast_radius", "blast_fraction", "blast_enemy_damage",
+                               "cloud_seconds", "cloud_radius", "cloud_fraction"});
+            GetString(ed, *s, "unlock", el.unlock, false);
+            std::int64_t from = el.from_arena;
+            if (GetInt(ed, *s, "from_arena", from, false)) CheckRange(ed, "from_arena", static_cast<double>(from), 1, 100);
+            el.from_arena = static_cast<int>(from);
+            const auto num = [&](const char* key, double& v, double lo, double hi) {
+                if (GetNumber(ed, *s, key, v, false)) CheckRange(ed, key, v, lo, hi);
+            };
+            num("chance", el.chance, 0.0, 1.0);
+            num("chance_per_arena", el.chance_per_arena, 0.0, 1.0);
+            num("max_chance", el.max_chance, 0.0, 1.0);
+            num("supplies_mult", el.supplies_mult, 0.0, 20.0);
+            num("aura_every", el.aura_every, 0.2, 30.0);
+            num("burn_seconds", el.burn_seconds, 0.0, 30.0);
+            num("burn_fraction", el.burn_fraction, 0.0, 1.0);
+            num("shock_every", el.shock_every, 1.0, 60.0);
+            num("shock_charge", el.shock_charge, 0.0, 10.0);
+            num("shock_radius", el.shock_radius, 0.0, 3000.0);
+            num("shock_fraction", el.shock_fraction, 0.0, 1.0);
+            num("chill_seconds", el.chill_seconds, 0.0, 30.0);
+            num("chill_slow", el.chill_slow, 0.0, 0.9);
+            num("blast_delay", el.blast_delay, 0.0, 10.0);
+            num("blast_radius", el.blast_radius, 0.0, 3000.0);
+            num("blast_fraction", el.blast_fraction, 0.0, 1.0);
+            num("blast_enemy_damage", el.blast_enemy_damage, 0.0, 30000.0);
+            num("cloud_seconds", el.cloud_seconds, 0.0, 60.0);
+            num("cloud_radius", el.cloud_radius, 0.0, 3000.0);
+            num("cloud_fraction", el.cloud_fraction, 0.0, 1.0);
+            GetStringList(ed, *s, "elements", el.elements, false);
+            for (const std::string& e : el.elements) {
+                if (!ParseElement(e)) ed.Error("unknown element " + Q(e));
+            }
+            if (el.chance > 0.0 && el.elements.empty()) ed.Error("elites with a chance need at least one element");
+            if (el.max_chance < el.chance) el.max_chance = el.chance;
         }
     }
     if (Get(doc, "keys") != nullptr) {

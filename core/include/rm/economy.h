@@ -194,6 +194,39 @@ struct EconomyConfig {
     /// Keys (M8): a chest opens only with a key (one used per chest), except for a build with
     /// chest_keys_exempt. Kills of the listed enemy classes (prefixes, e.g. "uEm1" = the Majini)
     /// drop one with drop_chance. Disabled: chests open freely.
+    /// Elite enemies (2026-11-23, the user: "Elite enemies get unlocked once you beat stage 12, those get an
+    /// element like our weapons, and all of them have a special effect that you'll have to overcome, nothing of
+    /// getting inmunity or negating damage or geeting more hp"). Once the profile holds `unlock` (a stats.bosses_beaten
+    /// key), a regular enemy the director spawns from arena `from_arena` on (1-based) is an elite by `chance` +
+    /// `chance_per_arena` an arena after it (at most `max_chance`), with one of `elements`. Its threat is the
+    /// adapter's, by element: incendiary's hits burn the player, shock charges and bursts, cryo's hits slow,
+    /// explosive blows up after its death, toxic leaves a poison cloud. Its kill pays `supplies_mult` times.
+    struct Elites {
+        std::string unlock = "boss:uEm82";
+        int from_arena = 1;
+        double chance = 0.0;
+        double chance_per_arena = 0.0;
+        double max_chance = 0.0;
+        std::vector<std::string> elements;
+        double supplies_mult = 1.0;
+        double aura_every = 1.5;       // its element's look this often
+        double burn_seconds = 3.0;     // incendiary: the player burns this long after its hit
+        double burn_fraction = 0.03;   // ... losing this much of their health a second
+        double shock_every = 7.0;      // shock: a burst this often
+        double shock_charge = 1.0;     // ... sparking this long first
+        double shock_radius = 350.0;   // ... reaching players this near (cm)
+        double shock_fraction = 0.10;  // ... for this much of their health
+        double chill_seconds = 3.0;    // cryo: the player is slowed this long after its hit
+        double chill_slow = 0.4;       // ... by this much of their speed
+        double blast_delay = 1.2;      // explosive: it blows up this long after its death
+        double blast_radius = 300.0;
+        double blast_fraction = 0.25;  // ... this much of a player's health
+        double blast_enemy_damage = 800.0;  // ... and this much to the enemies around
+        double cloud_seconds = 5.0;    // toxic: its death leaves a cloud this long
+        double cloud_radius = 300.0;
+        double cloud_fraction = 0.04;  // ... a player in it loses this much of their health a second
+    } elites;
+
     struct Keys {
         bool enabled = false;
         double drop_chance = 0.0;

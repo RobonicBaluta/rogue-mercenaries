@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <set>
 #include <string>
 
 #include <catch_amalgamated.hpp>
@@ -916,4 +917,98 @@ TEST_CASE("a boss's tuning is validated, and the shipped bosses carry the user's
     CHECK(monarch->boss->Tuning("wide_fire_every") == Catch::Approx(10));
     CHECK(monarch->boss->Tuning("flinch_only_explosives") == Catch::Approx(1));
     CHECK(monarch->boss->Tuning("dodge_chance") == Catch::Approx(0.6));
+}
+
+// Elite enemies (the user, 2026-11-23: "Elite enemies get unlocked once you beat stage 12, those get an element like
+// our weapons, and all of them have a special effect that you'll have to overcome").
+TEST_CASE("elites: a regular enemy is one by the arena's chance, with one of its elements", "[director]") {
+    ArenaThreat on;
+    on.elite_chance = 1.0;
+    on.elite_elements = {"shock", "cryo"};
+    Director d(TestMap(3), 8, 1, 42, on);
+    std::set<std::string> seen;
+    int spawned = 0;
+    double now = 0.0;
+    for (int round = 0; round < 40 && spawned < 8; ++round, now += 10.0) {
+        for (const SpawnRequest& r : d.Tick(now, std::array<double, 3>{5000.0, 0.0, 5000.0})) {
+            CHECK((r.elite == "shock" || r.elite == "cryo"));
+            seen.insert(r.elite);
+            const std::string id = "u" + std::to_string(r.ticket);
+            d.Spawned(r.ticket, id);
+            d.Died(id);
+            ++spawned;
+        }
+    }
+    CHECK(spawned == 8);
+    CHECK(seen.size() == 2);
+    // Off: no elite, and the very spawns of a director without them (no roll is drawn).
+    Director plain(TestMap(3), 6, 1, 42), off(TestMap(3), 6, 1, 42, ArenaThreat{});
+    const auto a = plain.Tick(0.0, std::array<double, 3>{5000.0, 0.0, 5000.0});
+    const auto b = off.Tick(0.0, std::array<double, 3>{5000.0, 0.0, 5000.0});
+    REQUIRE(a.size() == b.size());
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        CHECK(a[i].pos == b[i].pos);
+        CHECK(a[i].unit_class == b[i].unit_class);
+        CHECK(a[i].elite.empty());
+        CHECK(b[i].elite.empty());
+    }
+}
+
+TEST_CASE("elites come once the 12th arena's boss is beaten, and their kills pay more", "[director]") {
+    ContentSources src = test::FixtureSources();
+    src.maps = kMapsJson;
+    json eco = json::parse(src.economy);
+    eco["elites"] = {{"unlock", "boss:uEm82"}, {"chance", 1.0}, {"elements", {"toxic"}}, {"supplies_mult", 3.0}};
+    src.economy = eco.dump();
+    const auto content = test::Load(src);
+    const auto spawnsOf = [&](Profile profile) {
+        test::Harness h(content, std::move(profile));
+        h.rc.SetMapStage(4);
+        REQUIRE(h.rc.StartRun("alpha", 3).ok());
+        REQUIRE(h.rc.BeginArena(0.0).ok());
+        return h.rc.DirectorTick(0.0, std::nullopt);
+    };
+    for (const SpawnRequest& r : spawnsOf(Profile{})) CHECK(r.elite.empty());  // not beaten yet
+    Profile beaten;
+    beaten.stats.bosses_beaten.insert("boss:uEm82");
+    const auto elites = spawnsOf(beaten);
+    REQUIRE_FALSE(elites.empty());
+    for (const SpawnRequest& r : elites) CHECK(r.elite == "toxic");
+
+    // An elite's kill: three times the supplies of a plain one.
+    test::Harness h(content, beaten);
+    h.rc.SetMapStage(4);
+    REQUIRE(h.rc.StartRun("alpha", 3).ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    const auto spawns = h.rc.DirectorTick(0.0, std::nullopt);
+    REQUIRE(spawns.size() >= 2);
+    h.rc.DirectorSpawned(spawns[0].ticket, "plain");
+    h.rc.DirectorSpawned(spawns[1].ticket, "elite");
+    KillEvent k;
+    k.now = 1.0;
+    k.by_player = true;
+    k.enemy_id = "plain";
+    const std::int64_t plain = h.rc.OnEnemyKilled(k).supplies_awarded;
+    k.now = 2.0;
+    k.enemy_id = "elite";
+    k.elite = true;
+    const std::int64_t elite = h.rc.OnEnemyKilled(k).supplies_awarded;
+    CHECK(plain > 0);
+    CHECK(elite >= plain * 2);
+}
+
+TEST_CASE("the elites' section is checked when loaded", "[director]") {
+    ContentSources src = test::FixtureSources();
+    json eco = json::parse(src.economy);
+    eco["elites"] = {{"chance", 0.1}, {"elements", {"plasma"}}};
+    src.economy = eco.dump();
+    const auto bad = Content::LoadFromStrings(src);
+    CHECK(std::any_of(bad.errors.begin(), bad.errors.end(), [](const std::string& e) { return e.find("unknown element") != std::string::npos; }));
+    eco["elites"] = {{"chance", 0.1}};
+    src.economy = eco.dump();
+    const auto none = Content::LoadFromStrings(src);
+    CHECK(std::any_of(none.errors.begin(), none.errors.end(), [](const std::string& e) { return e.find("at least one element") != std::string::npos; }));
+    // The shipped one loads.
+    REQUIRE(Content::LoadFromDirectory(test::ConfigDir()).ok());
+    CHECK_FALSE(Content::LoadFromDirectory(test::ConfigDir()).content->economy().elites.elements.empty());
 }

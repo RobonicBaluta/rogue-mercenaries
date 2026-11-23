@@ -105,6 +105,7 @@ struct KillEvent {
     double target_hp_max = 0.0;
     bool target_frozen = false;  // frozen by a Cryo gun when it died: it shatters
     bool target_is_boss = false;
+    bool elite = false;          // an elite (SpawnRequest::elite): its kill pays EconomyConfig::Elites::supplies_mult times
 };
 
 struct KillOutcome {

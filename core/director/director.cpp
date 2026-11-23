@@ -329,6 +329,11 @@ std::vector<SpawnRequest> Director::Tick(double now, const std::vector<PlayerSpo
             r.hp = static_cast<int>(std::lround(map_.boss->hp * std::max(0.1, threat_.boss_hp_mult)));
             if (storySpot) r.facing = map_.boss->facing;
         }
+        // An elite: a regular enemy only, and a roll only while elites are on.
+        if (!map_.boss && !enemy->special && threat_.elite_chance > 0.0 && !threat_.elite_elements.empty() &&
+            rng_.NextDouble() < threat_.elite_chance) {
+            r.elite = threat_.elite_elements[rng_.Index(threat_.elite_elements.size())];
+        }
         pending_.emplace_back(r.ticket, point);
         ticket_enemy_[r.ticket] = enemy;
         if (r.seat >= 0) ticket_seat_[r.ticket] = r.seat;

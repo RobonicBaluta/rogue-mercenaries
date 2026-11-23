@@ -168,6 +168,10 @@ struct ArenaThreat {
     int specials_from = 1;  // the stage's specials join from this level on
     ThreatTable table;
     double boss_hp_mult = 1.0;  // a boss's health times this (its ladder length's, EconomyConfig::Ladder)
+    /// Elites (EconomyConfig::Elites): a regular enemy (no boss, no special, no add) is one by this chance,
+    /// with one of these elements (element names). 0: none (and no roll: the seed's spawns stay as they were).
+    double elite_chance = 0.0;
+    std::vector<std::string> elite_elements;
 };
 
 /// What the adapter must create now. `ticket` identifies the request until it is answered.
@@ -182,6 +186,7 @@ struct SpawnRequest {
     bool add = false;    // a boss's add (Director::AddWave): not part of the budget
     std::optional<double> facing;  // a boss's story turn (MapBoss::facing); else the adapter's choice
     int seat = -1;       // the player it was placed for (PlayerSpot::seat); -1: no player known
+    std::string elite;   // an elite's element (ArenaThreat::elite_chance); empty: a regular enemy
 };
 
 /// A standing player the spawns are shared between (co-op: each standing one; solo: the one).

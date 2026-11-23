@@ -350,5 +350,37 @@
     "incoming_per_arena": 0.08,
     "toughness_per_arena": 0.05,
     "budget_per_arena": 2
+  },
+  "elites": {
+    "_comment": "Elite enemies (the user, 2026-11-23): once the profile holds `unlock` (Uroboros Wesker, the 12th arena's boss, beaten), a regular enemy the director spawns is an elite by chance (chance + chance_per_arena an arena from from_arena, at most max_chance), with one of the elements. No more health, no immunity: each has a threat to deal with. incendiary: its hits set you burning (burn_seconds, burn_fraction of your health a second). shock: every shock_every seconds it sparks for shock_charge, then bursts on players within shock_radius (shock_fraction of their health). cryo: its hits slow you (chill_slow of your speed for chill_seconds). explosive: blast_delay after its death it blows up (blast_fraction of the health of players within blast_radius, blast_enemy_damage to the enemies there). toxic: its death leaves a cloud (cloud_seconds, cloud_radius, cloud_fraction of your health a second). Its kill pays supplies_mult times.",
+    "unlock": "boss:uEm82",
+    "from_arena": 1,
+    "chance": 0.06,
+    "chance_per_arena": 0.01,
+    "max_chance": 0.18,
+    "elements": [
+      "incendiary",
+      "shock",
+      "cryo",
+      "explosive",
+      "toxic"
+    ],
+    "supplies_mult": 2.0,
+    "aura_every": 1.5,
+    "burn_seconds": 3.0,
+    "burn_fraction": 0.03,
+    "shock_every": 7.0,
+    "shock_charge": 1.0,
+    "shock_radius": 350,
+    "shock_fraction": 0.1,
+    "chill_seconds": 3.0,
+    "chill_slow": 0.4,
+    "blast_delay": 1.2,
+    "blast_radius": 300,
+    "blast_fraction": 0.25,
+    "blast_enemy_damage": 800,
+    "cloud_seconds": 5.0,
+    "cloud_radius": 300,
+    "cloud_fraction": 0.04
   }
 }

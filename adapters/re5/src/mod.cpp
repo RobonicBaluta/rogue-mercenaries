@@ -6320,7 +6320,8 @@ double g_coopNext = 0.0;
 std::map<int, std::uint32_t> g_coopGw;
 std::string g_coopPlayersLast, g_coopViewsLast, g_coopPadsLast;
 bool g_devSaveGuard = false;
-unsigned g_devMortalSeats = 0;  // "mortal <seat> on|off": dev invulnerability spares that player (M10 tests)
+unsigned g_devMortalSeats = 0;
+void RegisterElite(std::uintptr_t unit, const std::string& element, double now);  // with the elites, below  // "mortal <seat> on|off": dev invulnerability spares that player (M10 tests)
 double g_padRelease[4] = {0.0, 0.0, 0.0, 0.0};
 unsigned short g_padReleaseButtons[4] = {0, 0, 0, 0};
 bool g_padReleaseSticks[4] = {false, false, false, false};
@@ -6751,6 +6752,7 @@ void DriveDirector(double now) {
         std::string id = "dir_" + std::to_string(r.ticket);
         g->directorUnits[unit] = id;
         run.DirectorSpawned(r.ticket, id);
+        if (!r.elite.empty()) RegisterElite(unit, r.elite, now);
         // Co-op: it starts out after the player it came for (uEnemy +0x1BA4, the target the Majini's own
         // search sets; it may change its mind later as the game's AI does). Never a boss.
         const std::uintptr_t forPlayer = r.seat >= 0 && r.seat < 2 && players.size() > 1 ? seatUnit[r.seat] : 0;
@@ -10064,6 +10066,221 @@ TwinShotResult TwinShotHit(const float muzzle[3], const float dir[3], int damage
     return r;
 }
 
+// ---- Elite enemies (the user, 2026-11-23: "Elite enemies get unlocked once you beat stage 12, those get an element
+// like our weapons, and all of them have a special effect that you'll have to overcome, nothing of getting inmunity or
+// negating damage or geeting more hp"; "More of the game's effects: Elite auras"). The core's director makes them
+// (SpawnRequest::elite, economy.json "elites"); here each wears its element's look and has its threat: incendiary's
+// hits set the player burning, shock sparks and bursts, cryo's hits slow, explosive blows up after its death, toxic
+// leaves a poison cloud. No more health, no immunity.
+struct EliteState {
+    std::string element;
+    double nextAura = 0.0;
+    double nextShock = 0.0;  // shock: the next spark's start
+    double shockAt = -1.0;   // ... its burst (-1: not sparking)
+    bool dead = false;
+    double diedAt = 0.0;
+    float at[3] = {};  // where it last stood
+    bool blasted = false;
+    double cloudUntil = -1.0, nextCloudTick = 0.0, nextCloudLook = 0.0;
+};
+std::map<std::uintptr_t, EliteState> g_elites;
+int g_eliteGeneration = -1;
+struct PlayerElementState {
+    double burnUntil = -1.0, nextBurn = 0.0, chillUntil = -1.0;
+};
+std::array<PlayerElementState, 4> g_playerElements;
+
+void ResetElitesFor(int generation) {
+    if (g_eliteGeneration == generation) return;
+    g_eliteGeneration = generation;
+    g_elites.clear();
+    g_playerElements = {};
+}
+
+void RegisterElite(std::uintptr_t unit, const std::string& element, double now) {
+    if (!unit) return;
+    ResetElitesFor(g->matchGeneration);
+    const auto& el = g->content->economy().elites;
+    EliteState st;
+    st.element = element;
+    st.nextAura = now;
+    st.nextShock = now + el.shock_every * 0.5;
+    UnitPosition(unit, st.at);
+    g_elites[unit] = st;
+    static std::string toldRun;
+    if (toldRun != g->run->state().run_id) {
+        toldRun = g->run->state().run_id;
+        g->toasts.Push("Elites: a glow marks each one's element and its trick");
+    }
+    RM_LOGI("elites: %s %08X is an elite (%s)", engine::ClassName(unit).c_str(), static_cast<unsigned>(unit), element.c_str());
+}
+
+// An elite's look: "elite_<element>" in element_effects, else its element's own (the explosive one, which has none,
+// the game's own flame, apart from Incendiary's recoloured one).
+void PlayEliteLook(const std::string& element, std::uintptr_t unit) {
+    if (!unit || !engine::Caps().effects) return;
+    static const std::map<std::string, std::string> kKind = {{"incendiary", "burn"}, {"shock", "shock"}, {"cryo", "freeze"}, {"toxic", "poison"}};
+    std::string paths;
+    if (const auto own = g->settings.elementEffects.find("elite_" + element); own != g->settings.elementEffects.end()) {
+        paths = own->second;
+    } else if (element == "explosive") {
+        paths = "effect\\efl\\wp\\wp21\\wp2103";
+    } else if (const auto kind = kKind.find(element); kind != kKind.end()) {
+        if (const auto look = g->settings.elementEffects.find(kind->second); look != g->settings.elementEffects.end()) paths = look->second;
+    }
+    if (paths.empty()) return;
+    for (const std::string& path : Alternatives(paths)) {
+        if (engine::PlayEffect(path.c_str(), unit)) return;
+    }
+}
+
+// The elites' threats take this much of a player's health (never their last point: they wear you down, they do not
+// end a run on their own), as the developer's invulnerability allows.
+void HurtPlayerBy(std::uintptr_t player, int seat, double fraction, const char* why) {
+    if (!player || fraction <= 0.0) return;
+    const bool invulnerable = (g->settings.devInvulnerable || mapeditor::Invulnerable()) && (g_devMortalSeats & (1u << seat)) == 0;
+    if (invulnerable) return;
+    const auto hp = engine::ReadHp(player);
+    if (!hp || hp->hp <= 1 || hp->max <= 0) return;
+    const int amount = std::max(1, static_cast<int>(std::lround(hp->max * fraction)));
+    const int wanted = std::max(1, hp->hp - amount);
+    engine::WriteHp(player, wanted);
+    static std::map<std::string, int> logged;
+    if (logged[why]++ < 3) RM_LOGI("elites: %s: player %d's health %d -> %d", why, seat + 1, hp->hp, wanted);
+}
+
+// A hit on the player by an elite (IncomingImpl, the player's turn): incendiary's burns, cryo's slows.
+void EliteHitPlayer(std::uintptr_t attacker, int seat, double now) {
+    const auto e = g_elites.find(attacker);
+    if (e == g_elites.end() || e->second.dead || seat < 0 || seat >= static_cast<int>(g_playerElements.size())) return;
+    const auto& el = g->content->economy().elites;
+    PlayerElementState& st = g_playerElements[static_cast<std::size_t>(seat)];
+    if (e->second.element == "incendiary") {
+        if (now >= st.burnUntil) st.nextBurn = now + 0.5;
+        st.burnUntil = now + el.burn_seconds;
+    } else if (e->second.element == "cryo") {
+        st.chillUntil = now + el.chill_seconds;
+    }
+}
+
+// The player's speed taken away while chilled (ApplyMoveSpeed: a fraction of each step pulled back).
+double EliteChill(int seat, double now) {
+    if (seat < 0 || seat >= static_cast<int>(g_playerElements.size())) return 0.0;
+    return now < g_playerElements[static_cast<std::size_t>(seat)].chillUntil ? g->content->economy().elites.chill_slow : 0.0;
+}
+
+void DriveElites(double now) {
+    if (g_eliteGeneration != g->matchGeneration) {
+        ResetElitesFor(g->matchGeneration);
+        return;
+    }
+    if (g_elites.empty() && std::all_of(g_playerElements.begin(), g_playerElements.end(), [&](const PlayerElementState& s) { return now >= s.burnUntil; })) return;
+    if (!g->match.inMatch || !g->run->HasActiveRun() || g->run->phase() != rm::Phase::ArenaActive || GamePaused() || ItemScreenOpen()) return;
+    const auto& el = g->content->economy().elites;
+    struct Standing {
+        int seat = 0;
+        std::uintptr_t unit = 0;
+        float at[3] = {};
+        double blastMult = 1.0;  // the build's own share of explosions (Safari Chris)
+    };
+    std::vector<Standing> players;
+    ForEachSeatTurn([&] {
+        const auto unit = engine::LocalPlayer();
+        const auto hp = unit ? engine::ReadHp(unit) : decltype(engine::ReadHp(unit)){};
+        if (!unit || !hp || hp->hp <= 0) return;
+        Standing p;
+        p.seat = g_adapterSeat;
+        p.unit = unit;
+        UnitPosition(unit, p.at);
+        p.blastMult = g->run->state().character.build.explosion_damage_mult;
+        players.push_back(p);
+    });
+    const auto within = [](const float a[3], const float b[3], double r) {
+        const float dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+        return dx * dx + dz * dz <= static_cast<float>(r * r) && std::fabs(dy) < 250.0f;
+    };
+    for (auto it = g_elites.begin(); it != g_elites.end();) {
+        const std::uintptr_t unit = it->first;
+        EliteState& e = it->second;
+        const auto hp = engine::ReadHp(unit);
+        if (hp && hp->hp > 0) {
+            UnitPosition(unit, e.at);
+            if (now >= e.nextAura) {
+                e.nextAura = now + el.aura_every;
+                PlayEliteLook(e.element, unit);
+            }
+            if (e.element == "shock") {
+                if (e.shockAt < 0.0 && now >= e.nextShock) {
+                    e.shockAt = now + el.shock_charge;  // it sparks: step away
+                    PlayEliteLook("shock", unit);
+                } else if (e.shockAt >= 0.0 && now >= e.shockAt) {
+                    e.shockAt = -1.0;
+                    e.nextShock = now + el.shock_every;
+                    PlayEliteLook("shock", unit);
+                    for (const Standing& p : players) {
+                        if (!within(e.at, p.at, el.shock_radius)) continue;
+                        AddArc(unit, p.unit, now, 0.35);
+                        HurtPlayerBy(p.unit, p.seat, el.shock_fraction, "a charged elite's burst");
+                    }
+                }
+            }
+            ++it;
+            continue;
+        }
+        if (!e.dead) {
+            e.dead = true;
+            e.diedAt = now;
+            if (e.element == "toxic") {
+                e.cloudUntil = now + el.cloud_seconds;
+                e.nextCloudTick = now + 0.5;
+            }
+            if (hp && (e.element == "toxic" || e.element == "explosive")) PlayEliteLook(e.element, unit);  // its warning
+            RM_LOGI("elites: the %s elite %08X is dead", e.element.c_str(), static_cast<unsigned>(unit));
+        }
+        if (e.element == "explosive" && !e.blasted && now - e.diedAt >= el.blast_delay) {
+            e.blasted = true;
+            int hurt = 0, reached = 0;
+            for (const Standing& p : players) {
+                if (!within(e.at, p.at, el.blast_radius)) continue;
+                HurtPlayerBy(p.unit, p.seat, el.blast_fraction * p.blastMult, "a volatile elite's blast");
+                ++hurt;
+            }
+            for (const auto& [enemy, d] : EnemiesNear(e.at, static_cast<float>(el.blast_radius), unit)) {
+                (void)d;
+                DotDamage(enemy, el.blast_enemy_damage, now, Reaction::Flyoff);
+                const auto ehp = engine::ReadHp(enemy);
+                if (ehp && ehp->hp > 0) React(enemy, Reaction::Flyoff, now, true);
+                ++reached;
+            }
+            if (hp) React(unit, Reaction::HeadBurst, now, true, true);  // the body bursts, if it is still there
+            RM_LOGI("elites: a volatile elite blew up (%d players, %d enemies within %.1f m)", hurt, reached, el.blast_radius / 100.0);
+        }
+        if (e.element == "toxic" && now < e.cloudUntil) {
+            if (hp && now >= e.nextCloudLook) {
+                e.nextCloudLook = now + 1.0;
+                PlayEliteLook("toxic", unit);
+            }
+            if (now >= e.nextCloudTick) {
+                e.nextCloudTick = now + 0.5;
+                for (const Standing& p : players) {
+                    if (within(e.at, p.at, el.cloud_radius)) HurtPlayerBy(p.unit, p.seat, el.cloud_fraction * 0.5, "a toxic elite's cloud");
+                }
+            }
+        }
+        const bool done = e.element == "explosive" ? e.blasted : e.element == "toxic" ? now >= e.cloudUntil : true;
+        it = done ? g_elites.erase(it) : std::next(it);
+    }
+    // The players' burns (incendiary elites' hits).
+    for (const Standing& p : players) {
+        PlayerElementState& st = g_playerElements[static_cast<std::size_t>(std::clamp(p.seat, 0, 3))];
+        if (now < st.burnUntil && now >= st.nextBurn) {
+            st.nextBurn = now + 0.5;
+            HurtPlayerBy(p.unit, p.seat, el.burn_fraction * 0.5, "burning (an incendiary elite's hit)");
+            PlayEliteLook("incendiary", p.unit);
+        }
+    }
+}
+
 // Each tick: the hits' queued perks, the launchers' wider blasts, the pistols' headshots, the rod's stuns.
 void DriveLevelHits(double now) {
     if (!g->match.inMatch || g->run->phase() != rm::Phase::ArenaActive) {
@@ -11587,9 +11804,10 @@ constexpr float kSpeedFloor = 50.0f;     // the floor ahead within half a metre 
 
 void ApplyMoveSpeed() {
     rm::RunController& run = *g->run;
-    const double bonus = run.HasActiveRun() ? run.state().stats.move_speed : 0.0;
+    // The build's speed, less a cryo elite's chill (its hits; the user's elites, 2026-11-23).
+    const double bonus = (run.HasActiveRun() ? run.state().stats.move_speed : 0.0) - EliteChill(g_adapterSeat, Now());
     const auto local = engine::LocalPlayer();
-    if (bonus <= 0.0 || !local || run.phase() != rm::Phase::ArenaActive || !g->match.inMatch || !g_move.kind.empty()) {
+    if (bonus == 0.0 || !local || run.phase() != rm::Phase::ArenaActive || !g->match.inMatch || !g_move.kind.empty()) {
         g_speed.have = false;
         return;
     }
@@ -11613,8 +11831,16 @@ void ApplyMoveSpeed() {
         keep(pos);
         return;
     }
-    const float extra = std::min(step * static_cast<float>(bonus), kSpeedExtraMax);
     const float ux = dx / step, uz = dz / step;
+    if (bonus < 0.0) {
+        // Slowed: back along the step just taken (where the player stood a moment ago: no wall check needed).
+        const float back = step * static_cast<float>(std::min(0.9, -bonus));
+        const float to[3] = {pos[0] - ux * back, pos[1], pos[2] - uz * back};
+        engine::WarpUnit(local, to);
+        keep(to);
+        return;
+    }
+    const float extra = std::min(step * static_cast<float>(bonus), kSpeedExtraMax);
     const float a[3] = {pos[0], pos[1] + kChestHeight, pos[2]};
     const float b[3] = {pos[0] + ux * (extra + kWallMargin), pos[1] + kChestHeight, pos[2] + uz * (extra + kWallMargin)};
     const auto wall = engine::CastSegment(a, b);
@@ -14612,6 +14838,7 @@ private:
             kill.was_melee = engine::InMeleeAction(r.attacker);
         }
         kill.target_is_boss = r.enemy == g->boss.unit;  // before EnemyKillId forgets the boss
+        kill.elite = g_elites.count(r.enemy) != 0;
         kill.target_hp_max = r.maxHp;
         kill.overkill = std::max(0, r.appliedDamage - r.hpBefore);
         kill.target_frozen = StatusActive(r.enemy, kill.now, &ElementStatus::frozenUntil);
@@ -14674,6 +14901,7 @@ private:
             RM_LOGD("incoming core=%.4f (raw %.4f) prevent_death=%d dev=%.2f", result.multiplier,
                     result.raw_multiplier, result.prevent_death, g->settings.devIncomingMultiplier);
         }
+        if (hit.attacker != 0) EliteHitPlayer(hit.attacker, turn.seat(), ctx.now);  // incendiary burns, cryo slows
         // An explosion (a hit by no character: a bomb, a grenade, a barrel, a rocket, dynamite) on a build that takes
         // less of it (Safari Chris: the user, 2026-11-23, "he should also get less damage from explosions").
         if (hit.attacker != 0 && g->run->HasActiveRun()) {
@@ -14782,6 +15010,7 @@ private:
         }); }
         { ProfileScope p("tick:DriveElements"); DriveElements(now); }
         { ProfileScope p("tick:DriveLevelHits"); DriveLevelHits(now); }
+        { ProfileScope p("tick:DriveElites"); DriveElites(now); }
         {
             // The game's pause (its menu, a paused world) stops the arena's clock (the user, 2026-11-22:
             // "timer continues in pause menu").
