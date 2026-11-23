@@ -5068,6 +5068,39 @@ void WatchArenaMatch(double now) {
     g->toasts.Push("Run abandoned: its match was quit or restarted");
 }
 
+bool ClearBossEventFlags(std::uintptr_t unit, const char* why);  // with the boss's fall, below
+
+// The stage change asked the game's time-up and the game has not taken it: its match object still runs (the mod
+// counts the match as ended once the countdown is 0, so TryBeginArena no longer looks).
+void WatchStageChange(double now) {
+    if (!g->transition.pending || !g->run->HasActiveRun()) return;
+    // The game's time-up not taken: the match object still running (the user, 2026-11-23, after Uroboros
+    // Wesker: "the next stage never comes"; it ran on for 20 s). From 6 s on, every 5 s, three times: what
+    // holds it in the log, the dead boss's event flags cleared, the time-up asked again. Only while the old match
+    // object still runs (state 0): after the game's own time-up (state 1) a request would end the next match.
+    static int nudged = 0;
+    static int nudgeGeneration = -1;
+    if (nudgeGeneration != g->transition.generation) {
+        nudgeGeneration = g->transition.generation;
+        nudged = 0;
+    }
+    const MercTimerView timer = ReadMercTimer();
+    if (g->matchGeneration == g->transition.generation && timer.recent && timer.state == 0 && nudged < 3 &&
+        now - g->transition.startedAt >= 6.0 + 5.0 * nudged) {
+        ++nudged;
+        const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+        RM_LOGW("stage change: the match still runs %.0f s after its end was asked (countdown %.1f, state %d; flags %08X %08X, "
+                "screens %08X; boss %s %s); asking again (%d of 3)",
+                now - g->transition.startedAt, timer.countdown, timer.state,
+                app ? ReadOr<std::uint32_t>(app + re5::off::kAppEventFlags, 0) : 0u, app ? ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0) : 0u,
+                app ? ReadOr<std::uint32_t>(app + re5::off::kAppScreenFlags, 0) : 0u,
+                g->boss.fallen ? engine::ClassName(g->boss.fallen).c_str() : "-",
+                g->boss.fallen ? engine::CurrentActionName(g->boss.fallen).c_str() : "", nudged);
+        ClearBossEventFlags(g->boss.fallen, "the stage change waited");
+        RequestMercMatchEnd();
+    }
+}
+
 void TryBeginArena(double now) {
     rm::RunController& run = *g->run;
     if (!run.HasActiveRun() || !g->match.inMatch) return;
@@ -6044,6 +6077,36 @@ void ClearTransformFlags(const char* why) {
     SafeStore<std::uint32_t>(app + re5::off::kAppEventFlags, events & ~re5::off::kEm82StageChangeEventFlags);
     SafeStore<std::uint32_t>(app + re5::off::kAppFlags, flags & ~re5::off::kEm82StageChangeAppFlags);
     RM_LOGW("boss: the transformation's application flags were still set (%s): %08X %08X, cleared", why, events, flags);
+}
+
+// The event flags a boss's death sets as it begins (the Uroboros' cEm40ActDead, Uroboros Wesker's last fall:
+// kEm82StageChangeEventFlags, 0x200), cleared: a run has no story scene after it (the user, 2026-11-23: after
+// Uroboros Wesker "you get the "wesker" as next stage, but the next stage never comes": the match object ran
+// on 20 s after its time-up was asked, the story's end in the way). Logs the first clearing for each `unit`.
+// True when it cleared any.
+bool ClearBossEventFlags(std::uintptr_t unit, const char* why) {
+    const auto app = ReadOr<std::uintptr_t>(re5::addr::kGameRoot, 0);
+    if (!app) return false;
+    const auto events = ReadOr<std::uint32_t>(app + re5::off::kAppEventFlags, 0);
+    const auto flags = ReadOr<std::uint32_t>(app + re5::off::kAppFlags, 0);
+    if ((events & re5::off::kEm82StageChangeEventFlags) == 0 && (flags & re5::off::kEm82StageChangeAppFlags) == 0) return false;
+    SafeStore<std::uint32_t>(app + re5::off::kAppEventFlags, events & ~re5::off::kEm82StageChangeEventFlags);
+    SafeStore<std::uint32_t>(app + re5::off::kAppFlags, flags & ~re5::off::kEm82StageChangeAppFlags);
+    static std::uintptr_t logged = 0;
+    if (logged != unit) {
+        logged = unit;
+        RM_LOGW("boss: %s left the application's event flags set (%s): %08X %08X, cleared (no story scene in a run)",
+                unit ? engine::ClassName(unit).c_str() : "-", why, events, flags);
+    }
+    return true;
+}
+
+// The arena's boss, dead: its death's event flags cleared each tick while the match lasts and while the stage
+// change waits (its last fall is played again and again: DriveBossFall).
+void ClearDeadBossFlags(double now) {
+    if (!g->run->HasActiveRun() || !g->boss.dead || !g->boss.fallen || now - g->boss.diedAt < 0.3) return;
+    if (!g->match.inMatch && !g->transition.pending) return;
+    ClearBossEventFlags(g->boss.fallen, "after its death");
 }
 
 void ClearElementStatus(std::uintptr_t enemy);  // with the elements, below
@@ -14544,11 +14607,13 @@ private:
             { ProfileScope p("tick:HandleNativeMenu"); HandleNativeMenu(now); }
             { ProfileScope p("tick:WatchArenaMatch"); WatchArenaMatch(now); }
             { ProfileScope p("tick:TryBeginArena"); TryBeginArena(now); }
+            { ProfileScope p("tick:WatchStageChange"); WatchStageChange(now); }
         }
         { ProfileScope p("tick:UpdateInventoryHold"); UpdateInventoryHold(now); }
         { ProfileScope p("tick:SkipMercIntro"); SkipMercIntro(g->run->HasActiveRun()); }  // a run's match starts without the announcer's intro
         { ProfileScope p("tick:DriveDirector"); DriveDirector(now); }
-        { ProfileScope p("tick:DriveBossFall"); DriveBossFall(now); }
+        { ProfileScope p("tick:DriveBossFall"); DriveBossFall(now);
+        ClearDeadBossFlags(now); }
         { ProfileScope p("tick:DriveBossDown"); DriveBossDown(now); DriveAddFalls(now); TameAddDeaths(now); DriveBossTuning(now); DriveBossFlinch(now); }
         { ProfileScope p("tick:TameBossKills"); TameBossKills(); }
         { ProfileScope p("tick:ReleaseBossHolds"); ReleaseBossHolds(now); }
