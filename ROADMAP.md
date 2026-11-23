@@ -400,6 +400,56 @@ times the bosses' health (tuned with `rm_sim`); two mod skins on the same base s
 9. F8, ship: README co-op section, tests, version and both packages; the user's two-controller
    playtest.
 
+### M11 — Online co-op (plan, not started)
+2026-11-24, the user's item 14: "Online co-op: Check and make a plan". Checked from the game's code
+(the memory dump) and the archives only; nothing run.
+
+**What the game has.** Mercenaries MODE SELECT row 1, DUO, is the online mode: uIdStartUp25 "NETWORK"
+(Online, Host game / Join game), then the lobby screens uIdStartUp26..28 (research/re5-engine-map.md,
+"Split-screen Mercenaries"). Since the 2023 patch its online play is Steam's, through the game's own
+classes (their names are in its debug strings): `NetworkSessionManagerSteam` (create, list and join
+lobbies, lobby data, members, the host connecting each member, custom messages: MatchSession,
+SessionChat, TerminateSession, JoinAns, MemberInfo, `processCustomMessage`), `NetworkPeerSteam` (the P2P
+session to each peer), `NetworkMultipleUdpSteam` (`send`, `receive`), on `sNetwork` and
+`sNetworkLibraryWindows`. Replicated units: `cNetPlayer`, `cNetEnemy`, `cNetEm`, `cNetEmc`. Every
+native enemy's set data has `mIsForNet` 1, and the mod's director spawns set it too. There is no
+steam_api.dll in the game's folder and no Steam call by name in the dump: how the game reaches
+Steam is the first thing to find.
+
+**What a run needs online.** One run on two machines, each with its own mod and profile:
+1. The host's RunController is the run: seed, run map, arenas, the director, supplies, chests, the
+   bosses. The guest's mod mirrors it from the host's messages and sends only its player's choices
+   (reward, purchases, route vote, specials).
+2. Enemies: the host's director spawns them. If the game replicates them to the guest (`cNetEnemy`),
+   kills and damage stay the game's; if not, the guest would have to make copies from messages: far
+   harder and likely to drift. This decides how big M11 is.
+3. The mod's own effects (elements and procs, specials, Twin Fury, mines, elites, the flamethrower
+   streams): damage on the host; looks on both from messages.
+4. Between arenas: the mod's screens pause the world, which an online match cannot do. Each player's
+   screens would run in a cleared arena (no enemies) without the pause.
+5. Stage changes: the mod moves a running match to the next stage. Online, the host's change has to
+   take the guest along, and Mercenaries online is one stage a match. The riskiest part.
+6. A channel for the mod's messages: the game's custom messages or its UDP send with message kinds
+   of the mod's own. Joining checks that both run the same mod version and content (a hash of the
+   configs); a mismatch is refused with a message.
+7. Each player keeps their own profile (credits, unlocks) on their own machine.
+
+**Steps, each with its check:**
+- O0, research (Ghidra, then two machines): find the send and receive calls and the peer's id; a plain
+  DUO match with the mod passive (no run), logging what replicates; one director spawn on the host.
+  Check: a mod message goes from the PC to the Deck and back, and a Majini spawned by the host is
+  seen and killed on both.
+- O1, joining: the mod's run starts from the game's lobby; versions and content compared.
+- O2, one arena: the host's director, the guest mirroring kills, health and supplies; no rewards yet.
+- O3, between arenas: rewards and the shop per player without the pause, the route vote.
+- O4, stage changes online (it may need the game's own match restart, both players reloading).
+- O5, the mod's effects, the bosses and the elites online.
+- O6, ship: README, a two-machine soak run, both packages.
+
+**Needs:** two machines (the PC and the Deck) and two Steam accounts that own RE5. **Size:** large,
+and O0 decides it (point 2 above). The user decides after O0 whether to go on. Until then M10's
+rule stands: no flow waits on a network.
+
 ## 6. Risks and how they are handled
 
 - **Context-bound engine objects** (screens and models created outside their context
@@ -408,7 +458,8 @@ times the bosses' health (tuned with `rm_sim`); two mod skins on the same base s
 - **Scripts in campaign areas.** Suppress per area (event list, triggers); start with areas
   that are open combat spaces.
 - **Co-op and network code paths.** Solo only until M10 (local split screen); flows that wait
-  on partner sync are entered past the sync or not at all. Online co-op stays out.
+  on partner sync are entered past the sync or not at all. Online co-op: planned as M11 (2026-11-24),
+  not started; its step O0 decides whether it is done.
 - **Game updates.** Every address is checked by signature at start; a mismatch disables the
   feature and says so.
 
