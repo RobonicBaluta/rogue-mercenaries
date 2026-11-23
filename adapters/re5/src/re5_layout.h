@@ -212,6 +212,11 @@ constexpr int kWeaponRecordCount = 0x50;
 constexpr std::uintptr_t kWeaponCapacityLevels = 0x011C06A0;  // int32 rounds by LvBulletMax
 constexpr std::uintptr_t kWeaponReloadLevels = 0x011C0664;    // float time multiplier by LvReloadSpeed
 constexpr std::size_t kWeaponLevelStride = 0x1E8;
+// The same rows for LvFireSpeed (float: the time between shots; one level per gun in the game, the rest 1.0)
+// and LvThrough (float: enemies a shot goes through; levels on the P8, MP5, L. Hawk, M29 and M500), the cItem
+// property list's (research/re5-engine-map.md "Gun stat tables").
+constexpr std::uintptr_t kWeaponFireLevels = 0x011C0628;
+constexpr std::uintptr_t kWeaponPierceLevels = 0x011C0718;
 // A player's execution (a chainsaw's, every enemy kill move, the die_* actions): thiscall (player
 // number, or -1 for the first one down). Starts the death camera that ends in the game over; only
 // the campaign's mode filters which player it is for (research/re5-engine-map.md).

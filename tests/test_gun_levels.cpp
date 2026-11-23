@@ -59,3 +59,28 @@ TEST_CASE("no steps change nothing, and levels from a bad record stay out of the
     CHECK(negative.capacity == -1);
     CHECK(negative.reload == -1);
 }
+
+// Fire speed and piercing (2026-11-23, the user: "new upgrade lines (fire speed, piercing)"): the game's own
+// piercing levels (the H&K P8: 2, 3, 4, 5 enemies) and the run's fire speed levels the adapter writes.
+TEST_CASE("each upgrade also moves fire speed and piercing, as far as their levels go", "[gun-levels]") {
+    GunLevelTables p8 = M92F();
+    p8.fire = {26, 24, 22, 20, 18.7f, 17.2f, 0, 0, 0, 0, 0, 0, 0, 0};  // the run's five, then none
+    p8.pierce = {2, 3, 4, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};           // the game's: four levels, then 1s
+    const GunStatLevels two = RaiseGunLevels(p8, {0, 0, 0, 0}, 2);
+    CHECK(two.fire == 2);
+    CHECK(two.pierce == 2);
+    const GunStatLevels nine = RaiseGunLevels(p8, {0, 0, 0, 0}, 9);
+    CHECK(nine.fire == 5);    // stops where the written levels end (0 is no level)
+    CHECK(nine.pierce == 3);  // stops at 5 enemies: the 1 after it is no gain
+    CHECK(nine.capacity == 9);
+}
+
+TEST_CASE("the game's untouched fire table (1.0 past its first level) is never stepped onto", "[gun-levels]") {
+    GunLevelTables stock = M92F();
+    stock.fire = {26, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};  // as the adapter reports a gun without the run's curve
+    stock.pierce = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+    const GunStatLevels l = RaiseGunLevels(stock, {0, 0, 0, 0}, 5);
+    CHECK(l.fire == 0);
+    CHECK(l.pierce == 0);
+    CHECK(l.capacity == 5);
+}

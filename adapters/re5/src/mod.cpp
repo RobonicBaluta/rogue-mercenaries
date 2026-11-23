@@ -545,13 +545,63 @@ int ShopUpgradesOf(std::uint32_t id) {
     return steps;
 }
 
-// The game's own level tables for this item, as the record names it (the grenade launcher's is 0x010C).
+// The run's fire speed levels (the user, 2026-11-23: "new upgrade lines (fire speed, piercing)"): the game gives
+// each gun one time between shots (its LvFireSpeed row, the rest 1.0, which would be a shot every frame), so
+// while a run lasts the regular guns' rows get kFireCurve's shorter ones at levels 1..5, put back when it ends.
+// The guns with levels of their own (weapons.json per_level), the longbow and the semi-automatic snipers (900, not
+// a time) are left out.
+constexpr float kFireCurve[] = {0.92f, 0.85f, 0.78f, 0.72f, 0.66f};
+constexpr std::uint32_t kFireCurveGuns[] = {0x02, 0x03, 0x04, 0x05, 0x09, 0x0B, 0x10, 0x11, 0x13, 0x16, 0x17, 0x19, 0x1A, 0x1B, 0x1D, 0x1E};
+std::map<std::uint32_t, std::array<float, std::size(kFireCurve)>> g_fireOriginal;  // gun row -> its levels 1..5
+
+bool WriteRecordFloat(std::uintptr_t address, float value) {
+    if (SafeStore(address, value)) return true;
+    DWORD old = 0;
+    if (!VirtualProtect(reinterpret_cast<void*>(address), sizeof(value), PAGE_READWRITE, &old)) return false;
+    const bool ok = SafeStore(address, value);
+    VirtualProtect(reinterpret_cast<void*>(address), sizeof(value), old, &old);
+    return ok;
+}
+
+void ApplyFireCurves() {
+    if (!engine::Caps().weaponLevels) return;
+    for (const std::uint32_t lo : kFireCurveGuns) {
+        if (g_fireOriginal.count(lo)) continue;
+        const std::uintptr_t row = re5::addr::kWeaponFireLevels + lo * re5::addr::kWeaponLevelStride;
+        const float base = ReadOr<float>(row, 0.0f);
+        if (!(base >= 4.0f && base <= 200.0f)) continue;  // not a time between shots as the others' are
+        std::array<float, std::size(kFireCurve)> original{};
+        bool ok = true;
+        for (std::size_t k = 0; k < std::size(kFireCurve); ++k) {
+            original[k] = ReadOr<float>(row + (k + 1) * 4, 1.0f);
+            ok = WriteRecordFloat(row + (k + 1) * 4, base * kFireCurve[k]) && ok;
+        }
+        g_fireOriginal[lo] = original;
+        RM_LOGI("upgrades: gun %02X's fire speed levels 1..5 from %.0f to %.1f -> %s", lo, base, base * kFireCurve[std::size(kFireCurve) - 1], ok ? "ok" : "failed");
+    }
+}
+
+void RestoreFireCurves() {
+    for (const auto& [lo, original] : g_fireOriginal) {
+        const std::uintptr_t row = re5::addr::kWeaponFireLevels + lo * re5::addr::kWeaponLevelStride;
+        for (std::size_t k = 0; k < original.size(); ++k) WriteRecordFloat(row + (k + 1) * 4, original[k]);
+    }
+    if (!g_fireOriginal.empty()) RM_LOGI("upgrades: the guns' own fire speed levels again (%zu guns)", g_fireOriginal.size());
+    g_fireOriginal.clear();
+}
+
+// The game's own level tables for this item, as the record names it (the grenade launcher's is 0x010C). Fire
+// speed levels only where the run wrote them (the game's own 1.0s are no level).
 rm::GunLevelTables GunTables(std::uint32_t rawItem) {
     rm::GunLevelTables tables;
-    const std::size_t row = (rawItem & 0xFF) * re5::addr::kWeaponLevelStride;
+    const std::uint32_t lo = rawItem & 0xFF;
+    const std::size_t row = lo * re5::addr::kWeaponLevelStride;
+    const bool curve = g_fireOriginal.count(lo) != 0;
     for (std::size_t level = 0; level < tables.capacity.size(); ++level) {
         tables.capacity[level] = ReadOr<std::int32_t>(re5::addr::kWeaponCapacityLevels + row + level * 4, 0);
         tables.reload[level] = ReadOr<float>(re5::addr::kWeaponReloadLevels + row + level * 4, 1.0f);
+        tables.fire[level] = level == 0 || (curve && level <= std::size(kFireCurve)) ? ReadOr<float>(re5::addr::kWeaponFireLevels + row + level * 4, 0.0f) : 0.0f;
+        tables.pierce[level] = ReadOr<float>(re5::addr::kWeaponPierceLevels + row + level * 4, 1.0f);
     }
     return tables;
 }
@@ -561,13 +611,19 @@ rm::GunLevelTables GunTables(std::uint32_t rawItem) {
 void RaiseForShopUpgrades(const GridCell& c, WeaponLevels& levels, int steps) {
     const std::uint32_t raw = ReadOr<std::uint32_t>(c.record + re5::off::kSlotItemId, 0);
     if ((raw & 0xFF00) != 0x100 || raw >= 0x150) return;
-    const rm::GunStatLevels before{static_cast<int>((levels[0] >> 24) & 0xFF), static_cast<int>((levels[0] >> 16) & 0xFF)};
+    // The slot's level bytes (+0x20..): power, fire speed, reload, capacity | rate, critical, piercing, range.
+    const rm::GunStatLevels before{static_cast<int>((levels[0] >> 24) & 0xFF), static_cast<int>((levels[0] >> 16) & 0xFF),
+                                   static_cast<int>((levels[0] >> 8) & 0xFF), static_cast<int>((levels[1] >> 16) & 0xFF)};
     const rm::GunLevelTables tables = GunTables(raw);
     const rm::GunStatLevels after = rm::RaiseGunLevels(tables, before, steps);
-    levels[0] = (levels[0] & 0x0000FFFFu) | (static_cast<std::uint32_t>(after.reload) << 16) | (static_cast<std::uint32_t>(after.capacity) << 24);
-    RM_LOGI("upgrades: %04X +%d: capacity level %d -> %d (%d rounds), reload level %d -> %d (x%.2f)", c.id, steps, before.capacity, after.capacity,
-            tables.capacity[static_cast<std::size_t>(std::clamp(after.capacity, 0, rm::kGunStatLevels - 1))], before.reload, after.reload,
-            tables.reload[static_cast<std::size_t>(std::clamp(after.reload, 0, rm::kGunStatLevels - 1))]);
+    levels[0] = (levels[0] & 0x000000FFu) | (static_cast<std::uint32_t>(after.fire) << 8) | (static_cast<std::uint32_t>(after.reload) << 16) |
+                (static_cast<std::uint32_t>(after.capacity) << 24);
+    levels[1] = (levels[1] & 0xFF00FFFFu) | (static_cast<std::uint32_t>(after.pierce) << 16);
+    const auto at = [](int level) { return static_cast<std::size_t>(std::clamp(level, 0, rm::kGunStatLevels - 1)); };
+    RM_LOGI("upgrades: %04X +%d: capacity level %d -> %d (%d rounds), reload level %d -> %d (x%.2f), fire speed level %d -> %d (%.1f), "
+            "piercing level %d -> %d (%.0f)", c.id, steps, before.capacity, after.capacity, tables.capacity[at(after.capacity)], before.reload,
+            after.reload, tables.reload[at(after.reload)], before.fire, after.fire, tables.fire[at(after.fire)], before.pierce, after.pierce,
+            tables.pierce[at(after.pierce)]);
 }
 
 int MagazineBonus(std::uint32_t recordId);  // its levels' rounds more (weapons.json per_level magazine), below
@@ -1700,7 +1756,7 @@ void LogOffersOnce(const char* what, const std::vector<rm::OfferView>& offers) {
 
 // Help line for a reward or shop offer in the game font (letters, digits, space, comma, period).
 std::string OfferDetail(const rm::OfferView& o) {
-    if (o.kind == "upgrade" && !o.detail.empty()) return Plain(o.detail) + "\nMore rounds, faster reload, if it has levels left.";
+    if (o.kind == "upgrade" && !o.detail.empty()) return Plain(o.detail) + "\nMore rounds, faster reload and fire, as levels allow.";
     if (!o.detail.empty()) return Plain(o.detail);
     if (o.kind == "heal") return "Restores half of your health.";
     if (o.kind == "upgrade") return "One more damage level for this weapon.";
@@ -4972,6 +5028,7 @@ void ArenaBegan(double now) {
     StopBossWatch();
     ApplyBuildHealth();
     ApplyBuildStacks();
+    ApplyFireCurves();
     {
         const rm::SkinBuild& build = g->run->state().character.build;
         world::DropRules drops;
@@ -5055,6 +5112,7 @@ void WatchArenaMatch(double now) {
         g_enemyTracks.clear();
         autopilot::Disarm("run suspended");
         RestoreBuildStacks();
+        RestoreFireCurves();
         world::SetDropRules({});
         autopilot::ReturnToTitle(true);
         nativemenu::OpenOnPlayMenu(nativemenu::ScreenId::Main);  // CONTINUE RUN at its top
@@ -12029,6 +12087,7 @@ void SettleFinishedRun() {
             g_enemyTracks.clear();
             autopilot::Disarm("run over");
             RestoreBuildStacks();
+            RestoreFireCurves();
             world::SetDropRules({});
             // M7.3: the last match's Mercenaries results are skipped (they would write a record
             // into the game's save) and the game goes back to its Play menu, where the mod menu
