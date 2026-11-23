@@ -16,3 +16,7 @@
 *.exp
 *.exe
 /third_party/nexusmods/
+
+# Secrets kept next to the repo (never committed)
+re5_nexus_api_key.txt
+*api_key*.txt
