@@ -71,6 +71,13 @@ STARTS = {
     # (302 of its 565). Not vetted in game: the start is the waypoint nearest the middle of that deck, so
     # the adapter's start warp brings the player there wherever the host puts them.
     704: (-4.8, 2580.0, -184.6),
+    # Four areas a match put outside the waypoints (2026-11-02 vetting), added 2026-11-23 for the user's map editor
+    # (the user: "More campaign and DLC arenas: points made with the map editor"): each start is the waypoint with
+    # the most others within 15 m, nearest the middle (scripts: the session's area_starts.py), not vetted in game.
+    109: (100542.2, 0.0, 221619.7),
+    119: (9993.5, 266.1, -9387.6),
+    313: (-8744.8, 4102.0, 47538.5),
+    702: (10681.2, -603.0, -17684.4),
 }
 # Starts moved off the recorded spot. s204: the host puts the player on the boat the story arrives
 # on (33885 51 -87306), and the climb to the ledge is a story action that never appears here (user
@@ -185,6 +192,12 @@ HIDE_MODELS = {
 }
 
 NO_ROTATION = {
+    # New (2026-11-23): out of the runs until the user has set their points and starts with the map editor
+    # (dev "nextmap <stage>" goes there), then their "rotation": false comes out.
+    109: 'new: waits for the map editor',
+    119: 'new: waits for the map editor',
+    313: 'new: waits for the map editor',
+    702: 'new: waits for the map editor',
     # (Civilian Checkpoint, s100, was out from 2026-11-03 to 0.2.5: the story kept the inventory,
     # the weapon and the HUD off there; a run now turns those stage-100 checks off, stage_fixes.h.)
     # Every AI waypoint of the area (276) lies in one 35 x 18 m box in the middle of the deck (y 0 to
