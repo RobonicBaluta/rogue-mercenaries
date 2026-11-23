@@ -34,6 +34,7 @@ struct Verified {
     bool effects = false;       // effect lists started on a unit the game's way (the elements' looks)
     bool effectStop = false;    // an effect the mod started stopped by its id
     bool flameStream = false;   // the flamethrower's fire with an element's look in place of its flame
+    bool flameCharge = false;   // the flamethrower's charge mode (a run never lets it go to the story's pump)
     bool partner = false;       // a computer player added the game's way (E22: Josh's backup)
     bool partnerDeath = false;  // a partner's execution does not end the run
     bool equipCell = false;     // the game's own change of the item in the hands

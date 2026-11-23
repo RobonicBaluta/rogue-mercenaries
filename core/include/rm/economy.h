@@ -205,6 +205,12 @@ struct EconomyConfig {
     /// Local co-op (M10, 2026-11-17): with two players an arena's enemy budget is enemy_mult times
     /// as large and a boss's health boss_hp_mult times; a player down comes back in the next arena
     /// with revive_health of their health. max_players: the seats a run takes.
+    /// An enemy class's health when the director spawns it (economy.json "enemy_health"; 2026-11-23, the
+    /// user: "the fat majini and the tribal big majini seem to have normal health"): the game's own
+    /// Mercenaries set data (mLife). The Majini variants the director places with cSetInfoEm10 otherwise
+    /// take a Majini's 1000. A class not listed keeps what it spawns with.
+    StringMap<int> enemy_health;
+
     struct Coop {
         double enemy_mult = 1.5;
         /// How many may be alive at once, times this (the map's max_alive and the arena's threat

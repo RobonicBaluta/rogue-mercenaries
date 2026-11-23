@@ -18,7 +18,8 @@ enum class ScreenId {
     MatchTestElement,  // the tester's special (element_pick): the gun in hand's element
     MatchTester,       // the tester's special: its gun, its level, its element (2026-11-22)
     MatchTestWeapon,   // ...the gun it holds
-    MatchTestLevel     // ...that gun's level
+    MatchTestLevel,    // ...that gun's level
+    ModSetup           // a mod skin or character without its mod: its page, the mods folder, check again (2026-11-23)
 };
 
 struct Item {

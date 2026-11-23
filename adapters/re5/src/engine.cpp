@@ -202,6 +202,7 @@ bool VerifySignatures(unsigned timeoutMs) {
                      ReadCString(ReadOr<std::uintptr_t>(re5::addr::kDtiEffectList + 4, 0), 16) == "rEffectList";
     g_caps.effectStop = g_caps.effects && SignatureOk("effect_stop");
     g_caps.flameStream = g_caps.effectStop && SignatureOk("wp21_fire");
+    g_caps.flameCharge = SignatureOk("wp21_charge");
     g_caps.partner = g_caps.players && g_caps.gameWork && SignatureOk("player_add") && SignatureOk("class_by_id");
     g_caps.partnerDeath = g_caps.partner && SignatureOk("player_death_event");
     g_caps.equipCell = g_caps.inventory && SignatureOk("player_equip_cell");

@@ -183,6 +183,12 @@ constexpr std::uintptr_t kFnEffectStop = 0x007712C0;
 // +0x1C, 0x00BBC8C0) turns up to 16 points of +0x1C8C's particles into hits (0x004E4120 reads them)
 // and plays the flame's sounds while +0x1C8C is set: the flame's look and its hits are that effect.
 constexpr std::uintptr_t kFnWp21Fire = 0x00BA4E00;
+// uWp21's charge mode (fastcall: the flamethrower; static 2026-11-23): the unit is moved to a fixed
+// spot (0x01032578..0x01032584: the story's pump), plays its motion 0x2B, is let go of the player
+// (vtable +0x5C, +0x3C, +0x40) and +0x1C88 (mbChargeMode) = 1. Called by the player's put action
+// (0x00C80630) for the flamethrower when the put is a charge (the action's +0x20 = 1) and a uWp21
+// exists (0x006187F0 with its DTI 0x01204314), by the co-op message 0x0078AC30 and by 0x00BBCED0.
+constexpr std::uintptr_t kFnWp21Charge = 0x00BA5470;
 // The camera system, sCamera (sBioCamera, DTI 0x011B1950; static analysis 2026-11-11): its instance
 // here (set by its constructor 0x0043FB20, cleared by its destructor), its 8 viewports (property
 // mViewport, sCamera::Viewport 0x5E0 bytes each, from +0x30), each with its camera (mpCamera +4)
@@ -1008,6 +1014,9 @@ inline constexpr Signature kSignatures[] = {
      "56 57 8B F9 80 7F 1C 00 75 09 80 3D 2E 9C 24 01 00 74 0A 8D 47 04 50 FF 15 F8 A0 F4 00 8B B7 60 02 00 00 33"},
     // `sub esp, 0x10; push esi; push edi; mov edi, [esp+0x1C]; push edi; mov esi, ecx; call 0x00B95810;
     // mov eax, [esi+0x1C8C]; test eax, eax; je; mov ecx, [kEffectManager]; push eax; call kFnEffectStop`.
+    // `push ebp; mov ebp, esp; and esp, -16; sub esp, 0x1C; movss xmm0, [0x01032584]; movss xmm1,
+    // [0x01032580]; push esi; mov esi, ecx`.
+    {"wp21_charge", addr::kFnWp21Charge, "55 8B EC 83 E4 F0 83 EC 1C F3 0F 10 05 84 25 03 01 F3 0F 10 0D 80 25 03 01 56 8B F1"},
     {"wp21_fire", addr::kFnWp21Fire,
      "83 EC 10 56 57 8B 7C 24 1C 57 8B F1 E8 FF 09 FF FF 8B 86 8C 1C 00 00 85 C0 74 0C 8B 0D 5C 9C 24 01 50 E8 99 C4 BC FF"},
     {"weapon_reload_levels", 0x00A34A70, "8B 44 24 04 3D 50 01 00 00 72 03 D9 EE C3 8B C8 81 E1 00 FF 00 00 81 F9 00 01 00 00 75 ED 25 FF 00 00 00 6B C0 7A 03 44 24 08 D9 04 85 64 06 1C 01 C3"},

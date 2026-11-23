@@ -25,6 +25,7 @@
 #include <optional>
 #include <random>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -908,9 +909,109 @@ bool g_devRedirects = false;          // dev redirect set them by hand: left alo
 
 std::filesystem::path ModsFolder() { return g->paths.modDir / L"mods"; }
 
+// Mods as they come (the user, 2026-11-23: "People have issues with adding the mods, they don't know
+// where, the game takes them to nexus mods even if they have it ... we need to streamline the process
+// as much as we can"). A .zip, .7z or .rar put in the mods folder as it was downloaded is unpacked into
+// a folder of its name by Windows' own tar (bsdtar/libarchive, in Windows 10 and 11), in a process of
+// its own (never in the game's memory), once (a .rm-unpacked note in that folder). Its result shows on
+// the MOD screen; the next scan finds the files.
+struct Unpack {
+    std::filesystem::path archive, dest;
+    bool done = false, ok = false;
+    DWORD code = 0;
+};
+std::mutex g_unpackMutex;
+std::vector<Unpack> g_unpacks;  // this session's
+
+bool IsModArchive(const std::filesystem::path& p) {
+    const std::wstring ext = p.extension().wstring();
+    return _wcsicmp(ext.c_str(), L".zip") == 0 || _wcsicmp(ext.c_str(), L".7z") == 0 || _wcsicmp(ext.c_str(), L".rar") == 0;
+}
+
+void RunUnpack(std::filesystem::path archive, std::filesystem::path dest) {
+    wchar_t windows[MAX_PATH] = {};
+    GetWindowsDirectoryW(windows, MAX_PATH);
+    const std::filesystem::path tar = std::filesystem::path(windows) / L"System32" / L"tar.exe";
+    std::wstring command = L"\"" + tar.wstring() + L"\" -xf \"" + archive.wstring() + L"\" -C \"" + dest.wstring() + L"\"";
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    DWORD code = 0xFFFFFFFFu;
+    bool ok = false;
+    if (CreateProcessW(tar.c_str(), command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, dest.c_str(), &si, &pi)) {
+        const DWORD waited = WaitForSingleObject(pi.hProcess, 15 * 60 * 1000);
+        if (waited == WAIT_OBJECT_0) GetExitCodeProcess(pi.hProcess, &code);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        ok = waited == WAIT_OBJECT_0 && code == 0;
+    } else {
+        code = GetLastError();
+    }
+    if (ok) {
+        std::ofstream note(dest / L".rm-unpacked");
+        note << rm::PathText(archive.filename()) << "\n";
+    }
+    std::lock_guard lock(g_unpackMutex);
+    for (Unpack& u : g_unpacks) {
+        if (u.archive == archive) {
+            u.done = true;
+            u.ok = ok;
+            u.code = code;
+        }
+    }
+}
+
+// The archives at the mods folder's top not unpacked yet: each in a thread of its own (tar's process).
+void StartUnpacks(const std::filesystem::path& root) {
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator(root, ec)) {
+        if (!entry.is_regular_file(ec) || !IsModArchive(entry.path())) continue;
+        const std::filesystem::path dest = root / entry.path().stem();
+        if (std::filesystem::exists(dest / L".rm-unpacked", ec)) continue;
+        {
+            std::lock_guard lock(g_unpackMutex);
+            if (std::any_of(g_unpacks.begin(), g_unpacks.end(), [&](const Unpack& u) { return u.archive == entry.path(); })) continue;
+            g_unpacks.push_back({entry.path(), dest});
+        }
+        std::filesystem::create_directories(dest, ec);
+        RM_LOGI("mods: unpacking %s into %s", rm::PathText(entry.path().filename()).c_str(), rm::PathText(dest.filename()).c_str());
+        std::thread(RunUnpack, entry.path(), dest).detach();
+    }
+}
+
+// What the MOD screen says of the unpacking: "" when none is going on or has gone wrong.
+std::string UnpackNote() {
+    std::lock_guard lock(g_unpackMutex);
+    for (const Unpack& u : g_unpacks) {
+        if (!u.done) return "Unzipping " + rm::PathText(u.archive.filename()) + "...";
+    }
+    for (const Unpack& u : g_unpacks) {
+        if (u.done && !u.ok) return "Could not unzip " + rm::PathText(u.archive.filename()) + ": unzip it in the mods folder.";
+    }
+    return {};
+}
+
+// A mod skin's state from the last scan: why it is not installed ("" when it is), and whether its files
+// are the game's own (a mod manager put the mod into the game's folders).
+std::map<std::string, std::string> g_modMissing;
+std::map<std::string, bool> g_modInGame;
+std::string g_modSetupSkin;  // the MOD screen's skin
+
 std::string LowerAscii(std::string s) {
     for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return s;
+}
+
+const rm::SkinDef* FindModSkin(const std::string& id, const rm::CharacterDef** owner = nullptr) {
+    for (const rm::CharacterDef& c : g->content->characters()) {
+        for (const rm::SkinDef& s : c.skins) {
+            if (s.id == id && s.mod) {
+                if (owner) *owner = &c;
+                return &s;
+            }
+        }
+    }
+    return nullptr;
 }
 
 // Every mod skin whose files are all in the mods folder (by name, any case, and the size listed).
@@ -918,6 +1019,7 @@ void ScanModSkins() {
     std::map<std::string, std::vector<std::filesystem::path>> byName;  // lowercase file name -> paths
     std::error_code ec;
     const std::filesystem::path root = ModsFolder();
+    if (std::filesystem::is_directory(root, ec)) StartUnpacks(root);
     if (std::filesystem::is_directory(root, ec)) {
         for (auto it = std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, ec);
              !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
@@ -934,6 +1036,7 @@ void ScanModSkins() {
             const int portraitSlot = portraits::kModPortraitBase + modIndex++;  // one per mod skin, in content order
             std::vector<fileredirect::Redirect> redirects;
             std::string missing;
+            bool inGame = false;
             for (const rm::SkinModFile& f : s.mod->files) {
                 static const std::vector<std::filesystem::path> kNone;
                 const auto named = byName.find(LowerAscii(f.name));
@@ -947,6 +1050,16 @@ void ScanModSkins() {
                     if (!sizeError && f.Accepts(static_cast<std::int64_t>(size))) {
                         match = p;
                         break;
+                    }
+                }
+                if (!match && (f.size > 0 || !f.sizes.empty())) {
+                    // The game's own file already is the mod's (a mod manager, or by hand, into nativePC_MT):
+                    // nothing to read in its place.
+                    std::error_code own;
+                    const auto size = std::filesystem::file_size(g->paths.gameDir / L"nativePC_MT" / L"Image" / L"Archive" / f.name, own);
+                    if (!own && f.Accepts(static_cast<std::int64_t>(size))) {
+                        inGame = true;
+                        continue;
                     }
                 }
                 if (!match) {
@@ -980,6 +1093,9 @@ void ScanModSkins() {
                     }
                 }
                 if (!dir) {
+                    // The game's own folders hold it (the mod put into them).
+                    std::error_code own;
+                    if (std::filesystem::is_directory(g->paths.gameDir / L"nativePC_MT" / std::filesystem::path(folder), own)) continue;
                     missing += " the folder " + folder + " (the mod's main files)";
                     continue;
                 }
@@ -1017,7 +1133,9 @@ void ScanModSkins() {
                 found[s.id] = std::move(redirects);
                 installed.insert(s.id);
             }
-            line += " " + s.id + (missing.empty() ? " installed" : " missing" + missing) + ";";
+            g_modMissing[s.id] = missing.empty() ? std::string() : missing.substr(1);
+            g_modInGame[s.id] = missing.empty() && inGame;
+            line += " " + s.id + (missing.empty() ? (inGame ? " installed (in the game's own files)" : " installed") : " missing" + missing) + ";";
             if (missing.empty() && s.mod->files.size() == 1 && found.count(s.id) && !found[s.id].empty()) {
                 const std::filesystem::path chosen(found[s.id].front().target);
                 line.pop_back();
@@ -2226,7 +2344,7 @@ private:
                         item.label += "   MOD";
                         const rm::SkinMod& mod = *firstMod->mod;
                         item.help = (mod.author.empty() ? std::string("A free mod on Nexus Mods.") : "A free mod by " + Plain(mod.author) + ".") +
-                                    " Press to open its page,\nendorse it, and unzip it in RogueMercenaries, mods.";
+                                    "\nPress to set it up: its page, where it goes, a check.";
                     } else if (c.gate == rm::CharacterGate::Selectable) {
                         const bool selected = static_cast<int>(i) == g->selectedCharacter;
                         if (selected) item.label += "   SELECTED";
@@ -2491,6 +2609,39 @@ private:
                 }
                 break;
             }
+            case ScreenId::ModSetup: {
+                // A mod skin or character without its mod (2026-11-23, "streamline the process as much as we can").
+                ScanModSkins();
+                const rm::CharacterDef* owner = nullptr;
+                const rm::SkinDef* skin = FindModSkin(g_modSetupSkin, &owner);
+                if (skin == nullptr) break;
+                const std::string title = owner != nullptr && owner->skins.size() > 0 && skin->mod->name.find(owner->name) == std::string::npos
+                                              ? owner->name + " " + skin->name
+                                              : skin->name;
+                screen.header = "MOD   " + Upper(Plain(title));
+                const auto missing = g_modMissing.find(skin->id);
+                const bool ready = missing != g_modMissing.end() && missing->second.empty();
+                const std::string unpack = UnpackNote();
+                std::string status = ready ? "Found: it is ready to wear."
+                                     : !unpack.empty() ? unpack
+                                     : missing != g_modMissing.end() ? "Not found yet: " + missing->second + "."
+                                                                     : "Not found yet.";
+                if (ready && g_modInGame[skin->id]) status = "Found in the game's own files: it is ready.";
+                Item page;
+                page.label = "OPEN ITS PAGE";
+                page.help = Plain(skin->mod->name) + (skin->mod->author.empty() ? "" : ", by " + Plain(skin->mod->author)) +
+                            ". Download it (Manual download).\n" + Plain(status);
+                screen.items.push_back(std::move(page));
+                Item folder;
+                folder.label = "OPEN THE MODS FOLDER";
+                folder.help = "Put the download in there as it is: a ZIP is unzipped\nfor you. Installed in the game already: it is found too.";
+                screen.items.push_back(std::move(folder));
+                Item check;
+                check.label = ready ? "BACK TO SKINS" : "CHECK AGAIN";
+                check.help = Plain(status);
+                screen.items.push_back(std::move(check));
+                break;
+            }
             case ScreenId::MatchTester: {
                 const rm::WeaponInstance* gun = TestElementGun();
                 const rm::WeaponBaseDef* def = gun != nullptr ? g->content->FindWeapon(gun->base_id) : nullptr;
@@ -2658,7 +2809,7 @@ private:
                         item.locked = true;
                         const rm::SkinMod& mod = *skinDef->mod;
                         item.help = (mod.author.empty() ? std::string("A free mod on Nexus Mods.") : "A free mod by " + Plain(mod.author) + ".") +
-                                    " Press to open its page,\nendorse it, and unzip it in RogueMercenaries, mods.";
+                                    "\nPress to set it up: its page, where it goes, a check.";
                     } else if (s.gate == rm::CharacterGate::Selectable && SkinsClash(g->menuOtherSkin, s.id)) {
                         // M10: two outfits of one costume slot cannot be worn together when one is a mod's.
                         item.locked = true;
@@ -2830,16 +2981,17 @@ private:
                 if (index < 0 || index >= static_cast<int>(characters.size())) break;
                 const auto& c = characters[index];
                 if (c.gate == rm::CharacterGate::NotInstalled) {
-                    // A mod character without its mod: its page.
+                    // A mod character without its mod: the MOD screen of its first mod skin.
                     if (const rm::CharacterDef* def = run.content().FindCharacter(c.id)) {
                         for (const rm::SkinDef& s : def->skins) {
                             if (s.mod) {
-                                OpenModPage(*s.mod);
+                                g_modSetupSkin = s.id;
                                 break;
                             }
                         }
                     }
-                    d.outcome = Outcome::Refresh;
+                    d.outcome = g_modSetupSkin.empty() ? Outcome::Denied : Outcome::Push;
+                    d.next = ScreenId::ModSetup;
                     break;
                 }
                 if (c.gate == rm::CharacterGate::Selectable) {
@@ -3112,6 +3264,35 @@ private:
                 d.outcome = Outcome::Close;  // the tick then banks the run and lets the match end
                 break;
             }
+            case ScreenId::ModSetup: {
+                const rm::SkinDef* skin = FindModSkin(g_modSetupSkin);
+                if (index < 0 || skin == nullptr) {
+                    d.outcome = Outcome::Back;
+                    break;
+                }
+                if (index == 0) {
+                    OpenModPage(*skin->mod);
+                    d.outcome = Outcome::Refresh;
+                } else if (index == 1) {
+                    std::error_code ec;
+                    std::filesystem::create_directories(ModsFolder(), ec);
+                    const std::wstring folder = ModsFolder().wstring();
+                    ShellExecuteW(nullptr, L"open", folder.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+                    RM_LOGI("mods: the mods folder opened for %s", skin->id.c_str());
+                    d.outcome = Outcome::Refresh;
+                } else {
+                    ScanModSkins();
+                    const auto missing = g_modMissing.find(skin->id);
+                    const bool ready = missing != g_modMissing.end() && missing->second.empty();
+                    if (ready) {
+                        g->toasts.Push(Plain(skin->name) + " is ready");
+                        d.outcome = Outcome::Back;
+                    } else {
+                        d.outcome = Outcome::Refresh;
+                    }
+                }
+                break;
+            }
             case ScreenId::MatchTester: {
                 if (index < 0) {
                     d.outcome = Outcome::Back;
@@ -3202,11 +3383,10 @@ private:
                     g->selectedSkin = skins[index].id;
                     d.outcome = Outcome::Refresh;
                 } else if (skins[index].gate == rm::CharacterGate::NotInstalled) {
-                    // A mod skin without its mod: its page, to get it there (and endorse it).
-                    const rm::CharacterDef* def = run.content().FindCharacter(characters[g->selectedCharacter].id);
-                    const rm::SkinDef* skinDef = def != nullptr ? rm::FindSkin(*def, skins[index].id) : nullptr;
-                    if (skinDef != nullptr && skinDef->mod) OpenModPage(*skinDef->mod);
-                    d.outcome = Outcome::Refresh;
+                    // A mod skin without its mod: the MOD screen (its page, the mods folder, a check).
+                    g_modSetupSkin = skins[index].id;
+                    d.outcome = Outcome::Push;
+                    d.next = ScreenId::ModSetup;
                 } else {
                     d.outcome = Outcome::Denied;
                 }
@@ -6168,7 +6348,8 @@ void DriveDirector(double now) {
     for (auto it = g_addHealth.begin(); it != g_addHealth.end();) {
         const auto hp = engine::ReadHp(it->unit);
         if (hp && hp->max != it->hp && hp->hp > 0 && engine::SetHealth(it->unit, it->hp)) {
-            RM_LOGI("director: add %s health %d/%d -> %d", engine::ClassName(it->unit).c_str(), hp->hp, hp->max, it->hp);
+            static int healthLogs = 0;
+            if (healthLogs++ < 40) RM_LOGI("director: %s health %d/%d -> %d", engine::ClassName(it->unit).c_str(), hp->hp, hp->max, it->hp);
         }
         it = now - it->spawnedAt > 3.0 ? g_addHealth.erase(it) : it + 1;
     }
@@ -6272,6 +6453,11 @@ void DriveDirector(double now) {
             g_bossAddUnits.insert(unit);
             if (r.hp > 0) g_addHealth.push_back({unit, r.hp, now});
             RM_LOGI("director: the boss's add %s%s", r.unit_class.c_str(), r.hp > 0 ? (", health " + std::to_string(r.hp)).c_str() : "");
+        }
+        // Its class's own health (economy.json enemy_health: the game's Mercenaries values), as it settles.
+        if (!r.boss && !(r.add && r.hp > 0)) {
+            const auto& health = g->content->economy().enemy_health;
+            if (const auto it = health.find(r.unit_class); it != health.end()) g_addHealth.push_back({unit, it->second, now});
         }
         if (r.boss) {
             g->boss = {unit, r.hp, now};

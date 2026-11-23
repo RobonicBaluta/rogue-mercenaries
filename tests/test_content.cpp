@@ -352,3 +352,18 @@ TEST_CASE("the flamethrower's burn is fast until its total and its poison stacks
         CHECK(toxic->stream_max_stacks > 1);
     }
 }
+
+TEST_CASE("the shipped enemy health: the big Majini variants at the game's own values", "[content]") {
+    // 2026-11-23, the user: "the fat majini and the tribal big majini seem to have normal health".
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const auto& h = r.content->economy().enemy_health;
+    REQUIRE(h.count("uEm13") == 1);
+    CHECK(h.at("uEm13") == 4000);
+    CHECK(h.at("uEm24") == 4000);
+    CHECK(h.count("uEm10") == 0);  // a Majini keeps its own
+    const ContentLoadResult bad = Content::LoadFromStrings(test::EditFixture([](json&, json&, json&, json&, json& economy) {
+        economy["enemy_health"] = json{{"uEm13", 0}, {"Majini", 100}};
+    }));
+    CHECK(std::count_if(bad.errors.begin(), bad.errors.end(), [](const std::string& e) { return e.find("enemy_health") != std::string::npos; }) == 2);
+}

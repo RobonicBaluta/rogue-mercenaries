@@ -1823,7 +1823,24 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
     const Diag d = file.Sub("");
     CheckKeys(d, doc, {"schema_version", "run", "rewards", "weapon_rarity", "upgrades", "supplies",
                        "credits", "rating", "damage", "shop", "run_map", "chests", "keys", "enemy_threat",
-                       "run_rosters", "ladder", "refine", "coop", "_comment"});
+                       "run_rosters", "ladder", "refine", "coop", "enemy_health", "_comment"});
+    if (const json* h = Get(doc, "enemy_health")) {
+        const Diag hd = d.Sub(": enemy_health");
+        if (!h->is_object()) {
+            hd.Error("must be an object of class: health");
+        } else {
+            for (const auto& [cls, v] : h->items()) {
+                if (cls == "_comment") continue;
+                if (cls.rfind("uEm", 0) != 0) {
+                    hd.Error(Q(cls) + " is no enemy class (uEm..)");
+                } else if (!v.is_number_integer() || v.get<std::int64_t>() < 1 || v.get<std::int64_t>() > 32767) {
+                    hd.Error(Q(cls) + " must be a health of 1..32767");
+                } else {
+                    eco.enemy_health[cls] = v.get<int>();
+                }
+            }
+        }
+    }
     if (const json* s = Section(d, doc, "run")) {
         const Diag sd = d.Sub(": run");
         CheckKeys(sd, *s, {"arena_count", "starting_route", "starting_supplies",

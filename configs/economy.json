@@ -261,6 +261,13 @@
       "uEm23": 4
     }
   },
+  "enemy_health": {
+    "_comment": "An enemy class's health when the director spawns it: the game's own Mercenaries set data (mLife in stage\\s40N\\soft\\merce_s40N_emNN, read with scripts/xfs_setinfo.py, 2026-11-23). The Majini variants the director places as Majini (cSetInfoEm10) otherwise come with a Majini's 1000: the fat Majini of the Mines and the Prison (uEm13) and the tribal big Majini of the Village and the Ruins (uEm24) 4000, the Gatling Majini (uEm23) 4000 and 6000 (5000 here), the megaphone Majini (uEm21) 1400. A class not listed keeps its own.",
+    "uEm13": 4000,
+    "uEm21": 1400,
+    "uEm23": 5000,
+    "uEm24": 4000
+  },
   "run_rosters": {
     "_comment": "Run-planned rosters (ROADMAP M3.3, rm::PlanRunRosters). When a run starts, every arena of its map from from_arena on (boss arenas aside) adds enemy classes of other maps to its map's own: up to normal_guests normal ones and, once the arena's threat level lets specials in, special_guests specials, within max_classes classes in all, at or under the arena's threat level, preferring classes the run has not fielded yet. A guest is its home map's roster entry (guests: class -> home map key; only listed classes travel). Guests take normal_share of the normal picks and special_share of the special ones. The first arena keeps its map's own enemies: its stage loads before the run exists. The adapter loads each arena's classes with its stage, with their weapons and plagas.",
     "enabled": true,

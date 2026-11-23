@@ -47,22 +47,28 @@ OPTIONAL: COSTUME MODS
   Classic, Sheva Hound Wolf Squad, Rebecca Winter, Wesker RE4), and Leon S. Kennedy and
   Ada Wong are characters from mods. None
   of them come with this package, and the mod plays fine without them: SKINS lists such
-  a skin in red, and pressing it opens the mod's page on Nexus Mods. Download it there
-  (and endorse its creator), then unzip it into
+  a skin in red. Press it for its MOD screen: OPEN ITS PAGE (download it there, and
+  endorse its creator), OPEN THE MODS FOLDER, and CHECK AGAIN. The mods folder is
     Resident Evil 5\RogueMercenaries\mods
-  Only the costume is used, only while you wear that skin; nothing in the game's own
-  folders changes. For Leon, unzip his Main Files too; for Wesker RE4 and Ada, all of
-  their files (their voice lines). Do not install these with a mod
-  manager: that replaces the original outfit everywhere.
+  Put the download in there as it is (new in 0.2.8): a .zip (or .7z, .rar) is unzipped
+  for you into a folder of its name, and any folders inside it are fine. Only the costume
+  is used, only while you wear that skin; nothing in the game's own folders changes. For
+  Leon, put his Main Files there too; for Wesker RE4 and Ada, all of their files (their
+  voice lines). A costume mod you already installed into the game (with Fluffy Mod
+  Manager, or by hand into nativePC_MT) is found too, but then the original outfit wears
+  it everywhere.
 
 OTHER RE5 MODS (THE PLUGINS FOLDER)
   Only one dinput8.dll can be in the game folder, and many RE5 mods (input fixes, Enhanced
   Movement, plugin loaders) come as one. Rogue Mercenaries' dinput8.dll is a plugin loader
   too: when the game starts it loads every .dll and .asi file in the plugins folder next to
   re5dx9.exe (and .asi files next to re5dx9.exe), as the RE5 plugin loaders do.
-    - Another mod's dinput8.dll: move it into plugins and give it another name, for
-      example InputFix.dll. If it came with a plugins folder of its own, those files stay
-      in plugins. When it handles the controls itself, the game's input goes through it.
+    - Another mod's dinput8.dll: move it into plugins, under its own name (dinput8.dll)
+      or any other, for example InputFix.dll. Or put that mod's whole folder into plugins
+      as it comes (new in 0.2.8): its dinput8.dll and .asi files load from there, with its
+      own files beside them. If it came with a plugins folder of its own, those files go
+      in plugins. When it handles the controls itself, the game's input goes through it;
+      with several such mods, through each in turn.
     - A plugin (.dll) or an .asi file: put it into plugins.
     - A plugins\RogueMercenaries.dll from an earlier download is not needed any more and is
       left out; you can delete it.

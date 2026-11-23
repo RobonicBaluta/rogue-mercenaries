@@ -736,6 +736,25 @@ void __fastcall Wp21FireDetour(std::uintptr_t self, void*, std::uintptr_t attack
     }
 }
 
+// The flamethrower's charge mode (re5::addr::kFnWp21Charge) in a run's match: never (the user,
+// 2026-11-23: "in public assembly in the house with 3 stories there's always the "recharge
+// flamethrower" prompt and if you press it, the character puts the flamethrower never to be attained
+// again"). It sends the gun to the story's pump spot, wherever the player is; the mod refills its fuel
+// itself (RefuelFlamethrower). The put's motion plays and the flamethrower stays the player's.
+using Wp21ChargeFn = void(__thiscall*)(std::uintptr_t self);
+Wp21ChargeFn g_origWp21Charge = nullptr;
+std::atomic<int> g_chargeRefused{0};
+
+void __fastcall Wp21ChargeDetour(std::uintptr_t self, void*) {
+    if (g_runMatchHooks.load(std::memory_order_relaxed)) {
+        if (g_chargeRefused.fetch_add(1) < 8) {
+            RM_LOGI("flamethrower: %08X would go to the story's pump (its charge mode); kept with the player", static_cast<unsigned>(self));
+        }
+        return;
+    }
+    g_origWp21Charge(self);
+}
+
 // Developer: a unit's attach (uCoord vtable +0x34, 0x00489860: parent +0x18, joint +0x1C) to the
 // probed parent (the local player), logged when its joint or parent changes, with the caller (dev
 // "attachprobe"; 2026-11-19, a gun drawn nowhere: its joint 2 instead of the hand's).
@@ -855,6 +874,10 @@ bool InstallCombatHooks() {
     if (ok && caps.flameStream) {
         Hook(re5::addr::kFnWp21Fire, reinterpret_cast<void*>(&Wp21FireDetour), reinterpret_cast<void**>(&g_origWp21Fire),
              "uWp21 fire (an element's look in place of the flame)");
+    }
+    if (ok && caps.flameCharge) {
+        Hook(re5::addr::kFnWp21Charge, reinterpret_cast<void*>(&Wp21ChargeDetour), reinterpret_cast<void**>(&g_origWp21Charge),
+             "uWp21 charge mode (never in a run: the story's pump)");
     }
     if (ok && caps.hitCheckProbe) {
         Hook(re5::addr::kFnEnemyHitCheck, reinterpret_cast<void*>(&HitCheckDetour), reinterpret_cast<void**>(&g_origHitCheck),
