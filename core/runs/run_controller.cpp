@@ -1025,6 +1025,7 @@ Status RunController::StartRun(std::string_view character_id, std::uint64_t seed
         .Add("weapon_mode", WeaponIdMode() ? std::string_view("by_weapon_id") : kSidearmSlot)
         .Add("skin", skin->id).Add("length", run_.length_id).Add("loadout_weapon", run_.loadout.weapon_id)
         .Add("loadout", FormatLoadout(run_.loadout, *content_)).Add("loadout_spent", run_.loadout.spent);
+    for (const auto& [key, value] : environment_) e.Add(key, value);
     Emit(std::move(e));
     EquipSeat(*ch);
     UpdateCheckpoint();

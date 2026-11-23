@@ -320,6 +320,10 @@ public:
     /// Lists and lets runs start with tester_only characters (an install's "test_character"); off,
     /// they are neither listed by Characters() nor playable.
     void SetTesterCharacters(bool on) { tester_characters_ = on; }
+    /// Where the game runs (the adapter's: host, loader, plugins, unlocked, mod version, ...): each pair
+    /// joins every run_started event, so the logs say which cell of the test matrix a run covers.
+    void SetEnvironment(std::vector<std::pair<std::string, std::string>> tags) { environment_ = std::move(tags); }
+    [[nodiscard]] const std::vector<std::pair<std::string, std::string>>& environment() const { return environment_; }
     /// The arena's boss would die now (its health is gone). With a phase left (MapBoss phases) that
     /// phase starts instead: the boss stays down phase.down_seconds, then gets up with `hp` and the
     /// director brings the phase's adds (AddWave). None: no phase left, the death is real. Each
@@ -752,6 +756,7 @@ private:
     std::optional<StringSet> placeable_weapons_;
     StringSet installed_mod_skins_;
     bool tester_characters_ = false;
+    std::vector<std::pair<std::string, std::string>> environment_;
     int boss_phases_used_ = 0;  // this arena's (BossWouldDie)
     int boss_add_kills_ = 0;    // this arena's adds killed (their supplies' transaction ids)
     int dev_supply_grants_ = 0;

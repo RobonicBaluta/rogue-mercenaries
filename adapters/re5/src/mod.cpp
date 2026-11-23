@@ -59,6 +59,7 @@
 #include "probe.h"
 #include "re5_layout.h"
 #include "version.h"
+#include "plugin_host.h"
 
 #include "rm/content.h"
 #include "rm/diagnostics.h"
@@ -15594,6 +15595,8 @@ void DrawDeveloper(const rm::RunSnapshot& s) {
 
 }  // namespace
 
+std::vector<std::pair<std::string, std::string>> RunEnvironment(const Paths& paths, const Settings& settings);
+
 void ModInit(const Paths& paths, const Settings& settings) {
     g = new ModState();
     g->paths = paths;
@@ -15611,6 +15614,7 @@ void ModInit(const Paths& paths, const Settings& settings) {
 
     rm::JsonlOptions jsonl;
     jsonl.directory = paths.logDir;
+    jsonl.mod_version = kModVersion;  // the release's (the core's own is its library version)
     jsonl.max_level = settings.logLevel == "debug" ? rm::EventLevel::Debug : rm::EventLevel::Info;
     g->jsonl = std::make_unique<rm::JsonlSink>(jsonl);
     g->fanout = std::make_unique<rm::FanoutSink>();
@@ -15645,6 +15649,7 @@ void ModInit(const Paths& paths, const Settings& settings) {
     options.store = g->store.get();
     g->run = std::make_unique<rm::RunController>(g->content, std::move(profile.profile), options);
     g->run->SetTesterCharacters(settings.testCharacter);
+    g->run->SetEnvironment(RunEnvironment(paths, settings));
     if (settings.testCharacter) RM_LOGI("the tester's characters are listed (adapter.json test_character)");
     if (g->run->CanResumeRun()) {
         // A run with a point to go on from waits for CONTINUE RUN (START RUN settles it instead).
@@ -15657,6 +15662,42 @@ void ModInit(const Paths& paths, const Settings& settings) {
     // with adapter.json "map_editor".
     mapeditor::Load(g->paths.dataDir, *g->run);
     mapeditor::SetEnabled(g->settings.mapEditor);
+}
+
+// Where this game runs, for every run_started event (the M9 test matrix, the user's item 9,
+// 2026-11-24: "every character x host type x a full run"; scripts/test_matrix.py reads it back):
+// host windows or proton (Wine's ntdll has wine_get_version), the loader (the game's dinput8.dll
+// or another loader's plugin, as dllmain.cpp tells them apart), the plugins it loaded, unlocked.
+std::vector<std::pair<std::string, std::string>> RunEnvironment(const Paths& paths, const Settings& settings) {
+    std::vector<std::pair<std::string, std::string>> tags;
+    using WineVersionFn = const char*(__cdecl*)();
+    const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    const auto wine = ntdll ? reinterpret_cast<WineVersionFn>(GetProcAddress(ntdll, "wine_get_version")) : nullptr;
+    tags.emplace_back("host", wine ? "proton" : "windows");
+    if (wine) {
+        const char* v = wine();
+        tags.emplace_back("host_version", v ? v : "");
+    }
+    HMODULE self = nullptr;
+    wchar_t file[MAX_PATH] = {};
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(&RunEnvironment), &self)) {
+        GetModuleFileNameW(self, file, MAX_PATH);
+    }
+    const std::filesystem::path me(file);
+    const bool proxy = me.parent_path() == paths.gameDir && _wcsicmp(me.filename().c_str(), L"dinput8.dll") == 0;
+    tags.emplace_back("loader", proxy ? "dinput8" : "plugin");
+    std::string loaded;
+    for (const plugins::Entry& e : plugins::Entries()) {
+        if (!e.loaded) continue;
+        if (!loaded.empty()) loaded += ",";
+        loaded += rm::PathText(std::filesystem::path(e.path).filename());
+    }
+    tags.emplace_back("plugins", loaded.empty() ? "none" : loaded);
+    tags.emplace_back("unlocked", settings.everythingUnlocked ? "true" : "false");
+    RM_LOGI("environment: %s, loader %s, plugins %s", wine ? (std::string("proton ") + wine()).c_str() : "windows",
+            proxy ? "dinput8" : "plugin", loaded.empty() ? "none" : loaded.c_str());
+    return tags;
 }
 
 void ModCapabilitiesReady() {

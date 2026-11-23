@@ -392,3 +392,22 @@ TEST_CASE("the game's pause leaves the arena's clock, its rating too", "[run]") 
     REQUIRE(s.rating_now);
     CHECK(*s.rating_now == ComputeRating(h.rc.content().economy().rating, 15.0, s.par_seconds, 0.0, 0.0, 0));
 }
+
+// The M9 test matrix (the user's item 9, 2026-11-24): every run's start says where it ran (the
+// adapter's host, loader, plugins, ...), so the logs fill the matrix.
+TEST_CASE("run_started carries the adapter's environment", "[run]") {
+    test::Harness h;
+    h.rc.SetEnvironment({{"host", "proton"}, {"loader", "plugin"}, {"unlocked", "false"}});
+    REQUIRE(h.rc.StartRun("alpha", 3).ok());
+    const auto started = std::find_if(h.sink.events.begin(), h.sink.events.end(),
+                                      [](const Event& e) { return e.type == EventType::RunStarted; });
+    REQUIRE(started != h.sink.events.end());
+    const auto text = [&](const char* key) {
+        const FieldValue* v = started->Find(key);
+        return v != nullptr && std::holds_alternative<std::string>(*v) ? std::get<std::string>(*v) : std::string("(none)");
+    };
+    CHECK(text("host") == "proton");
+    CHECK(text("loader") == "plugin");
+    CHECK(text("unlocked") == "false");
+    CHECK(text("character") == "alpha");
+}

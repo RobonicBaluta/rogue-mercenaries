@@ -119,6 +119,26 @@ From M8's second batch the user plays and the fixes come from `%LOCALAPPDATA%\Ro
 | start move | `match start: the player is not placed yet (0 0 0); moving to the map's start later`; `warp: N places hold the unit's position ..., more than a unit has; not moved` |
 | run-planned guests (M3.3) | `run map: arena N: 204 dockside_push +uEm14 +uEm32 -> 0 1` (each node's guests); at a stage change `resources: stage S brings the run's guests: uEm14 uEm32` and `resources: list 4 (enemies) extras queued: ... uEm14 uEm32 uEm0d ...`; `arena N: <MAP>   <ROUTE> (stage S, enemy threat L, guests uEm14 from 4, uEm32 from 4)`; `director: uEm14 (arm 7016D, ...)` spawn lines for them; a guest whose archive did not load: `director: uEm14 is not loaded on this stage; not spawned, dropped for this arena`; telemetry `arena_started` `guests` |
 
+## M9 test matrix
+
+Every character x host (Windows, Proton on the Steam Deck) x run length (4, 8, 12 arenas; endless
+apart) as a full run, with co-op and the plugin loader as extra columns; soak (the longest runs and
+play session) and saves (where each profile load came from). It is filled from the mod's own
+telemetry, so playing is all it takes:
+
+    python scripts/test_matrix.py                      the PC's logs
+    python scripts/test_matrix.py C:\deck-logs=proton  more folders (the Deck's AppData\Local\RogueMercenaries\logs copied over)
+    python scripts/test_matrix.py --since 2026-11-24   only recent runs
+
+Since 0.3.1 every run_started says where it ran: `host` (windows or proton, with `host_version`),
+`loader` (dinput8: the game's dinput8.dll; plugin: another loader's), `plugins` (the other mods
+it loaded), `unlocked`, and `mod_version` is the release's (it was the core library's 0.1.0-dev);
+older runs take the host named after the folder. A cell is `Ndone` (N runs finished), `aN` (the
+best arena, none finished) or `-`. The list at the end is every cell with no full run yet.
+Save corruption is covered by the core tests (`tests/test_persistence.cpp`: checksum, the .bak
+kept only while valid, the .tmp rename, a corrupt file set aside); the matrix shows any load
+that came from the backup or had errors.
+
 ## Commands
 
 Run from the repository root in PowerShell. CMake/CTest are not on PATH; the scripts locate the
