@@ -41,6 +41,20 @@ The user's picks, as pasted ("Next, in this order"); their notes in quotes.
 
 Later: infinite ammo as a reward; the second Jill, the gunner (uEm83); boss music, or your own tracks; new items made from the game's own.
 
+## After 0.3.0a (a closed beta)
+
+- [ ] Female Majini and burst heads (2026-11-24). Coded, not played (test DLL `22F871B62C016AF5` on the PC over 0.3.0a).
+  - **Female Majini.** The user: "female majini, they don't get affected by stuff, flamethrower doesn't stagger or they don't do the burn animation". They are uEm11 (Public Assembly), and the mod played its reactions on uEm10, uEm12 and uEm14 only: the 2026-11-08 test never saw a uEm11 come out. On 2026-11-23 the PC's log showed two of them still walking at zero health after the flame. uEm11 joins `kReactionClasses`:
+    - its actions are the `cEm10Act` table (the log names `cEm10ActWalk` and `cEm10ActDeadNormal` on it);
+    - its effect files are exactly those uEm12 and uEm14 share, so every reaction seen on both asks only for files it has;
+    - uEm13 stays out (it lacks em1306 and em130f).
+  - **Burst heads.** The user: "if the crit explodes the head, there's a chance that they still have enough hp to go by, that shouldn't be the case, its confusing". From the game's code (research/re5-engine-map.md "Head bursts and Plagas"), a destroyed head may grow a Plaga that fights on: `cEm10ActDmgAppearPlaga`, RE5's own, more often with a crit's overkill. `DriveHeadBursts` changes two things:
+    - within 2 s of a player's hit, a Majini beginning that action dies instead (its health taken, the head-burst death started);
+    - one in the head-burst death with health left (a damage penalty below x1) has the rest taken after 0.3 s.
+    - The kill is the player's.
+  - **Not covered:** a soldier Majini's own Plaga ending inside the head-burst death (uEm14, `+0x1F88` bit 6); its health is still taken.
+  - **Log lines:** TESTING.md "Female Majini's reactions", "A burst head is a kill".
+
 ## Shipped, not confirmed in game (Tidy 2026-11-24)
 
 The unchecked entries below shipped in a release but the logs kept (adapter logs from 2026-11-22, telemetry from 2026-11-08) show no sign of them in game. Each entry is still in its place further down; tick it there once played. Ticked in the tidy: entries superseded or seen running in those logs (each says why, in italics).

@@ -3845,6 +3845,8 @@ std::string EnemyKillId(std::uintptr_t enemy, int maxHp) {
 // hit, and when: a death within kSpecialKillCredit is the player's (a Majini the flamethrower set
 // burning dies of the game's own fire, outside any hit, about 4 s later).
 std::map<std::uintptr_t, double> g_specialVictims;
+// Every hit a player's gun or blade landed, killing or not, and when (DriveHeadBursts).
+std::map<std::uintptr_t, double> g_playerHitAt;
 // The rarity remake's element statuses (defined with DriveElements).
 bool FrozenNow(std::uintptr_t enemy, double now);
 void QueueProcs(std::uintptr_t enemy, const std::vector<rm::WeaponProc>& procs);
@@ -8475,14 +8477,19 @@ std::string StrikeEnemy(std::uintptr_t enemy, int damage, int reaction, double n
 // player's (g_specialVictims). Reactions are the enemies' own actions, found by name in their
 // table, and only for the classes whose reactions were seen in game (scripts/test_reactions.sh,
 // 2026-11-08: the town, village and soldier Majini, uEm10, uEm12 and uEm14): on fire, frozen,
-// acid, flash, blown away, a stagger, a head burst. The burning
+// acid, flash, blown away, a stagger, a head burst. The town's women, uEm11 (Public Assembly),
+// joined them 2026-11-24 (the user: female Majini "don't care that much for anything elemental
+// related"): their actions are the same cEm10Act table (their log lines name cEm10ActWalk and
+// cEm10ActDeadNormal), and their effect files (em11: 06 08 0d 0f 16 20 21 22 24) are exactly
+// those uEm12's and uEm14's have in common, so every reaction seen on both asks only for files
+// em11 has. Not uEm13 (the Mines' big Majini): it lacks 06 and 0f. The burning
 // soldier's death (DeadArmyBurn) asks for an effect file no PC archive has (em1026.efl: the game
 // ends), so it is never used; other classes take the damage alone. The boss takes none of it (the
 // core gives it more damage instead). A hit's procs are queued inside the game's damage call and
 // played on the next tick.
 constexpr double kElementTick = 0.5;
 constexpr double kReactionCooldown = 3.0;  // a reaction the mod starts, at most this often per enemy
-constexpr const char* kReactionClasses[] = {"uEm10", "uEm12", "uEm14"};
+constexpr const char* kReactionClasses[] = {"uEm10", "uEm11", "uEm12", "uEm14"};
 
 enum class Reaction { Fire, Ice, Acid, Flash, Flyoff, Yoroke, HeadBurst, None };
 constexpr std::size_t kReactionKinds = 7;
@@ -8721,6 +8728,79 @@ void DriveZeroHealth(double now) {
         }
     }
     for (auto it = g_zeroHealth.begin(); it != g_zeroHealth.end();) it = seen.count(it->first) ? std::next(it) : g_zeroHealth.erase(it);
+}
+
+// A head a player's shot bursts is a kill (the user, 2026-11-24: "if the crit explodes the head,
+// there's a chance that they still have enough hp to go by, that shouldn't be the case, its
+// confusing"). Two ways the game lets one go on, from its code:
+//  - A Majini whose head a hit destroys may grow a Plaga out of its neck and fight on
+//    (cEm10ActDmgAppearPlaga / ...B, update 0x00BFF040; RE5's own, more often with a crit's
+//    overkill). Within 2 s of a player's hit it dies instead: its health taken, the head-burst
+//    death started (cEm10ActDeadHeadExplosion, which for all but a soldier, uEm14, with its
+//    +0x1F88 bit 6 ends in the death: 0x00C11060).
+//  - The head-burst death with health left (a damage penalty below x1 on the hit that burst it):
+//    after 0.3 s in it the rest of its health is taken.
+// The kill is the player's (g_specialVictims). Not the arena's boss or a boss's add.
+void DriveHeadBursts(double now) {
+    static int generation = -1;
+    static std::set<std::uintptr_t> handled;
+    static std::map<std::uintptr_t, double> burstSince;
+    if (generation != g->matchGeneration || !g->match.inMatch || !g->run->HasActiveRun() || g->run->phase() != rm::Phase::ArenaActive) {
+        generation = g->matchGeneration;
+        handled.clear();
+        burstSince.clear();
+        g_playerHitAt.clear();
+        return;
+    }
+    for (auto it = g_playerHitAt.begin(); it != g_playerHitAt.end();) it = now - it->second > 5.0 ? g_playerHitAt.erase(it) : std::next(it);
+    static int logged = 0;
+    std::set<std::uintptr_t> bursting;
+    for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
+        const std::uintptr_t unit = e.object;
+        if (unit == g->boss.unit || g_bossAddUnits.count(unit) || g_deadBossAdds.count(unit)) continue;
+        const std::string action = engine::CurrentActionName(unit);
+        const auto ends = [&action](const char* tail) {
+            const std::size_t n = std::strlen(tail);
+            return action.size() >= n && action.compare(action.size() - n, n, tail) == 0;
+        };
+        const bool plaga = ends("DmgAppearPlaga") || ends("DmgAppearPlagaB");
+        const bool burst = ends("DeadHeadExplosion");
+        if (!plaga && !burst) continue;
+        const auto hit = g_playerHitAt.find(unit);
+        const bool byPlayer = hit != g_playerHitAt.end() && now - hit->second <= 2.0;
+        if (plaga) {
+            if (!byPlayer || handled.count(unit)) continue;
+            handled.insert(unit);
+            g_specialVictims[unit] = now;
+            if (e.hp > 0) director::Damage(unit, e.hp);
+            bool started = React(unit, Reaction::HeadBurst, now, true, true);
+            std::string how = "its head-burst death";
+            if (!started) {
+                std::string name;
+                const int id = DeathActionOf(unit, name);
+                started = id >= 0 && engine::StartAction(unit, id, name.c_str(), true);
+                how = id >= 0 ? name : std::string("no death in its table");
+            }
+            if (logged++ < 16) {
+                RM_LOGI("head burst: %s %08X began %s (%d health) after the player's hit: dies instead, %s %s",
+                        engine::ClassName(unit).c_str(), static_cast<unsigned>(unit), action.c_str(), e.hp, how.c_str(),
+                        started ? "started" : "refused");
+            }
+            continue;
+        }
+        bursting.insert(unit);
+        if (e.hp <= 0) continue;
+        const double since = burstSince.try_emplace(unit, now).first->second;
+        if (now - since < 0.3 || handled.count(unit)) continue;
+        handled.insert(unit);
+        g_specialVictims[unit] = now;
+        const bool done = director::Damage(unit, e.hp);
+        if (logged++ < 16) {
+            RM_LOGI("head burst: %s %08X in %s with %d health left: %s", engine::ClassName(unit).c_str(), static_cast<unsigned>(unit),
+                    action.c_str(), e.hp, done ? "taken" : "could not be taken");
+        }
+    }
+    for (auto it = burstSince.begin(); it != burstSince.end();) it = bursting.count(it->first) ? std::next(it) : burstSince.erase(it);
 }
 
 // Living enemies within `radius` of `at` (3D), nearest first; never `except` nor the boss.
@@ -15019,6 +15099,7 @@ private:
         if (!r.killed) {
             if (r.attackerIsLocal) {
                 std::lock_guard lock(g->mutex);
+                g_playerHitAt[r.enemy] = Now();
                 if (g_hitSamples.size() < 64) g_hitSamples.push_back({r.enemy, Now() + 0.25});
                 g_specialVictims[r.enemy] = Now();  // its death soon after is the player's (fire, a fall)
                 PanelHit(r.appliedDamage, false, Now());
@@ -15026,7 +15107,10 @@ private:
             return;
         }
         std::lock_guard lock(g->mutex);
-        if (r.attackerIsLocal) PanelHit(r.appliedDamage, true, Now());
+        if (r.attackerIsLocal) {
+            PanelHit(r.appliedDamage, true, Now());
+            g_playerHitAt[r.enemy] = Now();  // a head it bursts is a kill (DriveHeadBursts)
+        }
         // A boss with a phase left goes down instead of dying (MapBoss phases), whatever took its last
         // health: a hit to 0 reported its death here and Uroboros Wesker never took his second form
         // (the user's fight, 2026-11-22: 438 -> 0, killed).
@@ -15203,6 +15287,7 @@ private:
         { ProfileScope p("tick:DriveArena"); DriveArena(now); }
         { ProfileScope p("tick:DetectEnemyDeaths"); DetectEnemyDeaths(now); }
         { ProfileScope p("tick:DriveZeroHealth"); DriveZeroHealth(now); }
+        { ProfileScope p("tick:DriveHeadBursts"); DriveHeadBursts(now); }
         { ProfileScope p("tick:OpenChests"); OpenChests(now); }
         // M10: player 1's pad is the mod's primary one; each player's own turn below.
         SetPrimaryPadUser(g->run->HasActiveRun() && g->run->SeatCount() > 1 ? PadUserOfSeat(0) : 0);

@@ -378,9 +378,10 @@ later game; delete that file to go back to the defaults. The game's effects carr
 picked by picking an effect of that colour (an icy one for Cryo, a green one for Toxic). `"effect_gallery": true` in
 `adapter.json` starts it on.
 
-Town, village and soldier Majini play the game's own reactions to these (on fire, frozen, acid, the flash stun,
-blown away, the head burst); other enemies take the damage alone, and a boss takes 15 to 20 percent more damage from
-the gun instead of a status. Legendary effects (an Exotic gun's): **Executioner Rounds** (finishes off any enemy below 20 percent
+Town Majini (men and women), village and soldier Majini play the game's own reactions to these (on fire, frozen, acid,
+the flash stun, blown away, the head burst); other enemies take the damage alone, and a boss takes 15 to 20 percent more
+damage from the gun instead of a status. A head your shot bursts is always a kill: the Majini no longer grows a Plaga
+from it and fights on. Legendary effects (an Exotic gun's): **Executioner Rounds** (finishes off any enemy below 20 percent
 health; a boss takes double damage there), **Bottomless** (kills
 refill the magazine), **Overkill** (damage past a kill hits the nearest enemy within 6 m), **Last Word** (the last
 round of a magazine kills any enemy; a boss takes triple damage), **Bloodthirst** (kills heal 3 percent of your
