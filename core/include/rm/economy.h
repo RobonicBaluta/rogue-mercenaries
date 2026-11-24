@@ -188,6 +188,9 @@ struct EconomyConfig {
         int max_classes = 5;
         double normal_share = 0.35;
         double special_share = 0.5;
+        /// Guests that join every arena from this threat level on (class -> level), ahead of the others and
+        /// whatever the class cap: the dogs from the bigger tiers (the user, 2026-11-24). Each must be a guest.
+        StringMap<int> always_from_level;
         StringMap<int> guests;
     } run_rosters;
 

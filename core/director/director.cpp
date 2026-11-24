@@ -47,6 +47,12 @@ std::vector<std::pair<int, double>> ThreatTable::Variants(const MapEnemy& enemy)
     return out;
 }
 
+double ThreatTable::ClassWeight(const std::string& unit_class, int level) const {
+    const auto it = class_weight.find(unit_class);
+    if (it == class_weight.end() || level <= 0 || static_cast<std::size_t>(level) > it->second.size()) return 1.0;
+    return std::max(0.0, it->second[static_cast<std::size_t>(level - 1)]);
+}
+
 int ThreatTable::Lowest(const MapEnemy& enemy) const {
     int lowest = 0;
     for (const auto& [threat, weight] : Variants(enemy)) {
@@ -111,7 +117,7 @@ const MapEnemy* Director::PickEnemy() {
             const double share = Share(e);
             if (share <= 0.0) continue;
             pool.push_back(&e);
-            weights.push_back(e.weight * share);
+            weights.push_back(e.weight * share * threat_.table.ClassWeight(e.unit_class, threat_.level));
         }
         if (!pool.empty()) break;
     }
@@ -142,7 +148,7 @@ const MapEnemy* Director::PickSpecial() {
         if (byThreat && threat_.table.Lowest(e) > threat_.level) continue;
         if (unavailable_.count(e.unit_class) != 0) continue;
         pool.push_back(&e);
-        weights.push_back(std::max(e.weight, 0.001));
+        weights.push_back(std::max(e.weight, 0.001) * threat_.table.ClassWeight(e.unit_class, threat_.level));
     }
     if (pool.empty()) return nullptr;
     const std::size_t i = rng_.WeightedIndex(weights);

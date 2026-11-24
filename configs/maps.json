@@ -843,6 +843,10 @@
           "profiles": [
             {"weight": 1, "fields": {"montage": 0, "armed": 1, "attribute": 1048576}}
           ]
+        },
+        {
+          "class": "uEm30",
+          "weight": 20.0
         }
       ]
     },
@@ -2541,6 +2545,10 @@
           "class": "uEm22",
           "weight": 5,
           "special": true
+        },
+        {
+          "class": "uEm30",
+          "weight": 20.0
         }
       ]
     },

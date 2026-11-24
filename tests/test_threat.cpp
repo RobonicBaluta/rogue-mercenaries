@@ -270,3 +270,46 @@ TEST_CASE("economy enemy_threat is validated", "[threat]") {
     bad["unknown"] = 1;
     CHECK_FALSE(errors(bad).empty());
 }
+
+TEST_CASE("a class's weight by level makes it likelier at the bigger tiers", "[threat]") {
+    ThreatTable t = Table();
+    t.class_weight["uEm14"] = {1.0, 1.0, 1.0, 6.0};
+    CHECK(t.ClassWeight("uEm14", 1) == Catch::Approx(1.0));
+    CHECK(t.ClassWeight("uEm14", 4) == Catch::Approx(6.0));
+    CHECK(t.ClassWeight("uEm14", 5) == Catch::Approx(1.0));  // past the list
+    CHECK(t.ClassWeight("uEm14", 0) == Catch::Approx(1.0));  // no threat level
+    CHECK(t.ClassWeight("uEm10", 4) == Catch::Approx(1.0));  // not listed
+    const auto soldiers = [&](int level, bool weighted) {
+        ArenaThreat a = Threat(level);
+        if (weighted) a.table = t;
+        Director d(Map(), 60, 1, 11, a);
+        int n = 0, all = 0;
+        for (const SpawnRequest& r : RunArena(d)) {
+            ++all;
+            n += r.unit_class == "uEm14" ? 1 : 0;
+        }
+        return all > 0 ? static_cast<double>(n) / all : 0.0;
+    };
+    // Level 4 fields every Majini (weight 6) and the soldiers (2): about a quarter; six times the soldiers' weight
+    // makes them about two thirds. Level 2 (one Majini variant in three fits) is the same either way.
+    CHECK(soldiers(4, false) < 0.4);
+    CHECK(soldiers(4, true) > 0.55);
+    CHECK(soldiers(2, true) == Catch::Approx(soldiers(2, false)));
+}
+
+TEST_CASE("economy enemy_threat's class_weight_by_level is validated", "[threat]") {
+    const auto errors = [](const nlohmann::json& weights) {
+        ContentSources src = test::EditFixture([&](auto&, auto&, auto&, auto&, nlohmann::json& economy) {
+            economy["enemy_threat"] = {{"enabled", true}, {"max_level", 4}, {"classes", {{"uEm10", 1}}}, {"class_weight_by_level", weights}};
+        });
+        return Content::LoadFromStrings(src).errors;
+    };
+    CHECK(errors({{"uEm30", {1.0, 1.0, 2.0, 3.5}}}).empty());
+    for (const nlohmann::json& bad : {nlohmann::json{{"uEm30", {1, 1, 1, 1, 1}}}, nlohmann::json{{"uEm30", nlohmann::json::array()}},
+                                      nlohmann::json{{"uEm30", {1, -1}}}, nlohmann::json{{"dog", {1}}}, nlohmann::json{{"uEm30", 2}}}) {
+        INFO(bad.dump());
+        const auto e = errors(bad);
+        CHECK(std::any_of(e.begin(), e.end(), [](const std::string& x) { return x.find("class_weight_by_level") != std::string::npos; }));
+    }
+}
+

@@ -343,7 +343,9 @@ TEST_CASE("the shipped rosters plan guests from across the game for every later 
         INFO(unit_class);
         const std::optional<MapEnemy> e = GuestEntry(c, unit_class);
         REQUIRE(e);
-        CHECK(c.FindMapByStage(home)->stage < 100);  // from a Mercenaries map: their rosters are surveyed
+        // From a Mercenaries map (their rosters are surveyed), but the dogs: no Mercenaries stage has them, so their
+        // entry is the Bridge's (s104), whose campaign area places them (2026-11-24).
+        if (unit_class != "uEm30") CHECK(c.FindMapByStage(home)->stage < 100);
         CHECK(c.economy().enemy_threat.table.classes.count(unit_class) == 1);
     }
     const std::vector<int> pool = Rotation(c);
@@ -404,3 +406,70 @@ TEST_CASE("economy run_rosters is validated", "[rosters]") {
     bad["unknown"] = 1;
     CHECK_FALSE(errors(bad).empty());
 }
+
+TEST_CASE("a guest always_from_level joins every arena from that level, whatever the class cap", "[rosters]") {
+    // The soldiers (threat 2) always from level 2: every arena from the second (its route's tier plus one).
+    const json threat = {{"enabled", true}, {"later_arena_bonus", 1}, {"max_level", 4}, {"specials_from_level", 3},
+                         {"weapons", {{"none", 1}, {"5f", 1}}},
+                         {"classes", {{"uEm10", 1}, {"uEm12", 1}, {"uEm14", 2}, {"uEm0b", 2}, {"uEm22", 4}, {"uEm32", 3}}}};
+    json rosters = Rosters();
+    rosters["always_from_level"] = {{"uEm14", 2}};
+    rosters["max_classes"] = 2;  // the maps' own two (or one) leave no room for it otherwise
+    ContentSources src = test::EditFixture([&](auto&, auto&, auto&, auto&, json& economy) {
+        economy["run_rosters"] = rosters;
+        economy["enemy_threat"] = threat;
+    });
+    src.maps = kMaps;
+    const auto c = test::Load(src);
+    REQUIRE(c->economy().run_rosters.always_from_level.at("uEm14") == 2);
+    int arenas = 0;
+    for (std::uint64_t seed = 0; seed < 100; ++seed) {
+        Rng route = Rng::Derive(seed, streams::kRoute);
+        RunMap map = GenerateRunMap(*c, route, Rotation(*c), -1);
+        Rng roster = Rng::Derive(seed, streams::kRoster);
+        PlanRunRosters(*c, roster, map);
+        for (std::size_t l = 0; l < map.layers.size(); ++l) {
+            for (const RunMapNode& n : map.layers[l]) {
+                const MapDef* m = c->FindMapByStage(n.map_key);
+                if (m == nullptr || m->boss) continue;
+                const bool has = std::find(n.guests.begin(), n.guests.end(), "uEm14") != n.guests.end();
+                INFO("seed " << seed << " arena " << l + 1 << " map " << m->id);
+                if (l == 0) CHECK_FALSE(has);  // the first arena keeps its own
+                else if (!Has(*m, "uEm14")) {
+                    CHECK(has);
+                    ++arenas;
+                }
+            }
+        }
+    }
+    CHECK(arenas > 50);
+
+    // Validated: it must be a guest, at a level.
+    json notGuest = Rosters();
+    notGuest["always_from_level"] = {{"uEm30", 3}};
+    const auto errors = Content::LoadFromStrings(Sources(notGuest)).errors;
+    CHECK(std::any_of(errors.begin(), errors.end(), [](const std::string& e) { return e.find("must be one of the guests") != std::string::npos; }));
+    json badLevel = Rosters();
+    badLevel["always_from_level"] = {{"uEm14", 0}};
+    const auto errors2 = Content::LoadFromStrings(Sources(badLevel)).errors;
+    CHECK(std::any_of(errors2.begin(), errors2.end(), [](const std::string& e) { return e.find("must be a level") != std::string::npos; }));
+}
+
+TEST_CASE("the shipped dogs: a guest from the Bridge, from level 2, in every arena from level 3, likelier as it grows", "[rosters]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const EconomyConfig& eco = r.content->economy();
+    CHECK(eco.enemy_threat.table.Class("uEm30") == 2);
+    CHECK(eco.enemy_threat.table.ClassWeight("uEm30", 4) > eco.enemy_threat.table.ClassWeight("uEm30", 2));
+    CHECK(eco.run_rosters.guests.at("uEm30") == 104);
+    CHECK(eco.run_rosters.always_from_level.at("uEm30") == 3);
+    const std::optional<MapEnemy> dog = GuestEntry(*r.content, "uEm30");
+    REQUIRE(dog);
+    CHECK_FALSE(dog->special);
+    for (const int stage : {104, 500}) {
+        const MapDef* m = r.content->FindMapByStage(stage);
+        REQUIRE(m != nullptr);
+        CHECK(Has(*m, "uEm30"));
+    }
+}
+

@@ -57,6 +57,13 @@ CLASSES = {
     'uEm34': 3,                          # Reaper-like (core, crawl)
     'uEm22': 4,                          # Chainsaw Majini (AtkCut, BreakDoor)
     'uEm23': 4,                          # Gatling Majini
+    'uEm30': 2,                          # the dogs, Adjule (Bark, Snarl, NeckBite, AtckTentacle): fast, in packs
+}
+# A class's weight in the director's picks at each threat level, times its roster weight (the user, 2026-11-24:
+# "add dogs to the enemy possibilities, specially for the later stages get them to appear more ... like bigger
+# tiers"). The dogs come in at level 2 and grow from there.
+CLASS_WEIGHT_BY_LEVEL = {
+    'uEm30': [1.0, 1.0, 2.0, 3.5],
 }
 
 
@@ -93,7 +100,8 @@ def main():
                      'arena is level 1, later arenas their route\'s tier plus later_arena_bonus, up to max_level. The director '
                      'fields only spawns at or under the level (a map without any falls back to its mildest), keeps at most '
                      'max_alive_by_level of them alive, and lets specials in from specials_from_level; the run map puts a map '
-                     'on a node only when it can field enemies at that node\'s level.'),
+                     'on a node only when it can field enemies at that node\'s level. class_weight_by_level: a class\'s weight '
+                     'in the picks at each level (index level - 1), times its roster weight (the dogs grow with the tier).'),
         'enabled': True,
         'later_arena_bonus': 1,
         'max_level': 4,
@@ -102,6 +110,7 @@ def main():
         'default': DEFAULT_LEVEL,
         'weapons': weapons,
         'classes': CLASSES,
+        'class_weight_by_level': CLASS_WEIGHT_BY_LEVEL,
     }
     with open('configs/economy.json', 'w', encoding='utf-8', newline='\n') as f:
         json.dump(e, f, indent=2)

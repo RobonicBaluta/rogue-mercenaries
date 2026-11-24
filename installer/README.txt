@@ -159,19 +159,22 @@ PLAY
       refill a little by themselves when everything is empty.
     - New in 0.3.0b: a Supply perk's gun of your starting gun's kind takes its place,
       better, so no run starts with two guns of one kind.
-    - New: Perfection is epic; the Uroboros Virus stacks to 30 (the same total as before,
-      slower), and the info panel counts its stacks like ammo. At 30 stacks Midnight
-      Wesker's burst button turns him into Uroboros: everyone freezes while the camera
-      turns around him, then 12 seconds with no damage, no flinch and no grab, his other
-      button lashing everyone ahead. It comes back 120 seconds after it ends; burst
-      works all the while.
-    - New: a Majini that grows a Plaga out of its neck fights on again and counts when
-      the Plaga dies (0.3.0b killed it as the Plaga came out).
-    - New: the Cryo, Toxic and Shock flamethrowers keep the flame's sound; a Cryo
-      freeze now holds every enemy still, not only the Majini.
-    - New: a charm shows its picture in the match's grid as in ORGANIZE.
-    - New: the Drilling Facilities refuse the jump down at the boat's mooring, and a
-      jump down that holds you for 6 seconds puts you back at the arena's start.
+    - New in 0.3.0c: dogs (the Adjule) join the enemies: on The Bridge and the Ship Deck
+      from the second threat level, in every arena from the third, and more of them the
+      higher the tier.
+    - New in 0.3.0c: Perfection is epic; the Uroboros Virus stacks to 30 (the same total
+      as before, slower), and the info panel counts its stacks like ammo. At 30 stacks
+      Midnight Wesker's burst button turns him into Uroboros: everyone freezes while the
+      camera turns around him, then 12 seconds with no damage, no flinch and no grab,
+      his other button lashing everyone ahead. It comes back 120 seconds after it ends;
+      burst works all the while.
+    - New in 0.3.0c: a Majini that grows a Plaga out of its neck fights on again and
+      counts when the Plaga dies (0.3.0b killed it as the Plaga came out).
+    - New in 0.3.0c: the Cryo, Toxic and Shock flamethrowers keep the flame's sound; a
+      Cryo freeze now holds every enemy still, not only the Majini.
+    - New in 0.3.0c: a charm shows its picture in the match's grid as in ORGANIZE.
+    - New in 0.3.0c: the Drilling Facilities refuse the jump down at the boat's mooring,
+      and a jump down that holds you for 6 seconds puts you back at the arena's start.
     - A rocket launcher, once bought, comes back at the start of every arena (into the
       storage if your grid is full). Selling it gives it up for good.
     - What does not fit in your nine cells waits in the storage of ORGANIZE INVENTORY.

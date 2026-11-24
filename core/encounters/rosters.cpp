@@ -81,6 +81,19 @@ void PlanRunRosters(const Content& content, Rng& rng, RunMap& map) {
             const int level = threat.Level(arena, route != nullptr ? route->difficulty_tier : 1);  // 0: threat off
             const bool specials_join = level <= 0 || level >= threat.specials_from_level;
             int room = cfg.max_classes - static_cast<int>(classes.size());
+            // The ones that come to every arena from their level (the dogs), first.
+            if (level > 0) {
+                for (const auto& [unit_class, from] : cfg.always_from_level) {
+                    const auto e = pool.find(unit_class);
+                    if (level < from || e == pool.end() || classes.count(unit_class) != 0) continue;
+                    if (threat.table.Lowest(e->second) > level || (e->second.special && !specials_join)) continue;
+                    node.guests.push_back(unit_class);
+                    classes.insert(unit_class);
+                    path.insert(unit_class);
+                    ++layer_guests[unit_class];
+                    --room;
+                }
+            }
             for (const bool special : {false, true}) {
                 const int want = special ? (specials_join ? cfg.special_guests : 0) : cfg.normal_guests;
                 for (int k = 0; k < want && room > 0; ++k) {

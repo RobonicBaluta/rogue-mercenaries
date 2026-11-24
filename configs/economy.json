@@ -179,7 +179,7 @@
     "max": 9
   },
   "enemy_threat": {
-    "_comment": "Arena threat (ROADMAP M3.4, written by scripts/write_threats.py). A spawn's threat is the higher of its class's and its weapon's (weapons by uWp class, the arm id 0x701NN's NN; none = no weapon). The first arena is level 1, later arenas their route's tier plus later_arena_bonus, up to max_level. The director fields only spawns at or under the level (a map without any falls back to its mildest), keeps at most max_alive_by_level of them alive, and lets specials in from specials_from_level; the run map puts a map on a node only when it can field enemies at that node's level.",
+    "_comment": "Arena threat (ROADMAP M3.4, written by scripts/write_threats.py). A spawn's threat is the higher of its class's and its weapon's (weapons by uWp class, the arm id 0x701NN's NN; none = no weapon). The first arena is level 1, later arenas their route's tier plus later_arena_bonus, up to max_level. The director fields only spawns at or under the level (a map without any falls back to its mildest), keeps at most max_alive_by_level of them alive, and lets specials in from specials_from_level; the run map puts a map on a node only when it can field enemies at that node's level. class_weight_by_level: a class's weight in the picks at each level (index level - 1), times its roster weight (the dogs grow with the tier).",
     "enabled": true,
     "later_arena_bonus": 1,
     "max_level": 4,
@@ -258,18 +258,28 @@
       "uEm32": 3,
       "uEm34": 3,
       "uEm22": 4,
-      "uEm23": 4
+      "uEm23": 4,
+      "uEm30": 2
+    },
+    "class_weight_by_level": {
+      "uEm30": [
+        1.0,
+        1.0,
+        2.0,
+        3.5
+      ]
     }
   },
   "enemy_health": {
-    "_comment": "An enemy class's health when the director spawns it: the game's own Mercenaries set data (mLife in stage\\s40N\\soft\\merce_s40N_emNN, read with scripts/xfs_setinfo.py, 2026-11-23). The Majini variants the director places as Majini (cSetInfoEm10) otherwise come with a Majini's 1000: the fat Majini of the Mines and the Prison (uEm13) and the tribal big Majini of the Village and the Ruins (uEm24) 4000, the Gatling Majini (uEm23) 4000 and 6000 (5000 here), the megaphone Majini (uEm21) 1400. A class not listed keeps its own.",
+    "_comment": "An enemy class's health when the director spawns it: the game's own Mercenaries set data (mLife in stage\\s40N\\soft\\merce_s40N_emNN, read with scripts/xfs_setinfo.py, 2026-11-23). The Majini variants the director places as Majini (cSetInfoEm10) otherwise come with a Majini's 1000: the fat Majini of the Mines and the Prison (uEm13) and the tribal big Majini of the Village and the Ruins (uEm24) 4000, the Gatling Majini (uEm23) 4000 and 6000 (5000 here), the megaphone Majini (uEm21) 1400. A class not listed keeps its own. The dogs (uEm30, Adjule; in no Mercenaries stage) 800, the most of their campaign placements (s104: 700 and 800).",
     "uEm13": 4000,
     "uEm21": 1400,
     "uEm23": 5000,
-    "uEm24": 4000
+    "uEm24": 4000,
+    "uEm30": 800
   },
   "run_rosters": {
-    "_comment": "Run-planned rosters (ROADMAP M3.3, rm::PlanRunRosters). When a run starts, every arena of its map from from_arena on (boss arenas aside) adds enemy classes of other maps to its map's own: up to normal_guests normal ones and, once the arena's threat level lets specials in, special_guests specials, within max_classes classes in all, at or under the arena's threat level, preferring classes the run has not fielded yet. A guest is its home map's roster entry (guests: class -> home map key; only listed classes travel). Guests take normal_share of the normal picks and special_share of the special ones. The first arena keeps its map's own enemies: its stage loads before the run exists. The adapter loads each arena's classes with its stage, with their weapons and plagas.",
+    "_comment": "Run-planned rosters (ROADMAP M3.3, rm::PlanRunRosters). When a run starts, every arena of its map from from_arena on (boss arenas aside) adds enemy classes of other maps to its map's own: up to normal_guests normal ones and, once the arena's threat level lets specials in, special_guests specials, within max_classes classes in all, at or under the arena's threat level, preferring classes the run has not fielded yet. A guest is its home map's roster entry (guests: class -> home map key; only listed classes travel). Guests take normal_share of the normal picks and special_share of the special ones. The first arena keeps its map's own enemies: its stage loads before the run exists. The adapter loads each arena's classes with its stage, with their weapons and plagas. always_from_level: guests that join every arena from that threat level on, ahead of the others and whatever max_classes (the dogs from level 3; the user, 2026-11-24: \"specially for the later stages get them to appear more\").",
     "enabled": true,
     "from_arena": 2,
     "normal_guests": 1,
@@ -291,7 +301,11 @@
       "uEm24": 3,
       "uEm26": 7,
       "uEm32": 4,
-      "uEm34": 1
+      "uEm34": 1,
+      "uEm30": 104
+    },
+    "always_from_level": {
+      "uEm30": 3
     }
   },
   "ladder": {

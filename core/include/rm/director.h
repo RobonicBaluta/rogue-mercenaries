@@ -155,6 +155,11 @@ struct ThreatTable {
     int fallback = 2;  // a class or weapon not listed
     std::unordered_map<int, int> weapons;  // by weapon class: the arm 0x701NN's NN
     StringMap<int> classes;
+    /// A class's weight in the director's picks at each threat level (index level - 1), times its roster weight
+    /// (economy enemy_threat "class_weight_by_level"; the user, 2026-11-24, of the dogs: "specially for the later
+    /// stages get them to appear more ... like bigger tiers"). A class not listed, or a level past the list: 1.
+    StringMap<std::vector<double>> class_weight;
+    [[nodiscard]] double ClassWeight(const std::string& unit_class, int level) const;
 
     [[nodiscard]] int Weapon(std::int64_t arm) const;
     [[nodiscard]] int Class(const std::string& unit_class) const;

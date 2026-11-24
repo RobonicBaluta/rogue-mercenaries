@@ -2338,7 +2338,7 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
         if (const json* s = Section(d, doc, "enemy_threat")) {
             const Diag td = d.Sub(": enemy_threat");
             CheckKeys(td, *s, {"enabled", "later_arena_bonus", "max_level", "max_alive_by_level", "specials_from_level",
-                               "default", "weapons", "classes"});
+                               "default", "weapons", "classes", "class_weight_by_level"});
             EconomyConfig::EnemyThreat& t = eco.enemy_threat;
             GetBool(td, *s, "enabled", t.enabled, false);
             GetIntRange(td, *s, "max_level", t.max_level, false, 1, 9);
@@ -2396,6 +2396,23 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
                     }
                 }
             }
+            if (const json* cw = Get(*s, "class_weight_by_level")) {
+                if (!cw->is_object()) {
+                    td.Error("class_weight_by_level must be an object (enemy class -> a weight per level)");
+                } else {
+                    for (const auto& [key, value] : cw->items()) {
+                        std::vector<double> by;
+                        bool ok = key.rfind("uEm", 0) == 0 && value.is_array() && !value.empty() &&
+                                  value.size() <= static_cast<std::size_t>(std::max(1, t.max_level));
+                        for (const json& w : ok ? value : json::array()) {
+                            if (!w.is_number() || w.get<double>() < 0.0 || w.get<double>() > 20.0) ok = false;
+                            else by.push_back(w.get<double>());
+                        }
+                        if (!ok) td.Error("class_weight_by_level " + Q(key) + " must be an enemy class with 1..max_level weights of 0..20");
+                        else t.table.class_weight[key] = std::move(by);
+                    }
+                }
+            }
             if (t.specials_from_level > t.max_level + 1) td.Error("specials_from_level must be at most max_level + 1");
         }
     }
@@ -2403,7 +2420,7 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
         if (const json* s = Section(d, doc, "run_rosters")) {
             const Diag rd = d.Sub(": run_rosters");
             CheckKeys(rd, *s, {"enabled", "from_arena", "normal_guests", "special_guests", "max_classes", "normal_share",
-                               "special_share", "guests"});
+                               "special_share", "guests", "always_from_level"});
             EconomyConfig::RunRosters& r = eco.run_rosters;
             GetBool(rd, *s, "enabled", r.enabled, false);
             GetIntRange(rd, *s, "from_arena", r.from_arena, false, 1, 9);
@@ -2421,6 +2438,17 @@ void ParseEconomy(const Diag& file, const json& doc, EconomyConfig& eco) {
                         if (key.rfind("uEm", 0) != 0) rd.Error("guest " + Q(key) + " must be an enemy class (uEm..)");
                         else if (!value.is_number_integer()) rd.Error("guest " + Q(key) + " needs its home map key (a number)");
                         else r.guests[key] = value.get<int>();
+                    }
+                }
+            }
+            if (const json* a = Get(*s, "always_from_level")) {
+                if (!a->is_object()) {
+                    rd.Error("always_from_level must be an object (guest class -> threat level)");
+                } else {
+                    for (const auto& [key, value] : a->items()) {
+                        if (r.guests.count(key) == 0) rd.Error("always_from_level " + Q(key) + " must be one of the guests");
+                        else if (!value.is_number_integer() || value.get<int>() < 1 || value.get<int>() > 10) rd.Error("always_from_level " + Q(key) + " must be a level 1..10");
+                        else r.always_from_level[key] = value.get<int>();
                     }
                 }
             }
