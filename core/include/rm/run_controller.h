@@ -121,6 +121,7 @@ struct KillOutcome {
     std::string stat_gained;             // a build's melee-kill stat ("damage", ...), empty if none
     double stat_amount = 0.0;
     std::vector<WeaponProc> procs;       // the killing gun's kill effects (Explode, Shatter, Overkill, Refill)
+    double refill_fraction = 0.0;        // the build's kill refill came up: this share of the gun in hand's magazine
 };
 
 /// A healing item's heal as the game applies it (the adapter's hook on the player's health add).
@@ -477,6 +478,11 @@ public:
     [[nodiscard]] bool BreaksGrabs() const;
     [[nodiscard]] bool BreaksGrabs(double now) const { return BreaksGrabs() || Transformed(now); }
 
+    /// The build's elements a gun of `base_id` carries (gun_elements, on its gun_elements_categories).
+    [[nodiscard]] std::vector<Element> BuildElements(std::string_view base_id) const;
+    /// The build's own elements (gun_elements): never a gun's own.
+    [[nodiscard]] std::vector<Element> BuildElements() const;
+
     // ---- A charm's transformation (CharmTransform: Midnight Wesker's Uroboros, 2026-11-24) ----
     /// The carried charm whose transformation the run's skin has (nullptr: none).
     [[nodiscard]] const CharmDef* TransformCharm() const;
@@ -489,6 +495,10 @@ public:
     /// What the special button `slot` does now: its own special, the transformation while that is ready, its
     /// attack on the other button while transformed. UseSpecial uses it, and starts the transformation.
     [[nodiscard]] const SkinSpecial& ActiveSpecial(double now, int slot) const;
+
+    /// A perfect dodge's reward (Classic Jill): her next `count` shots crit.
+    void GrantSureCrits(int count);
+    [[nodiscard]] int SureCrits() const { return run_.sure_crits; }
     /// The gun a supply perk gave in place of the starting gun of its kind (SwapStartingWeapon; the
     /// Perk Workshop's "doesn't start with 2 weapons of the same type"): the adapter puts it in the
     /// hands and takes the starting gun away. Empty: none.
@@ -727,8 +737,6 @@ private:
     /// The gun's elements, each with whether it plays evolved: its own (evolved on a Legendary
     /// gun), then the build's (gun_elements, the arena's element), each once.
     [[nodiscard]] std::vector<std::pair<Element, bool>> GunElements(const WeaponInstance& weapon) const;
-    /// The build's own elements (gun_elements): never a gun's own.
-    [[nodiscard]] std::vector<Element> BuildElements() const;
     const WeaponInstance* ApplicableWeapon(const std::optional<std::string>& weapon_id,
                                            const std::optional<bool>& melee) const;
     std::string NextInstanceId();

@@ -898,7 +898,9 @@ TEST_CASE("Ada Wong wears Sheva's three outfits, each skin with its build", "[bu
         REQUIRE(rifle != h.rc.state().weapons.end());
         CHECK(rifle->rarity == Rarity::Rare);
         CHECK(has(h.rc.state(), "longbow") == h.rc.state().weapons.end());
-        CHECK(h.rc.state().character.build.drops_as_held_ammo);
+        // Her pickups stay what they are; a rifle headshot gives its round back (2026-11-24).
+        CHECK_FALSE(h.rc.state().character.build.drops_as_held_ammo);
+        CHECK(h.rc.state().character.build.headshot_refund.at("rifle") == Catch::Approx(1.0));
     }
     test::Harness without(r.content, open);
     CHECK_FALSE(without.rc.StartRun("ada", 7, "ada_agent").ok());

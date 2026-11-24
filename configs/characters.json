@@ -269,13 +269,17 @@
           "build": {
             "name": "Scorched Earth",
             "icon": "wolf",
-            "summary": "A pistol and a rare flamethrower, fuel back 50 percent faster. Her guns are all Incendiary. Supplies x0.75.",
+            "summary": "A pistol, a rare flamethrower, fuel 50 percent faster. Flamethrower and launchers Incendiary. Supplies x0.75.",
             "starting_weapon": "flamethrower",
             "starting_weapon_rarity": "rare",
             "pistol_in_hand": true,
             "fuel_regen_mult": 1.5,
             "gun_elements": [
               "incendiary"
+            ],
+            "gun_elements_categories": [
+              "flamethrower",
+              "launcher"
             ],
             "supplies_mult": 0.75
           },
@@ -369,26 +373,47 @@
           "build": {
             "name": "Last Escape",
             "icon": "launcher",
-            "summary": "Starts with the grenade launcher. Her guns all carry Incendiary, Cryo and Toxic. Handguns, launchers only.",
+            "summary": "Dodge a blow as it lands, those near freeze, 3 shots crit. Her Reloading Tool mixes launcher rounds.",
             "starting_weapon": "grenade_launcher",
-            "gun_elements": [
-              "incendiary",
-              "cryo",
-              "toxic"
-            ],
             "offered_weapons": {
               "categories": [
                 "handgun",
+                "shotgun",
                 "launcher"
               ]
             },
             "usable_weapons": {
               "categories": [
                 "handgun",
+                "shotgun",
                 "launcher"
               ]
             },
-            "max_health_mult": 0.85
+            "max_health_mult": 0.9,
+            "special": {
+              "kind": "perfect_dodge",
+              "name": "Perfect Dodge",
+              "icon": "dash",
+              "cooldown_seconds": 4,
+              "duration_seconds": 0.7,
+              "power": 3
+            },
+            "charms": [
+              {
+                "id": "reloading_tool",
+                "name": "Reloading Tool",
+                "game_item": "0x0424",
+                "picture": "reloading_tool.png",
+                "description": "While it is in her grid, every 8 kills she mixes two grenade launcher rounds, flame, then acid, then freeze, in turn.",
+                "craft_every_kills": 8,
+                "craft_items": [
+                  "0x020E",
+                  "0x0207",
+                  "0x0208"
+                ],
+                "craft_amount": 2
+              }
+            ]
           },
           "unlock_kind": "boss_beaten",
           "unlock_boss": "boss:uEm43",
@@ -541,9 +566,13 @@
           "build": {
             "name": "Cold Snap",
             "icon": "snowflake",
-            "summary": "Her guns are all Cryo, and rifles hit 25 percent harder. Heals 20 percent weaker.",
+            "summary": "Her rifles and handguns are Cryo, and rifles hit 25 percent harder. Heals 20 percent weaker.",
             "gun_elements": [
               "cryo"
+            ],
+            "gun_elements_categories": [
+              "rifle",
+              "handgun"
             ],
             "category_damage": {
               "rifle": 0.25
@@ -1021,13 +1050,15 @@
           "build": {
             "name": "Separate Ways",
             "icon": "rifle",
-            "summary": "Starts with a rare PSG-1. Rifles hit 40 percent harder, and every pickup is ammo for the gun in hand.",
+            "summary": "Starts with a rare PSG-1. Rifles hit 40 percent harder, and a rifle headshot gives its round back.",
             "starting_weapon": "psg1",
             "starting_weapon_rarity": "rare",
             "category_damage": {
               "rifle": 0.4
             },
-            "drops_as_held_ammo": true,
+            "headshot_refund": {
+              "rifle": 1.0
+            },
             "pistol_in_hand": true
           },
           "unlock_kind": "runs_completed_as",

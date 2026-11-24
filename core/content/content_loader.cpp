@@ -583,7 +583,8 @@ void ParsePerks(const Diag& file, const json& doc, std::vector<PerkDef>& out) {
                                    "supplies_mult", "ammo_stack_mult", "stack_mult", "never_offered", "drops_as_held_ammo",
                                    "pickup_as", "break_grabs", "grenade_damage", "grenade_blast_m", "grenade_blast_fraction",
                                    "cluster_bomblets", "cluster_damage_fraction", "cluster_radius_m", "incendiary_burns",
-                                   "flash_masked", "flash_extra_seconds", "empty_ammo_regen", "charms"});
+                                   "flash_masked", "flash_extra_seconds", "empty_ammo_regen", "charms", "kill_refill",
+                                   "headshot_refund"});
                 SkinBuild build;
                 ParseBuild(bd, *b, build);
                 p.build = std::move(build);
@@ -977,8 +978,8 @@ void ParseSpecial(const Diag& d, const json& sp, SkinSpecial& out, std::string_v
     if (!only.empty()) {
         if (out.kind != only) d.Error("special kind " + Q(out.kind) + " must be " + Q(std::string(only)) + " here");
     } else if (!out.kind.empty() && out.kind != "dash" && out.kind != "dual_smg" && out.kind != "backup" && out.kind != "burst" &&
-               out.kind != "element_pick" && out.kind != "flip") {
-        d.Error("unknown special kind " + Q(out.kind) + " (dash, dual_smg, backup, burst, element_pick, flip)");
+               out.kind != "element_pick" && out.kind != "flip" && out.kind != "perfect_dodge") {
+        d.Error("unknown special kind " + Q(out.kind) + " (dash, dual_smg, backup, burst, element_pick, flip, perfect_dodge)");
     }
     GetString(d, sp, "name", out.name, true);
     if (GetString(d, sp, "icon", out.icon, false) && !IsValidId(out.icon)) d.Error("special icon " + Q(out.icon) + " is not a valid name");
@@ -1025,7 +1026,8 @@ void ParseTransform(const Diag& d, const json& t, CharmTransform& out) {
 
 void ParseCharm(const Diag& d, const json& c, CharmDef& out) {
     CheckKeys(d, c, {"id", "name", "description", "game_item", "picture", "chest_weapon_every", "chest_weapon_rarity",
-                     "kill_stack_stats", "kill_stack_max", "stacks_end_on_hit", "breaks_grabs", "special", "transform"});
+                     "kill_stack_stats", "kill_stack_max", "stacks_end_on_hit", "breaks_grabs", "special", "transform",
+                     "craft_every_kills", "craft_items", "craft_amount"});
     if (GetString(d, c, "id", out.id, true) && !IsValidId(out.id)) d.Error("charm id " + Q(out.id) + " is not a valid id");
     GetString(d, c, "name", out.name, true);
     GetString(d, c, "description", out.description, false);
@@ -1063,6 +1065,20 @@ void ParseCharm(const Diag& d, const json& c, CharmDef& out) {
     if (!out.kill_stack_stats.empty() && out.kill_stack_max <= 0) d.Error("kill_stack_stats need a kill_stack_max");
     GetBool(d, c, "stacks_end_on_hit", out.stacks_end_on_hit, false);
     GetBool(d, c, "breaks_grabs", out.breaks_grabs, false);
+    GetIntRange(d, c, "craft_every_kills", out.craft_every_kills, false, 1, 100);
+    GetIntRange(d, c, "craft_amount", out.craft_amount, false, 1, 20);
+    if (const json* ci = Get(c, "craft_items")) {
+        if (!ci->is_array() || ci->empty()) {
+            d.Error("field 'craft_items' must be a list of game items");
+        } else {
+            for (const json& item : *ci) {
+                const std::int64_t id = ItemIdValue(item);
+                if (id <= 0 || id > 0xFFFF) d.Error("craft_items: " + item.dump() + " is not a game item");
+                else out.craft_items.push_back(id);
+            }
+        }
+    }
+    if ((out.craft_every_kills > 0) != !out.craft_items.empty()) d.Error("craft_every_kills and craft_items go together");
     if (const json* sp = Get(c, "special")) {
         if (sp->is_object()) {
             ParseSpecial(d.Sub(" special"), *sp, out.special);
@@ -1084,6 +1100,7 @@ void ParseCharm(const Diag& d, const json& c, CharmDef& out) {
 void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
     CheckKeys(d, b, {"grenade_damage", "grenade_blast_m", "grenade_blast_fraction", "cluster_bomblets", "cluster_damage_fraction",
                      "cluster_radius_m", "incendiary_burns", "flash_masked", "flash_extra_seconds", "empty_ammo_regen", "charms",
+                     "kill_refill", "headshot_refund", "gun_elements_categories",
                      "name", "icon", "summary", "offered_weapons", "usable_weapons", "category_damage", "supplies_mult",
                      "free_shop_rerolls", "rarity_shift", "uncapped_upgrades", "starting_weapon",
                      "starting_weapon_rarity", "max_health_mult", "stack_max", "ammo_stack_mult", "extra_weapons",
@@ -1299,6 +1316,33 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
     GetBool(d, b, "flash_masked", out.flash_masked, false);
     if (GetNumber(d, b, "flash_extra_seconds", out.flash_extra_seconds, false)) {
         CheckRange(d, "flash_extra_seconds", out.flash_extra_seconds, 0.0, 30.0);
+    }
+    if (const json* kr = Get(b, "kill_refill")) {
+        if (kr->is_object()) CheckKeys(d, *kr, {"chance", "fraction"});
+        if (!kr->is_object() || !GetNumber(d, *kr, "chance", out.kill_refill_chance, true) ||
+            !GetNumber(d, *kr, "fraction", out.kill_refill_fraction, true)) {
+            d.Error("field 'kill_refill' must be {chance, fraction}");
+        } else {
+            CheckRange(d, "kill_refill chance", out.kill_refill_chance, 0.0, 1.0);
+            CheckRange(d, "kill_refill fraction", out.kill_refill_fraction, 0.05, 1.0);
+        }
+    }
+    if (const json* hr = Get(b, "headshot_refund")) {
+        if (!hr->is_object()) {
+            d.Error("field 'headshot_refund' must be an object of weapon categories");
+        } else {
+            for (const auto& [category, v] : hr->items()) {
+                if (!ParseWeaponCategory(category)) d.Error("headshot_refund: unknown weapon category " + Q(category));
+                else if (!v.is_number() || v.get<double>() <= 0.0 || v.get<double>() > 1.0) d.Error("headshot_refund " + Q(category) + " must be a chance above 0, up to 1");
+                else out.headshot_refund[category] = v.get<double>();
+            }
+        }
+    }
+    if (GetStringList(d, b, "gun_elements_categories", out.gun_elements_categories, false)) {
+        for (const std::string& c : out.gun_elements_categories) {
+            if (!ParseWeaponCategory(c)) d.Error("gun_elements_categories: unknown weapon category " + Q(c));
+        }
+        if (out.gun_elements.empty()) d.Error("gun_elements_categories needs gun_elements");
     }
     if (const json* er = Get(b, "empty_ammo_regen")) {
         if (!er->is_object()) {

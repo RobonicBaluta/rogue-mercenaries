@@ -610,7 +610,7 @@ void RunController::AddRefineReward(bool sure) {
     if (target == nullptr) return;
     RewardChoice choice;
     choice.kind = RewardKind::Refine;
-    choice.weapon = RefineWeapon(streams_->reward, *content_, caps_, *target, BuildElements());
+    choice.weapon = RefineWeapon(streams_->reward, *content_, caps_, *target, BuildElements(target->base_id));
     choice.rarity = choice.weapon.rarity;
     choice.target_instance_id = target->instance_id;
     run_.reward_offer.back() = std::move(choice);  // in place of the last choice: the offer keeps its size
@@ -627,7 +627,7 @@ void RunController::AddRefineOffer() {
     if (target == nullptr) return;
     ShopOffer o;
     o.kind = ShopOfferKind::Refine;
-    o.weapon = RefineWeapon(streams_->shop, *content_, caps_, *target, BuildElements());
+    o.weapon = RefineWeapon(streams_->shop, *content_, caps_, *target, BuildElements(target->base_id));
     o.rarity = o.weapon.rarity;
     o.target_instance_id = target->instance_id;
     o.price = static_cast<std::int64_t>(std::llround(static_cast<double>(refine.price[RarityIndex(o.rarity)]) * build.refine_price_mult));
@@ -1132,7 +1132,7 @@ void RunController::EquipSeat(const CharacterDef& character) {
         WeaponInstance w = rarity == Rarity::Common
                                ? MakeStartingWeapon(build.starting_weapon, NextInstanceId())
                                : GenerateWeapon(streams_->loot, *content_, caps_, build.starting_weapon, rarity, NextInstanceId(),
-                                                BuildElements());
+                                                BuildElements(build.starting_weapon));
         // Queued, not placed at once: the adapter first cuts the game's loadout down to the gun in
         // hand (which may be this very gun) and then hands the queue over.
         const WeaponBaseDef* base = content_->FindWeapon(w.base_id);
@@ -1492,6 +1492,21 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
             ++a.player_kills;
             if (kill.was_melee.value_or(false)) run_.last_melee_time = kill.now;
             ApplyBuildKill(kill, out);
+            // A carried charm's crafting (the Reloading Tool): every n-th kill while carried makes the next of its items.
+            for (const CharmDef* c : CarriedCharmDefs()) {
+                if (c->craft_every_kills <= 0 || c->craft_items.empty()) continue;
+                if (++run_.craft_kills % c->craft_every_kills != 0) continue;
+                const std::int64_t item = c->craft_items[static_cast<std::size_t>(run_.craft_next++) % c->craft_items.size()];
+                run_.item_grants.push_back(ItemGrant{item, std::max(1, c->craft_amount), "charm:" + c->id});
+                Event cr = MakeEvent(EventType::PerkTriggered);
+                cr.Add("source", "charm").Add("trigger", "craft").Add("charm", c->id).Add("game_item", item).Add("now", kill.now);
+                Emit(std::move(cr));
+            }
+            // The build's kill refill (Scavenger): by its chance, a share of the gun in hand's magazine.
+            if (const SkinBuild& b = run_.character.build; b.kill_refill_chance > 0.0 && b.kill_refill_fraction > 0.0 &&
+                                                           (b.kill_refill_chance >= 1.0 || streams_->combat.NextDouble() < b.kill_refill_chance)) {
+                out.refill_fraction = b.kill_refill_fraction;
+            }
             // A carried charm's kill stacks (the Uroboros Virus): one more, up to its most.
             int most = 0;
             for (const CharmDef* c : CarriedCharmDefs()) {
@@ -2270,8 +2285,10 @@ Status RunController::UseSpecial(double now, double cooldown_scale, int slot) {
         run_.invulnerable_until = std::max(run_.invulnerable_until, run_.transformed_until);
         run_.transform_attack_use.ready_at = now + (c != nullptr ? c->transform.cinematic_seconds : 0.0);
         run_.transform_attack_use.cooldown = 0.0;
-    } else if ((sp.kind == "dash" || sp.kind == "burst" || sp.kind == "flip") && sp.duration_seconds > 0.0) {
+    } else if ((sp.kind == "dash" || sp.kind == "burst" || sp.kind == "flip" || sp.kind == "perfect_dodge") && sp.duration_seconds > 0.0) {
         run_.invulnerable_until = std::max(run_.invulnerable_until, now + sp.duration_seconds);
+        // A dodge is not even a flinch: the hit it slips leaves her in her dodge.
+        if (sp.kind == "perfect_dodge") run_.no_reaction_until = std::max(run_.no_reaction_until, now + sp.duration_seconds);
     }
     Event e = MakeEvent(EventType::PerkTriggered);
     e.Add("source", "build").Add("trigger", "special").Add("kind", sp.kind).Add("slot", slot).Add("uses", use.uses)
@@ -2582,7 +2599,7 @@ Result<ChestReward> RunController::OpenChest(double now, std::optional<std::stri
     const double chest_refine = RefineChance(eco.refine, eco.refine.chest_chance, PacingArenas());
     if (eco.refine.enabled && chest_refine > 0.0 && rng.NextDouble() < chest_refine) {
         if (const WeaponInstance* target = RefineTarget(held_weapon)) {
-            const WeaponInstance refined = RefineWeapon(rng, *content_, caps_, *target, BuildElements());
+            const WeaponInstance refined = RefineWeapon(rng, *content_, caps_, *target, BuildElements(target->base_id));
             const std::string id = target->instance_id;
             if (ApplyRefine(id, refined, "chest").ok()) {
                 out.refined_instance_id = id;
@@ -2628,7 +2645,7 @@ Result<ChestReward> RunController::OpenChest(double now, std::optional<std::stri
             const WeaponBaseDef* base = bases[rng.Index(bases.size())];
             Rarity rarity = RollRarity(rng, ShiftRarityWeights(eco.rewards.rarity_weights, ctx.rarity_shift));
             if (charm_rarity && static_cast<int>(rarity) < static_cast<int>(*charm_rarity)) rarity = *charm_rarity;
-            WeaponInstance w = GenerateWeapon(rng, *content_, caps_, base->id, rarity, NextInstanceId(), BuildElements());
+            WeaponInstance w = GenerateWeapon(rng, *content_, caps_, base->id, rarity, NextInstanceId(), BuildElements(base->id));
             if (PlaceWeaponItem(w, "chest").ok()) {
                 GrantWeapon(w, "chest");
                 out.weapon_id = base->id;
@@ -2716,7 +2733,7 @@ void RunController::SettleStartingGuns() {
             const auto held = std::find_if(run_.weapons.begin(), run_.weapons.end(), [gun](const WeaponInstance& w) { return w.base_id == gun->id; });
             if (held != run_.weapons.end() && static_cast<int>(held->rarity) >= static_cast<int>(rarity)) return;
             WeaponInstance better = GenerateWeapon(streams_->loot, *content_, caps_, gun->id, rarity,
-                                                   held != run_.weapons.end() ? held->instance_id : NextInstanceId(), BuildElements());
+                                                   held != run_.weapons.end() ? held->instance_id : NextInstanceId(), BuildElements(gun->id));
             if (gun->id != start->id) {
                 std::erase_if(run_.weapons, [start](const WeaponInstance& w) { return w.base_id == start->id; });
                 run_.loadout.weapon_id = gun->id;
@@ -2775,6 +2792,14 @@ bool RunController::BreaksGrabs() const {
     if (run_.character.build.break_grabs) return true;
     const auto charms = CarriedCharmDefs();
     return std::any_of(charms.begin(), charms.end(), [](const CharmDef* c) { return c->breaks_grabs; });
+}
+
+void RunController::GrantSureCrits(int count) {
+    if (!run_.active || count <= 0) return;
+    run_.sure_crits = std::min(run_.sure_crits + count, 20);
+    Event e = MakeEvent(EventType::PerkTriggered);
+    e.Add("source", "build").Add("trigger", "sure_crits").Add("count", count).Add("left", run_.sure_crits);
+    Emit(std::move(e));
 }
 
 const CharmDef* RunController::TransformCharm() const {
@@ -2844,7 +2869,7 @@ Status RunController::ChooseElement(std::string_view instance_id, int option) {
         chosen = it->element_offer[static_cast<std::size_t>(option)];
     } else {
         // Random: any element but the build's, each as likely (the rare ones too).
-        const std::vector<Element> exclude = BuildElements();
+        const std::vector<Element> exclude = BuildElements(it->base_id);
         std::vector<Element> pool;
         for (const ElementDef& e : content_->elements()) {
             if (std::find(exclude.begin(), exclude.end(), e.element) == exclude.end()) pool.push_back(e.element);
@@ -2976,7 +3001,7 @@ Status RunController::DevRefineWeapon(const std::optional<std::string>& base) {
     if (!run_.active) return Fail("dev_refine_weapon", ErrorCode::NoActiveRun, "no active run");
     const WeaponInstance* target = RefineTarget(base);
     if (target == nullptr) return Fail("dev_refine_weapon", ErrorCode::NotEligible, "no gun can go up a tier");
-    const WeaponInstance refined = RefineWeapon(streams_->loot, *content_, caps_, *target, BuildElements());
+    const WeaponInstance refined = RefineWeapon(streams_->loot, *content_, caps_, *target, BuildElements(target->base_id));
     const Status s = ApplyRefine(target->instance_id, refined, "dev");
     return s.ok() ? s : Fail("dev_refine_weapon", ErrorCode::GrantFailed, s.message);
 }

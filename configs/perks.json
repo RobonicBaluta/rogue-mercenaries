@@ -379,7 +379,7 @@
     {
       "id": "sheva_scavenger",
       "name": "Scavenger",
-      "description": "Sheva. Pickups become ammo for her gun. All guns dry, rounds come by themselves, fewer for big guns.",
+      "description": "Sheva. A kill may refill a third of her gun. All guns dry, rounds come by themselves, fewer for big guns.",
       "category": "style",
       "rarity": "rare",
       "tags": [
@@ -392,7 +392,10 @@
       ],
       "unlock_cost_credits": 150,
       "build": {
-        "drops_as_held_ammo": true,
+        "kill_refill": {
+          "chance": 0.3,
+          "fraction": 0.34
+        },
         "empty_ammo_regen": {
           "handgun": [
             6,

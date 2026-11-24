@@ -504,3 +504,128 @@ TEST_CASE("a transformation is the skin's own and ends with the arena", "[charms
     CHECK(h.rc.phase() != Phase::ArenaActive);
     CHECK_FALSE(h.rc.Transformed(3.5));
 }
+
+TEST_CASE("a crafting charm makes the next of its items every so many kills while carried", "[charms]") {
+    const json tool = {{"id", "reloading_tool"}, {"name", "Reloading Tool"}, {"game_item", "0x0424"}, {"craft_every_kills", 2},
+                       {"craft_items", {"0x020E", "0x0207", "0x0208"}}, {"craft_amount", 2}};
+    CHECK(LoadErrors(json{{"charms", {tool}}}).empty());
+    json lonely = tool;
+    lonely.erase("craft_items");
+    CHECK(HasError(LoadErrors(json{{"charms", {lonely}}}), "go together"));
+    json bad = tool;
+    bad["craft_items"] = {"0x70000"};
+    CHECK(HasError(LoadErrors(json{{"charms", {bad}}}), "is not a game item"));
+
+    test::Harness h(test::Load(Sources(json{{"charms", {tool}}})));
+    REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    (void)h.rc.ConsumeItemGrants();  // the charm itself
+    h.rc.OnEnemyKilled(Kill("a", 1.0));
+    h.rc.OnEnemyKilled(Kill("b", 1.1));
+    CHECK(h.rc.ConsumeItemGrants().empty());  // not carried
+    h.rc.SetCarriedCharms({"reloading_tool"});
+    std::vector<std::int64_t> made;
+    for (int i = 0; i < 8; ++i) {
+        h.rc.OnEnemyKilled(Kill(("k" + std::to_string(i)).c_str(), 2.0 + i));
+        for (const ItemGrant& g : h.rc.ConsumeItemGrants()) {
+            CHECK(g.count == 2);
+            CHECK(g.source == "charm:reloading_tool");
+            made.push_back(g.game_item);
+        }
+    }
+    CHECK(made == std::vector<std::int64_t>{0x020E, 0x0207, 0x0208, 0x020E});  // in turn, every second kill
+}
+
+TEST_CASE("a perfect dodge: untouchable without a reaction, then sure crits for the next shots", "[charms]") {
+    const json build = {{"special", {{"kind", "perfect_dodge"}, {"name", "Perfect Dodge"}, {"cooldown_seconds", 4.0},
+                                     {"duration_seconds", 0.7}, {"power", 3}}}};
+    CHECK(LoadErrors(build).empty());
+    test::Harness h(test::Load(Sources(build)));
+    REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    REQUIRE(h.rc.UseSpecial(1.0).ok());
+    IncomingContext hit;
+    hit.now = 1.5;
+    hit.amount = 100.0;
+    hit.hp = 1000.0;
+    hit.hp_max = 1000.0;
+    const IncomingResult dodged = h.rc.ComputeIncoming(hit);
+    CHECK(dodged.multiplier == 0.0);
+    CHECK(dodged.no_reaction);
+    hit.now = 1.8;
+    CHECK_FALSE(h.rc.ComputeIncoming(hit).no_reaction);
+    CHECK(h.rc.UseSpecial(3.0).code == ErrorCode::NotEligible);  // its 4 s
+
+    // The adapter grants the sure crits when a blow was coming.
+    h.rc.GrantSureCrits(3);
+    CHECK(h.rc.SureCrits() == 3);
+    HitContext shot;
+    shot.now = 2.0;
+    shot.weapon_id = "pistol";
+    shot.base_damage = 100.0;
+    HitContext kick = shot;
+    kick.is_melee = true;
+    CHECK_FALSE(h.rc.ComputeOutgoingMultiplier(kick).crit);  // a kick is no shot
+    for (int i = 0; i < 3; ++i) CHECK(h.rc.ComputeOutgoingMultiplier(shot).crit);
+    CHECK(h.rc.SureCrits() == 0);
+    int crits = 0;
+    for (int i = 0; i < 20; ++i) crits += h.rc.ComputeOutgoingMultiplier(shot).crit ? 1 : 0;
+    CHECK(crits < 20);  // its own chance again
+}
+
+TEST_CASE("a build's kill refill and headshot refunds are checked; the refill comes by its chance", "[charms]") {
+    CHECK(LoadErrors(json{{"kill_refill", {{"chance", 0.3}, {"fraction", 0.34}}}, {"headshot_refund", {{"rifle", 1.0}}}}).empty());
+    CHECK(HasError(LoadErrors(json{{"kill_refill", {{"chance", 0.3}}}}), "kill_refill"));
+    CHECK(HasError(LoadErrors(json{{"headshot_refund", {{"bazooka", 1.0}}}}), "unknown weapon category"));
+    CHECK(HasError(LoadErrors(json{{"headshot_refund", {{"rifle", 0.0}}}}), "must be a chance"));
+    {
+        test::Harness h(test::Load(Sources(json{{"kill_refill", {{"chance", 1.0}, {"fraction", 0.34}}}})));
+        REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+        REQUIRE(h.rc.BeginArena(0.0).ok());
+        CHECK(h.rc.OnEnemyKilled(Kill("a", 1.0)).refill_fraction == Catch::Approx(0.34));
+    }
+    test::Harness h(test::Load(Sources(json{{"kill_refill", {{"chance", 0.3}, {"fraction", 0.34}}}})));
+    REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    int refills = 0;
+    for (int i = 0; i < 40; ++i) refills += h.rc.OnEnemyKilled(Kill(("k" + std::to_string(i)).c_str(), 1.0 + i)).refill_fraction > 0.0 ? 1 : 0;
+    CHECK(refills > 3);
+    CHECK(refills < 25);
+}
+
+TEST_CASE("a build's elements only on its categories: the other guns keep their own", "[charms]") {
+    CHECK(HasError(LoadErrors(json{{"gun_elements_categories", {"rifle"}}}), "needs gun_elements"));
+    CHECK(HasError(LoadErrors(json{{"gun_elements", {"cryo"}}, {"gun_elements_categories", {"bazooka"}}}), "unknown weapon category"));
+    test::Harness h(test::Load(Sources(json{{"gun_elements", {"cryo"}}, {"gun_elements_categories", {"shotgun"}}})));
+    REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+    CHECK(h.rc.BuildElements("shotgun").size() == 1);
+    CHECK(h.rc.BuildElements("pistol").empty());
+    CHECK(h.rc.BuildElements().size() == 1);  // the build's own, whatever the gun
+}
+
+TEST_CASE("the reworked builds as shipped: Classic Jill, Scavenger, Separate Ways, Hound Wolf and Winter", "[charms]") {
+    const ContentLoadResult r = Content::LoadFromDirectory(test::ConfigDir());
+    REQUIRE(r.ok());
+    const SkinDef* classic = FindSkin(*r.content->FindCharacter("jill"), "jill_classic");
+    REQUIRE(classic != nullptr);
+    CHECK(classic->build.special.kind == "perfect_dodge");
+    CHECK(classic->build.special.power == Catch::Approx(3.0));
+    CHECK(classic->build.gun_elements.empty());  // no three elements on every gun
+    REQUIRE(classic->build.charms.size() == 1);
+    const CharmDef& tool = classic->build.charms.front();
+    CHECK(tool.id == "reloading_tool");
+    CHECK(tool.craft_items == std::vector<std::int64_t>{0x020E, 0x0207, 0x0208});
+    CHECK(std::filesystem::exists(test::ConfigDir() / "charms" / tool.picture));
+    const PerkDef* scav = r.content->FindPerk("sheva_scavenger");
+    REQUIRE((scav != nullptr && scav->build.has_value()));
+    CHECK_FALSE(scav->build->drops_as_held_ammo);
+    CHECK(scav->build->kill_refill_chance > 0.0);
+    CHECK(scav->build->kill_refill_fraction < 1.0);  // not completely
+    CHECK_FALSE(scav->build->empty_ammo_regen.empty());  // kept
+    const SkinDef* hound = FindSkin(*r.content->FindCharacter("sheva"), "sheva_hound_wolf");
+    const SkinDef* winter = FindSkin(*r.content->FindCharacter("rebecca"), "rebecca_winter");
+    REQUIRE((hound != nullptr && winter != nullptr));
+    CHECK(hound->build.gun_elements_categories == std::vector<std::string>{"flamethrower", "launcher"});
+    CHECK(winter->build.gun_elements_categories == std::vector<std::string>{"rifle", "handgun"});
+}
+

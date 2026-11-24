@@ -34,6 +34,14 @@ UROBOROS_VIRUS = {
                    'power': 700, 'duration_seconds': 0.6},
     },
 }
+# Classic Jill's Reloading Tool (the user's pick for her rework, 2026-11-24: RE3's gunpowder): the grenade launcher's
+# own flame, acid and freeze (nitrogen) rounds, two at a time every 8 kills, in turn. A treasure no run hands out.
+RELOADING_TOOL = {
+    'id': 'reloading_tool', 'name': 'Reloading Tool', 'game_item': '0x0424', 'picture': 'reloading_tool.png',
+    'description': 'While it is in her grid, every 8 kills she mixes two grenade launcher rounds, flame, then acid, '
+                   'then freeze, in turn.',
+    'craft_every_kills': 8, 'craft_items': ['0x020E', '0x0207', '0x0208'], 'craft_amount': 2,
+}
 GRAPPLE_GUN = {
     'id': 'grapple_gun', 'name': 'Grapple Gun', 'game_item': '0x0423', 'picture': 'grapple_gun.png',
     'description': 'While it is in her grid, she slips out of every grab at once, and the special button flips her '
@@ -123,10 +131,12 @@ perks += [
          [], ['chris'], cost=200, rarity='epic', tags=['survival'], build={'break_grabs': True, 'heal_mult': 0.75}),
     # The empty guns' rounds (the Perk Workshop, 2026-11-24: "When she has no more ammo from any weapons she carries she should
     # get ammo based on the weapon type (the bigger the class the more you have to wait and less ammo you get)").
-    perk('sheva_scavenger', 'Scavenger', 'Sheva. Pickups become ammo for her gun. All guns dry, rounds come by themselves, '
-         'fewer for big guns.', 'style',
+    # Its pickups-into-ammo rule went (the user, 2026-11-24: "killing enemies refills current weapon (not completely) on
+    # chance"): herbs and sprays stay herbs and sprays.
+    perk('sheva_scavenger', 'Scavenger', 'Sheva. A kill may refill a third of her gun. All guns dry, rounds come by '
+         'themselves, fewer for big guns.', 'style',
          [], ['sheva'], cost=150, rarity='rare', tags=['items'],
-         build={'drops_as_held_ammo': True,
+         build={'kill_refill': {'chance': 0.3, 'fraction': 0.34},
                 'empty_ammo_regen': {'handgun': [6, 10], 'smg': [8, 30], 'machine_gun': [10, 20], 'shotgun': [12, 4],
                                      'rifle': [15, 3], 'magnum': [18, 2], 'launcher': [25, 1]}}),
     perk('sheva_sharpshooter', 'Sharpshooter', 'Sheva. Rifles hit 35 percent harder, rifle rounds stack twice as high. Machine guns 20 percent less.', 'style',
@@ -368,18 +378,27 @@ BUILDS = {
         # A rare flamethrower and a pistol in hand, not her costume's M3 (2026-11-11, the user: "get sheva's
         # mod skin a better flamethrower, make it be rare from the beggining", "she also starts with an M3,
         # make her start with a pistol").
-        'summary': 'A pistol and a rare flamethrower, fuel back 50 percent faster. Her guns are all Incendiary. Supplies x0.75.',
+        # Incendiary only on her flamethrower and launchers (the user, 2026-11-24: "only their category"); her other guns
+        # keep the element they rolled.
+        'summary': 'A pistol, a rare flamethrower, fuel 50 percent faster. Flamethrower and launchers Incendiary. Supplies x0.75.',
         'starting_weapon': 'flamethrower', 'starting_weapon_rarity': 'rare', 'pistol_in_hand': True,
-        'fuel_regen_mult': 1.5, 'gun_elements': ['incendiary'], 'supplies_mult': 0.75,
+        'fuel_regen_mult': 1.5, 'gun_elements': ['incendiary'], 'gun_elements_categories': ['flamethrower', 'launcher'],
+        'supplies_mult': 0.75,
     },
-    # Jill in her Raccoon City clothes (Jill HDR Casual): RE3's Last Escape, the grenade launcher
-    # and its flame, freeze and acid rounds; RE3's two guns only.
+    # Jill in her Raccoon City clothes (Jill HDR Casual): RE3's Last Escape. Reworked (the user, 2026-11-24: "jill classic has
+    # multiple elements and her style feels uninspired for her"; their pick: the dodge and the launcher rounds): RE3's two
+    # signatures, the Perfect Dodge and the gunpowder (the Reloading Tool's rounds), in place of three elements on every
+    # gun; RE3's arsenal (handguns, shotguns, the grenade launcher).
     'jill_classic': {
         'name': 'Last Escape', 'icon': 'launcher',
-        'summary': 'Starts with the grenade launcher. Her guns all carry Incendiary, Cryo and Toxic. Handguns, launchers only.',
-        'starting_weapon': 'grenade_launcher', 'gun_elements': ['incendiary', 'cryo', 'toxic'],
-        'offered_weapons': {'categories': ['handgun', 'launcher']}, 'usable_weapons': {'categories': ['handgun', 'launcher']},
-        'max_health_mult': 0.85,
+        'summary': 'Dodge a blow as it lands, those near freeze, 3 shots crit. Her Reloading Tool mixes launcher rounds.',
+        'starting_weapon': 'grenade_launcher',
+        'offered_weapons': {'categories': ['handgun', 'shotgun', 'launcher']},
+        'usable_weapons': {'categories': ['handgun', 'shotgun', 'launcher']},
+        'max_health_mult': 0.9,
+        'special': {'kind': 'perfect_dodge', 'name': 'Perfect Dodge', 'icon': 'dash', 'cooldown_seconds': 4,
+                    'duration_seconds': 0.7, 'power': 3},
+        'charms': [RELOADING_TOOL],
     },
     # Leon's two (Leon Definitive Edition): Darkside Chronicles' rookie, RE4's jacket and its merchant.
     'leon_dsc': {
@@ -412,8 +431,10 @@ BUILDS = {
     },
     'ada_red_dress': {
         'name': 'Separate Ways', 'icon': 'rifle',
-        'summary': 'Starts with a rare PSG-1. Rifles hit 40 percent harder, and every pickup is ammo for the gun in hand.',
-        'starting_weapon': 'psg1', 'starting_weapon_rarity': 'rare', 'category_damage': {'rifle': 0.4}, 'drops_as_held_ammo': True,
+        # Its pickups-into-ammo rule went (the user's pick, 2026-11-24: headshot refunds).
+        'summary': 'Starts with a rare PSG-1. Rifles hit 40 percent harder, and a rifle headshot gives its round back.',
+        'starting_weapon': 'psg1', 'starting_weapon_rarity': 'rare', 'category_damage': {'rifle': 0.4},
+        'headshot_refund': {'rifle': 1.0},
         'pistol_in_hand': True,
     },
     # The tester (the user, 2026-11-22: "can you give me a character just for me, who has infinite
@@ -437,8 +458,10 @@ BUILDS = {
     # of the hits and the next hit shatters (weapons.json elements).
     'rebecca_winter': {
         'name': 'Cold Snap', 'icon': 'snowflake',
-        'summary': 'Her guns are all Cryo, and rifles hit 25 percent harder. Heals 20 percent weaker.',
-        'gun_elements': ['cryo'], 'category_damage': {'rifle': 0.25}, 'heal_mult': 0.8,
+        # Cryo only on her rifles and handguns (the user, 2026-11-24: "only their category").
+        'summary': 'Her rifles and handguns are Cryo, and rifles hit 25 percent harder. Heals 20 percent weaker.',
+        'gun_elements': ['cryo'], 'gun_elements_categories': ['rifle', 'handgun'], 'category_damage': {'rifle': 0.25},
+        'heal_mult': 0.8,
     },
     'sheva_fairy_tale': {
         'name': 'Enchanted Arms', 'icon': 'star',

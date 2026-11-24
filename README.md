@@ -181,7 +181,7 @@ of the newer ones are a rule with a cost. Written 2026-11-04 and waiting for a p
 | Chris | Iron Grip | Throws off whatever grabs him at once (Majini, the big axe men, chainsaws, the Village's creature, the Uroboros; not the Wesker bosses' blows), but every heal is 25 percent smaller. | 200 credits |
 | Sheva | Field Training | Each kill heals 2 percent of max health. | free, the default |
 | Sheva | Flash Tactics | Every 3 kills hand you a flash grenade. | 120 credits |
-| Sheva | Scavenger | Ammo and herbs she picks up become ammo for the gun in her hands. With every gun empty and no rounds for any of them, rounds for the gun in her hands come by themselves: 10 handgun rounds after 6 s, 30 SMG rounds after 8 s, 20 machine gun rounds after 10 s, 4 shells after 12 s, 3 rifle rounds after 15 s, 2 magnum rounds after 18 s, 1 launcher round after 25 s. | 150 credits |
+| Sheva | Scavenger | A kill refills a third of the gun in her hands by a 30 percent chance (what she picks up stays what it is). With every gun empty and no rounds for any of them, rounds for the gun in her hands come by themselves: 10 handgun rounds after 6 s, 30 SMG rounds after 8 s, 20 machine gun rounds after 10 s, 4 shells after 12 s, 3 rifle rounds after 15 s, 2 magnum rounds after 18 s, 1 launcher round after 25 s. | 150 credits |
 | Sheva | Sharpshooter | Rifles hit 35 percent harder, rifle rounds stack twice as high. Machine guns 20 percent less. | 150 credits |
 | Jill | Battle Instinct | 15 percent of hits are critical and deal double damage. | free, the default |
 | Jill | Weapon Expert | Handguns hit 30 percent harder, handgun rounds stack twice as high. Shotguns 20 percent less. | 150 credits |
@@ -271,8 +271,8 @@ Use this folder, not a mod manager: one that installs the mod into the game repl
 | Character | Skin | Mod (creator) | Build | What it does |
 |---|---|---|---|---|
 | Excella | Experimenter | [Excella the Experimenter](https://www.nexusmods.com/residentevil5goldedition/mods/387) (TheGrimrose) | Field Trials | Every arena all her guns carry one random element (the arena's name is followed by it). Every shop offers a refine, at half price. Health x0.8. |
-| Jill | Classic | [Jill HDR Casual](https://www.nexusmods.com/residentevil5goldedition/mods/135) | Last Escape | Starts with the grenade launcher. Every gun she holds carries Incendiary, Cryo and Toxic (its flame, freeze and acid rounds). Only handguns and launchers are hers. Health x0.85. The mod comes in four variants (gear or not, gloves or not): keep the one you like in the mods folder (with several, the first by folder name is worn). |
-| Sheva | Hound Wolf Squad | [Hound Wolf Squad Sheva](https://www.nexusmods.com/residentevil5goldedition/mods/1177) (Angeltitilxyz) | Scorched Earth | Starts with a pistol in hand (not her costume's M3) and a rare flamethrower, whose fuel comes back 50 percent faster. Every gun she holds is Incendiary. Supplies x0.75. |
+| Jill | Classic | [Jill HDR Casual](https://www.nexusmods.com/residentevil5goldedition/mods/135) | Last Escape | RE3's two signatures. Her special is the **Perfect Dodge**: pressed as an enemy within 3 m swings at her, she dodges clear (untouchable, no reaction), everyone within 4.5 m freezes for 1.5 s and her next 3 shots crit; with no blow coming it is a plain dodge, every 4 s. She carries the **Reloading Tool**, a charm: every 8 kills it mixes two grenade launcher rounds, flame, acid and freeze in turn (the game's own rounds). Starts with the grenade launcher; handguns, shotguns and launchers are hers. Health x0.9. The mod comes in four variants (gear or not, gloves or not): keep the one you like in the mods folder (with several, the first by folder name is worn). |
+| Sheva | Hound Wolf Squad | [Hound Wolf Squad Sheva](https://www.nexusmods.com/residentevil5goldedition/mods/1177) (Angeltitilxyz) | Scorched Earth | Starts with a pistol in hand (not her costume's M3) and a rare flamethrower, whose fuel comes back 50 percent faster. Her flamethrower and launchers are Incendiary; her other guns keep the element they rolled. Supplies x0.75. |
 
 | Wesker | RE4 | [RE4 Wesker Reimagined](https://www.nexusmods.com/residentevil5goldedition/mods/1019) (izacky, kreed, Freyr95, Cixon64, DimensionalBoy, nealktorce) | Mastermind | RE4's Mercenaries Wesker: starts with a rare Lightning Hawk (his silenced magnum), magnums hit 30 percent harder and his melee twice as hard. It wears S.T.A.R.S. Wesker's slot (that outfit keeps its look), so only his own Samurai Edge, Lightning Hawk and Hydra are for him. Unzip all of it: his new voice lines too. |
 
@@ -294,7 +294,8 @@ damage taken), **Assassin** (15 percent of hits critical for two and a half time
 supply **Machine Pistol** (a VZ61 and 60 rounds; the longbow until 0.2.72). Her skins: **Agent** (Intel Network: her Px4, a free NEW STOCK and
 better rarities in every shop, handguns 25 percent harder, supplies x0.85), **Assignment** (a rare MP5, machine guns
 and rifles 25 percent harder, health x0.9) and **Red Dress** (Separate Ways: a rare PSG-1, rifles 40 percent harder,
-every pickup ammo for the gun in hand; a rare longbow and bows until 0.2.72).
+a rifle headshot gives its round back; every pickup was ammo for the gun in hand until 0.3.0c, a rare longbow and bows
+until 0.2.72).
 
 **Leon S. Kennedy** (a character of his own, from [Leon Definitive Edition](https://www.nexusmods.com/residentevil5goldedition/mods/223)
 by kreed and izacky). Unzip all of it, its *Main Files* too (his voice lines): without them he cannot be picked. He

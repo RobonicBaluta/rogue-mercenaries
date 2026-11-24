@@ -222,6 +222,11 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
     b.crit_chance = std::clamp(crit_chance, 0.0, eco.damage.max_crit_chance);
     // Roll only when a crit is possible so the combat stream advances only for crit builds.
     if (b.crit_chance > 0.0) b.crit = streams_->combat.NextDouble() < b.crit_chance;
+    // A perfect dodge's sure crits: the next shots (not a kick) crit whatever the roll.
+    if (!b.crit && run_.sure_crits > 0 && hit.weapon_id && !hit.is_melee.value_or(false)) {
+        b.crit = true;
+        --run_.sure_crits;
+    }
     b.crit_multiplier = (best_crit_mult > 0.0 ? best_crit_mult : eco.damage.default_crit_multiplier) + crit_extra;
 
     b.raw = b.route_mult * std::max(0.0, 1.0 + b.perk_bonus + b.kill_streak_bonus + b.build_bonus) * b.weapon_base_mult *
@@ -267,12 +272,17 @@ std::vector<std::pair<Element, bool>> RunController::GunElements(const WeaponIns
         if (std::none_of(out.begin(), out.end(), [e](const auto& x) { return x.first == e; })) out.emplace_back(e, evolved);
     };
     for (Element e : weapon.elements) add(e, weapon.element_evolved);
-    for (Element e : BuildElements()) add(e, false);
+    for (Element e : BuildElements(weapon.base_id)) add(e, false);
     if (run_.arena_element >= 0) add(static_cast<Element>(run_.arena_element), false);
     return out;
 }
 
 std::vector<Element> RunController::BuildElements() const { return ParseElements(run_.character.build.gun_elements); }
+
+std::vector<Element> RunController::BuildElements(std::string_view base_id) const {
+    const SkinBuild& b = run_.character.build;
+    return BuildElementsFor(b.gun_elements, b.gun_elements_categories, content_->FindWeapon(base_id));
+}
 
 std::vector<std::pair<Element, bool>> RunController::ElementsOf(std::string_view base_id) const {
     for (const WeaponInstance& w : run_.weapons) {
@@ -439,7 +449,7 @@ IncomingResult RunController::ComputeIncoming(const IncomingContext& incoming) {
     if (incoming.now < run_.invulnerable_until) {
         out.multiplier = 0.0;
         out.raw_multiplier = 0.0;
-        out.no_reaction = Transformed(incoming.now);  // a transformation: not even a flinch
+        out.no_reaction = Transformed(incoming.now) || incoming.now < run_.no_reaction_until;  // a transformation, a dodge
         return out;
     }
 

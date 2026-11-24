@@ -114,6 +114,10 @@ std::string_view ElementName(Element e);
 std::optional<Element> ParseElement(std::string_view name);
 /// The known ones of `names` (a build's gun_elements), in order.
 std::vector<Element> ParseElements(const std::vector<std::string>& names);
+/// A build's elements (`names`) a gun of `base` carries: all of them when `categories` is empty, else only on a gun
+/// of one of those categories (none for an unknown gun).
+std::vector<Element> BuildElementsFor(const std::vector<std::string>& names, const std::vector<std::string>& categories,
+                                      const WeaponBaseDef* base);
 
 struct ElementDef {
     Element element = Element::Incendiary;

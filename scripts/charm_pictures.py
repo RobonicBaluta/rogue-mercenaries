@@ -9,6 +9,8 @@ the game's item sheet) for gun_looks.cpp to paint over the treasure each charm s
 - uroboros_virus: the game's own herb vial (item 0x0305's picture) with its liquid turned to the
   virus's black and violet.
 - grapple_gun: the game's own M93R (0x011E's picture) with a grappling hook and its cable.
+- reloading_tool: the game's own grenade launcher rounds, flame (0x020E), acid (0x0207) and freeze (0x0208), fanned out
+  over a small press, Classic Jill's RE3 gunpowder.
 
 The game's pictures come from the item sheet id\\jpn\\cockpit\\cp05_360_NOMIP_BM in ShopResource.arc,
 read only; configs/item_pictures.json says where each sits. --sheet also writes build/charms_sheet.png.
@@ -34,6 +36,8 @@ SS = 4
 SHEET = 'id\\jpn\\cockpit\\cp05_360_NOMIP_BM'
 # Item 0x0305 (green herb) and 0x011E (M93R): their pictures' rects (item box layout, scripts/item_pictures.py).
 HERB_PICTURE = 'item_15c'
+# The launcher's flame, acid and nitrogen rounds (the item box table, 0x01128C70: 0x020E, 0x0207, 0x0208).
+ROUND_PICTURES = ('item_157', 'item_154', 'item_155')
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--game', default=r'G:\SteamLibrary\steamapps\common\Resident Evil 5')
@@ -189,8 +193,26 @@ def grapple_gun():
     return out
 
 
+def reloading_tool():
+    out = Image.new('RGBA', (SIZE, SIZE), (0, 0, 0, 0))
+    # A small press under them: a dark steel base and a lever.
+    press = big()
+    d = ImageDraw.Draw(press)
+    d.rounded_rectangle([18 * SS, 74 * SS, 86 * SS, 88 * SS], radius=3 * SS, fill=(58, 60, 66, 255), outline=(25, 25, 28, 255), width=SS)
+    d.rectangle([47 * SS, 46 * SS, 55 * SS, 76 * SS], fill=(84, 86, 94, 255), outline=(30, 30, 34, 255), width=SS)
+    d.line([(51 * SS, 50 * SS), (82 * SS, 38 * SS)], fill=(150, 152, 160, 255), width=int(3 * SS))
+    d.ellipse([79 * SS, 34 * SS, 87 * SS, 42 * SS], fill=(190, 40, 40, 255), outline=(80, 15, 15, 255), width=SS)
+    out.alpha_composite(shadowed(press).resize((SIZE, SIZE), Image.LANCZOS))
+    # The three rounds' own pictures, fanned out.
+    for k, (element, ang, at) in enumerate(zip(ROUND_PICTURES, (18, 0, -18), ((2, 6), (20, 0), (38, 6)))):
+        pic = game_picture(layout_rect(layout, element)).resize((62, 62), Image.LANCZOS).rotate(ang, resample=Image.BICUBIC, expand=True)
+        out.alpha_composite(pic, at)
+    return out
+
+
 os.makedirs(OUT, exist_ok=True)
-made = {'fidelity_card': fidelity_card(), 'uroboros_virus': uroboros_virus(), 'grapple_gun': grapple_gun()}
+made = {'fidelity_card': fidelity_card(), 'uroboros_virus': uroboros_virus(), 'grapple_gun': grapple_gun(),
+        'reloading_tool': reloading_tool()}
 for name, im in made.items():
     assert im.size == (SIZE, SIZE)
     im.save(os.path.join(OUT, name + '.png'), optimize=True)

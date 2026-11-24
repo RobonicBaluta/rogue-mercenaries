@@ -159,6 +159,14 @@ void ApplyPerkBuild(SkinBuild& build, const SkinBuild& perk) {
     build.flash_masked = build.flash_masked || perk.flash_masked;
     build.flash_extra_seconds = std::max(build.flash_extra_seconds, perk.flash_extra_seconds);
     for (const auto& [category, regen] : perk.empty_ammo_regen) build.empty_ammo_regen.try_emplace(category, regen);
+    if (perk.kill_refill_chance > build.kill_refill_chance) {
+        build.kill_refill_chance = perk.kill_refill_chance;
+        build.kill_refill_fraction = perk.kill_refill_fraction;
+    }
+    for (const auto& [category, chance] : perk.headshot_refund) {
+        double& mine = build.headshot_refund[category];
+        mine = std::max(mine, chance);
+    }
     for (const CharmDef& charm : perk.charms) {
         if (std::none_of(build.charms.begin(), build.charms.end(), [&charm](const CharmDef& c) { return c.id == charm.id; })) {
             build.charms.push_back(charm);

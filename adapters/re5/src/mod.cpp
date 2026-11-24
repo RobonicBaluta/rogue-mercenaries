@@ -3863,6 +3863,23 @@ void PlagueOnDeath(std::uintptr_t enemy, int maxHp, double now);
 constexpr double kSpecialKillCredit = 6.0;
 void BuildKillNotice(const rm::KillOutcome& outcome, double now);
 
+std::uintptr_t EquippedGunSlot();             // below
+bool LevelLog(const std::string& what);      // below
+// A build's kill refill (Scavenger, the user 2026-11-24: "killing enemies refills current weapon (not completely) on
+// chance"): `fraction` of the gun in hand's magazine back, at most to full.
+void RefillHeldGun(double fraction) {
+    if (fraction <= 0.0) return;
+    const std::uintptr_t slot = EquippedGunSlot();
+    const int max = slot ? ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0) : 0;
+    const int count = slot ? ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0) : 0;
+    if (!slot || max <= 1 || count >= max) return;
+    const int add = std::max(1, static_cast<int>(std::ceil(max * fraction)));
+    const int now = std::min(max, count + add);
+    if (SafeStore<std::int32_t>(slot + re5::off::kSlotCount, now) && LevelLog("kill_refill")) {
+        RM_LOGI("build: a kill refills %04X %d -> %d of %d", ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0), count, now, max);
+    }
+}
+
 void ReportEnemyDeath(std::uintptr_t enemy, int maxHp, double now, const char* how) {
     rm::KillEvent kill;
     kill.now = now;
@@ -3880,6 +3897,7 @@ void ReportEnemyDeath(std::uintptr_t enemy, int maxHp, double now, const char* h
     PlagueOnDeath(enemy, maxHp, now);
     const rm::KillOutcome out = g->run->OnEnemyKilled(kill);
     if (!out.procs.empty()) QueueProcs(enemy, out.procs);
+    RefillHeldGun(out.refill_fraction);
     if (out.counted) {
         RM_LOGI("enemy %08X died (%s): counted, %d remain%s", static_cast<unsigned>(enemy), how, out.remaining,
                 kill.by_player ? " (by the special)" : "");
@@ -7084,6 +7102,19 @@ void UpdatePreloads() {
         for (const std::int64_t item : {0x0101, 0x010E, 0x0123, 0x0124, 0x010D}) addItem(item);
         for (const rm::PerkDef& perk : g->content->perks()) {
             for (const rm::EffectDef& e : perk.effects) addItem(static_cast<std::int64_t>(e.params.game_item));
+            if (perk.build) {
+                for (const rm::CharmDef& c : perk.build->charms) {
+                    for (const std::int64_t item : c.craft_items) addItem(item);
+                }
+            }
+        }
+        // The charms' crafted items (Classic Jill's Reloading Tool: the launcher's flame, acid and freeze rounds).
+        for (const rm::CharacterDef& ch : g->content->characters()) {
+            for (const rm::SkinDef& skin : ch.skins) {
+                for (const rm::CharmDef& c : skin.build.charms) {
+                    for (const std::int64_t item : c.craft_items) addItem(item);
+                }
+            }
         }
         auto addWeapon = [&](std::int64_t arm) {
             const auto id = static_cast<std::uint32_t>(arm);
@@ -10399,6 +10430,29 @@ double LevelPerksOnHit(const OutgoingHit& hit, const rm::HitContext& ctx, double
             RM_LOGI("level perks: a %s hit on %s, %d damage (x%.2f)", gun.c_str(), engine::ClassName(hit.enemy).c_str(), hit.damage, multiplier);
         }
     }
+    // A build's headshot refund (Ada's Separate Ways, 2026-11-24: "a rifle headshot gives its round back"), by its
+    // gun's category; the same check as a pistol level's (its head reaction within kHeadshotWindow).
+    if (!melee && !boss) {
+        const rm::WeaponBaseDef* own = g->content->FindWeapon(gun);
+        const auto& refunds = g->run->state().character.build.headshot_refund;
+        const auto r = own != nullptr ? refunds.find(std::string(rm::WeaponCategoryName(own->category))) : refunds.end();
+        if (r != refunds.end() && r->second > 0.0) {
+            if (const std::uintptr_t slot = EquippedGunSlot()) {
+                HeadshotCheck c;
+                c.enemy = hit.enemy;
+                c.slot = slot;
+                c.item = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
+                c.actionAtHit = engine::CurrentActionId(hit.enemy);
+                c.until = now + kHeadshotWindow;
+                c.chance = r->second;
+                c.gun = gun;
+                g_headshotChecks.erase(std::remove_if(g_headshotChecks.begin(), g_headshotChecks.end(),
+                                                      [&](const HeadshotCheck& o) { return o.enemy == hit.enemy; }),
+                                       g_headshotChecks.end());
+                g_headshotChecks.push_back(std::move(c));
+            }
+        }
+    }
     const GunLevel lv = RunGunLevel(gun);
     if (lv.base == nullptr || lv.steps <= 0 || !lv.perks().Any()) return mult;
     if (melee && gun != "stun_rod") return mult;  // a kick is no shot
@@ -12482,6 +12536,75 @@ void DriveJumpDown(double now) {
             now - w.since, at[0], at[1], at[2], w.before[0], w.before[1], w.before[2], to[0], to[1], to[2]);
 }
 
+// Classic Jill's Perfect Dodge (the user's pick, 2026-11-24: RE3's dodge, in place of her three elements on every gun).
+// Pressed as an enemy within kDodgeThreatRange swings at her (its action an attack), she dodges clear of it (her own
+// avoid move, away from it), untouchable without a reaction while it lasts (the core: duration_seconds), every enemy
+// within kPerfectHoldRadius is held still for kPerfectHoldSeconds and her next shots are sure to crit (sp.power of
+// them). With no blow coming it is her plain dodge.
+constexpr float kDodgeThreatRange = 300.0f;
+constexpr float kPerfectHoldRadius = 450.0f;
+constexpr double kPerfectHoldSeconds = 1.5;
+constexpr float kDodgeAway = 300.0f;
+bool AttackAction(const std::string& action) {
+    return action.find("Atk") != std::string::npos || action.find("Attack") != std::string::npos;
+}
+
+void StartPerfectDodge(double now, const rm::SkinSpecial& sp, std::uintptr_t local, int slot, const char* source) {
+    rm::RunController& run = *g->run;
+    std::uintptr_t attacker = 0;
+    float nearest = kDodgeThreatRange + 1.0f;
+    std::string blow;
+    for (const auto& [enemy, d] : EnemiesAround(local, kDodgeThreatRange, -1.0f, 0.0f, 1.0f)) {
+        const std::string action = engine::CurrentActionName(enemy);
+        if (d < nearest && AttackAction(action)) {
+            nearest = d;
+            attacker = enemy;
+            blow = action;
+        }
+    }
+    const rm::Status used = run.UseSpecial(now, 1.0, slot);
+    if (!used.ok()) {
+        DeniedNotice(now, Upper(Plain(sp.name)), run.Special(now, slot));
+        return;
+    }
+    float at[3];
+    UnitPosition(local, at);
+    float fx = 0.0f, fz = 1.0f;
+    PlayerFacing(local, fx, fz);
+    float away[2] = {-fx, -fz};  // no blow: backwards
+    if (attacker) {
+        float e[3];
+        UnitPosition(attacker, e);
+        const float dx = at[0] - e[0], dz = at[2] - e[2];
+        const float len = std::sqrt(dx * dx + dz * dz);
+        if (len > 1.0f) {
+            away[0] = dx / len;
+            away[1] = dz / len;
+        }
+    }
+    const float toward[3] = {at[0] + away[0] * kDodgeAway, at[1], at[2] + away[1] * kDodgeAway};
+    const bool dodged = engine::StartDodge(local, toward);
+    int held = 0;
+    const int crits = static_cast<int>(sp.power > 0.0 ? sp.power : 3.0);
+    if (attacker) {
+        for (const auto& [enemy, d] : EnemiesAround(local, kPerfectHoldRadius, -1.0f, 0.0f, 1.0f)) {
+            (void)d;
+            if (enemy == g->boss.unit) continue;
+            HoldStill(enemy, now + kPerfectHoldSeconds, "a perfect dodge");
+            ++held;
+        }
+        run.GrantSureCrits(crits);
+        g->notice = "PERFECT DODGE   " + std::to_string(crits) + " SURE CRITS";
+        g->noticeUntil = now + 1.8;
+    } else {
+        g->notice = "DODGE";
+        g->noticeUntil = now + 0.8;
+    }
+    RM_LOGI("special: %s (%s) %s, %d held, %d sure crits [%s]", attacker ? "perfect dodge" : "dodge",
+            attacker ? (engine::ClassName(attacker) + " in " + blow).c_str() : "no blow coming", dodged ? "dodged" : "no dodge", held,
+            attacker ? crits : 0, source);
+}
+
 void StartSpecial(double now, int slot, const char* source) {
     rm::RunController& run = *g->run;
     const rm::SpecialState state = run.Special(now, slot);
@@ -12514,6 +12637,10 @@ void StartSpecial(double now, int slot, const char* source) {
     }
     if (sp.kind == "flip") {
         StartFlip(now, sp, local, slot, source);
+        return;
+    }
+    if (sp.kind == "perfect_dodge") {
+        StartPerfectDodge(now, sp, local, slot, source);
         return;
     }
     const rm::Status used = run.UseSpecial(now, 1.0, slot);
@@ -16149,6 +16276,7 @@ private:
         kill.enemy_class = engine::ClassName(r.enemy);
         const auto outcome = g->run->OnEnemyKilled(kill);
         if (!outcome.procs.empty()) QueueProcs(r.enemy, outcome.procs);
+        RefillHeldGun(outcome.refill_fraction);
         if (outcome.counted) {
             RM_LOGI("kill counted: +%lld supplies, %d remaining%s", static_cast<long long>(outcome.supplies_awarded),
                     outcome.remaining, kill.was_melee.value_or(false) ? " (melee)" : "");

@@ -61,8 +61,12 @@ std::vector<ShopOffer> GenerateShopOffers(Rng& rng, const OfferContext& ctx,
 
     const RarityWeights weights = ShiftRarityWeights(eco.rewards.rarity_weights, ctx.rarity_shift);
     // A gun's element is never one its build gives every gun already.
-    const std::vector<Element> build_elements =
-        ctx.character != nullptr ? ParseElements(ctx.character->build.gun_elements) : std::vector<Element>{};
+    // (on the build's gun_elements_categories only: Hound Wolf Sheva's and Winter Rebecca's others roll any).
+    const auto build_elements = [&ctx](const WeaponBaseDef* base) {
+        return ctx.character != nullptr
+                   ? BuildElementsFor(ctx.character->build.gun_elements, ctx.character->build.gun_elements_categories, base)
+                   : std::vector<Element>{};
+    };
     const auto owned = [&owned_weapons](std::string_view id) {
         return std::any_of(owned_weapons.begin(), owned_weapons.end(), [id](const WeaponInstance& w) { return w.base_id == id; });
     };
@@ -77,7 +81,7 @@ std::vector<ShopOffer> GenerateShopOffers(Rng& rng, const OfferContext& ctx,
             const std::int64_t price = ctx.character->build.shop_weapon_price;
             o.price = price > 0 ? price : eco.shop.weapon_price[RarityIndex(Rarity::Common)];
             o.weapon = GenerateWeapon(rng, *ctx.content, caps, base->id, Rarity::Common,
-                                      next_instance_id ? next_instance_id() : std::string("w"), build_elements);
+                                      next_instance_id ? next_instance_id() : std::string("w"), build_elements(base));
             o.restricted = !UsableWeapon(ctx, *base);
             out.push_back(std::move(o));
         }
@@ -95,7 +99,7 @@ std::vector<ShopOffer> GenerateShopOffers(Rng& rng, const OfferContext& ctx,
         o.rarity = rarity;
         o.price = eco.shop.weapon_price[RarityIndex(rarity)];
         o.weapon = GenerateWeapon(rng, *ctx.content, caps, base->id, rarity,
-                                  next_instance_id ? next_instance_id() : std::string("w"), build_elements);
+                                  next_instance_id ? next_instance_id() : std::string("w"), build_elements(base));
         o.restricted = !UsableWeapon(ctx, *base);  // shown, not for sale to this build
         out.push_back(std::move(o));
     }

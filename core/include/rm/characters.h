@@ -50,7 +50,8 @@ struct WeaponFilter {
 /// A build's special move, used with a button combo during an arena (the adapter reads the
 /// input and performs it; the core keeps its cooldown and availability).
 struct SkinSpecial {
-    // "dash", "dual_smg", "backup", "burst", "element_pick" (the tester), "flip"; a charm's transformation's
+    // "dash", "dual_smg", "backup", "burst", "element_pick" (the tester), "flip", "perfect_dodge" (Classic Jill: power
+    // the sure crits a perfect one gives, duration_seconds untouchable); a charm's transformation's
     // "transform" and "uroboros_strike" (CharmTransform); empty = none
     std::string kind;
     std::string name;              // HUD label
@@ -100,6 +101,11 @@ struct CharmDef {
     bool stacks_end_on_hit = false;    // a hit the player takes clears the stacks
     bool breaks_grabs = false;         // while carried, a grab is broken at once (as SkinBuild::break_grabs)
     SkinSpecial special;               // usable while carried, on the special's button when the build has none
+    /// While carried, every `craft_every_kills` kills it makes `craft_amount` of the next of `craft_items`, in turn
+    /// (Classic Jill's Reloading Tool: RE3's gunpowder, the grenade launcher's flame, acid and freeze rounds).
+    int craft_every_kills = 0;
+    std::vector<std::int64_t> craft_items;
+    int craft_amount = 1;
     CharmTransform transform;          // the kill stacks' last step (Midnight Wesker's Uroboros)
     /// The stacks its transformation needs.
     [[nodiscard]] int TransformStacks() const { return transform.stacks > 0 ? transform.stacks : kill_stack_max; }
@@ -162,6 +168,13 @@ struct SkinBuild {
     std::vector<std::pair<std::int64_t, double>> stack_mult;
     WeaponFilter never_offered;      // rewards, the shop and chests never offer these
     bool drops_as_held_ammo = false; // ammo and recovery items picked up become ammo for the gun in hand
+    /// The user's rework of the pickups-into-ammo builds (2026-11-24): a kill refills `kill_refill_fraction` of the gun
+    /// in hand's magazine by `kill_refill_chance` (Scavenger: "killing enemies refills current weapon (not completely)
+    /// on chance"), and a headshot with a gun of a listed category gives its round back by its chance (Separate Ways'
+    /// rifles).
+    double kill_refill_chance = 0.0;
+    double kill_refill_fraction = 0.0;
+    StringMap<double> headshot_refund;
     /// Game item picked up -> the item given instead (JSON keys and values may be hex).
     std::vector<std::pair<std::int64_t, std::int64_t>> pickup_as;
     /// Game item -> the item the run gets in its place wherever it comes from: picked up, a chest, a reward,
@@ -206,6 +219,9 @@ struct SkinBuild {
     // The rarity remake's elements on the build's guns (element names, rm::ParseElement): every gun's
     // hits carry gun_elements, and with arena_element one more random element, drawn each arena.
     std::vector<std::string> gun_elements;
+    /// gun_elements only on guns of these categories (empty: every gun); the others keep the element they rolled
+    /// (the user, 2026-11-24: Hound Wolf Sheva's and Winter Rebecca's "only their category").
+    std::vector<std::string> gun_elements_categories;
     bool arena_element = false;
     bool refine_every_shop = false;  // every shop offers a refine (economy refine)
     double refine_price_mult = 1.0;  // refines in the shop cost this much

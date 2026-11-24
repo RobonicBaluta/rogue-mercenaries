@@ -89,6 +89,16 @@ std::optional<Element> ParseElement(std::string_view name) {
     return std::nullopt;
 }
 
+std::vector<Element> BuildElementsFor(const std::vector<std::string>& names, const std::vector<std::string>& categories,
+                                      const WeaponBaseDef* base) {
+    if (!categories.empty()) {
+        if (base == nullptr) return {};
+        const std::string own(WeaponCategoryName(base->category));
+        if (std::find(categories.begin(), categories.end(), own) == categories.end()) return {};
+    }
+    return ParseElements(names);
+}
+
 std::vector<Element> ParseElements(const std::vector<std::string>& names) {
     std::vector<Element> out;
     for (const std::string& n : names) {

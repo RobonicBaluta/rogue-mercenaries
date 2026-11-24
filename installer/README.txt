@@ -177,6 +177,16 @@ PLAY
       and a jump down that holds you for 6 seconds puts you back at the arena's start.
     - New: fewer dogs at once (3 at most, 4 with two players), and fewer more of them on the
       bigger tiers.
+    - New: Classic Jill's Last Escape is RE3's: a Perfect Dodge special (dodge a blow as it
+      lands, those near freeze, her next 3 shots crit) and a Reloading Tool that mixes
+      grenade launcher rounds (flame, acid, freeze) every 8 kills. No more three elements
+      on every gun; handguns, shotguns and launchers.
+    - New: Sheva's Scavenger and Ada's Separate Ways no longer turn pickups into ammo:
+      Scavenger's kills may refill a third of her gun, Ada's rifle headshots give their
+      round back.
+    - New: Hound Wolf Sheva's Incendiary is on her flamethrower and launchers only, and
+      Winter Rebecca's Cryo on her rifles and handguns only; their other guns keep the
+      element they rolled.
     - New: Midnight Wesker's Uroboros kneels, stays down and rises (no dash), the virus covers
       him in a dark crimson crust, his strike no longer turns him round, and as it ends the
       virus leaves him with a stagger.

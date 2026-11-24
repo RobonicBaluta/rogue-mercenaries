@@ -206,6 +206,10 @@ struct PlayerSeat {
     SpecialUse transform_use{};
     SpecialUse transform_attack_use{};
     double transformed_until = -1.0;
+    int sure_crits = 0;
+    double no_reaction_until = -1.0;
+    int craft_kills = 0;
+    int craft_next = 0;
     std::string starting_gun_replaced_by;
 };
 
@@ -286,6 +290,12 @@ struct RunState {
     SpecialUse transform_use{};
     SpecialUse transform_attack_use{};
     double transformed_until = -1.0;
+    // A perfect dodge's (Classic Jill): the next shots that are sure to crit, and until when a hit has no reaction.
+    int sure_crits = 0;
+    double no_reaction_until = -1.0;
+    // A crafting charm's (CharmDef::craft_every_kills): kills while carried, and the next item of its list.
+    int craft_kills = 0;
+    int craft_next = 0;
     // A supply perk's gun that took the starting gun's place (RunController::StartingGunReplacedBy).
     std::string starting_gun_replaced_by;
     std::string end_reason;
@@ -342,6 +352,10 @@ inline void SwapSeat(RunState& run, PlayerSeat& seat) {
     swap(run.transform_use, seat.transform_use);
     swap(run.transform_attack_use, seat.transform_attack_use);
     swap(run.transformed_until, seat.transformed_until);
+    swap(run.sure_crits, seat.sure_crits);
+    swap(run.no_reaction_until, seat.no_reaction_until);
+    swap(run.craft_kills, seat.craft_kills);
+    swap(run.craft_next, seat.craft_next);
     swap(run.starting_gun_replaced_by, seat.starting_gun_replaced_by);
 }
 
