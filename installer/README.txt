@@ -140,10 +140,10 @@ PLAY
       Plague's victims let out a green cloud. Burns and poison hurt bosses as well (they
       end when a boss goes down for its next phase), and Jill and Wesker flinch when the
       flame takes a share of their health in one go.
-    - A gun with an element shows it: its picture in the inventory takes the element's
-      colour and badge (flame, bolt, snowflake, blast, drop), its model takes the colour,
-      and in your hands it gives off its element's effect. "gun_looks" in adapter.json
-      turns each part off or makes it stronger (README.md).
+    - New in 0.3.0a: a gun with an element shows it. Its picture in the inventory takes
+      the element's colour and badge (flame, bolt, snowflake, blast, drop), its model
+      takes the colour, and in your hands it gives off its element's effect. "gun_looks"
+      in adapter.json turns each part off or makes it stronger (README.md).
     - A rocket launcher, once bought, comes back at the start of every arena (into the
       storage if your grid is full). Selling it gives it up for good.
     - What does not fit in your nine cells waits in the storage of ORGANIZE INVENTORY.
@@ -167,6 +167,21 @@ PLAY
       magnums, the bolt rifles), Shock arcs further and harder, and a kill with a Cryo gun
       may freeze each enemy around it (more often with Absolute Zero).
     - New in 0.3.0: after Uroboros Wesker, the next stage comes (it never loaded).
+    - New in 0.3.0a: Battle Suit Jill's Twin Fury fires real bullets from her two guns,
+      each hitting the first enemy in its line.
+    - New in 0.3.0a: the SHOP's upgrades also make a gun fire faster, and the H&K P8, MP5,
+      Lightning Hawk, M29 and M500 shoot through more enemies, as far as the game's own
+      levels go.
+    - New in 0.3.0a: elite enemies, once you have beaten Uroboros Wesker. Now and then an
+      enemy carries an element, glows with it and has a trick of its own to watch for.
+      An elite's kill pays twice the supplies.
+    - New in 0.3.0a: Chris's Iron Grip and Ada's Grapple Gun throw off every grab at once,
+      the chainsaw Majini's and the big axe men's included.
+    - New in 0.3.0a: move speed bonuses (Excella's Ambition) make you walk and run faster
+      for real, and a Cryo elite's chill slows you.
+    - New in 0.3.0a: Tribal Sheva's Quiver heals on kills only (the longbow takes no ammo
+      item, so the arrows it handed out did nothing).
+    - New in 0.3.0a: your progress is saved without the short pause each save made.
     - Dying or beating the run's last boss ends the run and banks your Credits.
 
 TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPHA.30
