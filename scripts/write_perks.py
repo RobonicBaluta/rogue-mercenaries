@@ -14,12 +14,25 @@ FIDELITY_CARD = {
     'description': 'While it is in her grid, every third chest she opens holds a weapon, rare or better.',
     'chest_weapon_every': 3, 'chest_weapon_rarity': 'rare',
 }
+# The user, 2026-11-24: "it should max at 30 or so and at 30 if you have midnight wesker the burst button combo should
+# transform you into uroboros wesker (with a camera while everyone else is not moving so you get to see the
+# transformation) and for 12 seconds you are invulnerable (don't even flinch) and the other button combo lets you do
+# some uroboros wesker attacks, with a high cooldown on the transformation (but lets you do burst in the meantime)".
+# 30 stacks give what 10 gave before (30 percent damage, 21 less taken, 9 crit, 15 speed), three times slower.
 UROBOROS_VIRUS = {
     'id': 'uroboros_virus', 'name': 'Uroboros Virus', 'game_item': '0x0422', 'picture': 'uroboros_virus.png',
-    'description': 'While it is in his grid, every kill adds a stack, up to 10: 3 percent more damage, 2 percent less '
-                   'damage taken, 1 percent more critical chance and 1.5 percent more speed each. A hit he takes clears them.',
-    'kill_stack_stats': {'damage': 0.03, 'defense': 0.02, 'crit': 0.01, 'move_speed': 0.015},
-    'kill_stack_max': 10, 'stacks_end_on_hit': True,
+    'description': 'While it is in his grid, every kill adds a stack, up to 30: 1 percent more damage, 0.7 percent less '
+                   'damage taken, 0.3 percent more critical chance and 0.5 percent more speed each. A hit he takes clears '
+                   'them. Midnight Wesker at 30: the burst button turns him into Uroboros for 12 seconds.',
+    'kill_stack_stats': {'damage': 0.01, 'defense': 0.007, 'crit': 0.003, 'move_speed': 0.005},
+    'kill_stack_max': 30, 'stacks_end_on_hit': True,
+    'transform': {
+        'skin': 'wesker_midnight', 'slot': 1, 'cinematic_seconds': 2.4,
+        'special': {'kind': 'transform', 'name': 'Uroboros', 'icon': 'syringe', 'cooldown_seconds': 120,
+                    'duration_seconds': 12, 'power': 600},
+        'attack': {'kind': 'uroboros_strike', 'name': 'Uroboros Strike', 'icon': 'fist', 'cooldown_seconds': 1.2,
+                   'power': 700, 'duration_seconds': 0.6},
+    },
 }
 GRAPPLE_GUN = {
     'id': 'grapple_gun', 'name': 'Grapple Gun', 'game_item': '0x0423', 'picture': 'grapple_gun.png',
@@ -67,9 +80,11 @@ perks += [
          [{'kind': 'crit', 'chance': 0.15, 'multiplier': 2.0}], ['jill'], tags=['crit']),
     # Firestarter became Perfection (the Perk Workshop, 2026-11-24: "Completely change it to. Perfection"); its id
     # stays, so the profiles that equip it and Wesker's own trait keep it.
-    perk('wesker_firestarter', 'Perfection', 'Wesker. The Uroboros Virus, each kill makes him stronger and faster, up to 10. '
-         'A hit clears it.', 'style',
-         [], ['wesker'], tags=['items'], build={'charms': [UROBOROS_VIRUS]}),
+    # Epic, not common, though it is his own trait (the user, 2026-11-24: "I don't think is a common perk even if it
+    # comes with the character").
+    perk('wesker_firestarter', 'Perfection', 'Wesker. Each kill makes him stronger, up to 30, a hit clears it. '
+         'At 30 Midnight becomes Uroboros.', 'style',
+         [], ['wesker'], rarity='epic', tags=['items'], build={'charms': [UROBOROS_VIRUS]}),
     # The supply perks, 2026-11-11 (the user: a marathon should pay for 4 or 5 guns built all the way;
     # scripts/economy_math.py): Squad Tactics 2 -> 1 a kill, Executive Bonus 25 -> 8 a clear, Hostile
     # Takeover 15 -> 1 and Suplex 10 -> 1 a melee kill, Clean Sweep 40 -> 15 a clean clear.

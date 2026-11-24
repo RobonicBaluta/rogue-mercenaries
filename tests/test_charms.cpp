@@ -305,8 +305,21 @@ TEST_CASE("the shipped picks: the charms, the pouches, Scavenger's rounds and th
     REQUIRE(perfection->build.has_value());
     const CharmDef* virus = charmOf(*perfection->build, "uroboros_virus");
     REQUIRE(virus != nullptr);
-    CHECK(virus->kill_stack_max == 10);
+    CHECK(virus->kill_stack_max == 30);
     CHECK(virus->stacks_end_on_hit);
+    CHECK(perfection->rarity == Rarity::Epic);  // not common, though it is his own trait
+    // At 30, Midnight Wesker's burst button transforms: 12 s, a long cooldown, the other button's strike.
+    CHECK(virus->transform.skin == "wesker_midnight");
+    CHECK(virus->transform.slot == 1);
+    CHECK(virus->TransformStacks() == 30);
+    CHECK(virus->transform.special.kind == "transform");
+    CHECK(virus->transform.special.duration_seconds == Catch::Approx(12.0));
+    CHECK(virus->transform.special.cooldown_seconds >= 60.0);
+    CHECK(virus->transform.cinematic_seconds > 0.0);
+    CHECK(virus->transform.attack.kind == "uroboros_strike");
+    const SkinDef* midnight = FindSkin(*r.content->FindCharacter("wesker"), "wesker_midnight");
+    REQUIRE(midnight != nullptr);
+    CHECK(midnight->build.special_2.kind == "burst");
     // Squad Tactics' cluster grenades and its grenade every 8 kills.
     const PerkDef* squad = r.content->FindPerk("josh_squad_tactics");
     REQUIRE(squad != nullptr);
@@ -351,4 +364,143 @@ TEST_CASE("the shipped picks: the charms, the pouches, Scavenger's rounds and th
             CHECK(std::filesystem::exists(test::ConfigDir() / "charms" / c.picture));
         }
     }
+}
+
+namespace {
+
+// The virus with a transformation on alpha's build skin: 3 stacks, 10 s, 60 s after it, a 1 s scene.
+json VirusWithTransform() {
+    json virus = kVirus;
+    virus["transform"] = {{"skin", "alpha_build"}, {"slot", 1}, {"cinematic_seconds", 1.0},
+                          {"special", {{"kind", "transform"}, {"name", "Uroboros"}, {"icon", "syringe"}, {"cooldown_seconds", 60.0},
+                                       {"duration_seconds", 10.0}, {"power", 500}}},
+                          {"attack", {{"kind", "uroboros_strike"}, {"name", "Strike"}, {"cooldown_seconds", 2.0}, {"power", 600}}}};
+    return virus;
+}
+
+json TransformBuild(const json& virus) {
+    return {{"charms", {virus}},
+            {"special", {{"kind", "dash"}, {"name", "Dash"}, {"cooldown_seconds", 3.0}, {"power", 5}}},
+            {"special_2", {{"kind", "burst"}, {"name", "Burst"}, {"cooldown_seconds", 7.0}, {"power", 300}}}};
+}
+
+}  // namespace
+
+TEST_CASE("a charm's transformation is checked when loaded", "[charms]") {
+    CHECK(LoadErrors(TransformBuild(VirusWithTransform())).empty());
+    json wrongKind = VirusWithTransform();
+    wrongKind["transform"]["special"]["kind"] = "burst";
+    CHECK(HasError(LoadErrors(TransformBuild(wrongKind)), "must be 'transform' here"));
+    json noLength = VirusWithTransform();
+    noLength["transform"]["special"].erase("duration_seconds");
+    CHECK(HasError(LoadErrors(TransformBuild(noLength)), "needs duration_seconds"));
+    json longScene = VirusWithTransform();
+    longScene["transform"]["cinematic_seconds"] = 6.0;
+    longScene["transform"]["special"]["duration_seconds"] = 5.0;
+    CHECK(HasError(LoadErrors(TransformBuild(longScene)), "shorter than the transformation"));
+    json tooMany = VirusWithTransform();
+    tooMany["transform"]["stacks"] = 5;  // the charm stacks to 3
+    CHECK(HasError(LoadErrors(TransformBuild(tooMany)), "above the charm's kill_stack_max"));
+    json noStacks = VirusWithTransform();
+    noStacks.erase("kill_stack_stats");
+    noStacks.erase("kill_stack_max");
+    CHECK(HasError(LoadErrors(TransformBuild(noStacks)), "needs its kill stacks"));
+    // A build's own special may not be one.
+    json build = TransformBuild(kVirus);
+    build["special"]["kind"] = "transform";
+    CHECK(HasError(LoadErrors(build), "unknown special kind"));
+}
+
+TEST_CASE("at its stacks the burst button transforms: untouchable, no reaction, grabs broken, the other button strikes", "[charms]") {
+    test::Harness h(test::Load(Sources(TransformBuild(VirusWithTransform()))));
+    REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    // Not carried, or short of its stacks: the burst.
+    for (int i = 0; i < 3; ++i) h.rc.OnEnemyKilled(Kill(("a" + std::to_string(i)).c_str(), 0.5 + i * 0.1));
+    CHECK_FALSE(h.rc.TransformReady(1.0));
+    CHECK(h.rc.Special(1.0, 1).kind == "burst");
+    h.rc.SetCarriedCharms({"uroboros_virus"});
+    h.rc.OnEnemyKilled(Kill("b0", 1.1));
+    h.rc.OnEnemyKilled(Kill("b1", 1.2));
+    CHECK(h.rc.CharmStacks() == 2);
+    CHECK_FALSE(h.rc.TransformReady(1.5));
+    CHECK(h.rc.Special(1.5, 1).kind == "burst");
+    h.rc.OnEnemyKilled(Kill("b2", 1.6));
+    REQUIRE(h.rc.CharmStacks() == 3);
+
+    // At 3: the burst button shows and does the transformation; the other button is still the dash.
+    CHECK(h.rc.TransformReady(2.0));
+    const SpecialState ready = h.rc.Special(2.0, 1);
+    CHECK(ready.kind == "transform");
+    CHECK(ready.name == "Uroboros");
+    CHECK(ready.ready);
+    CHECK(h.rc.Special(2.0, 0).kind == "dash");
+    CHECK_FALSE(h.rc.BreaksGrabs(2.0));
+    REQUIRE(h.rc.UseSpecial(2.0, 1.0, 1).ok());
+    CHECK(h.rc.Transformed(2.0));
+    CHECK(h.rc.TransformedLeft(2.0) == Catch::Approx(10.0));
+
+    // Untouchable without a reaction, and every grab broken, for its 10 s.
+    IncomingContext hit;
+    hit.now = 5.0;
+    hit.amount = 200.0;
+    hit.hp = 1000.0;
+    hit.hp_max = 1000.0;
+    const IncomingResult taken = h.rc.ComputeIncoming(hit);
+    CHECK(taken.multiplier == 0.0);
+    CHECK(taken.no_reaction);
+    CHECK(h.rc.BreaksGrabs(5.0));
+    CHECK(h.rc.CharmStacks() == 3);  // no damage taken: the stacks stay
+
+    // The other button strikes once the scene is over (1 s), on its own cooldown; the burst button bursts.
+    CHECK(h.rc.Special(2.5, 0).kind == "uroboros_strike");
+    CHECK_FALSE(h.rc.Special(2.5, 0).ready);  // still the scene
+    REQUIRE(h.rc.Special(3.1, 0).ready);
+    REQUIRE(h.rc.UseSpecial(3.1, 1.0, 0).ok());
+    CHECK(h.rc.UseSpecial(4.0, 1.0, 0).code == ErrorCode::NotEligible);  // its 2 s
+    CHECK(h.rc.UseSpecial(5.2, 1.0, 0).ok());
+    CHECK(h.rc.Special(5.2, 1).kind == "burst");
+    CHECK(h.rc.UseSpecial(5.3, 1.0, 1).ok());  // a burst while transformed
+    CHECK(h.rc.state().specials[0].uses == 0);  // the dash's own cooldown untouched by the strikes
+
+    // Over at 12 s: hits hurt and react again, the dash is back, and the burst button bursts while it cools down.
+    CHECK_FALSE(h.rc.Transformed(12.1));
+    hit.now = 12.5;
+    const IncomingResult after = h.rc.ComputeIncoming(hit);
+    CHECK(after.multiplier > 0.0);
+    CHECK_FALSE(after.no_reaction);
+    CHECK(h.rc.Special(12.5, 0).kind == "dash");
+    CHECK_FALSE(h.rc.BreaksGrabs(12.5));
+    CHECK_FALSE(h.rc.TransformReady(40.0));  // 60 s from its end (12 s)
+    CHECK(h.rc.Special(40.0, 1).kind == "burst");
+    CHECK(h.rc.TransformReady(72.5));
+    CHECK(h.rc.Special(72.5, 1).kind == "transform");
+}
+
+TEST_CASE("a transformation is the skin's own and ends with the arena", "[charms]") {
+    json other = VirusWithTransform();
+    other["transform"]["skin"] = "alpha_base";  // another skin's
+    {
+        test::Harness h(test::Load(Sources(TransformBuild(other))));
+        REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+        REQUIRE(h.rc.BeginArena(0.0).ok());
+        h.rc.SetCarriedCharms({"uroboros_virus"});
+        for (int i = 0; i < 3; ++i) h.rc.OnEnemyKilled(Kill(("k" + std::to_string(i)).c_str(), 0.5 + i * 0.1));
+        CHECK(h.rc.TransformCharm() == nullptr);
+        CHECK_FALSE(h.rc.TransformReady(1.0));
+        CHECK(h.rc.Special(1.0, 1).kind == "burst");
+    }
+    test::Harness h(test::Load(Sources(TransformBuild(VirusWithTransform()))));
+    REQUIRE(h.rc.StartRun("alpha", 3, "alpha_build").ok());
+    REQUIRE(h.rc.BeginArena(0.0).ok());
+    h.rc.SetCarriedCharms({"uroboros_virus"});
+    for (int i = 0; i < 3; ++i) h.rc.OnEnemyKilled(Kill(("k" + std::to_string(i)).c_str(), 0.5 + i * 0.1));
+    REQUIRE(h.rc.UseSpecial(1.0, 1.0, 1).ok());
+    REQUIRE(h.rc.Transformed(2.0));
+    // The arena's end ends it.
+    test::KillN(h.rc, h.rc.RemainingEnemies(), 2.0);
+    REQUIRE(h.rc.IsArenaComplete());
+    REQUIRE(h.rc.CompleteArena(3.0).ok());
+    CHECK(h.rc.phase() != Phase::ArenaActive);
+    CHECK_FALSE(h.rc.Transformed(3.5));
 }

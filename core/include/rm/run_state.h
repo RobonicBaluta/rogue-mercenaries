@@ -203,6 +203,9 @@ struct PlayerSeat {
     std::vector<std::string> carried_charms;
     int charm_chests = 0;
     int charm_stacks = 0;
+    SpecialUse transform_use{};
+    SpecialUse transform_attack_use{};
+    double transformed_until = -1.0;
     std::string starting_gun_replaced_by;
 };
 
@@ -278,6 +281,11 @@ struct RunState {
     std::vector<std::string> carried_charms;
     int charm_chests = 0;
     int charm_stacks = 0;
+    // A charm's transformation (CharmTransform): its cooldown (ready_at counts from its end), its attack's, and
+    // until when it lasts.
+    SpecialUse transform_use{};
+    SpecialUse transform_attack_use{};
+    double transformed_until = -1.0;
     // A supply perk's gun that took the starting gun's place (RunController::StartingGunReplacedBy).
     std::string starting_gun_replaced_by;
     std::string end_reason;
@@ -331,6 +339,9 @@ inline void SwapSeat(RunState& run, PlayerSeat& seat) {
     swap(run.carried_charms, seat.carried_charms);
     swap(run.charm_chests, seat.charm_chests);
     swap(run.charm_stacks, seat.charm_stacks);
+    swap(run.transform_use, seat.transform_use);
+    swap(run.transform_attack_use, seat.transform_attack_use);
+    swap(run.transformed_until, seat.transformed_until);
     swap(run.starting_gun_replaced_by, seat.starting_gun_replaced_by);
 }
 

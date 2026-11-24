@@ -142,9 +142,21 @@ New in 0.2.0-alpha.28, made playable for both players in alpha.29 and alpha.30, 
 A charm is an item that takes a cell of your grid and works while you carry it. It comes with its perk
 or skin when the run starts and has its own picture and name; drop or store it and its rule stops until you carry it
 again. **Fidelity Card** (Clubbin' Sheva's Night Shopper): every third chest a weapon, rare or better. **Uroboros
-Virus** (Wesker's Perfection): kill stacks, lost on a hit. **Grapple Gun** (Ada's): no grab holds her, and the
-special button flips her clear. Each stands for a treasure the run never hands out, so the game shows the charm's picture
-(`configs/charms`) and name in its place while a run lasts.
+Virus** (Wesker's Perfection): kill stacks, lost on a hit; at 30 Midnight Wesker becomes Uroboros (below). **Grapple
+Gun** (Ada's): no grab holds her, and the special button flips her clear. Each stands for a treasure the run never hands
+out, so the game shows the charm's picture (`configs/charms`) and name in its place while a run lasts, on every copy of
+the game's item picture sheet that is loaded (the match's grid and ORGANIZE's can be different ones). The info panel
+counts the Virus's stacks like ammo (`VIRUS 17 / 30`, its bar filling; `ready` when Midnight can transform), and the top
+line does where the panel does not show (co-op, the panel off).
+
+**Uroboros.** Midnight Wesker with the Virus at 30 stacks: the burst button's ring turns into UROBOROS, and pressing it
+transforms him. Everyone else holds still for 2.4 s while the camera turns around him; he drops to a knee (the boss
+Wesker's motions), goes dark and red, and comes up in a blast that throws everyone within 6 m (600 each, tentacle
+lashes). For 12 s he takes no damage, does not even flinch, and breaks out of every grab; his other button is the
+**Uroboros Strike** (lashes everyone ahead of him within 7.5 m, and anyone close, for 700, every 1.2 s), and the burst
+button still bursts. The transformation comes back 120 s after it ends; the burst works all the while. The stacks stay
+(nothing hits him), so he can transform again once it is back. Its numbers are the charm's `transform` in
+`configs/perks.json`; the game has no player tentacles, so the lashes are drawn over the picture as Shock's lightning is.
 
 ### The pouches
 
@@ -171,7 +183,7 @@ of the newer ones are a rule with a cost. Written 2026-11-04 and waiting for a p
 | Jill | Battle Instinct | 15 percent of hits are critical and deal double damage. | free, the default |
 | Jill | Weapon Expert | Handguns hit 30 percent harder, handgun rounds stack twice as high. Shotguns 20 percent less. | 150 credits |
 | Jill | Finisher | Shots deal 60 percent more to enemies under a third of their health, 10 percent less otherwise. | 150 credits |
-| Albert | Perfection | Wesker. He carries the Uroboros Virus, a charm: while it is in his grid, every kill adds a stack, up to 10. Each stack gives 3 percent more damage, 2 percent less damage taken, 1 percent more critical chance and 1.5 percent more speed. A hit he takes clears them. (It was Firestarter: every 5 kills an incendiary grenade.) | free, the default |
+| Albert | Perfection (epic) | Wesker. He carries the Uroboros Virus, a charm: while it is in his grid, every kill adds a stack, up to 30. Each stack gives 1 percent more damage, 0.7 percent less damage taken, 0.3 percent more critical chance and 0.5 percent more speed (at 30 what 10 gave before). A hit he takes clears them. Midnight Wesker at 30 becomes Uroboros (Charms). (It was Firestarter: every 5 kills an incendiary grenade.) | free, the default |
 | Albert | Superior Being | Wesker. He takes 30 percent less damage, but heals are half as strong. | 200 credits |
 | Albert | Predator | Wesker. Each kill within 5 seconds of the last adds 10 percent damage, up to 50. 85 percent health. | 180 credits |
 | Josh | Squad Tactics | Every kill gives 1 extra supply, and every 8 kills a hand grenade. His hand grenades are cluster grenades: four bomblets go off around each a moment later, each half the blast's biggest hit to the enemies within 2.5 m. They never hurt a player. | free, the default |
@@ -331,7 +343,11 @@ The **flamethrower** carries its elements in the flame: Shock arcs from the near
 evolved), Cryo freezes an enemy after 2 s in the flame (1.2 s evolved), Toxic poisons and Incendiary burns everything
 in it. A Shock flamethrower fires sparks (the stun rod's) instead of a flame: everything within 5 m ahead takes 300
 damage a second, scaled like the flamethrower's hits, and is stunned. The other elements still fire the flame until
-an effect is picked for them.
+an effect is picked for them. An element's look in place of the flame keeps the flame's own sound (`"flame_stream_sound":
+false` in `adapter.json` takes it away). A Cryo freeze holds every enemy that can react still for its seconds: the
+Majini play the game's own freeze (the pose and the ice), the others (the big Majini, the chainsaw men, the dogs...) are
+held in their pose by the mod. The flame's ticks roll the gun's critical chance like a shot (a crit doubles that
+tick's damage), so crit affixes count on it.
 
 Since 0.2.7 the flame's damage is the mod's whatever its element: 300 a second (times the gun's multiplier) to
 everything in its cone, the boss and big enemies by their bones (U-8, its legs and its spawns; Uroboros Aheri's cores,
@@ -401,8 +417,9 @@ picked by picking an effect of that colour (an icy one for Cryo, a green one for
 
 Town Majini (men and women), village and soldier Majini play the game's own reactions to these (on fire, frozen, acid,
 the flash stun, blown away, the head burst); other enemies take the damage alone, and a boss takes 15 to 20 percent more
-damage from the gun instead of a status. A head your shot bursts is always a kill: the Majini no longer grows a Plaga
-from it and fights on. Legendary effects (an Exotic gun's): **Executioner Rounds** (finishes off any enemy below 20 percent
+damage from the gun instead of a status. A head your shot bursts is always a kill (one in the head-burst death with
+health left loses the rest). A Majini that grows a Plaga out of its neck is the game's own: it fights on and counts as a
+kill when the Plaga dies (0.3.0b killed it as the Plaga came out). Legendary effects (an Exotic gun's): **Executioner Rounds** (finishes off any enemy below 20 percent
 health; a boss takes double damage there), **Bottomless** (kills
 refill the magazine), **Overkill** (damage past a kill hits the nearest enemy within 6 m), **Last Word** (the last
 round of a magazine kills any enemy; a boss takes triple damage), **Bloodthirst** (kills heal 3 percent of your

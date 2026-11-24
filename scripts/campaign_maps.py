@@ -190,6 +190,12 @@ BOSS_PLAYER_DISTANCE = (1000, 2500)  # the boss appears within sight, not on top
 HIDE_MODELS = {
     505: ['OM08BC_IDo00_U001'],
 }
+# Places where the game's "jump down" is refused (maps.json "no_jump_down"; the user, 2026-11-24, of the Drilling
+# Facilities' boat: "it is why people get stuck sometime by pressing jump down"): s204's boat at its mooring, the
+# stage model scr02 V_hunedomeC00 (its bounding sphere: centre 28544 114 -92638, 24 m).
+NO_JUMP_DOWN = {
+    204: [{'at': [28544.0, 114.0, -92638.0], 'radius': 1500.0}],
+}
 
 NO_ROTATION = {
     # New (2026-11-23): out of the runs until the user has set their points and starts with the map editor
@@ -406,13 +412,15 @@ for stage in args.stages:
     entry = with_layouts(entry, ladder_layouts(stage))
     if stage in HIDE_MODELS:
         entry['hide_models'] = HIDE_MODELS[stage]
+    if stage in NO_JUMP_DOWN:
+        entry['no_jump_down'] = NO_JUMP_DOWN[stage]
     # An area made again keeps player 2's start (the map editor's, folded in).
     old = next((m for m in doc['maps'] if m['stage'] == stage), None)
     if old is not None and 'small_only_points' in old:
         entry['small_only_points'] = old['small_only_points']
     if old is not None and 'start2' in old:
-        entry = {**{k: v for k, v in entry.items() if k not in ('max_alive', 'min_player_distance', 'max_player_distance', 'points', 'chests', 'preload', 'layouts', 'roster', 'boss', 'hide_models')},
-                 'start2': old['start2'], **{k: v for k, v in entry.items() if k in ('max_alive', 'min_player_distance', 'max_player_distance', 'points', 'chests', 'preload', 'layouts', 'roster', 'boss', 'hide_models')}}
+        entry = {**{k: v for k, v in entry.items() if k not in ('max_alive', 'min_player_distance', 'max_player_distance', 'points', 'chests', 'preload', 'layouts', 'roster', 'boss', 'hide_models', 'no_jump_down')},
+                 'start2': old['start2'], **{k: v for k, v in entry.items() if k in ('max_alive', 'min_player_distance', 'max_player_distance', 'points', 'chests', 'preload', 'layouts', 'roster', 'boss', 'hide_models', 'no_jump_down')}}
     # An area made again keeps its place in the list (the run map draws from it in order).
     if any(m['stage'] == stage for m in doc['maps']):
         doc['maps'] = [entry if m['stage'] == stage else m for m in doc['maps']]

@@ -216,6 +216,8 @@ struct IncomingResult {
     /// instead of applying lethal damage.
     bool prevent_death = false;
     double leave_hp = 0.0;
+    /// The hit takes no reaction either (a transformation: "don't even flinch").
+    bool no_reaction = false;
 };
 
 enum class UnlockKind { Character, Perk, Weapon };
@@ -471,8 +473,22 @@ public:
     /// What the carried charms' kill stacks add to the run stats now (damage, defense, crit, move_speed).
     [[nodiscard]] RunStats CharmStats() const;
     [[nodiscard]] int CharmStacks() const { return run_.charm_stacks; }
-    /// A grab is broken at once: the build's own rule, or a carried charm's.
+    /// A grab is broken at once: the build's own rule, or a carried charm's (at `now`: a transformation's too).
     [[nodiscard]] bool BreaksGrabs() const;
+    [[nodiscard]] bool BreaksGrabs(double now) const { return BreaksGrabs() || Transformed(now); }
+
+    // ---- A charm's transformation (CharmTransform: Midnight Wesker's Uroboros, 2026-11-24) ----
+    /// The carried charm whose transformation the run's skin has (nullptr: none).
+    [[nodiscard]] const CharmDef* TransformCharm() const;
+    /// It is ready on its button now: the skin, the charm carried with its stacks, cooled down, an arena on.
+    [[nodiscard]] bool TransformReady(double now) const;
+    /// While it lasts: no damage, no hit's reaction (IncomingResult::no_reaction), every grab broken, the other
+    /// button its attack. It ends with the arena.
+    [[nodiscard]] bool Transformed(double now) const;
+    [[nodiscard]] double TransformedLeft(double now) const;
+    /// What the special button `slot` does now: its own special, the transformation while that is ready, its
+    /// attack on the other button while transformed. UseSpecial uses it, and starts the transformation.
+    [[nodiscard]] const SkinSpecial& ActiveSpecial(double now, int slot) const;
     /// The gun a supply perk gave in place of the starting gun of its kind (SwapStartingWeapon; the
     /// Perk Workshop's "doesn't start with 2 weapons of the same type"): the adapter puts it in the
     /// hands and takes the starting gun away. Empty: none.
@@ -643,6 +659,8 @@ public:
 private:
     /// The active seat's carried charms, as the build defines them.
     [[nodiscard]] std::vector<const CharmDef*> CarriedCharmDefs() const;
+    /// The cooldown record the special button `slot` uses now (ActiveSpecial's).
+    [[nodiscard]] const RunState::SpecialUse& UseOf(double now, int slot) const;
     /// A supply perk's gun of the starting gun's kind takes its place, better (StartingGunReplacedBy).
     void SettleStartingGuns();
     // The ladder (EconomyConfig::Ladder): what the profile has beaten and opened.

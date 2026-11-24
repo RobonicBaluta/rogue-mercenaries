@@ -130,6 +130,14 @@ struct MapDef {
     /// Objects of the area not built (set record names or their start, any case: the Engine
     /// Room's `om0955_ido00`): a door its campaign opens with a lever that a run never pulls.
     std::vector<std::string> hide_models;
+    /// Places where the game's "jump down" is refused (the user, 2026-11-24, of the Drilling Facilities' boat:
+    /// "it is why people get stuck sometime by pressing jump down"): the player who starts one within `radius`
+    /// (engine units, across the floor) of `at` stands again where they were.
+    struct JumpBlock {
+        std::array<double, 3> at{};
+        double radius = 0.0;
+    };
+    std::vector<JumpBlock> no_jump_down;
     int max_alive = 8;
     double min_player_distance = 800.0;  // engine units; points closer than this are avoided
     double max_player_distance = 0.0;    // > 0: points farther than this are avoided (large areas)

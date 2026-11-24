@@ -439,6 +439,7 @@ IncomingResult RunController::ComputeIncoming(const IncomingContext& incoming) {
     if (incoming.now < run_.invulnerable_until) {
         out.multiplier = 0.0;
         out.raw_multiplier = 0.0;
+        out.no_reaction = Transformed(incoming.now);  // a transformation: not even a flinch
         return out;
     }
 

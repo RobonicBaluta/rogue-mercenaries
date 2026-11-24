@@ -3856,8 +3856,6 @@ std::string EnemyKillId(std::uintptr_t enemy, int maxHp) {
 // hit, and when: a death within kSpecialKillCredit is the player's (a Majini the flamethrower set
 // burning dies of the game's own fire, outside any hit, about 4 s later).
 std::map<std::uintptr_t, double> g_specialVictims;
-// Every hit a player's gun or blade landed, killing or not, and when (DriveHeadBursts).
-std::map<std::uintptr_t, double> g_playerHitAt;
 // The rarity remake's element statuses (defined with DriveElements).
 bool FrozenNow(std::uintptr_t enemy, double now);
 void QueueProcs(std::uintptr_t enemy, const std::vector<rm::WeaponProc>& procs);
@@ -8012,6 +8010,30 @@ std::string Clock(double seconds) {
     return text;
 }
 
+// The kill stacks of a carried charm that has them (the Uroboros Virus; the user, 2026-11-24: "add it a counter, like an
+// ammo counter"): its stacks and most, the transformation's seconds left (0: not transformed), and whether it is ready.
+struct StackCounter {
+    const rm::CharmDef* charm = nullptr;
+    int stacks = 0, most = 0;
+    double transformed = 0.0;
+    bool ready = false;
+};
+StackCounter CharmCounter(double now) {
+    StackCounter c;
+    rm::RunController& run = *g->run;
+    if (!run.HasActiveRun()) return c;
+    for (const rm::CharmDef& charm : run.state().character.build.charms) {
+        if (charm.kill_stack_max <= 0 || !run.CharmCarried(charm.id)) continue;
+        c.charm = &charm;
+        c.stacks = std::min(run.CharmStacks(), charm.kill_stack_max);
+        c.most = charm.kill_stack_max;
+        break;
+    }
+    c.transformed = run.TransformedLeft(now);
+    c.ready = run.TransformReady(now);
+    return c;
+}
+
 void DrawInfoPanel(const rm::RunSnapshot& s, double now) {
     if (!g->settings.infoPanel || !s.run_active || s.phase != rm::Phase::ArenaActive || !g->match.inMatch || s.seat_count > 1 ||
         matchui::IsOpen() || overlay::IsFocused() || mapeditor::Open()) {
@@ -8081,6 +8103,22 @@ void DrawInfoPanel(const rm::RunSnapshot& s, double now) {
     }
     std::snprintf(text, sizeof(text), "%lld", static_cast<long long>(s.credits_pending));
     cells.push_back({"credits", "CREDITS", text, gold, std::string()});
+    // The Uroboros Virus's stacks, as an ammo count: n / most, its bar filling; at the most gold, and red while he is
+    // transformed (its seconds left).
+    if (const StackCounter c = CharmCounter(now); c.charm != nullptr) {
+        const ImU32 red = IM_COL32(230, 60, 70, 255);
+        if (c.transformed > 0.0) {
+            std::snprintf(text, sizeof(text), "%.0f s", std::ceil(c.transformed));
+            const rm::CharmDef* t = g->run->TransformCharm();
+            const double whole = t != nullptr && t->transform.special.duration_seconds > 0.0 ? t->transform.special.duration_seconds : 12.0;
+            cells.push_back({"syringe", "UROBOROS", text, red, std::string(), static_cast<float>(std::clamp(c.transformed / whole, 0.0, 1.0)), red});
+        } else {
+            std::snprintf(text, sizeof(text), "%d", c.stacks);
+            const bool full = c.stacks >= c.most;
+            cells.push_back({"syringe", "VIRUS", text, full ? gold : white, "/ " + std::to_string(c.most) + (c.ready ? "  ready" : ""),
+                             static_cast<float>(c.stacks) / static_cast<float>(std::max(1, c.most)), full ? gold : IM_COL32(200, 60, 70, 220)});
+        }
+    }
     if (g_panel.chain >= 2) {
         std::snprintf(text, sizeof(text), "x%d", g_panel.chain);
         const float left = static_cast<float>(std::clamp(1.0 - (now - g_panel.lastKillAt) / kChainSeconds, 0.0, 1.0));
@@ -9035,15 +9073,14 @@ void SettleStartingGunSwaps(double now) {
 
 // A head a player's shot bursts is a kill (the user, 2026-11-24: "if the crit explodes the head,
 // there's a chance that they still have enough hp to go by, that shouldn't be the case, its
-// confusing"). Two ways the game lets one go on, from its code:
-//  - A Majini whose head a hit destroys may grow a Plaga out of its neck and fight on
-//    (cEm10ActDmgAppearPlaga / ...B, update 0x00BFF040; RE5's own, more often with a crit's
-//    overkill). Within 2 s of a player's hit it dies instead: its health taken, the head-burst
-//    death started (cEm10ActDeadHeadExplosion, which for all but a soldier, uEm14, with its
-//    +0x1F88 bit 6 ends in the death: 0x00C11060).
-//  - The head-burst death with health left (a damage penalty below x1 on the hit that burst it):
-//    after 0.3 s in it the rest of its health is taken.
-// The kill is the player's (g_specialVictims). Not the arena's boss or a boss's add.
+// confusing"): the head-burst death with health left (a damage penalty below x1 on the hit that
+// burst it): after 0.3 s in it the rest of its health is taken. The kill is the player's
+// (g_specialVictims). Not the arena's boss or a boss's add.
+// A Majini whose head a hit destroys may grow a Plaga out of its neck and fight on
+// (cEm10ActDmgAppearPlaga / ...B, update 0x00BFF040; the game gives it new health, 3000 seen):
+// that is the game's own and stays (the user, 2026-11-24: "they shouldn't count as dead when they
+// spawn something, and the plaga should be counted when killed"; 0.3.0b killed it as it came out).
+// It counts once, when the Plaga's health reaches zero.
 void DriveHeadBursts(double now) {
     static int generation = -1;
     static std::set<std::uintptr_t> handled;
@@ -9052,10 +9089,8 @@ void DriveHeadBursts(double now) {
         generation = g->matchGeneration;
         handled.clear();
         burstSince.clear();
-        g_playerHitAt.clear();
         return;
     }
-    for (auto it = g_playerHitAt.begin(); it != g_playerHitAt.end();) it = now - it->second > 5.0 ? g_playerHitAt.erase(it) : std::next(it);
     static int logged = 0;
     std::set<std::uintptr_t> bursting;
     for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
@@ -9066,31 +9101,15 @@ void DriveHeadBursts(double now) {
             const std::size_t n = std::strlen(tail);
             return action.size() >= n && action.compare(action.size() - n, n, tail) == 0;
         };
-        const bool plaga = ends("DmgAppearPlaga") || ends("DmgAppearPlagaB");
-        const bool burst = ends("DeadHeadExplosion");
-        if (!plaga && !burst) continue;
-        const auto hit = g_playerHitAt.find(unit);
-        const bool byPlayer = hit != g_playerHitAt.end() && now - hit->second <= 2.0;
-        if (plaga) {
-            if (!byPlayer || handled.count(unit)) continue;
-            handled.insert(unit);
-            g_specialVictims[unit] = now;
-            if (e.hp > 0) director::Damage(unit, e.hp);
-            bool started = React(unit, Reaction::HeadBurst, now, true, true);
-            std::string how = "its head-burst death";
-            if (!started) {
-                std::string name;
-                const int id = DeathActionOf(unit, name);
-                started = id >= 0 && engine::StartAction(unit, id, name.c_str(), true);
-                how = id >= 0 ? name : std::string("no death in its table");
-            }
-            if (logged++ < 16) {
-                RM_LOGI("head burst: %s %08X began %s (%d health) after the player's hit: dies instead, %s %s",
-                        engine::ClassName(unit).c_str(), static_cast<unsigned>(unit), action.c_str(), e.hp, how.c_str(),
-                        started ? "started" : "refused");
+        if (ends("DmgAppearPlaga") || ends("DmgAppearPlagaB")) {
+            static std::set<std::uintptr_t> told;  // the game's own: it fights on (logged once a unit, for the playtests)
+            if (told.insert(unit).second && logged++ < 16) {
+                RM_LOGI("head burst: %s %08X grows its Plaga (%d health): it fights on, counted when that dies",
+                        engine::ClassName(unit).c_str(), static_cast<unsigned>(unit), e.hp);
             }
             continue;
         }
+        if (!ends("DeadHeadExplosion")) continue;
         bursting.insert(unit);
         if (e.hp <= 0) continue;
         const double since = burstSince.try_emplace(unit, now).first->second;
@@ -9303,6 +9322,7 @@ struct ElementArc {
     float a[3] = {}, b[3] = {};
     double born = 0.0, until = 0.0;
     std::uint32_t seed = 0;
+    bool tentacle = false;  // a transformation's lash (AddTentacle): dark red, bending, not jagged
 };
 std::vector<ElementArc> g_arcs;
 constexpr float kArcHeight = 120.0f;  // an arc's ends: chest high
@@ -9322,6 +9342,105 @@ void AddArc(std::uintptr_t from, std::uintptr_t to, double now, double seconds) 
     seeds = seeds * 1664525u + 1013904223u;
     arc.seed = seeds;
     g_arcs.push_back(arc);
+}
+
+// A transformation's lash from `from` to `to` (Midnight Wesker's Uroboros: the game has no player tentacles, so the
+// overlay draws them where the camera shows the two, as Shock's lightning).
+void AddTentacle(std::uintptr_t from, std::uintptr_t to, double now, double seconds) {
+    if (g_arcs.size() >= kMaxArcs || to == 0 || from == 0) return;
+    const bool on = g->settings.elementArcs;
+    g->settings.elementArcs = true;
+    AddArc(from, to, now, seconds);
+    g->settings.elementArcs = on;
+    if (!g_arcs.empty() && g_arcs.back().to == to) g_arcs.back().tentacle = true;
+}
+
+// ---- Held still (2026-11-24) ---------------------------------------------------------------------------------
+// A unit held in its pose: its body's motion layers (0..2) at speed 0 until `until`, each put back to what it had
+// after (the game sets a layer's speed when it starts a motion, so it is written every tick). The game's own freeze
+// does the same (cEm10ActDmgIce's update 0x00C0F8C0 sets layer 0's speed to 0 for its hold, back to 1 after). The
+// mod holds an enemy with no ice reaction of its own through a Cryo freeze (FreezeEnemy), and every enemy through a
+// transformation's scene.
+struct HeldUnit {
+    double until = 0.0;
+    std::array<float, 3> speeds{1.0f, 1.0f, 1.0f};  // each layer's before (the game's)
+    bool saved = false;
+    std::string why;
+};
+std::map<std::uintptr_t, HeldUnit> g_held;
+int g_heldGeneration = -1;
+constexpr int kHeldLayers = 3;
+
+void HoldStill(std::uintptr_t unit, double until, const char* why) {
+    if (!unit) return;
+    HeldUnit& h = g_held[unit];
+    h.until = std::max(h.until, until);
+    h.why = why;
+}
+
+void ReleaseHeld(std::uintptr_t unit, const HeldUnit& h) {
+    for (int n = 0; n < kHeldLayers; ++n) {
+        const std::uintptr_t at = unit + re5::off::kMotionLayer0Speed + static_cast<std::size_t>(n) * re5::off::kMotionLayerStride;
+        if (ReadOr<float>(at, -1.0f) == 0.0f) SafeStore<float>(at, h.saved ? h.speeds[static_cast<std::size_t>(n)] : 1.0f);
+    }
+}
+
+// Each tick: the held ones kept still; one whose time is up, or dead, let go; one gone forgotten (nothing written).
+void DriveHeld(double now) {
+    if (g_heldGeneration != g->matchGeneration || !g->match.inMatch) {
+        g_heldGeneration = g->matchGeneration;
+        g_held.clear();
+        return;
+    }
+    if (g_held.empty()) return;
+    std::map<std::uintptr_t, int> hp;
+    for (const engine::EnemyState& e : engine::ReadEnemyStates()) hp[e.object] = e.hp;
+    static int logged = 0;
+    for (auto it = g_held.begin(); it != g_held.end();) {
+        const auto found = hp.find(it->first);
+        if (found == hp.end()) {
+            it = g_held.erase(it);
+            continue;
+        }
+        HeldUnit& h = it->second;
+        if (now >= h.until || found->second <= 0) {
+            ReleaseHeld(it->first, h);
+            it = g_held.erase(it);
+            continue;
+        }
+        const int layers = std::min<int>(kHeldLayers, static_cast<int>(ReadOr<std::uint32_t>(it->first + re5::off::kMotionLayerCount, 0)));
+        if (!h.saved) {
+            for (int n = 0; n < layers; ++n) {
+                const float v = ReadOr<float>(it->first + re5::off::kMotionLayer0Speed + static_cast<std::size_t>(n) * re5::off::kMotionLayerStride, 1.0f);
+                h.speeds[static_cast<std::size_t>(n)] = v > 0.0f && v < 10.0f ? v : 1.0f;
+            }
+            h.saved = true;
+            if (logged++ < 16) {
+                RM_LOGI("held: %s %08X still (%s) for %.1f s, %d layers", engine::ClassName(it->first).c_str(), static_cast<unsigned>(it->first),
+                        h.why.c_str(), h.until - now, layers);
+            }
+        }
+        for (int n = 0; n < layers; ++n) {
+            SafeStore<float>(it->first + re5::off::kMotionLayer0Speed + static_cast<std::size_t>(n) * re5::off::kMotionLayerStride, 0.0f);
+        }
+        ++it;
+    }
+}
+
+// A Cryo freeze (the user, 2026-11-24: "cryo flame doesn't freeze anymore"): the game's own on the Majini that have
+// it (their ice reaction: the pose held, the ice texture); any other enemy that can react (the big Majini, the
+// chainsaw men, the dogs, ...: no ice reaction of their own, so they only took its colour and walked on) is held
+// still by the mod for the freeze. Never a boss. True when it froze.
+bool FreezeEnemy(std::uintptr_t enemy, double seconds, double now) {
+    if (!enemy || enemy == g->boss.unit || seconds <= 0.0) return false;
+    g_elementStatus[enemy].frozenUntil = now + seconds;
+    if (React(enemy, Reaction::Ice, now, true)) return true;
+    const ClassReactions* cr = ReactionsOf(enemy);
+    if ((cr == nullptr || cr->id[static_cast<std::size_t>(Reaction::Ice)] < 0) && CanReact(enemy)) {
+        HoldStill(enemy, now + seconds, "frozen, no ice of its own");
+        return true;
+    }
+    return false;
 }
 
 void ApplyProc(const QueuedProc& q, double now) {
@@ -9359,8 +9478,7 @@ void ApplyProc(const QueuedProc& q, double now) {
                 note = ", the target already dead";
                 break;
             }
-            g_elementStatus[q.enemy].frozenUntil = now + p.seconds;
-            reacted = React(q.enemy, Reaction::Ice, now, true);
+            reacted = FreezeEnemy(q.enemy, p.seconds, now);
             PlayLook(p, q.enemy, now);
             reached = 1;
             break;
@@ -9372,8 +9490,7 @@ void ApplyProc(const QueuedProc& q, double now) {
             for (const auto& [enemy, d] : EnemiesNear(q.at, static_cast<float>(p.radius), q.enemy)) {
                 (void)d;
                 if (enemy == g->boss.unit || !alive(enemy) || roll(freezeRng) >= p.chance) continue;
-                g_elementStatus[enemy].frozenUntil = now + p.seconds;
-                React(enemy, Reaction::Ice, now, true);
+                FreezeEnemy(enemy, p.seconds, now);
                 PlayLook(p, enemy, now);
                 ++reached;
             }
@@ -9452,8 +9569,7 @@ void ApplyProc(const QueuedProc& q, double now) {
                     if (alive(enemy)) {
                         // Absolute Zero (an evolved Cryo's shatter): those it hits freeze.
                         if (p.freeze_seconds > 0.0) {
-                            g_elementStatus[enemy].frozenUntil = now + p.freeze_seconds;
-                            React(enemy, Reaction::Ice, now, true);
+                            FreezeEnemy(enemy, p.freeze_seconds, now);
                         } else {
                             React(enemy, thrown, now, true);
                         }
@@ -10592,6 +10708,7 @@ std::array<float, 3> TintRgb(const std::string& kind) {
     if (kind == "elite_cryo") return {0.78f, 0.95f, 1.25f};
     if (kind == "elite_toxic") return {0.82f, 1.18f, 0.76f};
     if (kind == "elite_explosive") return {1.25f, 0.72f, 0.72f};
+    if (kind == "uroboros") return {0.42f, 0.17f, 0.2f};  // Midnight Wesker transformed: dark, red veined
     return {1.0f, 1.0f, 1.0f};
 }
 
@@ -11613,6 +11730,12 @@ const std::vector<BossStep>* BossSteps(const std::string& move) {
     static const std::vector<BossStep> dash = {{0x20, 1.5f}};
     static const std::vector<BossStep> knee = {{0x24, 1.6f}};
     static const std::vector<BossStep> kick = {{0xC9, 1.6f}};
+    // The transformation (the Uroboros Virus): he drops to a knee (0x72, his Hiza) as it takes him and comes up out
+    // of a shift's stop (0x20); its strike his other kick (0xCA).
+    static const std::vector<BossStep> transform = {{0x72, 1.4f}, {0x20, 1.1f}};
+    static const std::vector<BossStep> strike = {{0xCA, 1.8f}};
+    if (move == "transform") return &transform;
+    if (move == "uroboros_strike") return &strike;
     if (move == "dual_smg") return &sweep;
     if (move == "dash") return &dash;
     if (move == "lunge") return &knee;
@@ -12015,13 +12138,269 @@ void StartFlip(double now, const rm::SkinSpecial& sp, std::uintptr_t local, int 
     g->noticeUntil = now + 1.0;
 }
 
+// ---- Midnight Wesker's Uroboros (the Uroboros Virus's transformation, rm::CharmTransform; 2026-11-24) ----------
+// The user: "at 30 if you have midnight wesker the burst button combo should transform you into uroboros wesker (with
+// a camera while everyone else is not moving so you get to see the transformation) and for 12 seconds you are
+// invulnerable (don't even flinch) and the other button combo lets you do some uroboros wesker attacks, with a high
+// cooldown on the transformation (but lets you do burst in the meantime)". The core says when the burst button
+// transforms (RunController::ActiveSpecial), keeps him untouchable, breaks his grabs and gives the other button the
+// strike. Here: its scene (every enemy held still, HoldStill; the camera turning around him, areacams::SetSceneCamera;
+// the boss Wesker's kneel and rise, his colours going dark and red), its blast as the scene ends (tentacle lashes
+// throwing everyone near), no hit's reaction while it lasts (the hit record cleared), his colours back after.
+struct UroborosForm {
+    std::uintptr_t player = 0;  // 0: none
+    int seat = -1;
+    double start = 0.0, sceneUntil = 0.0;
+    bool scene = false;
+    bool blasted = false;
+    float yaw = 0.0f;  // his facing at the start: the camera begins on his front
+    std::uintptr_t camera = 0;
+    int power = 0;
+    EnemyTint tint;
+    bool tinted = false;
+};
+UroborosForm g_uro;
+constexpr float kUroBlastRadius = 600.0f;
+constexpr float kUroStrikeReach = 750.0f;   // the strike: ahead of him this far (within kUroStrikeCos)...
+constexpr float kUroStrikeAround = 250.0f;  // ... and anyone this close
+constexpr float kUroStrikeCos = 0.5f;       // 60 degrees either side
+constexpr int kUroStrikeMost = 8;
+constexpr float kUroCameraDistance = 380.0f, kUroCameraHeight = 150.0f, kUroCameraTurn = 1.8f;
+
+// While he is transformed: the hit he takes has nothing to react to (its damage is none already, the core's).
+void ClearPendingHit(std::uintptr_t player) {
+    if (const auto record = ReadOr<std::uintptr_t>(player + re5::off::kEnemyHitRecord, 0); record != 0 &&
+        ReadOr<std::uint8_t>(record + re5::off::kHitRecordPending, 0) != 0) {
+        SafeStore<std::uint8_t>(record + re5::off::kHitRecordPending, 0);
+    }
+}
+
+void StartTransformation(double now, const rm::SkinSpecial& sp, std::uintptr_t local, int slot, const char* source) {
+    rm::RunController& run = *g->run;
+    const int stacks = run.CharmStacks();
+    const rm::Status used = run.UseSpecial(now, 1.0, slot);
+    if (!used.ok()) {
+        DeniedNotice(now, Upper(Plain(sp.name)), run.Special(now, slot));
+        return;
+    }
+    const rm::CharmDef* charm = run.TransformCharm();
+    const double scene = charm ? charm->transform.cinematic_seconds : 0.0;
+    EndSpecialMove("transformed");
+    if (g_uro.tinted && g_uro.player) PutTint(g_uro.player, g_uro.tint, "");
+    g_uro = {};
+    g_uro.player = local;
+    g_uro.seat = run.ActiveSeat();
+    g_uro.start = now;
+    g_uro.sceneUntil = now + scene;
+    g_uro.scene = scene > 0.0;
+    g_uro.power = static_cast<int>(sp.power > 0.0 ? sp.power : 600.0);
+    float fx = 0.0f, fz = 1.0f;
+    PlayerFacing(local, fx, fz);
+    g_uro.yaw = std::atan2(fz, fx);
+    int held = 0;
+    if (g_uro.scene) {
+        for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
+            if (e.hp <= 0) continue;
+            HoldStill(e.object, g_uro.sceneUntil, "Uroboros's scene");
+            ++held;
+        }
+    }
+    const bool moved = StartBossMove(local, "transform", now);
+    g->notice = "UROBOROS";
+    g->noticeUntil = now + 2.5;
+    RM_LOGI("uroboros: %s transforms at %d stacks for %.1f s [%s]: its scene %.1f s, %d enemies held, %s, the camera %s",
+            engine::ClassName(local).c_str(), stacks, run.TransformedLeft(now), source, scene, held,
+            moved ? "the boss Wesker's kneel" : "no boss move", engine::Caps().sceneCamera ? "turns around him" : "the game's (no view hook)");
+}
+
+// Its blast as the scene ends: everyone within kUroBlastRadius on his floor is thrown, a lash to each.
+void UroborosBlast(std::uintptr_t local, double now) {
+    float at[3];
+    UnitPosition(local, at);
+    std::string results;
+    for (const auto& [enemy, d] : EnemiesAround(local, kUroBlastRadius, -1.0f, 0.0f, 1.0f)) {
+        (void)d;
+        if (std::fabs(ReadOr<float>(enemy + re5::off::kUnitPosition + 4, 0.0f) - at[1]) > kMaxStep) continue;
+        results += " " + StrikeEnemy(enemy, g_uro.power, re5::off::kEm10DmgFlyoff, now);
+        AddTentacle(local, enemy, now, 0.5);
+    }
+    RM_LOGI("uroboros: the blast (%d):%s", g_uro.power, results.empty() ? " nobody in reach" : results.c_str());
+}
+
+void StepTransformation(double now) {
+    if (g_uro.player == 0) return;
+    rm::RunController& run = *g->run;
+    if (run.ActiveSeat() != g_uro.seat) return;
+    const auto local = engine::LocalPlayer();
+    const bool on = local == g_uro.player && run.HasActiveRun() && run.Transformed(now) && g->match.inMatch;
+    if (g_uro.scene && (!on || now >= g_uro.sceneUntil)) {
+        areacams::ClearSceneCamera();
+        g_uro.scene = false;
+        RM_LOGI("uroboros: the scene over after %.1f s (the camera's view built %d times)", now - g_uro.start, areacams::SceneCameraViews());
+        if (on && !g_uro.blasted) {
+            g_uro.blasted = true;
+            UroborosBlast(local, now);
+        }
+    }
+    if (!on) {
+        if (g_uro.tinted && local == g_uro.player) PutTint(g_uro.player, g_uro.tint, "");
+        RM_LOGI("uroboros: over after %.1f s", now - g_uro.start);
+        if (local == g_uro.player && g->match.inMatch) {
+            g->notice = "UROBOROS ENDS";
+            g->noticeUntil = now + 1.5;
+        }
+        g_uro = {};
+        return;
+    }
+    // His colours go as he kneels.
+    if (!g_uro.tinted && now >= g_uro.start + (g_uro.sceneUntil - g_uro.start) * 0.45) {
+        PutTint(local, g_uro.tint, "uroboros");
+        g_uro.tinted = true;
+        RM_LOGI("uroboros: %zu of his materials dark", g_uro.tint.original.size());
+    }
+    if (g_uro.scene && engine::Caps().sceneCamera) {
+        if (!g_uro.camera) {
+            engine::CameraView view;
+            if (engine::ReadCameraView(view)) g_uro.camera = view.camera;
+        }
+        if (g_uro.camera) {
+            float at[3];
+            UnitPosition(local, at);
+            const double length = std::max(0.1, g_uro.sceneUntil - g_uro.start);
+            const float t = static_cast<float>(std::clamp((now - g_uro.start) / length, 0.0, 1.0));
+            const float a = g_uro.yaw + kUroCameraTurn * (t - 0.5f);
+            const float closer = kUroCameraDistance * (1.0f - 0.25f * t);
+            const float eye[3] = {at[0] + std::cos(a) * closer, at[1] + kUroCameraHeight, at[2] + std::sin(a) * closer};
+            const float target[3] = {at[0], at[1] + 120.0f, at[2]};
+            areacams::SetSceneCamera(g_uro.camera, eye, target);
+        }
+    }
+    ClearPendingHit(local);
+}
+
+// The strike (the other button while transformed): everyone ahead of him within kUroStrikeReach (and anyone close)
+// is thrown, a lash to each; the boss Wesker's kick plays it.
+void StartUroborosStrike(double now, const rm::SkinSpecial& sp, std::uintptr_t local, int slot, const char* source) {
+    rm::RunController& run = *g->run;
+    const rm::Status used = run.UseSpecial(now, 1.0, slot);
+    if (!used.ok()) {
+        DeniedNotice(now, Upper(Plain(sp.name)), run.Special(now, slot));
+        return;
+    }
+    float at[3];
+    UnitPosition(local, at);
+    float fx = 0.0f, fz = 1.0f;
+    PlayerFacing(local, fx, fz);
+    const int damage = static_cast<int>(sp.power > 0.0 ? sp.power : 700.0);
+    std::string results;
+    int struck = 0;
+    for (const auto& [enemy, d] : EnemiesAround(local, kUroStrikeReach, -1.0f, 0.0f, 1.0f)) {
+        float e[3];
+        UnitPosition(enemy, e);
+        if (std::fabs(e[1] - at[1]) > kMaxStep) continue;
+        const float dx = e[0] - at[0], dz = e[2] - at[2];
+        if (d > kUroStrikeAround && (d < 1.0f || (dx * fx + dz * fz) / d < kUroStrikeCos)) continue;
+        results += " " + StrikeEnemy(enemy, damage, re5::off::kEm10DmgFlyoff, now);
+        AddTentacle(local, enemy, now, 0.4);
+        if (++struck >= kUroStrikeMost) break;
+    }
+    const bool moved = StartBossMove(local, "uroboros_strike", now);
+    RM_LOGI("uroboros: strike (%d%s):%s [%s]", damage, moved ? ", his kick" : "", results.empty() ? " nobody in reach" : results.c_str(), source);
+    g->notice = Upper(Plain(sp.name));
+    g->noticeUntil = now + 0.8;
+}
+
+// ---- Jump downs (2026-11-24, the user of the Drilling Facilities' boat: "it is why people get stuck sometime by
+// pressing jump down or not let them jump down or something?") ---------------------------------------------------
+// The game's jump down (cPlAction_pl_act_jump_down) started within one of the map's no_jump_down places is refused: the
+// player waits again where they stood before it. One that holds a player for kJumpStuckSeconds (no way out of where it
+// went) puts them at the arena's start. Each jump down is logged with where it began (up to 24 a match), so a place
+// that traps players shows in the logs.
+constexpr double kJumpStuckSeconds = 6.0;
+struct JumpWatch {
+    std::uintptr_t player = 0;
+    bool jumping = false;
+    double since = 0.0;
+    float before[3] = {};  // where the player stood before it
+    int generation = -1;
+    int logged = 0;
+};
+std::array<JumpWatch, 4> g_jumps;
+
+void DriveJumpDown(double now) {
+    rm::RunController& run = *g->run;
+    const int seat = std::clamp(run.ActiveSeat(), 0, 3);
+    JumpWatch& w = g_jumps[static_cast<std::size_t>(seat)];
+    const auto local = engine::LocalPlayer();
+    if (!local || !g->match.inMatch || !run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive) {
+        w.jumping = false;
+        return;
+    }
+    if (w.generation != g->matchGeneration || w.player != local) {
+        w = {};
+        w.generation = g->matchGeneration;
+        w.player = local;
+    }
+    float at[3];
+    UnitPosition(local, at);
+    const std::string action = engine::CurrentActionName(local);
+    if (action.rfind("cPlAction_pl_act_jump_down", 0) != 0) {
+        w.jumping = false;
+        for (int k = 0; k < 3; ++k) w.before[k] = at[k];
+        return;
+    }
+    const rm::MapDef* map = CurrentMap();
+    if (!w.jumping) {
+        w.jumping = true;
+        w.since = now;
+        if (w.logged++ < 24) {
+            RM_LOGI("jump down: player %d from %.0f %.0f %.0f on %s", seat + 1, w.before[0], w.before[1], w.before[2], map ? map->id.c_str() : "?");
+        }
+        for (const auto& b : map ? map->no_jump_down : std::vector<rm::MapDef::JumpBlock>{}) {
+            const double dx = w.before[0] - b.at[0], dz = w.before[2] - b.at[2];
+            if (std::sqrt(dx * dx + dz * dz) > b.radius) continue;
+            const bool waits = engine::StartAction(local, 0, "cPlAction_pl_act_wait");
+            engine::WarpUnit(local, w.before);
+            w.jumping = false;
+            g->notice = "NO WAY DOWN HERE";
+            g->noticeUntil = now + 2.0;
+            RM_LOGI("jump down: refused within %.0f m of %.0f %.0f (the map's no_jump_down), %s", b.radius / 100.0, b.at[0], b.at[2],
+                    waits ? "back to wait" : "the wait refused");
+            return;
+        }
+        return;
+    }
+    if (now - w.since < kJumpStuckSeconds) return;
+    // Held in it: out to the arena's start (else where it began).
+    float to[3] = {w.before[0], w.before[1], w.before[2]};
+    if (map && map->start) {
+        for (int k = 0; k < 3; ++k) to[k] = static_cast<float>((*map->start)[static_cast<std::size_t>(k)]);
+    }
+    engine::StartAction(local, 0, "cPlAction_pl_act_wait");
+    engine::WarpUnit(local, to);
+    w.jumping = false;
+    g->notice = "BACK ON YOUR FEET";
+    g->noticeUntil = now + 2.0;
+    RM_LOGI("jump down: player %d held %.1f s in it at %.0f %.0f %.0f (from %.0f %.0f %.0f); moved to %.0f %.0f %.0f", seat + 1,
+            now - w.since, at[0], at[1], at[2], w.before[0], w.before[1], w.before[2], to[0], to[1], to[2]);
+}
+
 void StartSpecial(double now, int slot, const char* source) {
     rm::RunController& run = *g->run;
     const rm::SpecialState state = run.Special(now, slot);
     if (state.kind.empty()) return;
     const auto local = engine::LocalPlayer();
     if (!local) return;
-    const rm::SkinSpecial& sp = run.state().character.build.Special(slot);
+    // The button's special now: its own, the transformation while it is ready, the strike while transformed.
+    const rm::SkinSpecial& sp = run.ActiveSpecial(now, slot);
+    if (sp.kind == "transform") {
+        StartTransformation(now, sp, local, slot, source);
+        return;
+    }
+    if (sp.kind == "uroboros_strike") {
+        StartUroborosStrike(now, sp, local, slot, source);
+        return;
+    }
     if (sp.kind == "element_pick") {
         // The tester's: its element screen, opened after the tick (matchui::Open takes the lock).
         g->elementPickRequested = true;
@@ -12271,7 +12650,7 @@ bool StartPlayerAction(std::uintptr_t player, int id) {
 
 void DriveGrabBreak(double now) {
     rm::RunController& run = *g->run;
-    if (!run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || (!run.BreaksGrabs() && !g->devBreakGrabs)) {
+    if (!run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || (!run.BreaksGrabs(now) && !g->devBreakGrabs)) {
         return;
     }
     const auto local = engine::LocalPlayer();
@@ -12382,6 +12761,7 @@ void DriveSpecial(double now) {
     }
     WatchDodge(now);
     StepBossMove(now);
+    StepTransformation(now);
     if (!arena) {
         EndBossMove(engine::LocalPlayer(), "arena over");
         EndSpecialMove("arena over");
@@ -13095,6 +13475,10 @@ void UpdateMatchStatus() {
             if (!g->settings.infoPanel || run.SeatCount() > 1) {
                 hud.right = std::to_string(s.supplies) + " SUPPLIES";
                 if (s.keys_needed) hud.right += "   " + Upper(Plural(s.keys, "key"));
+                if (const StackCounter c = CharmCounter(Now()); c.charm != nullptr) {
+                    hud.right += c.transformed > 0.0 ? "   UROBOROS " + std::to_string(static_cast<int>(std::ceil(c.transformed))) + " SEC"
+                                                     : "   VIRUS " + std::to_string(c.stacks) + " OF " + std::to_string(c.most);
+                }
             }
             if (!g->noticeNext.empty() && Now() >= g->noticeUntil) {
                 g->notice = std::move(g->noticeNext);
@@ -15627,7 +16011,6 @@ private:
         if (!r.killed) {
             if (r.attackerIsLocal) {
                 std::lock_guard lock(g->mutex);
-                g_playerHitAt[r.enemy] = Now();
                 if (g_hitSamples.size() < 64) g_hitSamples.push_back({r.enemy, Now() + 0.25});
                 g_specialVictims[r.enemy] = Now();  // its death soon after is the player's (fire, a fall)
                 PanelHit(r.appliedDamage, false, Now());
@@ -15635,10 +16018,7 @@ private:
             return;
         }
         std::lock_guard lock(g->mutex);
-        if (r.attackerIsLocal) {
-            PanelHit(r.appliedDamage, true, Now());
-            g_playerHitAt[r.enemy] = Now();  // a head it bursts is a kill (DriveHeadBursts)
-        }
+        if (r.attackerIsLocal) PanelHit(r.appliedDamage, true, Now());
         // A boss with a phase left goes down instead of dying (MapBoss phases), whatever took its last
         // health: a hit to 0 reported its death here and Uroboros Wesker never took his second form
         // (the user's fight, 2026-11-22: 438 -> 0, killed).
@@ -15742,6 +16122,7 @@ private:
         }
         decision.preventDeath = result.prevent_death;
         decision.leaveHp = std::max(1, static_cast<int>(std::lround(result.leave_hp)));
+        decision.noReaction = result.no_reaction;  // transformed: not even a flinch
         return decision;
     }
 
@@ -15828,6 +16209,7 @@ private:
             ApplyHeals();
             DriveSpecial(now);
             DriveGrabBreak(now);
+            DriveJumpDown(now);
             WatchEquippedWeapon(now);
             ApplyMoveSpeed();
             RefuelFlamethrower(now);
@@ -15838,6 +16220,7 @@ private:
             DriveGunLevelPerks(now);
         }); }
         { ProfileScope p("tick:DriveElements"); DriveElements(now); }
+        { ProfileScope p("tick:DriveHeld"); DriveHeld(now); }
         { ProfileScope p("tick:DriveLevelHits"); DriveLevelHits(now); }
         { ProfileScope p("tick:DriveElites"); DriveElites(now); }
         { ProfileScope p("tick:DriveEnemyTints"); DriveEnemyTints(now); }
@@ -16324,6 +16707,7 @@ void ModInit(const Paths& paths, const Settings& settings) {
     icons::SetDirectory(paths.configDir / L"icons");
     hudnames::SetDirectory(paths.configDir / L"hud_names");
     gunlooks::SetDirectory(paths.configDir);
+    SetFlameStreamSound(settings.flameStreamSound);
     gunlooks::SetOptions({settings.gunPictures, settings.gunModels, settings.gunPictureTint, settings.gunModelTint, settings.gunEvolvedExtra});
     portraits::SetGameDirectory(paths.gameDir);
     LoadJoypadMapping();
@@ -16636,6 +17020,18 @@ void DrawElementArcsIn(const engine::CameraView& cam, float x0, float y0, float 
         const float length = std::hypot(pb->x - pa->x, pb->y - pa->y);
         const int segments = std::clamp(static_cast<int>(length / 18.0f), 4, 24);
         const float closest = std::min(pa->depth, pb->depth), thick = std::clamp(900.0f / std::max(closest, 1.0f), 1.5f, 6.0f);
+        if (arc.tentacle) {
+            // A lash: one bend that sways (a new shape every 120 ms), thick and dark red with a black core.
+            const std::uint32_t sway = static_cast<std::uint32_t>(now * 8.0);
+            const auto bend = rm::screenfx::BoltPath(pa->x, pa->y, pb->x, pb->y, std::clamp(segments / 3, 3, 8), 0.06f, arc.seed ^ (sway * 2654435761u));
+            std::vector<ImVec2> lash;
+            lash.reserve(bend.size());
+            for (const auto& [x, y] : bend) lash.emplace_back(x, y);
+            list->AddPolyline(lash.data(), static_cast<int>(lash.size()), IM_COL32(150, 10, 25, alpha(80.0f)), 0, thick * 6.0f);
+            list->AddPolyline(lash.data(), static_cast<int>(lash.size()), IM_COL32(70, 0, 12, alpha(230.0f)), 0, thick * 2.6f);
+            list->AddPolyline(lash.data(), static_cast<int>(lash.size()), IM_COL32(220, 40, 50, alpha(200.0f)), 0, thick * 0.7f);
+            continue;
+        }
         const auto path = rm::screenfx::BoltPath(pa->x, pa->y, pb->x, pb->y, segments, 0.12f, arc.seed ^ (flicker * 2654435761u));
         std::vector<ImVec2> points;
         points.reserve(path.size());

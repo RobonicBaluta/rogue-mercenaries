@@ -50,7 +50,9 @@ struct WeaponFilter {
 /// A build's special move, used with a button combo during an arena (the adapter reads the
 /// input and performs it; the core keeps its cooldown and availability).
 struct SkinSpecial {
-    std::string kind;              // "dash", "dual_smg", "backup", "burst", "element_pick" (the tester), "flip"; empty = none
+    // "dash", "dual_smg", "backup", "burst", "element_pick" (the tester), "flip"; a charm's transformation's
+    // "transform" and "uroboros_strike" (CharmTransform); empty = none
+    std::string kind;
     std::string name;              // HUD label
     std::string icon;              // icons/<icon>.png
     double cooldown_seconds = 0.0;
@@ -58,6 +60,24 @@ struct SkinSpecial {
     double power = 0.0;            // dash: metres; dual_smg, burst: damage per enemy (per pulse)
     double duration_seconds = 0.0; // dash, burst: invulnerability; dual_smg: burst length
     [[nodiscard]] bool Any() const { return !kind.empty(); }
+};
+
+/// A charm's transformation (the user, 2026-11-24: "at 30 if you have midnight wesker the burst button combo
+/// should transform you into uroboros wesker ... for 12 seconds you are invulnerable (don't even flinch) and the
+/// other button combo lets you do some uroboros wesker attacks, with a high cooldown on the transformation (but
+/// lets you do burst in the meantime)"). While the charm is carried with `stacks` kill stacks (0: its
+/// kill_stack_max) on the skin `skin`, the special button `slot` transforms in place of its own special; for
+/// special.duration_seconds the player takes no damage and no hit's reaction and breaks every grab, and the other
+/// button does `attack`. special.cooldown_seconds runs from the transformation's end; meanwhile the button does
+/// its own special again.
+struct CharmTransform {
+    std::string skin;
+    int stacks = 0;
+    int slot = 1;
+    SkinSpecial special;             // kind "transform"; power: the blast as it starts
+    double cinematic_seconds = 0.0;  // its start's scene: the enemies held, the camera on the player
+    SkinSpecial attack;              // kind "uroboros_strike": the other button's while transformed
+    [[nodiscard]] bool Any() const { return special.Any(); }
 };
 
 /// A charm (the user's Perk Workshop picks, 2026-11-24): an item that takes a cell of the grid and
@@ -80,6 +100,9 @@ struct CharmDef {
     bool stacks_end_on_hit = false;    // a hit the player takes clears the stacks
     bool breaks_grabs = false;         // while carried, a grab is broken at once (as SkinBuild::break_grabs)
     SkinSpecial special;               // usable while carried, on the special's button when the build has none
+    CharmTransform transform;          // the kill stacks' last step (Midnight Wesker's Uroboros)
+    /// The stacks its transformation needs.
+    [[nodiscard]] int TransformStacks() const { return transform.stacks > 0 ? transform.stacks : kill_stack_max; }
 };
 
 /// Rounds that come by themselves when every gun the player carries is empty and none of their

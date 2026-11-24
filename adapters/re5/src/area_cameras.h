@@ -29,4 +29,15 @@ const char* ModeName(Mode mode);
 /// The player camera (uCameraCtrl) the zone check ran on last (0: none yet).
 std::uintptr_t LastCamera();
 
+/// The scene camera (a transformation's, 2026-11-24: "with a camera while everyone else is not moving so you get to
+/// see the transformation"): while it is set, the view of the camera `camera` (a uCamera, engine::ReadCameraView's)
+/// is built from `eye` and `target`, written to its +0x30 and +0x50 just before its view function (0x00835C20, the
+/// uCameraBase +0x34 slot) builds the view, whatever its controller wrote; ClearSceneCamera gives it back. Any
+/// thread. Needs engine::Caps().sceneCamera (InstallSceneCamera).
+bool InstallSceneCamera();
+void SetSceneCamera(std::uintptr_t camera, const float eye[3], const float target[3]);
+void ClearSceneCamera();
+/// The scene camera's views built since it was set (0 while none: the hook is not reached).
+int SceneCameraViews();
+
 }  // namespace rmre5::areacams

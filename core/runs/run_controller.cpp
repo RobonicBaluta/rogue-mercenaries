@@ -2209,10 +2209,10 @@ HealOutcome RunController::OnPlayerHealed(const HealContext& heal) {
 
 SpecialState RunController::Special(double now, int slot) const {
     SpecialState s;
-    if (slot < 0 || slot > 1) return s;
-    const SkinSpecial& sp = run_.character.build.Special(slot);
-    const RunState::SpecialUse& use = run_.specials[static_cast<std::size_t>(slot)];
-    if (!run_.active || !sp.Any()) return s;
+    if (slot < 0 || slot > 1 || !run_.active) return s;
+    const SkinSpecial& sp = ActiveSpecial(now, slot);
+    if (!sp.Any()) return s;
+    const RunState::SpecialUse& use = UseOf(now, slot);
     s.kind = sp.kind;
     s.name = sp.name;
     s.icon = sp.icon;
@@ -2225,14 +2225,29 @@ SpecialState RunController::Special(double now, int slot) const {
     return s;
 }
 
+const RunState::SpecialUse& RunController::UseOf(double now, int slot) const {
+    const SkinSpecial& sp = ActiveSpecial(now, slot);
+    if (const CharmDef* c = TransformCharm()) {
+        if (&sp == &c->transform.special) return run_.transform_use;
+        if (&sp == &c->transform.attack) return run_.transform_attack_use;
+    }
+    return run_.specials[static_cast<std::size_t>(slot)];
+}
+
 Status RunController::UseSpecial(double now, double cooldown_scale, int slot) {
     constexpr std::string_view op = "use_special";
     if (!run_.active) return Fail(op, ErrorCode::NoActiveRun, "no active run");
     if (slot < 0 || slot > 1) return Fail(op, ErrorCode::InvalidArgument, "no special slot " + std::to_string(slot));
-    const SkinSpecial& sp = run_.character.build.Special(slot);
-    RunState::SpecialUse& use = run_.specials[static_cast<std::size_t>(slot)];
+    const SkinSpecial& sp = ActiveSpecial(now, slot);
+    RunState::SpecialUse* usep = &run_.specials[static_cast<std::size_t>(slot)];
+    if (const CharmDef* c = TransformCharm()) {
+        if (&sp == &c->transform.special) usep = &run_.transform_use;
+        if (&sp == &c->transform.attack) usep = &run_.transform_attack_use;
+    }
+    RunState::SpecialUse& use = *usep;
     if (!sp.Any()) return Fail(op, ErrorCode::NotEligible, "this build has no special");
-    if (slot == 0 && !run_.character.build.special_charm.empty() && !CharmCarried(run_.character.build.special_charm)) {
+    if (slot == 0 && &sp == &run_.character.build.special && !run_.character.build.special_charm.empty() &&
+        !CharmCarried(run_.character.build.special_charm)) {
         return Fail(op, ErrorCode::NotEligible, sp.name + " needs its charm in the grid");
     }
     if (run_.phase != Phase::ArenaActive) return Fail(op, ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
@@ -2244,12 +2259,21 @@ Status RunController::UseSpecial(double now, double cooldown_scale, int slot) {
     use.ready_at = now + use.cooldown;
     use.used_arena = run_.arena_index;
     ++use.uses;
-    if ((sp.kind == "dash" || sp.kind == "burst" || sp.kind == "flip") && sp.duration_seconds > 0.0) {
+    if (sp.kind == "transform") {
+        // Its cooldown runs from its end; untouchable while it lasts; its attack once its scene is over.
+        const CharmDef* c = TransformCharm();
+        run_.transformed_until = now + sp.duration_seconds;
+        use.ready_at = run_.transformed_until + use.cooldown;
+        run_.invulnerable_until = std::max(run_.invulnerable_until, run_.transformed_until);
+        run_.transform_attack_use.ready_at = now + (c != nullptr ? c->transform.cinematic_seconds : 0.0);
+        run_.transform_attack_use.cooldown = 0.0;
+    } else if ((sp.kind == "dash" || sp.kind == "burst" || sp.kind == "flip") && sp.duration_seconds > 0.0) {
         run_.invulnerable_until = std::max(run_.invulnerable_until, now + sp.duration_seconds);
     }
     Event e = MakeEvent(EventType::PerkTriggered);
     e.Add("source", "build").Add("trigger", "special").Add("kind", sp.kind).Add("slot", slot).Add("uses", use.uses)
         .Add("arena", run_.arena_index).Add("cooldown", use.cooldown).Add("now", now);
+    if (sp.kind == "transform") e.Add("stacks", run_.charm_stacks).Add("until", run_.transformed_until);
     Emit(std::move(e));
     return Status::Success();
 }
@@ -2748,6 +2772,34 @@ bool RunController::BreaksGrabs() const {
     if (run_.character.build.break_grabs) return true;
     const auto charms = CarriedCharmDefs();
     return std::any_of(charms.begin(), charms.end(), [](const CharmDef* c) { return c->breaks_grabs; });
+}
+
+const CharmDef* RunController::TransformCharm() const {
+    if (!run_.active) return nullptr;
+    for (const CharmDef& c : run_.character.build.charms) {
+        if (c.transform.Any() && c.transform.skin == run_.skin_id) return &c;
+    }
+    return nullptr;
+}
+
+bool RunController::TransformReady(double now) const {
+    const CharmDef* c = TransformCharm();
+    return c != nullptr && run_.phase == Phase::ArenaActive && !Transformed(now) && CharmCarried(c->id) &&
+           run_.charm_stacks >= c->TransformStacks() && now >= run_.transform_use.ready_at;
+}
+
+bool RunController::Transformed(double now) const {
+    return run_.active && run_.phase == Phase::ArenaActive && now < run_.transformed_until;
+}
+
+double RunController::TransformedLeft(double now) const { return Transformed(now) ? run_.transformed_until - now : 0.0; }
+
+const SkinSpecial& RunController::ActiveSpecial(double now, int slot) const {
+    const SkinSpecial& own = run_.character.build.Special(slot);
+    const CharmDef* c = TransformCharm();
+    if (c == nullptr) return own;
+    if (Transformed(now)) return slot != c->transform.slot && c->transform.attack.Any() ? c->transform.attack : own;
+    return slot == c->transform.slot && TransformReady(now) ? c->transform.special : own;
 }
 
 std::vector<std::int64_t> RunController::RestockWeaponItems() const {

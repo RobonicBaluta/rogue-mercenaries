@@ -970,11 +970,14 @@ std::int64_t ItemIdValue(const json& v) {
     }
 }
 
-void ParseSpecial(const Diag& d, const json& sp, SkinSpecial& out) {
+// `only`: the one kind allowed (a charm's transformation's "transform" and "uroboros_strike"); else a build's kinds.
+void ParseSpecial(const Diag& d, const json& sp, SkinSpecial& out, std::string_view only = {}) {
     CheckKeys(d, sp, {"kind", "name", "icon", "cooldown_seconds", "every_arenas", "power", "duration_seconds"});
     GetString(d, sp, "kind", out.kind, true);
-    if (!out.kind.empty() && out.kind != "dash" && out.kind != "dual_smg" && out.kind != "backup" && out.kind != "burst" &&
-        out.kind != "element_pick" && out.kind != "flip") {
+    if (!only.empty()) {
+        if (out.kind != only) d.Error("special kind " + Q(out.kind) + " must be " + Q(std::string(only)) + " here");
+    } else if (!out.kind.empty() && out.kind != "dash" && out.kind != "dual_smg" && out.kind != "backup" && out.kind != "burst" &&
+               out.kind != "element_pick" && out.kind != "flip") {
         d.Error("unknown special kind " + Q(out.kind) + " (dash, dual_smg, backup, burst, element_pick, flip)");
     }
     GetString(d, sp, "name", out.name, true);
@@ -996,9 +999,33 @@ bool KnownRunStat(const std::string& stat) {
 }
 constexpr const char* kRunStatNames = "damage, defense, max_health, crit, move_speed, heal, supplies";
 
+void ParseTransform(const Diag& d, const json& t, CharmTransform& out) {
+    CheckKeys(d, t, {"skin", "stacks", "slot", "special", "cinematic_seconds", "attack"});
+    if (GetString(d, t, "skin", out.skin, true) && !IsValidId(out.skin)) d.Error("transform skin " + Q(out.skin) + " is not a valid id");
+    GetIntRange(d, t, "stacks", out.stacks, false, 1, 100);
+    GetIntRange(d, t, "slot", out.slot, false, 0, 1);
+    if (GetNumber(d, t, "cinematic_seconds", out.cinematic_seconds, false)) CheckRange(d, "cinematic_seconds", out.cinematic_seconds, 0.0, 6.0);
+    if (const json* sp = Get(t, "special"); sp != nullptr && sp->is_object()) {
+        ParseSpecial(d.Sub(" special"), *sp, out.special, "transform");
+        if (out.special.duration_seconds <= 0.0) d.Error("a transformation needs duration_seconds");
+        if (out.cinematic_seconds >= out.special.duration_seconds && out.special.duration_seconds > 0.0) {
+            d.Error("cinematic_seconds must be shorter than the transformation");
+        }
+    } else {
+        d.Error("transform needs a 'special' object");
+    }
+    if (const json* at = Get(t, "attack")) {
+        if (at->is_object()) {
+            ParseSpecial(d.Sub(" attack"), *at, out.attack, "uroboros_strike");
+        } else {
+            d.Error("field 'attack' must be an object");
+        }
+    }
+}
+
 void ParseCharm(const Diag& d, const json& c, CharmDef& out) {
     CheckKeys(d, c, {"id", "name", "description", "game_item", "picture", "chest_weapon_every", "chest_weapon_rarity",
-                     "kill_stack_stats", "kill_stack_max", "stacks_end_on_hit", "breaks_grabs", "special"});
+                     "kill_stack_stats", "kill_stack_max", "stacks_end_on_hit", "breaks_grabs", "special", "transform"});
     if (GetString(d, c, "id", out.id, true) && !IsValidId(out.id)) d.Error("charm id " + Q(out.id) + " is not a valid id");
     GetString(d, c, "name", out.name, true);
     GetString(d, c, "description", out.description, false);
@@ -1041,6 +1068,15 @@ void ParseCharm(const Diag& d, const json& c, CharmDef& out) {
             ParseSpecial(d.Sub(" special"), *sp, out.special);
         } else {
             d.Error("field 'special' must be an object");
+        }
+    }
+    if (const json* t = Get(c, "transform")) {
+        if (t->is_object()) {
+            ParseTransform(d.Sub(" transform"), *t, out.transform);
+            if (out.kill_stack_max <= 0) d.Error("a charm's transform needs its kill stacks (kill_stack_max)");
+            if (out.transform.stacks > out.kill_stack_max) d.Error("transform stacks above the charm's kill_stack_max");
+        } else {
+            d.Error("field 'transform' must be an object");
         }
     }
 }
@@ -1614,7 +1650,7 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
         MapDef map;
         if (!ReadId(d, e, map.id)) continue;
         d = file.Sub(": map " + Q(map.id));
-        CheckKeys(d, e, {"id", "name", "stage", "rotation", "start", "start2", "points", "small_only_points", "chests", "preload", "layouts", "hide_models", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
+        CheckKeys(d, e, {"id", "name", "stage", "rotation", "start", "start2", "points", "small_only_points", "chests", "preload", "layouts", "hide_models", "no_jump_down", "roster", "boss", "max_alive", "min_player_distance", "max_player_distance", "special_after", "max_specials"});
         if (const auto s = e.find("start"); s != e.end()) {
             if (!s->is_array() || s->size() != 3 || !(*s)[0].is_number() || !(*s)[1].is_number() || !(*s)[2].is_number()) {
                 d.Error("field 'start' must be [x, y, z]");
@@ -1694,6 +1730,23 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
                     continue;
                 }
                 map.hide_models.push_back(name);
+            }
+        }
+        if (const auto blocks = e.find("no_jump_down"); blocks != e.end()) {
+            if (!blocks->is_array()) d.Error("field 'no_jump_down' must be a list of {at, radius}");
+            for (const json& b : blocks->is_array() ? *blocks : json::array()) {
+                const json* at = b.is_object() ? Get(b, "at") : nullptr;
+                const json* radius = b.is_object() ? Get(b, "radius") : nullptr;
+                if (at == nullptr || !at->is_array() || at->size() != 3 || !(*at)[0].is_number() || !(*at)[1].is_number() ||
+                    !(*at)[2].is_number() || radius == nullptr || !radius->is_number() || radius->get<double>() <= 0.0 ||
+                    radius->get<double>() > 20000.0) {
+                    d.Error("every no_jump_down entry must be {\"at\": [x, y, z], \"radius\": 0..20000}");
+                    continue;
+                }
+                MapDef::JumpBlock jb;
+                jb.at = {(*at)[0].get<double>(), (*at)[1].get<double>(), (*at)[2].get<double>()};
+                jb.radius = radius->get<double>();
+                map.no_jump_down.push_back(jb);
             }
         }
         if (const auto small = e.find("small_only_points"); small != e.end()) {

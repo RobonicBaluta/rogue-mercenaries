@@ -644,6 +644,13 @@ void __fastcall PlayerSubHpDetour(std::uintptr_t self, void*, std::int16_t amoun
     if (applied > 0) {
         g_origPlayerSubHp(self, static_cast<std::int16_t>(applied));
     }
+    if (decision.noReaction) {
+        // Not even a flinch: the hit record's pending byte cleared, so the player's hit check (0x00B7CDD0, before the
+        // reactions' 0x00B7B730 in the same update) finds nothing to react to.
+        if (const auto record = ReadOr<std::uintptr_t>(self + re5::off::kEnemyHitRecord, 0); record != 0) {
+            SafeStore<std::uint8_t>(record + re5::off::kHitRecordPending, 0);
+        }
+    }
     const auto after = engine::ReadHp(self);
     PlayerHitResult result;
     result.player = self;
@@ -694,11 +701,23 @@ StreamLook* StreamOfUnit(std::uintptr_t unit) {
     return nullptr;
 }
 
+// The flame's sound with an element's look (the user, 2026-11-24: "and flamethrower sound is gone?"): the
+// flamethrower's update (0x00BBC8C0) plays the flame's sounds while its stream id (+0x1C8C, mEffIdFire) is set and
+// stops them once it is 0, and makes its flame hits only from the effect that id finds (0x00770510, a walk of the
+// effect manager's list; nothing for an id no effect has). Fire with the look sets this id, which no effect has
+// (the manager counts its ids up from 1): the sound plays, no flame hits come; the look's end puts 0 back.
+constexpr std::uint32_t kSilentStreamId = 0x7FFFFF21u;
+std::atomic<bool> g_streamSound{true};
+
 void StopStreamLookLocked(StreamLook& s) {
     if (s.effect != 0) engine::StopEffect(s.effect);
     if (s.companionEffect != 0) engine::StopEffect(s.companionEffect);
     s.effect = 0;
     s.companionEffect = 0;
+    if (s.unit != 0 && ReadOr<std::uintptr_t>(s.unit, 0) == re5::addr::kVtableWp21 &&
+        ReadOr<std::uint32_t>(s.unit + re5::off::kWp21StreamEffect, 0) == kSilentStreamId) {
+        SafeStore<std::uint32_t>(s.unit + re5::off::kWp21StreamEffect, 0);  // its sound ends with it
+    }
 }
 
 // With g_streamMutex held: the look at the nozzle (joint 0, where the flame starts) and its
@@ -715,8 +734,8 @@ void RefreshStreamLookLocked(StreamLook& s, bool force) {
 }
 
 // The game's fire (re5::addr::kFnWp21Fire) without its flame: the firing flag, the old stream
-// stopped, no stream kept (so no flame, no flame hits, no flame sound), the attack data; the
-// element's look at the nozzle instead.
+// stopped, no stream kept (so no flame, no flame hits; its sound by kSilentStreamId), the attack
+// data; the element's look at the nozzle instead.
 void __fastcall Wp21FireDetour(std::uintptr_t self, void*, std::uintptr_t attack) {
     std::unique_lock lock(g_streamMutex);
     StreamLook* s = StreamOfUnit(self);
@@ -727,8 +746,9 @@ void __fastcall Wp21FireDetour(std::uintptr_t self, void*, std::uintptr_t attack
     }
     SafeStore<std::uint8_t>(self + re5::off::kWp21Firing, 1);
     std::uint32_t old = 0;
-    if (SafeRead(self + re5::off::kWp21StreamEffect, old) && old != 0) engine::StopEffect(old);
-    SafeStore<std::uint32_t>(self + re5::off::kWp21StreamEffect, 0);
+    if (SafeRead(self + re5::off::kWp21StreamEffect, old) && old != 0 && old != kSilentStreamId) engine::StopEffect(old);
+    // No stream the game's update could read hits from; the silent id keeps its flame's sound (kSilentStreamId).
+    SafeStore<std::uint32_t>(self + re5::off::kWp21StreamEffect, g_streamSound.load(std::memory_order_relaxed) ? kSilentStreamId : 0u);
     SafeStore<std::uintptr_t>(self + re5::off::kWp21AttackData, attack);
     RefreshStreamLookLocked(*s, true);
     const DWORD now = GetTickCount();
@@ -937,6 +957,8 @@ void SetCoopStanding(std::uintptr_t first, std::uintptr_t second) {
     g_standing[0] = first;
     g_standing[1] = second;
 }
+
+void SetFlameStreamSound(bool on) { g_streamSound = on; }
 
 void SetFlameStream(int seat, std::uintptr_t unit, const std::string& path, const std::string& companion, bool loops, float scale) {
     std::lock_guard lock(g_streamMutex);

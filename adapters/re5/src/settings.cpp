@@ -152,6 +152,7 @@ Settings LoadAdapterSettings(const Paths& paths, std::string* error) {
         settings.musicRotation = json.value("music_rotation", settings.musicRotation);
         settings.flameStreamScale = json.value("flame_stream_scale", settings.flameStreamScale);
         settings.flameStreamCompanion = json.value("flame_stream_companion", settings.flameStreamCompanion);
+        settings.flameStreamSound = json.value("flame_stream_sound", settings.flameStreamSound);
         MergeLooks(json, "element_effects", settings.elementEffects);  // "": no look for that kind
         MergeLooks(json, "flame_streams", settings.flameStreams);      // "": the flame for that element
         if (json.contains("special2_pad") && json["special2_pad"].is_array()) {

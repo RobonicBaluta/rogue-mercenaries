@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 
 #include "engine.h"
 #include "log.h"
@@ -89,6 +90,26 @@ std::uint32_t __fastcall ForceDetour(std::uintptr_t ctrl, void* edx, std::uint32
     return g_origForce(ctrl, edx, index);
 }
 
+// The scene camera (SetSceneCamera).
+using ViewFn = void*(__fastcall*)(std::uintptr_t camera, void* edx, void* out);
+ViewFn g_origView = nullptr;
+std::mutex g_sceneMutex;
+std::uintptr_t g_sceneCamera = 0;
+float g_sceneEye[3] = {}, g_sceneTarget[3] = {};
+std::atomic<int> g_sceneViews{0};
+
+void* __fastcall ViewDetour(std::uintptr_t camera, void* edx, void* out) {
+    {
+        std::lock_guard lock(g_sceneMutex);
+        if (g_sceneCamera != 0 && camera == g_sceneCamera) {
+            SafeWrite(camera + 0x30, g_sceneEye, sizeof(g_sceneEye));
+            SafeWrite(camera + 0x50, g_sceneTarget, sizeof(g_sceneTarget));
+            g_sceneViews.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    return g_origView(camera, edx, out);
+}
+
 bool Queue(std::uintptr_t address, void* detour, void** original, const char* what) {
     auto* target = reinterpret_cast<void*>(address);
     MH_STATUS status = MH_CreateHook(target, detour, original);
@@ -116,6 +137,33 @@ bool Install() {
     RM_LOGI("area cameras: zone check and forced zone hooks queued");
     return true;
 }
+
+bool InstallSceneCamera() {
+    if (!engine::Caps().sceneCamera) {
+        RM_LOGW("scene camera: the camera's view function is not the one expected; no scene camera");
+        return false;
+    }
+    if (!Queue(re5::addr::kFnCameraView, reinterpret_cast<void*>(&ViewDetour), reinterpret_cast<void**>(&g_origView), "camera view")) return false;
+    RM_LOGI("scene camera: the camera's view hook queued");
+    return true;
+}
+
+void SetSceneCamera(std::uintptr_t camera, const float eye[3], const float target[3]) {
+    std::lock_guard lock(g_sceneMutex);
+    if (g_sceneCamera != camera) g_sceneViews = 0;
+    g_sceneCamera = camera;
+    for (int k = 0; k < 3; ++k) {
+        g_sceneEye[k] = eye[k];
+        g_sceneTarget[k] = target[k];
+    }
+}
+
+void ClearSceneCamera() {
+    std::lock_guard lock(g_sceneMutex);
+    g_sceneCamera = 0;
+}
+
+int SceneCameraViews() { return g_sceneViews.load(std::memory_order_relaxed); }
 
 void SetRunWantsOff(bool off) {
     if (g_runWantsOff.exchange(off) != off && GetMode() == Mode::Auto) {

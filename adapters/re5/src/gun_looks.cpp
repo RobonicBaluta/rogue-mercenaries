@@ -251,67 +251,99 @@ struct Sheet {
         Look look;
     };
     std::map<std::pair<int, int>, Written> written;  // by the picture's top left
+    IDirect3DTexture9* unusable = nullptr;           // a texture that was not the sheet expected (told once)
 };
-Sheet g_sheet;
+// Every loaded copy of the sheet, by resource: the menus' and the match's can be different resources (a tester saw
+// the charm's picture in ORGANIZE and the treasure's in the match, 2026-11-24), and each is painted.
+std::map<std::uintptr_t, Sheet> g_sheets;
 
-void DropSheet() {
-    if (g_sheet.texture) g_sheet.texture->Release();
-    g_sheet = {};
+void DropSheet(Sheet& s) {
+    if (s.texture) s.texture->Release();
+    s.texture = nullptr;
+    s.written.clear();
 }
 
-// The sheet as `resource` holds it now; a sheet loaded again is the game's own again.
-void TakeSheet(std::uintptr_t resource) {
-    IDirect3DTexture9* t = resource ? textures::D3DTextureOf(resource) : nullptr;
-    if (resource == g_sheet.resource && t == g_sheet.texture) return;
-    if (g_sheet.texture) RM_LOGI("gun looks: the picture sheet went (loaded again or released)");
-    DropSheet();
-    g_sheet.resource = resource;
-    if (!t) return;
+// The sheet as `resource` holds it now; a sheet loaded again is the game's own again. False when it cannot be painted.
+bool TakeSheet(Sheet& s, std::uintptr_t resource) {
+    IDirect3DTexture9* t = textures::D3DTextureOf(resource);
+    if (s.texture && t == s.texture) return true;
+    if (!s.texture && t && t == s.unusable) return false;
+    if (s.texture) RM_LOGI("gun looks: the picture sheet %08X was loaded again", static_cast<unsigned>(resource));
+    DropSheet(s);
+    if (!t) return false;
+    for (const auto& [other, sheet] : g_sheets) {
+        if (other != resource && sheet.texture == t) return false;  // one texture under two resources: painted once
+    }
     D3DSURFACE_DESC desc{};
     if (!textures::LevelDesc(t, 0, desc) || desc.Format != D3DFMT_DXT5 || static_cast<int>(desc.Width) != g_sheetWidth ||
         static_cast<int>(desc.Height) != g_sheetHeight) {
-        static int told = 0;
-        if (told++ < 3) RM_LOGW("gun looks: the picture sheet is not the %dx%d DXT5 expected; left alone", g_sheetWidth, g_sheetHeight);
-        return;
+        s.unusable = t;
+        RM_LOGW("gun looks: the picture sheet %08X is %ux%u format %08X, not the %dx%d DXT5 expected (another mod's?); left alone",
+                static_cast<unsigned>(resource), desc.Width, desc.Height, static_cast<unsigned>(desc.Format), g_sheetWidth, g_sheetHeight);
+        return false;
     }
     t->AddRef();
-    g_sheet.texture = t;
-    RM_LOGI("gun looks: the picture sheet found (pool %d)", static_cast<int>(desc.Pool));
+    s.texture = t;
+    s.resource = resource;
+    RM_LOGI("gun looks: the picture sheet %08X found (pool %d, %zu loaded)", static_cast<unsigned>(resource), static_cast<int>(desc.Pool),
+            g_sheets.size());
+    return true;
 }
 
-void ApplySheet(const std::map<std::pair<int, int>, std::pair<Rect, Look>>& want) {
-    if (!g_sheet.texture) return;
-    for (auto it = g_sheet.written.begin(); it != g_sheet.written.end();) {
+void ApplySheet(Sheet& sheet, const std::map<std::pair<int, int>, std::pair<Rect, Look>>& want) {
+    if (!sheet.texture) return;
+    for (auto it = sheet.written.begin(); it != sheet.written.end();) {
         const auto w = want.find(it->first);
         if (w != want.end() && w->second.second == it->second.look) {
             ++it;
             continue;
         }
-        if (WriteBlocks(g_sheet.texture, 0, it->second.inner, 16, it->second.original)) {
+        if (WriteBlocks(sheet.texture, 0, it->second.inner, 16, it->second.original)) {
             RM_LOGI("gun looks: the picture at %d,%d is the game's again", it->first.first, it->first.second);
         }
-        it = g_sheet.written.erase(it);
+        it = sheet.written.erase(it);
     }
     for (const auto& [key, wanted] : want) {
-        if (g_sheet.written.count(key)) continue;
+        if (sheet.written.count(key)) continue;
         Sheet::Written w;
         w.rect = wanted.first;
         w.inner = Inner(wanted.first);
         w.look = wanted.second;
-        if (!ReadBlocks(g_sheet.texture, 0, w.inner, 16, w.original)) {
+        if (!ReadBlocks(sheet.texture, 0, w.inner, 16, w.original)) {
             static int fails = 0;
             if (fails++ < 5) RM_LOGW("gun looks: the picture at %d,%d could not be read", key.first, key.second);
             continue;
         }
         const auto blocks = w.look.picture.empty() ? PictureBlocks(w.original, w.inner, w.look) : OwnPictureBlocks(w.original, w.inner, w.rect, w.look.picture);
-        if (!WriteBlocks(g_sheet.texture, 0, w.inner, 16, blocks)) {
+        if (!WriteBlocks(sheet.texture, 0, w.inner, 16, blocks)) {
             static int fails = 0;
             if (fails++ < 5) RM_LOGW("gun looks: the picture at %d,%d could not be written", key.first, key.second);
             continue;
         }
-        RM_LOGI("gun looks: the picture at %d,%d shows %s", key.first, key.second, w.look.Text().c_str());
-        g_sheet.written.emplace(key, std::move(w));
+        RM_LOGI("gun looks: the picture at %d,%d of %08X shows %s", key.first, key.second, static_cast<unsigned>(sheet.resource), w.look.Text().c_str());
+        sheet.written.emplace(key, std::move(w));
     }
+}
+
+// Each loaded sheet painted as wanted; the ones gone are forgotten (their texture went with them).
+void ApplySheets(const std::vector<std::uintptr_t>& loaded, const std::map<std::pair<int, int>, std::pair<Rect, Look>>& want) {
+    for (auto it = g_sheets.begin(); it != g_sheets.end();) {
+        if (std::find(loaded.begin(), loaded.end(), it->first) != loaded.end()) {
+            ++it;
+            continue;
+        }
+        if (it->second.texture) RM_LOGI("gun looks: the picture sheet %08X was released", static_cast<unsigned>(it->first));
+        DropSheet(it->second);
+        it = g_sheets.erase(it);
+    }
+    for (const std::uintptr_t resource : loaded) {
+        Sheet& s = g_sheets[resource];
+        if (TakeSheet(s, resource)) ApplySheet(s, want);
+    }
+}
+
+bool AnySheetWritten() {
+    return std::any_of(g_sheets.begin(), g_sheets.end(), [](const auto& s) { return !s.second.written.empty(); });
 }
 
 // ---- the models -----------------------------------------------------------------------------
@@ -486,7 +518,7 @@ void OnDraw(IDirect3DDevice9* device) {
     std::lock_guard lock(g_mutex);
     if (!g_loaded) LoadConfig();
     if (!g_ok) return;
-    if (g_wanted.empty() && g_wantedPictures.empty() && g_sheet.written.empty() && g_models.empty()) return;
+    if (g_wanted.empty() && g_wantedPictures.empty() && !AnySheetWritten() && g_models.empty()) return;
     // Looked at once a second (a texture loaded again since, or released), at once when the guns changed.
     const DWORD now = GetTickCount();
     if (!g_changed && now - g_lastLook < 1000) return;
@@ -511,19 +543,23 @@ void OnDraw(IDirect3DDevice9* device) {
             pictures[std::make_pair(p->second.x0, p->second.y0)] = std::make_pair(p->second, look);
         }
     }
-    std::uintptr_t sheet = 0;
+    std::vector<std::uintptr_t> sheets;
     std::vector<textures::Loaded> maps;
     for (textures::Loaded& t : textures::Find([](const std::string& lower) { return lower == g_sheetPath || !ModelMapFolder(lower).empty(); })) {
         std::string lower = t.path;
         std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         if (lower == g_sheetPath) {
-            if (!sheet) sheet = t.resource;
+            sheets.push_back(t.resource);
         } else {
             maps.push_back(std::move(t));
         }
     }
-    TakeSheet(sheet);
-    ApplySheet(pictures);
+    static std::size_t toldSheets = 0;
+    if (sheets.size() != toldSheets) {
+        toldSheets = sheets.size();
+        RM_LOGI("gun looks: %zu copies of the picture sheet loaded", sheets.size());
+    }
+    ApplySheets(sheets, pictures);
     ApplyModels(maps, models);
 }
 

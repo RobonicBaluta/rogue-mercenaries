@@ -1845,6 +1845,12 @@
       "preload": ["uEm10", "uOm1202", "uOm1203", "uWp50", "uWp52", "uWp81", "uWp6c", "uWp59", "uWp5a", "uEm22", "uWp5b", "uEm62", "uWp3c", "uWp3d", "uWp3e", "uWp73", "uEm0d", "uWp55", "uWp51", "uWp54", "uOm1206", "uWp72", "uOm0100", "uWp53"],
       "layouts": ["s204_IDf03_Ins"],
       "hide_models": ["OM0957T_IDo00_U581"],
+      "no_jump_down": [
+        {
+          "at": [28544.0, 114.0, -92638.0],
+          "radius": 1500.0
+        }
+      ],
       "roster": [
         {
           "class": "uEm10",

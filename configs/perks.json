@@ -118,9 +118,9 @@
     {
       "id": "wesker_firestarter",
       "name": "Perfection",
-      "description": "Wesker. The Uroboros Virus, each kill makes him stronger and faster, up to 10. A hit clears it.",
+      "description": "Wesker. Each kill makes him stronger, up to 30, a hit clears it. At 30 Midnight becomes Uroboros.",
       "category": "style",
-      "rarity": "common",
+      "rarity": "epic",
       "tags": [
         "items"
       ],
@@ -136,15 +136,36 @@
             "name": "Uroboros Virus",
             "game_item": "0x0422",
             "picture": "uroboros_virus.png",
-            "description": "While it is in his grid, every kill adds a stack, up to 10: 3 percent more damage, 2 percent less damage taken, 1 percent more critical chance and 1.5 percent more speed each. A hit he takes clears them.",
+            "description": "While it is in his grid, every kill adds a stack, up to 30: 1 percent more damage, 0.7 percent less damage taken, 0.3 percent more critical chance and 0.5 percent more speed each. A hit he takes clears them. Midnight Wesker at 30: the burst button turns him into Uroboros for 12 seconds.",
             "kill_stack_stats": {
-              "damage": 0.03,
-              "defense": 0.02,
-              "crit": 0.01,
-              "move_speed": 0.015
+              "damage": 0.01,
+              "defense": 0.007,
+              "crit": 0.003,
+              "move_speed": 0.005
             },
-            "kill_stack_max": 10,
-            "stacks_end_on_hit": true
+            "kill_stack_max": 30,
+            "stacks_end_on_hit": true,
+            "transform": {
+              "skin": "wesker_midnight",
+              "slot": 1,
+              "cinematic_seconds": 2.4,
+              "special": {
+                "kind": "transform",
+                "name": "Uroboros",
+                "icon": "syringe",
+                "cooldown_seconds": 120,
+                "duration_seconds": 12,
+                "power": 600
+              },
+              "attack": {
+                "kind": "uroboros_strike",
+                "name": "Uroboros Strike",
+                "icon": "fist",
+                "cooldown_seconds": 1.2,
+                "power": 700,
+                "duration_seconds": 0.6
+              }
+            }
           }
         ]
       },

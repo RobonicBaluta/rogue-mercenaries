@@ -146,6 +146,7 @@ DWORD StartMod() {
         world::Install();
         host::Install();
         areacams::Install();
+        areacams::InstallSceneCamera();
         stagefix::Install();
         if (settings.directStart) autopilot::Install();
     }

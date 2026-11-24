@@ -153,6 +153,8 @@ struct Settings {
     // lesser?").
     float flameStreamScale = 0.6f;
     bool flameStreamCompanion = false;
+    // The flame's sound while an element's look is in its place (2026-11-24, the user: "and flamethrower sound is gone?").
+    bool flameStreamSound = true;
     std::map<std::string, std::string> flameStreams = {
         {"shock", "effect\\efl\\wp\\wp21\\wp21e0|effect\\efl\\wp\\wp22\\wp2200"},
         {"cryo", "effect\\efl\\wp\\wp21\\wp21c0"},

@@ -169,6 +169,7 @@ bool VerifySignatures(unsigned timeoutMs) {
                            SignatureOk("scene_base_setup") && SignatureOk("as308_get_dti");
     g_caps.areaCameras = SignatureOk("area_camera_check") && SignatureOk("area_camera_none") && SignatureOk("area_camera_force") &&
                          SignatureOk("area_camera_set") && SignatureOk("rahcamera_get_dti");
+    g_caps.sceneCamera = SignatureOk("camera_view");
     g_caps.fatalHandler = SignatureOk("game_fatal_error");
     g_caps.stageLayouts = SignatureOk("stage_layouts") && SignatureOk("register_layout");
     g_caps.itemBox = SignatureOk("itembox_create") && SignatureOk("unit_register");

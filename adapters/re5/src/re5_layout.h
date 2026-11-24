@@ -69,6 +69,9 @@ constexpr std::uintptr_t kVtablePlActTest = 0x01045CF8;
 // AL) is a script's or an object's "this zone's camera now" (0x0076C880, 0x00AF1470).
 constexpr std::uintptr_t kAreaCameraResource = 0x011E9F44;
 constexpr std::uintptr_t kFnAreaCameraCheck = 0x00841840;
+// A camera's view (uCameraBase vtable +0x34, thiscall (out matrix), ret 4): the look-at of its +0x30 (eye), +0x50
+// (target) and +0x40 (up) through 0x006D1030 (research/re5-engine-map.md "The camera"). The scene camera's hook.
+constexpr std::uintptr_t kFnCameraView = 0x00835C20;
 constexpr std::uintptr_t kFnAreaCameraForce = 0x008417C0;
 constexpr std::uintptr_t kFnAreaCameraSet = 0x0083D530;
 // The enemy hit check (research/re5-engine-map.md "Enemy hit collection"): thiscall (enemy, part
@@ -1221,6 +1224,8 @@ inline constexpr Signature kSignatures[] = {
     {"area_camera_force", addr::kFnAreaCameraForce, "56 57 8B 3D 44 9F 1E 01 85 FF 8B F1 75 07 5F 32 C0 5E C2 04 00"},
     {"area_camera_set", addr::kFnAreaCameraSet, "55 8B EC 83 E4 F0 81 EC D4 00 00 00 53 56 8B 75 08 83 FE FF 8B D9 57"},
     {"rahcamera_get_dti", 0x007F71C0, "B8 4C 89 1E 01 C3"},
+    // The camera's view: `and esp, -16`, `lea eax, [ecx+0x40]`, `lea edx, [ecx+0x50]`, `add ecx, 0x30`, then its call.
+    {"camera_view", addr::kFnCameraView, "55 8B EC 83 E4 F0 83 EC 0C 56 8B 75 08 8D 41 40 8D 51 50 50 83 C1 30 52 51 8B CE E8"},
     // The enemy hit check: `mov ebp, [esp+8]` (the part), `cmovz eax, esi`, `mov edi, [eax+0x129C]`.
     // Uroboros Wesker's "may this hit hurt": `cmp ax, 0x3C`, `mov ecx, [esi+0x1F50]`; his getDTI.
     {"em82_may_hurt", addr::kFnEm82MayHurt, "8B 44 24 04 53 33 DB 66 3D 3C 00 56 8B F1 72 38 8B 8E 50 1F 00 00 83 C0 C4 0F B7 C0"},

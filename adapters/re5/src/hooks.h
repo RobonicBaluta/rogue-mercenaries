@@ -44,6 +44,7 @@ struct IncomingDecision {
     float multiplier = 1.0f;
     bool preventDeath = false;
     int leaveHp = 1;
+    bool noReaction = false;  // the hit takes no reaction either (a transformation's "don't even flinch")
 };
 
 struct PlayerHitResult {
@@ -219,6 +220,8 @@ void SetFlameStream(int seat, std::uintptr_t unit, const std::string& path, cons
 unsigned long FlameStreamFiredAt(int seat);
 /// While `firing`, keeps the look going at the nozzle (started again every so often); else stops it.
 void KeepFlameStreamLook(int seat, bool firing);
+/// The flame's sound with an element's look in its place (adapter.json "flame_stream_sound", on by default).
+void SetFlameStreamSound(bool on);
 void MarkHooksInactive();
 bool InstallInputHooks(void* realDirectInput8Create);
 bool InstallD3d9Hooks();
