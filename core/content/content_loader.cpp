@@ -581,7 +581,9 @@ void ParsePerks(const Diag& file, const json& doc, std::vector<PerkDef>& out) {
             } else {
                 CheckKeys(bd, *b, {"category_damage", "melee_damage", "rarity_shift", "max_health_mult", "heal_mult",
                                    "supplies_mult", "ammo_stack_mult", "stack_mult", "never_offered", "drops_as_held_ammo",
-                                   "pickup_as", "break_grabs"});
+                                   "pickup_as", "break_grabs", "grenade_damage", "grenade_blast_m", "grenade_blast_fraction",
+                                   "cluster_bomblets", "cluster_damage_fraction", "cluster_radius_m", "incendiary_burns",
+                                   "flash_masked", "flash_extra_seconds", "empty_ammo_regen", "charms"});
                 SkinBuild build;
                 ParseBuild(bd, *b, build);
                 p.build = std::move(build);
@@ -972,8 +974,8 @@ void ParseSpecial(const Diag& d, const json& sp, SkinSpecial& out) {
     CheckKeys(d, sp, {"kind", "name", "icon", "cooldown_seconds", "every_arenas", "power", "duration_seconds"});
     GetString(d, sp, "kind", out.kind, true);
     if (!out.kind.empty() && out.kind != "dash" && out.kind != "dual_smg" && out.kind != "backup" && out.kind != "burst" &&
-        out.kind != "element_pick") {
-        d.Error("unknown special kind " + Q(out.kind) + " (dash, dual_smg, backup, burst, element_pick)");
+        out.kind != "element_pick" && out.kind != "flip") {
+        d.Error("unknown special kind " + Q(out.kind) + " (dash, dual_smg, backup, burst, element_pick, flip)");
     }
     GetString(d, sp, "name", out.name, true);
     if (GetString(d, sp, "icon", out.icon, false) && !IsValidId(out.icon)) d.Error("special icon " + Q(out.icon) + " is not a valid name");
@@ -987,8 +989,66 @@ void ParseSpecial(const Diag& d, const json& sp, SkinSpecial& out) {
     if (GetNumber(d, sp, "duration_seconds", out.duration_seconds, false)) CheckRange(d, "duration_seconds", out.duration_seconds, 0.0, 60.0);
 }
 
+// The run stats a build or a charm can raise.
+bool KnownRunStat(const std::string& stat) {
+    return stat == "damage" || stat == "defense" || stat == "max_health" || stat == "crit" || stat == "move_speed" || stat == "heal" ||
+           stat == "supplies";
+}
+constexpr const char* kRunStatNames = "damage, defense, max_health, crit, move_speed, heal, supplies";
+
+void ParseCharm(const Diag& d, const json& c, CharmDef& out) {
+    CheckKeys(d, c, {"id", "name", "description", "game_item", "picture", "chest_weapon_every", "chest_weapon_rarity",
+                     "kill_stack_stats", "kill_stack_max", "stacks_end_on_hit", "breaks_grabs", "special"});
+    if (GetString(d, c, "id", out.id, true) && !IsValidId(out.id)) d.Error("charm id " + Q(out.id) + " is not a valid id");
+    GetString(d, c, "name", out.name, true);
+    GetString(d, c, "description", out.description, false);
+    if (const json* gi = Get(c, "game_item")) {
+        out.game_item = ItemIdValue(*gi);
+        // A treasure (category 4): no run hands one out, so carrying it is the charm.
+        if (out.game_item < 0x0400 || out.game_item > 0x04FF) d.Error("charm game_item must be a treasure, 0x0400..0x04FF");
+    } else {
+        d.Error("charm needs a game_item");
+    }
+    if (GetString(d, c, "picture", out.picture, false) && (out.picture.find("..") != std::string::npos || out.picture.find('/') == 0)) {
+        d.Error("charm picture " + Q(out.picture) + " must be a file name");
+    }
+    GetIntRange(d, c, "chest_weapon_every", out.chest_weapon_every, false, 1, 20);
+    if (GetString(d, c, "chest_weapon_rarity", out.chest_weapon_rarity, false) && !ParseRarity(out.chest_weapon_rarity)) {
+        d.Error("charm chest_weapon_rarity " + Q(out.chest_weapon_rarity) + " is not a rarity");
+    }
+    if (const json* ks = Get(c, "kill_stack_stats")) {
+        if (!ks->is_object()) {
+            d.Error("field 'kill_stack_stats' must be an object");
+        } else {
+            for (const auto& [stat, v] : ks->items()) {
+                if (!KnownRunStat(stat) || stat == "max_health" || stat == "heal" || stat == "supplies") {
+                    d.Error(std::string("kill_stack_stats: stat ") + Q(stat) + " is not damage, defense, crit or move_speed");
+                } else if (!v.is_number()) {
+                    d.Error("kill_stack_stats " + Q(stat) + " must be a number");
+                } else {
+                    CheckRange(d, "kill_stack_stats " + stat, v.get<double>(), 0.0, 0.5, true);
+                    out.kill_stack_stats[stat] = v.get<double>();
+                }
+            }
+        }
+    }
+    GetIntRange(d, c, "kill_stack_max", out.kill_stack_max, false, 1, 100);
+    if (!out.kill_stack_stats.empty() && out.kill_stack_max <= 0) d.Error("kill_stack_stats need a kill_stack_max");
+    GetBool(d, c, "stacks_end_on_hit", out.stacks_end_on_hit, false);
+    GetBool(d, c, "breaks_grabs", out.breaks_grabs, false);
+    if (const json* sp = Get(c, "special")) {
+        if (sp->is_object()) {
+            ParseSpecial(d.Sub(" special"), *sp, out.special);
+        } else {
+            d.Error("field 'special' must be an object");
+        }
+    }
+}
+
 void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
-    CheckKeys(d, b, {"name", "icon", "summary", "offered_weapons", "usable_weapons", "category_damage", "supplies_mult",
+    CheckKeys(d, b, {"grenade_damage", "grenade_blast_m", "grenade_blast_fraction", "cluster_bomblets", "cluster_damage_fraction",
+                     "cluster_radius_m", "incendiary_burns", "flash_masked", "flash_extra_seconds", "empty_ammo_regen", "charms",
+                     "name", "icon", "summary", "offered_weapons", "usable_weapons", "category_damage", "supplies_mult",
                      "free_shop_rerolls", "rarity_shift", "uncapped_upgrades", "starting_weapon",
                      "starting_weapon_rarity", "max_health_mult", "stack_max", "ammo_stack_mult", "extra_weapons",
                      "melee_damage", "melee_kill_stats", "melee_kill_caps", "melee_kill_gains_by_length", "heal_mult", "heal_buff_fraction", "heal_invulnerable_seconds",
@@ -1022,11 +1082,8 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
     GetStringList(d, b, "more_starting_weapons", out.more_starting_weapons, false);
     if (GetNumber(d, b, "melee_damage", out.melee_damage, false)) CheckRange(d, "melee_damage", out.melee_damage, -0.9, 20.0);
     // The run stats a melee kill can raise, and their caps.
-    const auto knownStat = [](const std::string& stat) {
-        return stat == "damage" || stat == "defense" || stat == "max_health" || stat == "crit" || stat == "move_speed" ||
-               stat == "heal" || stat == "supplies";
-    };
-    constexpr const char* kStatNames = "damage, defense, max_health, crit, move_speed, heal, supplies";
+    const auto knownStat = KnownRunStat;
+    constexpr const char* kStatNames = kRunStatNames;
     if (const json* ms = Get(b, "melee_kill_stats")) {
         if (!ms->is_object()) {
             d.Error("field 'melee_kill_stats' must be an object");
@@ -1188,6 +1245,60 @@ void ParseBuild(const Diag& d, const json& b, SkinBuild& out) {
     if ((out.kill_item >= 0) != (out.kill_item_every > 0)) d.Error("kill_item and kill_item_every go together");
     if (GetNumber(d, b, "explosion_damage_mult", out.explosion_damage_mult, false)) {
         CheckRange(d, "explosion_damage_mult", out.explosion_damage_mult, 0.0, 1.0);
+    }
+    if (GetNumber(d, b, "grenade_damage", out.grenade_damage, false)) CheckRange(d, "grenade_damage", out.grenade_damage, 0.0, 10.0);
+    if (GetNumber(d, b, "grenade_blast_m", out.grenade_blast_m, false)) CheckRange(d, "grenade_blast_m", out.grenade_blast_m, 0.0, 10.0);
+    if (GetNumber(d, b, "grenade_blast_fraction", out.grenade_blast_fraction, false)) {
+        CheckRange(d, "grenade_blast_fraction", out.grenade_blast_fraction, 0.0, 1.0);
+    }
+    GetIntRange(d, b, "cluster_bomblets", out.cluster_bomblets, false, 0, 8);
+    if (GetNumber(d, b, "cluster_damage_fraction", out.cluster_damage_fraction, false)) {
+        CheckRange(d, "cluster_damage_fraction", out.cluster_damage_fraction, 0.0, 2.0);
+    }
+    if (GetNumber(d, b, "cluster_radius_m", out.cluster_radius_m, false)) CheckRange(d, "cluster_radius_m", out.cluster_radius_m, 0.0, 10.0);
+    if (out.cluster_bomblets > 0 && (out.cluster_damage_fraction <= 0.0 || out.cluster_radius_m <= 0.0)) {
+        d.Error("cluster_bomblets need cluster_damage_fraction and cluster_radius_m");
+    }
+    GetBool(d, b, "incendiary_burns", out.incendiary_burns, false);
+    GetBool(d, b, "flash_masked", out.flash_masked, false);
+    if (GetNumber(d, b, "flash_extra_seconds", out.flash_extra_seconds, false)) {
+        CheckRange(d, "flash_extra_seconds", out.flash_extra_seconds, 0.0, 30.0);
+    }
+    if (const json* er = Get(b, "empty_ammo_regen")) {
+        if (!er->is_object()) {
+            d.Error("field 'empty_ammo_regen' must be an object of weapon categories");
+        } else {
+            for (const auto& [category, v] : er->items()) {
+                if (!ParseWeaponCategory(category)) {
+                    d.Error("empty_ammo_regen: unknown weapon category " + Q(category));
+                } else if (!v.is_array() || v.size() != 2 || !v[0].is_number() || !v[1].is_number_integer()) {
+                    d.Error("empty_ammo_regen " + Q(category) + " must be [seconds, rounds]");
+                } else {
+                    AmmoRegen r;
+                    r.seconds = v[0].get<double>();
+                    r.rounds = static_cast<int>(v[1].get<std::int64_t>());
+                    CheckRange(d, "empty_ammo_regen " + category + " seconds", r.seconds, 1.0, 120.0);
+                    CheckRange(d, "empty_ammo_regen " + category + " rounds", static_cast<double>(r.rounds), 1.0, 100.0);
+                    out.empty_ammo_regen[category] = r;
+                }
+            }
+        }
+    }
+    if (const json* charms = Get(b, "charms")) {
+        if (!charms->is_array()) {
+            d.Error("field 'charms' must be an array");
+        } else {
+            for (std::size_t i = 0; i < charms->size(); ++i) {
+                const Diag cd = d.Sub(" charm[" + std::to_string(i) + "]");
+                if (!(*charms)[i].is_object()) {
+                    cd.Error("must be an object");
+                    continue;
+                }
+                CharmDef charm;
+                ParseCharm(cd, (*charms)[i], charm);
+                out.charms.push_back(std::move(charm));
+            }
+        }
     }
     ParseWeaponFilter(d, b, "never_offered", out.never_offered);
     ParseWeaponFilter(d, b, "infinite_ammo", out.infinite_ammo);

@@ -135,6 +135,10 @@ std::uintptr_t LayoutElementOnLayer(int layer, const char* name);
 void LogMessagesWith(const std::string& text);
 /// Developer: mes_system message `id` shows `text` (empty: the game's again).
 void SetMessageText(int id, const std::string& text);
+/// Game item `item`'s name in the loaded item messages (mes_item) shows `text` (empty: the game's again): a
+/// charm's name over the treasure it stands for. False when no loaded message was changed.
+bool SetItemName(std::uint32_t item, const std::string& text);
+void RestoreItemNames();
 /// The next time the Play menu waits for input, the mod menu opens by itself on `screen`
 /// (above its main screen), as if ROGUE MERCENARIES had been chosen: a finished run's results.
 void OpenOnPlayMenu(ScreenId screen);

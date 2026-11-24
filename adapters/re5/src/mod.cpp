@@ -469,6 +469,17 @@ void ApplyBuildStacks() {
         const int max = wanted(g_stackOriginal[id]);
         if (current == max || max < 1) return;
         RM_LOGI("build: item %04X stacks to %d (was %d) -> %s", id, max, current, WriteRecordInt(record + 0x20, max) ? "ok" : "failed");
+        // The arena's slots of it are made before this (the game's loadout): each keeps its own maximum, so
+        // a larger stack reaches them too (the Perk Workshop, 2026-11-24, Ammo Belt: "check that it actually
+        // does it"; before, only slots made later grew).
+        if (const auto player = engine::LocalPlayer(); player && max > current) {
+            const auto inv = player + re5::off::kPlayerInventory;
+            for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+                const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+                if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1 || ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) != id) continue;
+                if (ReadOr<std::int32_t>(slot + re5::off::kSlotMax, 0) < max) SafeStore<std::int32_t>(slot + re5::off::kSlotMax, max);
+            }
+        }
     };
     for (const auto& [item, max] : build.stack_max) {
         apply(static_cast<std::uint32_t>(item), [max = max](int) { return max; });
@@ -3939,6 +3950,19 @@ void RefreshPlaceableWeapons() {
 void ForgetBackGun(std::uintptr_t record, const char* why);  // the inventory's stale back gun, below
 
 // Returns the units placed (stacked or in new slots); 0 when nothing fit or no player.
+void ClearSlot(std::uintptr_t slot);  // below, with the loadout's strip
+
+// The starting guns a supply perk's gun of their kind replaced (rm::RunController::StartingGunReplacedBy).
+struct StartGunSwap {
+    std::string runId;
+    int seat = 0;
+    std::uint32_t oldItem = 0;  // the gun the costume held
+    std::string newBase;        // the perk's (weapons.json id)
+    double since = 0.0;
+    bool handed = false;        // the hands took the new one
+};
+std::vector<StartGunSwap> g_startGunSwaps;
+
 int GiveItem(const char* source, std::int64_t gameItem, int count) {
     const auto player = engine::LocalPlayer();
     if (!engine::Caps().inventory || !player || gameItem < 0 || count <= 0) return 0;
@@ -4008,6 +4032,25 @@ int GiveItem(const char* source, std::int64_t gameItem, int count) {
     for (int attempt = 0; left > 0 && attempt < 8; ++attempt) {
         const auto made = create(inventory, id, 1, -1, -1, -1, 0xD, 0, 0, 0, 0, 0, 0, 0, 0, 0, player, 0, 0);
         if (!made) break;
+        // A charm (a treasure, category 4; rm::CharmDef) is carried only in a cell of the grid: one the game
+        // filed outside it takes a free cell, else it goes back (the grid is full).
+        if ((id >> 8) == 4) {
+            const int cell = ReadOr<std::int32_t>(made + kSlotCell, -1);
+            if (cell < 0 || cell >= kGridCells) {
+                int freeCell = -1;
+                const auto grid = ReadGrid();
+                for (int c = 0; c < kGridCells && freeCell < 0; ++c) {
+                    if (!grid[static_cast<std::size_t>(c)].record) freeCell = c;
+                }
+                if (freeCell < 0) {
+                    ClearSlot(made);
+                    RM_LOGW("%s: charm %04X not placed: no free cell in the grid", source, id);
+                    break;
+                }
+                SafeStore<std::int32_t>(made + kSlotCell, freeCell);
+                RM_LOGI("%s: charm %04X came in cell %d, outside the grid; moved to cell %d", source, id, cell, freeCell + 1);
+            }
+        }
         ++createdSlots;
         --left;
         if (left > 0) left = addToStacks(inventory, id, left);
@@ -4039,6 +4082,21 @@ std::uint32_t PartnerAmmoSwap(std::uint32_t id);  // with the partner, below
 // The ammo for the gun in the player's hands (Sheva's Scavenger: drops become it); 0 for one
 // without (knife, stun rod, flamethrower, the rocket launcher's single rocket). The grenade
 // launcher is one item per round type loaded (0x0125.., the Organize table), its rounds 0x0206..
+// The rounds gun item `id` takes; 0 for one without (knife, stun rod, flamethrower, the rocket launcher's single
+// rocket). The grenade launcher is one item per round type loaded (0x0125.., the Organize table), its rounds 0x0206..
+std::uint32_t AmmoItemForGun(std::uint32_t id) {
+    static const std::pair<std::uint32_t, std::uint32_t> kLauncherRounds[] = {
+        {0x0125, 0x0206}, {0x0126, 0x0207}, {0x0127, 0x0208}, {0x0139, 0x020E}, {0x013A, 0x020F}, {0x013B, 0x0210}};
+    for (const auto& [launcher, rounds] : kLauncherRounds) {
+        if (id == launcher) return rounds;
+    }
+    // The launcher's own record (RecordItemId): the rounds it is made with.
+    if (id == kItemGrenadeLauncher) return 0x0206;
+    if (id == 0x010D) return 0;  // the rocket launcher: one rocket, never reloaded
+    if (const rm::WeaponBaseDef* w = WeaponForItem(id)) return AmmoItemFor(w->category);
+    return 0;
+}
+
 std::uint32_t HeldAmmoItem() {
     const auto player = engine::LocalPlayer();
     if (!engine::Caps().inventory || !player) return 0;
@@ -4046,17 +4104,7 @@ std::uint32_t HeldAmmoItem() {
     for (int i = 0; i < re5::off::kInventorySlots; ++i) {
         const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
         if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1 || ReadOr<std::int32_t>(slot + re5::off::kSlotEquipped, 0) != 1) continue;
-        const auto id = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
-        static const std::pair<std::uint32_t, std::uint32_t> kLauncherRounds[] = {
-            {0x0125, 0x0206}, {0x0126, 0x0207}, {0x0127, 0x0208}, {0x0139, 0x020E}, {0x013A, 0x020F}, {0x013B, 0x0210}};
-        for (const auto& [launcher, rounds] : kLauncherRounds) {
-            if (id == launcher) return rounds;
-        }
-        // The launcher's own record (RecordItemId): the rounds it is made with.
-        if (id == kItemGrenadeLauncher) return 0x0206;
-        if (id == 0x010D) return 0;  // the rocket launcher: one rocket, never reloaded
-        if (const rm::WeaponBaseDef* w = WeaponForItem(id)) return AmmoItemFor(w->category);
-        return 0;
+        return AmmoItemForGun(ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0));
     }
     return 0;
 }
@@ -4195,6 +4243,12 @@ void StripToPistol() {
             ammo = AmmoItemFor(w->category);
             const rm::Status swapped = g->run->SwapStartingWeapon(w->id);
             if (!swapped.ok()) RM_LOGW("inventory: starting weapon swap to %s failed: %s", w->id.c_str(), swapped.message.c_str());
+            // A supply perk's gun of its kind takes its place (the core's SettleStartingGuns): the hands take
+            // it once it is in, and this one goes (SettleStartingGunSwaps).
+            if (const std::string& by = g->run->StartingGunReplacedBy(); !by.empty()) {
+                g_startGunSwaps.push_back({g->run->state().run_id, g_adapterSeat, equipped, by, Now(), false});
+                RM_LOGI("inventory: %s takes the place of %04X (a supply perk's gun of its kind)", by.c_str(), equipped);
+            }
         }
     }
     int removed = 0;
@@ -7274,6 +7328,7 @@ void OpenChests(double now) {
         if (chest->supplies > 0) line += "   " + std::to_string(chest->supplies) + " SUPPLIES";
         if (!chest->refined_name.empty()) line += "   " + Upper(Plain(chest->refined_name)) + " REFINED TO " + Upper(chest->refined_rarity);
         if (chest->key_used) line += "   KEY USED";
+        if (!chest->charm.empty()) line = Upper(Plain(chest->charm)) + "   " + line;
         g->notice = line;
         g->noticeUntil = now + 4.0;
         RM_LOGI("chest %d: %s", chest->number, line.c_str());
@@ -8730,6 +8785,254 @@ void DriveZeroHealth(double now) {
     for (auto it = g_zeroHealth.begin(); it != g_zeroHealth.end();) it = seen.count(it->first) ? std::next(it) : g_zeroHealth.erase(it);
 }
 
+// ---- The Perk Workshop's picks (2026-11-24) ---------------------------------------------------
+
+std::vector<std::pair<std::uintptr_t, float>> EnemiesNear(const float at[3], float radius, std::uintptr_t except);  // below
+bool LevelLog(const std::string& what);  // below
+
+// How many of game item `id` the player carries (every slot of it); -1 without a player.
+int CountItem(std::uint32_t id) {
+    const auto player = engine::LocalPlayer();
+    if (!engine::Caps().inventory || !player) return -1;
+    const auto inv = player + re5::off::kPlayerInventory;
+    int count = 0;
+    for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+        const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+        if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) == 1 && ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0) == id) {
+            count += std::max(0, ReadOr<std::int32_t>(slot + re5::off::kSlotCount, 0));
+        }
+    }
+    return count;
+}
+
+// Charms (rm::CharmDef): each player's carried charms go to the run (its rules: the Fidelity Card's chests, the
+// Uroboros Virus's stacks, the Grapple Gun's grab escape and flip), and while a run lasts each charm's treasure
+// shows the charm's picture (gun_looks, configs\charms) and name (mes_item). Twice a second; what a player carries
+// is read only in a match (between arenas it stands).
+void UpdateCharms(double now) {
+    static double next = 0.0;
+    if (now < next) return;
+    next = now + 0.5;
+    rm::RunController& run = *g->run;
+    std::vector<gunlooks::Picture> pictures;
+    std::map<std::uint32_t, std::string> names;
+    if (run.HasActiveRun()) {
+        ForEachSeatTurn([&] {
+            const std::vector<rm::CharmDef>& charms = run.state().character.build.charms;
+            if (charms.empty()) return;
+            for (const rm::CharmDef& c : charms) {
+                const auto item = static_cast<std::uint32_t>(c.game_item);
+                if (!c.picture.empty()) pictures.push_back({item, g->paths.configDir / L"charms" / c.picture});
+                names[item] = c.name;
+            }
+            if (!g->match.inMatch || !engine::LocalPlayer()) return;
+            std::vector<std::string> carried;
+            for (const rm::CharmDef& c : charms) {
+                if (CountItem(static_cast<std::uint32_t>(c.game_item)) > 0) carried.push_back(c.id);
+            }
+            const bool had = !run.state().carried_charms.empty();
+            run.SetCarriedCharms(carried);
+            static std::map<int, std::size_t> told;
+            if (told[g_adapterSeat] != carried.size() + (had ? 100 : 0)) {
+                told[g_adapterSeat] = carried.size() + (had ? 100 : 0);
+                std::string list;
+                for (const std::string& id : carried) list += " " + id;
+                RM_LOGI("charms: seat %d carries%s", g_adapterSeat, list.empty() ? " none" : list.c_str());
+            }
+        });
+    }
+    gunlooks::SetPictures(std::move(pictures));
+    static std::map<std::uint32_t, std::string> named;
+    if (names.empty() && !named.empty()) {
+        nativemenu::RestoreItemNames();
+        named.clear();
+        RM_LOGI("charms: the treasures' names are the game's again");
+    }
+    for (const auto& [item, name] : names) {
+        if (named.count(item) && named[item] == name) continue;
+        if (nativemenu::SetItemName(item, name)) {
+            named[item] = name;
+            RM_LOGI("charms: item %04X is named %s", item, name.c_str());
+        }
+    }
+}
+
+// The Flash Pouch (the Perk Workshop, 2026-11-24: "Majini wearing face masks also get stunned, and enemies get
+// stunned for longer"). A flash grenade a player throws (their count of them goes down in an arena) is watched
+// for 15 s: the first enemy the game stuns with it (its DmgFlash) marks where it went off, and every Majini within
+// kFlashReach of that point the game left alone (the masked ones) is stunned too (flash_masked); each stun of that
+// throw plays once more as it ends (flash_extra_seconds: the game's stun lasts about as long).
+constexpr float kFlashReach = 700.0f;
+struct FlashWatch {
+    double thrownAt = 0.0;
+    bool masked = false, longer = false, centred = false;
+    std::array<float, 3> centre{};
+    std::map<std::uintptr_t, int> stunned;  // enemy -> 0 stunned, 1 played again
+};
+std::vector<FlashWatch> g_flashWatches;
+
+void DriveFlashPouch(double now) {
+    rm::RunController& run = *g->run;
+    static std::array<int, 4> lastCount{-1, -1, -1, -1};
+    if (!g->match.inMatch || !run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive) {
+        g_flashWatches.clear();
+        lastCount.fill(-1);
+        return;
+    }
+    ForEachSeatTurn([&] {
+        const rm::SkinBuild& b = run.state().character.build;
+        const auto seat = static_cast<std::size_t>(std::clamp(g_adapterSeat, 0, 3));
+        const int count = CountItem(0x0108);
+        if (count >= 0 && lastCount[seat] >= 0 && count < lastCount[seat] && (b.flash_masked || b.flash_extra_seconds > 0.0)) {
+            FlashWatch w;
+            w.thrownAt = now;
+            w.masked = b.flash_masked;
+            w.longer = b.flash_extra_seconds > 0.0;
+            g_flashWatches.push_back(w);
+            RM_LOGI("flash pouch: seat %d threw a flash grenade (%d left)", g_adapterSeat, count);
+        }
+        lastCount[seat] = count;
+    });
+    for (auto it = g_flashWatches.begin(); it != g_flashWatches.end();) {
+        FlashWatch& w = *it;
+        for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
+            if (e.hp <= 0 || e.object == g->boss.unit) continue;
+            const std::string action = engine::CurrentActionName(e.object);
+            const bool flashed = action.size() > 8 && action.compare(action.size() - 8, 8, "DmgFlash") == 0;
+            const auto s = w.stunned.find(e.object);
+            if (flashed && s == w.stunned.end() && now - w.thrownAt <= 4.0) {
+                w.stunned[e.object] = 0;
+                if (!w.centred) {
+                    w.centred = true;
+                    UnitPosition(e.object, w.centre.data());
+                    int more = 0;
+                    for (const auto& [enemy, d] : EnemiesNear(w.centre.data(), kFlashReach, e.object)) {
+                        (void)d;
+                        if (!w.masked || w.stunned.count(enemy)) continue;
+                        if (React(enemy, Reaction::Flash, now, true)) {
+                            w.stunned[enemy] = 0;
+                            ++more;
+                        }
+                    }
+                    RM_LOGI("flash pouch: it went off by %s; %d more stunned (the masked)", engine::ClassName(e.object).c_str(), more);
+                }
+            } else if (!flashed && s != w.stunned.end() && s->second == 0 && w.longer && !DyingAction(action)) {
+                s->second = 1;
+                if (React(e.object, Reaction::Flash, now, true) && LevelLog("flash_again")) {
+                    RM_LOGI("flash pouch: %s's stun plays again", engine::ClassName(e.object).c_str());
+                }
+            }
+        }
+        it = now - w.thrownAt > 15.0 ? g_flashWatches.erase(it) : std::next(it);
+    }
+}
+
+// Scavenger's rounds (the Perk Workshop, 2026-11-24: "When she has no more ammo from any weapons she carries she
+// should get ammo based on the weapon type (the bigger the class the more you have to wait and less ammo you
+// get)"): with every gun in the grid that takes rounds empty and none of their rounds in it, the build's
+// empty_ammo_regen for the gun in hand's category gives its rounds after its wait, again while it stays so.
+void DriveEmptyAmmo(double now) {
+    rm::RunController& run = *g->run;
+    static std::array<double, 4> since{-1.0, -1.0, -1.0, -1.0};
+    if (!g->match.inMatch || !run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || GamePaused() || ItemScreenOpen()) {
+        since.fill(-1.0);
+        return;
+    }
+    ForEachSeatTurn([&] {
+        double& from = since[static_cast<std::size_t>(std::clamp(g_adapterSeat, 0, 3))];
+        const auto& regen = run.state().character.build.empty_ammo_regen;
+        const std::uintptr_t hand = EquippedGunSlot();
+        const auto handItem = hand ? ReadOr<std::uint32_t>(hand + re5::off::kSlotItemId, 0) : 0u;
+        const rm::WeaponBaseDef* held = hand ? WeaponForItem(handItem) : nullptr;
+        const auto entry = held ? regen.find(std::string(rm::WeaponCategoryName(held->category))) : regen.end();
+        const std::uint32_t heldAmmo = held ? AmmoItemForGun(handItem) : 0;
+        if (regen.empty() || entry == regen.end() || heldAmmo == 0) {
+            from = -1.0;
+            return;
+        }
+        std::set<std::uint32_t> rounds;
+        bool empty = true;
+        for (const GridCell& c : ReadGrid()) {
+            if (!c.record || (c.id >> 8) != 1) continue;
+            const std::uint32_t ammo = AmmoItemForGun(c.id);
+            if (ammo == 0) continue;
+            rounds.insert(ammo);
+            if (c.count > 0) empty = false;
+        }
+        for (const GridCell& c : ReadGrid()) {
+            if (c.record && rounds.count(c.id) && c.count > 0) empty = false;
+        }
+        if (!empty) {
+            from = -1.0;
+            return;
+        }
+        if (from < 0.0) {
+            from = now;
+            return;
+        }
+        if (now - from < entry->second.seconds) return;
+        from = now;
+        const int given = GiveItem("scavenger", heldAmmo, entry->second.rounds);
+        RM_LOGI("scavenger: every gun dry; %d of %04X for the %s", given, heldAmmo, held->id.c_str());
+        if (given > 0) {
+            g->notice = "SCAVENGED   " + std::to_string(given) + " ROUNDS";
+            g->noticeUntil = now + 2.0;
+        }
+    });
+}
+
+// The starting guns a supply perk's gun of their kind replaced (g_startGunSwaps): once the new gun is in the grid
+// the hands take it, and the old one goes once it is out of them (the game hangs when a record it holds goes).
+// Given up after 20 s (the new gun never came: no room, not loaded).
+void SettleStartingGunSwaps(double now) {
+    for (auto it = g_startGunSwaps.begin(); it != g_startGunSwaps.end();) {
+        if (!g->run->HasActiveRun() || it->runId != g->run->state().run_id) {
+            it = g_startGunSwaps.erase(it);
+            continue;
+        }
+        SeatTurn turn(it->seat);
+        const auto player = engine::LocalPlayer();
+        const rm::WeaponBaseDef* base = g->content->FindWeapon(it->newBase);
+        if (!player || base == nullptr || base->game_item < 0 || !g->match.inMatch) {
+            ++it;
+            continue;
+        }
+        const auto newItem = RecordItemId(static_cast<std::uint32_t>(base->game_item));
+        std::uintptr_t oldSlot = 0;
+        int newCell = -1;
+        const auto inv = player + re5::off::kPlayerInventory;
+        for (int i = 0; i < re5::off::kInventorySlots; ++i) {
+            const auto slot = inv + re5::off::kInventoryFirstSlot + i * re5::off::kInventorySlotSize;
+            if (ReadOr<std::uint8_t>(slot + re5::off::kSlotValid, 0) != 1) continue;
+            const auto id = SlotItemId(slot);
+            if (id == it->oldItem) oldSlot = slot;
+            if (id == newItem) newCell = ReadOr<std::int32_t>(slot + kSlotCell, -1);
+        }
+        if (!oldSlot) {  // gone already
+            RM_LOGI("inventory: %04X is gone; %s is the starting gun", it->oldItem, it->newBase.c_str());
+            it = g_startGunSwaps.erase(it);
+            continue;
+        }
+        if (newCell < 0 || newCell >= kGridCells) {
+            if (now - it->since > 20.0) {
+                RM_LOGW("inventory: %s never came; %04X stays", it->newBase.c_str(), it->oldItem);
+                it = g_startGunSwaps.erase(it);
+            } else {
+                ++it;
+            }
+            continue;
+        }
+        if (ReadOr<std::int32_t>(oldSlot + re5::off::kSlotEquipped, 0) == 1) {
+            if (!it->handed) it->handed = TakeOutOfHand(player, oldSlot, newCell);
+            ++it;  // out of the hands next time
+            continue;
+        }
+        ClearSlot(oldSlot);
+        RM_LOGI("inventory: %04X went; the hands hold %s (cell %d)", it->oldItem, it->newBase.c_str(), newCell + 1);
+        it = g_startGunSwaps.erase(it);
+    }
+}
+
 // A head a player's shot bursts is a kill (the user, 2026-11-24: "if the crit explodes the head,
 // there's a chance that they still have enough hp to go by, that shouldn't be the case, its
 // confusing"). Two ways the game lets one go on, from its code:
@@ -8938,7 +9241,8 @@ std::vector<std::string> Alternatives(const std::string& value) {
 // An element's look on `unit` (settings element_effects, by proc kind; an evolved element's own
 // "<kind>_evolved" first): at most once a second for the same enemy and kind.
 void PlayLook(const rm::WeaponProc& p, std::uintptr_t unit, double now) {
-    if (!unit || !engine::Caps().effects || g->settings.elementEffects.empty()) return;
+    // Off unless asked for (adapter.json element_lights): an enemy's status is its colour now (DriveEnemyTints).
+    if (!g->settings.elementLights || !unit || !engine::Caps().effects || g->settings.elementEffects.empty()) return;
     const std::string kind(rm::ProcKindName(p.kind));
     auto it = p.evolved ? g->settings.elementEffects.find(kind + "_evolved") : g->settings.elementEffects.end();
     if (it == g->settings.elementEffects.end()) it = g->settings.elementEffects.find(kind);
@@ -10071,13 +10375,87 @@ double LevelPerksOnHit(const OutgoingHit& hit, const rm::HitContext& ctx, double
     return mult;
 }
 
-// A proximity bomb's blast (the Mine Layer build's wider one): the enemies it hit, its biggest hit.
+// A proximity bomb's blast (the Mine Layer build's wider one) or a hand grenade's (the Grenade Pouch's, Squad
+// Tactics' cluster): the enemies it hit, its biggest hit, and the bomblets it lets out.
 struct MineBlast {
     bool open = false;
     double at = 0.0, damage = 0.0, radius = 0.0, fraction = 0.0;
+    int bomblets = 0;
+    double bombletFraction = 0.0, bombletRadius = 0.0;
     std::vector<std::pair<std::uintptr_t, std::array<float, 3>>> victims;
 };
 MineBlast g_mineBlast;
+MineBlast g_grenadeBlast;
+// A cluster grenade's bomblets (Squad Tactics; the Perk Workshop, 2026-11-24: "The grenade explodes in several
+// other grenades that detonate a bit after (player shouldn't take damage from all of them but enemies should)"):
+// each goes off at its time and hurts the enemies around it (the mod's damage: never a player's).
+struct Bomblet {
+    double at = 0.0;
+    std::array<float, 3> pos{};
+    double damage = 0.0;
+    float radius = 0.0f;
+};
+std::vector<Bomblet> g_bomblets;
+// An incendiary grenade's hits on enemies, to set burning next tick (the Fire Pouch: "It applies burn (like the
+// element)"): the enemy and the hit's damage.
+std::vector<std::pair<std::uintptr_t, double>> g_grenadeBurns;
+
+// A hit whose attacker is a hand grenade's unit (uWp06) or an incendiary grenade's (uWp07), while a player of the
+// run has a build with grenade_damage, grenade_blast_m or cluster_bomblets (hand) or incendiary_burns (fire): its
+// damage multiplier, and its enemy noted for the wider blast, the bomblets and the burn (DriveLevelHits lands
+// them). Whose grenade it is is not known: the best of the run's players' builds. Hold g->mutex.
+double GrenadeHit(const OutgoingHit& hit) {
+    if (hit.enemy == 0 || hit.attacker == 0 || !g->match.inMatch || !g->run->HasActiveRun() ||
+        g->run->phase() != rm::Phase::ArenaActive) {
+        return 1.0;
+    }
+    const std::string cls = engine::ClassName(hit.attacker);
+    if (cls == "uWp07") {
+        bool burns = false;
+        ForEachSeatTurn([&] { burns = burns || g->run->state().character.build.incendiary_burns; });
+        if (burns && g_grenadeBurns.size() < 64) g_grenadeBurns.emplace_back(hit.enemy, static_cast<double>(hit.damage));
+        return 1.0;
+    }
+    if (cls != "uWp06") return 1.0;
+    double bonus = 0.0, radius = 0.0, fraction = 0.0, bombletFraction = 0.0, bombletRadius = 0.0;
+    int bomblets = 0;
+    ForEachSeatTurn([&] {
+        const rm::SkinBuild& b = g->run->state().character.build;
+        bonus = std::max(bonus, b.grenade_damage);
+        if (b.grenade_blast_m * 100.0 > radius && b.grenade_blast_fraction > 0.0) {
+            radius = b.grenade_blast_m * 100.0;
+            fraction = b.grenade_blast_fraction;
+        }
+        if (b.cluster_bomblets > bomblets) {
+            bomblets = b.cluster_bomblets;
+            bombletFraction = b.cluster_damage_fraction;
+            bombletRadius = b.cluster_radius_m * 100.0;
+        }
+    });
+    if (bonus <= 0.0 && radius <= 0.0 && bomblets <= 0) return 1.0;
+    const double now = Now();
+    if (!g_grenadeBlast.open) {
+        g_grenadeBlast = {};
+        g_grenadeBlast.open = true;
+        g_grenadeBlast.at = now;
+        g_grenadeBlast.radius = radius;
+        g_grenadeBlast.fraction = fraction;
+        g_grenadeBlast.bomblets = bomblets;
+        g_grenadeBlast.bombletFraction = bombletFraction;
+        g_grenadeBlast.bombletRadius = bombletRadius;
+    }
+    g_grenadeBlast.damage = std::max(g_grenadeBlast.damage, hit.damage * (1.0 + bonus));
+    const bool known = std::any_of(g_grenadeBlast.victims.begin(), g_grenadeBlast.victims.end(), [&](const auto& v) { return v.first == hit.enemy; });
+    if (!known) {
+        float at[3];
+        UnitPosition(hit.enemy, at);
+        g_grenadeBlast.victims.push_back({hit.enemy, {at[0], at[1], at[2]}});
+    }
+    if (LevelLog("grenade_hit")) {
+        RM_LOGI("grenades: a hand grenade's hit on %s, %d damage x%.2f", engine::ClassName(hit.enemy).c_str(), hit.damage, 1.0 + bonus);
+    }
+    return 1.0 + bonus;
+}
 
 // A hit whose attacker is a proximity bomb's unit (uWp0a, the item 0x010A's: 109 hits "by=uWp0a" in the Deck's
 // Safari run, 2026-11-23), while a player of the run has a build with mine_damage or mine_blast_m: its damage
@@ -10187,6 +10565,106 @@ struct EliteState {
     double cloudUntil = -1.0, nextCloudTick = 0.0, nextCloudLook = 0.0;
 };
 std::map<std::uintptr_t, EliteState> g_elites;
+
+// An enemy's element status as its colour (the user, 2026-11-24: "the element light on them is too much, just
+// change the hue to see they are still affected and that's it + the element light stays even if it doesn't do
+// anything on them anymore, like for example when an enemy is done burning the element stays"). While it burns, is
+// frozen or poisoned, each of its own materials (the unit's list +0xAC8, count +0xACC; a cMaterialStandard's colour
+// at +0x30, RGBA: what Uroboros Aheri's death writes its mDeadColor to, 0x008C1F70) takes that status's tint over
+// the game's own, and an elite its element's, fainter; the game's colours come back the moment it ends. Off with
+// adapter.json enemy_tints false.
+constexpr std::uintptr_t kDtiMaterialStandard = 0x0124AEB0;  // build/dti_all.txt
+constexpr std::size_t kUnitMaterials = 0xAC8;
+constexpr std::size_t kUnitMaterialCount = 0xACC;
+constexpr std::size_t kMaterialColour = 0x30;
+struct EnemyTint {
+    std::string kind;  // the tint on it now ("" none)
+    std::vector<std::pair<std::uintptr_t, std::array<float, 4>>> original;  // material -> its colour before
+};
+std::map<std::uintptr_t, EnemyTint> g_enemyTints;
+
+std::array<float, 3> TintRgb(const std::string& kind) {
+    if (kind == "burn") return {1.45f, 0.62f, 0.38f};
+    if (kind == "frozen") return {0.55f, 0.85f, 1.5f};
+    if (kind == "poison") return {0.62f, 1.35f, 0.5f};
+    if (kind == "elite_incendiary") return {1.2f, 0.82f, 0.7f};
+    if (kind == "elite_shock") return {1.18f, 1.15f, 0.65f};
+    if (kind == "elite_cryo") return {0.78f, 0.95f, 1.25f};
+    if (kind == "elite_toxic") return {0.82f, 1.18f, 0.76f};
+    if (kind == "elite_explosive") return {1.25f, 0.72f, 0.72f};
+    return {1.0f, 1.0f, 1.0f};
+}
+
+// Puts the game's colours back on `unit`, then `kind`'s tint over them ("" leaves them the game's).
+void PutTint(std::uintptr_t unit, EnemyTint& t, const std::string& kind) {
+    for (const auto& [material, colour] : t.original) SafeWrite(material + kMaterialColour, colour.data(), sizeof(colour));
+    t.original.clear();
+    t.kind.clear();
+    if (kind.empty()) return;
+    const auto list = ReadOr<std::uintptr_t>(unit + kUnitMaterials, 0);
+    const int count = ReadOr<std::int32_t>(unit + kUnitMaterialCount, 0);
+    if (!list || count <= 0 || count > 128) return;
+    const auto rgb = TintRgb(kind);
+    for (int i = 0; i < count; ++i) {
+        const auto material = ReadOr<std::uintptr_t>(list + static_cast<std::size_t>(i) * 4, 0);
+        if (material < 0x10000 || !engine::IsKindOf(material, kDtiMaterialStandard)) continue;
+        std::array<float, 4> colour{};
+        if (!SafeCopy(colour.data(), material + kMaterialColour, sizeof(colour))) continue;
+        if (!std::all_of(colour.begin(), colour.end(), [](float v) { return std::isfinite(v) && v >= 0.0f && v <= 16.0f; })) continue;
+        const std::array<float, 4> tinted{colour[0] * rgb[0], colour[1] * rgb[1], colour[2] * rgb[2], colour[3]};
+        if (!SafeWrite(material + kMaterialColour, tinted.data(), sizeof(tinted))) continue;
+        t.original.emplace_back(material, colour);
+    }
+    t.kind = kind;
+    static int told = 0;
+    if (told++ < 12) {
+        const std::array<float, 4> first = t.original.empty() ? std::array<float, 4>{} : t.original.front().second;
+        RM_LOGI("enemy tints: %s %08X %s on %zu of %d materials (the game's first: %.2f %.2f %.2f %.2f)", engine::ClassName(unit).c_str(),
+                static_cast<unsigned>(unit), kind.c_str(), t.original.size(), count, first[0], first[1], first[2], first[3]);
+    }
+}
+
+void DriveEnemyTints(double now) {
+    static double next = 0.0;
+    if (now < next) return;
+    next = now + 0.2;
+    const bool on = g->settings.enemyTints && g->match.inMatch && g->run->HasActiveRun();
+    std::map<std::uintptr_t, std::string> want;
+    std::set<std::uintptr_t> present;
+    for (const engine::EnemyState& e : engine::ReadEnemyStates()) {
+        present.insert(e.object);
+        if (!on || e.hp <= 0) continue;
+        std::string kind;
+        const auto st = g_elementStatus.find(e.object);
+        if (FrozenNow(e.object, now)) {
+            kind = "frozen";
+        } else if (st != g_elementStatus.end() && (now < st->second.burnUntil || st->second.flameBurnLeft > 0.0)) {
+            kind = "burn";
+        } else if (PoisonedNow(e.object, now)) {
+            kind = "poison";
+        } else if (const auto elite = g_elites.find(e.object); elite != g_elites.end() && !elite->second.dead) {
+            kind = "elite_" + elite->second.element;
+        }
+        if (!kind.empty()) want[e.object] = kind;
+    }
+    for (auto it = g_enemyTints.begin(); it != g_enemyTints.end();) {
+        if (!present.count(it->first)) {
+            it = g_enemyTints.erase(it);  // gone: its memory may be another unit's now, nothing is written
+            continue;
+        }
+        const auto w = want.find(it->first);
+        if (w == want.end()) {
+            PutTint(it->first, it->second, "");  // its status ended, or it died: the game's colours again
+            it = g_enemyTints.erase(it);
+            continue;
+        }
+        ++it;
+    }
+    for (const auto& [unit, kind] : want) {
+        EnemyTint& t = g_enemyTints[unit];
+        if (t.kind != kind) PutTint(unit, t, kind);
+    }
+}
 int g_eliteGeneration = -1;
 struct PlayerElementState {
     double burnUntil = -1.0, nextBurn = 0.0, chillUntil = -1.0;
@@ -10281,72 +10759,6 @@ double EliteChill(int seat, double now) {
     return now < g_playerElements[static_cast<std::size_t>(seat)].chillUntil ? g->content->economy().elites.chill_slow : 0.0;
 }
 
-// An element gun's effect in hand (gun_looks.h; the user's item 4, 2026-11-24: "adding some effect"):
-// every gun_looks.aura_every seconds its element's effect starts on the gun's own unit (uWpNN, among
-// the player's pointers, as the flamethrower's is found), at its joint aura_joint and aura_scale its
-// size: element_effects "gun_<element>_evolved" / "gun_<element>", else the element's hit look
-// (Explosive has none unless set). Not the flamethrower: its stream shows its element already.
-void DriveGunAuras(double now) {
-    if (!g->settings.gunAura || !engine::Caps().effects) return;
-    if (!g->match.inMatch || !g->run->HasActiveRun() || g->run->phase() != rm::Phase::ArenaActive || GamePaused() || ItemScreenOpen()) return;
-    struct Held {
-        double next = 0.0;
-        std::uint32_t item = 0;
-        std::uintptr_t unit = 0;
-    };
-    static std::array<Held, 4> held{};
-    static std::set<std::string> told;
-    ForEachSeatTurn([&] {
-        Held& h = held[static_cast<std::size_t>(std::clamp(g_adapterSeat, 0, 3))];
-        if (now < h.next) return;
-        const std::uintptr_t slot = EquippedGunSlot();
-        const auto player = engine::LocalPlayer();
-        if (!slot || !player) return;
-        const auto item = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
-        const rm::WeaponBaseDef* def = WeaponForItem(item);
-        if (def == nullptr || def->id == "flamethrower") return;
-        const rm::WeaponInstance* gun = nullptr;
-        for (const rm::WeaponInstance& w : g->run->state().weapons) {
-            if (w.base_id == def->id && !w.elements.empty()) gun = &w;
-        }
-        if (gun == nullptr) return;
-        h.next = now + g->settings.gunAuraEvery;
-        char cls[8];
-        std::snprintf(cls, sizeof(cls), "uWp%02x", item & 0xFFu);  // item 0x01NN loads class uWpNN (resources.h)
-        if (h.item != item || !h.unit || engine::ClassName(h.unit) != cls) {
-            h.item = item;
-            h.unit = 0;
-            for (std::size_t off = 0; off < 0x4000 && !h.unit; off += 4) {
-                const auto p = ReadOr<std::uintptr_t>(player + off, 0);
-                if (p >= 0x00400000 && p < 0x7FFF0000 && !(p & 3) && engine::ClassName(p) == cls) h.unit = p;
-            }
-        }
-        if (!h.unit) return;
-        const std::string element(rm::ElementName(gun->elements.front()));
-        std::string paths;
-        for (const std::string& key : {"gun_" + element + "_evolved", "gun_" + element}) {
-            if (key.size() > 8 && key.compare(key.size() - 8, 8, "_evolved") == 0 && !gun->element_evolved) continue;
-            if (const auto own = g->settings.elementEffects.find(key); own != g->settings.elementEffects.end()) {
-                paths = own->second;
-                break;
-            }
-        }
-        if (paths.empty()) paths = ElementHitLook(element);
-        std::string played;
-        for (const std::string& path : Alternatives(paths)) {
-            if (engine::StartEffect(path.c_str(), h.unit, g->settings.gunAuraJoint, g->settings.gunAuraScale) != 0) {
-                played = path;
-                break;
-            }
-        }
-        if (told.insert(std::string(cls) + element).second) {
-            RM_LOGI("gun looks: %s in hand (%s), its %s look %s (joint %d, scale %.2f)", cls, def->id.c_str(), element.c_str(),
-                    played.empty() ? (paths.empty() ? "none set" : ("none in memory of " + paths).c_str()) : played.c_str(),
-                    g->settings.gunAuraJoint, g->settings.gunAuraScale);
-        }
-    });
-}
-
 void DriveElites(double now) {
     if (g_eliteGeneration != g->matchGeneration) {
         ResetElitesFor(g->matchGeneration);
@@ -10383,7 +10795,7 @@ void DriveElites(double now) {
         const auto hp = engine::ReadHp(unit);
         if (hp && hp->hp > 0) {
             UnitPosition(unit, e.at);
-            if (now >= e.nextAura) {
+            if (g->settings.elementLights && now >= e.nextAura) {  // else its colour (DriveEnemyTints)
                 e.nextAura = now + el.aura_every;
                 PlayEliteLook(e.element, unit);
             }
@@ -10585,27 +10997,90 @@ void DriveLevelHits(double now) {
         }
         s.blastVictims.clear();
     }
-    // A proximity bomb's blast that is over: those just beyond it take a share of its biggest hit (mine_blast_m).
-    if (g_mineBlast.open && now - g_mineBlast.at >= kBlastWindow) {
-        g_mineBlast.open = false;
+    // A bomb's or a hand grenade's blast that is over: those just beyond it take a share of its biggest hit
+    // (mine_blast_m, grenade_blast_m), and a cluster grenade's bomblets are set to go off around it.
+    const auto land = [&](MineBlast& blast, const char* what) {
+        if (!blast.open || now - blast.at < kBlastWindow) return;
+        blast.open = false;
         std::set<std::uintptr_t> taken;
-        for (const auto& v : g_mineBlast.victims) taken.insert(v.first);
+        for (const auto& v : blast.victims) taken.insert(v.first);
         int reached = 0;
-        for (const auto& [victim, pos] : g_mineBlast.victims) {
+        for (const auto& [victim, pos] : blast.victims) {
             (void)victim;
-            for (const auto& [enemy, d] : EnemiesNear(pos.data(), static_cast<float>(g_mineBlast.radius), 0)) {
+            if (blast.radius <= 0.0 || blast.fraction <= 0.0) break;
+            for (const auto& [enemy, d] : EnemiesNear(pos.data(), static_cast<float>(blast.radius), 0)) {
                 (void)d;
                 if (!taken.insert(enemy).second) continue;
-                DotDamage(enemy, g_mineBlast.damage * g_mineBlast.fraction, now, Reaction::Flyoff);
+                DotDamage(enemy, blast.damage * blast.fraction, now, Reaction::Flyoff);
                 if (alive(enemy)) React(enemy, Reaction::Flyoff, now, true);
                 ++reached;
             }
         }
-        if (LevelLog("mine_blast")) {
-            RM_LOGI("mines: a bomb's blast hit %zu, %.1f m wider reached %d more (%.0f each)", g_mineBlast.victims.size(),
-                    g_mineBlast.radius / 100.0, reached, g_mineBlast.damage * g_mineBlast.fraction);
+        if (blast.bomblets > 0 && !blast.victims.empty()) {
+            std::array<float, 3> centre{};
+            for (const auto& v : blast.victims) {
+                for (int k = 0; k < 3; ++k) centre[static_cast<std::size_t>(k)] += v.second[static_cast<std::size_t>(k)];
+            }
+            for (float& c : centre) c /= static_cast<float>(blast.victims.size());
+            static std::uint32_t spin = 0x9E3779B9u;
+            for (int i = 0; i < blast.bomblets; ++i) {
+                spin = spin * 1664525u + 1013904223u;
+                const double angle = (i + (spin >> 8) / 16777216.0 * 0.6) * 2.0 * 3.14159265358979 / blast.bomblets;
+                const double reach = 120.0 + (spin & 0xFF) / 255.0 * 80.0;  // 1.2 to 2 m out
+                Bomblet b;
+                b.at = now + 0.25 + 0.18 * i;
+                b.pos = {centre[0] + static_cast<float>(std::cos(angle) * reach), centre[1], centre[2] + static_cast<float>(std::sin(angle) * reach)};
+                b.damage = blast.damage * blast.bombletFraction;
+                b.radius = static_cast<float>(blast.bombletRadius);
+                if (g_bomblets.size() < 32) g_bomblets.push_back(b);
+            }
         }
-        g_mineBlast.victims.clear();
+        if (LevelLog(what)) {
+            RM_LOGI("%s: a blast hit %zu, %.1f m wider reached %d more (%.0f each), %d bomblets", what, blast.victims.size(),
+                    blast.radius / 100.0, reached, blast.damage * blast.fraction, blast.bomblets);
+        }
+        blast.victims.clear();
+    };
+    land(g_mineBlast, "mine_blast");
+    land(g_grenadeBlast, "grenade_blast");
+    // The bomblets that are due: the look of a blast on the nearest enemy (element_effects "cluster": the bombs'
+    // own explosion when loaded), the damage to every enemy within reach.
+    for (auto it = g_bomblets.begin(); it != g_bomblets.end();) {
+        if (now < it->at) {
+            ++it;
+            continue;
+        }
+        const auto reached = EnemiesNear(it->pos.data(), it->radius, 0);
+        if (!reached.empty()) {
+            const auto look = g->settings.elementEffects.find("cluster");
+            const std::string paths = look != g->settings.elementEffects.end() ? look->second
+                                                                               : "effect\\efl\\wp\\wp0a\\wp0a01|effect\\efl\\wp\\wp0a\\wp0a00|effect\\efl\\core\\cr0012";
+            for (const std::string& path : Alternatives(paths)) {
+                if (engine::PlayEffect(path.c_str(), reached.front().first)) break;
+            }
+        }
+        int hurt = 0;
+        for (const auto& [enemy, d] : reached) {
+            (void)d;
+            DotDamage(enemy, it->damage, now, Reaction::Flyoff);
+            if (alive(enemy)) React(enemy, Reaction::Yoroke, now, true);
+            ++hurt;
+        }
+        if (LevelLog("bomblet")) RM_LOGI("grenades: a bomblet went off, %d enemies within %.1f m took %.0f", hurt, it->radius / 100.0, it->damage);
+        it = g_bomblets.erase(it);
+    }
+    // An incendiary grenade's hits burn as the Incendiary element (its own numbers, of the grenade's hit).
+    if (!g_grenadeBurns.empty()) {
+        const rm::ElementDef* fire = g->content->FindElement(rm::Element::Incendiary);
+        for (const auto& [enemy, damage] : g_grenadeBurns) {
+            if (fire == nullptr || !alive(enemy)) continue;
+            const bool lit = Ignite(enemy, damage * fire->dps_fraction, fire->seconds, now);
+            if (LevelLog("grenade_burn")) {
+                RM_LOGI("grenades: an incendiary grenade sets %s burning (%.0f a second for %.0f s)%s", engine::ClassName(enemy).c_str(),
+                        damage * fire->dps_fraction, fire->seconds, lit ? "" : ", already burning");
+            }
+        }
+        g_grenadeBurns.clear();
     }
     // A pistol's hit followed by its head reaction: a headshot, its round back by chance.
     for (auto it = g_headshotChecks.begin(); it != g_headshotChecks.end();) {
@@ -11491,6 +11966,55 @@ void StartBurst(double now, const rm::SkinSpecial& sp, std::uintptr_t local, int
     g->noticeUntil = now + 1.2;
 }
 
+// Ada's flip (the Grapple Gun charm's special; the Perk Workshop, 2026-11-24: "a button combo that she can use to
+// make a flip to evade and deal damage"): her own dodge (engine::StartDodge: the game's avoid move toward its
+// threat point, here a point behind her, away from the nearest enemy), untouchable for its duration (the core),
+// and the enemies within kFlipRadius of where she stood take its power and stagger.
+constexpr float kFlipRadius = 250.0f;
+constexpr float kFlipThreatRange = 900.0f;
+constexpr float kFlipAway = 300.0f;
+void StartFlip(double now, const rm::SkinSpecial& sp, std::uintptr_t local, int slot, const char* source) {
+    rm::RunController& run = *g->run;
+    const rm::Status used = run.UseSpecial(now, 1.0, slot);
+    if (!used.ok()) {
+        DeniedNotice(now, Upper(Plain(sp.name)), run.Special(now, slot));
+        return;
+    }
+    float at[3];
+    UnitPosition(local, at);
+    float fx = 0.0f, fz = 1.0f;
+    PlayerFacing(local, fx, fz);
+    float away[2] = {-fx, -fz};  // nobody near: backwards
+    std::uintptr_t threat = 0;
+    for (const auto& [enemy, d] : EnemiesAround(local, kFlipThreatRange, -1.0f, 0.0f, 1.0f)) {
+        (void)d;
+        float e[3];
+        UnitPosition(enemy, e);
+        const float dx = at[0] - e[0], dz = at[2] - e[2];
+        const float len = std::sqrt(dx * dx + dz * dz);
+        if (len > 1.0f) {
+            away[0] = dx / len;
+            away[1] = dz / len;
+        }
+        threat = enemy;
+        break;  // the nearest
+    }
+    const float toward[3] = {at[0] + away[0] * kFlipAway, at[1], at[2] + away[1] * kFlipAway};
+    const bool dodged = engine::StartDodge(local, toward);
+    const int damage = static_cast<int>(sp.power > 0.0 ? sp.power : 300.0);
+    const float py = at[1];
+    std::string results;
+    for (const auto& [enemy, d] : EnemiesAround(local, kFlipRadius, -1.0f, 0.0f, 1.0f)) {
+        (void)d;
+        if (std::fabs(ReadOr<float>(enemy + re5::off::kUnitPosition + 4, 0.0f) - py) > kMaxStep) continue;
+        results += " " + StrikeEnemy(enemy, damage, re5::off::kEm10DmgYoroke, now);
+    }
+    RM_LOGI("special: flip %s, away from %s:%s [%s]", dodged ? "dodged" : "no dodge", threat ? engine::ClassName(threat).c_str() : "nobody",
+            results.empty() ? " nobody in reach" : results.c_str(), source);
+    g->notice = Upper(Plain(sp.name));
+    g->noticeUntil = now + 1.0;
+}
+
 void StartSpecial(double now, int slot, const char* source) {
     rm::RunController& run = *g->run;
     const rm::SpecialState state = run.Special(now, slot);
@@ -11510,6 +12034,10 @@ void StartSpecial(double now, int slot, const char* source) {
     }
     if (sp.kind == "burst") {
         StartBurst(now, sp, local, slot, source);
+        return;
+    }
+    if (sp.kind == "flip") {
+        StartFlip(now, sp, local, slot, source);
         return;
     }
     const rm::Status used = run.UseSpecial(now, 1.0, slot);
@@ -11743,7 +12271,7 @@ bool StartPlayerAction(std::uintptr_t player, int id) {
 
 void DriveGrabBreak(double now) {
     rm::RunController& run = *g->run;
-    if (!run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || (!run.state().character.build.break_grabs && !g->devBreakGrabs)) {
+    if (!run.HasActiveRun() || run.phase() != rm::Phase::ArenaActive || (!run.BreaksGrabs() && !g->devBreakGrabs)) {
         return;
     }
     const auto local = engine::LocalPlayer();
@@ -12086,7 +12614,7 @@ void ApplyMoveSpeed() {
     rm::RunController& run = *g->run;
     const double now = Now();
     // The build's speed, less a cryo elite's chill (its hits; the user's elites, 2026-11-23).
-    const double bonus = (run.HasActiveRun() ? run.state().stats.move_speed : 0.0) - EliteChill(g_adapterSeat, now);
+    const double bonus = (run.HasActiveRun() ? run.state().stats.move_speed + run.CharmStats().move_speed : 0.0) - EliteChill(g_adapterSeat, now);
     const double mult = std::clamp(1.0 + bonus, kSpeedMultMin, kSpeedMultMax);
     const auto local = engine::LocalPlayer();
     const bool arena = local && run.HasActiveRun() && run.phase() == rm::Phase::ArenaActive && g->match.inMatch;
@@ -15015,9 +15543,9 @@ private:
                 g_bossLastHit = {Now(), !hit.attackerIsLocal || launcher};
             }
         }
-        if (!hit.attackerIsLocal) {  // grenades, bombs and barrels: a Mine Layer's bombs hit harder (MineHit)
+        if (!hit.attackerIsLocal) {  // grenades, bombs and barrels: a Mine Layer's bombs hit harder (MineHit), a pouch's grenades (GrenadeHit)
             std::lock_guard lock(g->mutex);
-            return static_cast<float>(MineHit(hit));
+            return static_cast<float>(MineHit(hit) * GrenadeHit(hit));
         }
         std::lock_guard lock(g->mutex);
         SeatTurn turn(SeatTurn::OfUnit(hit.attacker));
@@ -15288,6 +15816,9 @@ private:
         { ProfileScope p("tick:DetectEnemyDeaths"); DetectEnemyDeaths(now); }
         { ProfileScope p("tick:DriveZeroHealth"); DriveZeroHealth(now); }
         { ProfileScope p("tick:DriveHeadBursts"); DriveHeadBursts(now); }
+        { ProfileScope p("tick:DriveFlashPouch"); DriveFlashPouch(now); }
+        { ProfileScope p("tick:DriveEmptyAmmo"); DriveEmptyAmmo(now); }
+        { ProfileScope p("tick:SettleStartingGunSwaps"); SettleStartingGunSwaps(now); }
         { ProfileScope p("tick:OpenChests"); OpenChests(now); }
         // M10: player 1's pad is the mod's primary one; each player's own turn below.
         SetPrimaryPadUser(g->run->HasActiveRun() && g->run->SeatCount() > 1 ? PadUserOfSeat(0) : 0);
@@ -15309,7 +15840,7 @@ private:
         { ProfileScope p("tick:DriveElements"); DriveElements(now); }
         { ProfileScope p("tick:DriveLevelHits"); DriveLevelHits(now); }
         { ProfileScope p("tick:DriveElites"); DriveElites(now); }
-        { ProfileScope p("tick:DriveGunAuras"); DriveGunAuras(now); }
+        { ProfileScope p("tick:DriveEnemyTints"); DriveEnemyTints(now); }
         {
             // The game's pause (its menu, a paused world) stops the arena's clock (the user, 2026-11-22:
             // "timer continues in pause menu").
@@ -15398,6 +15929,7 @@ private:
         WatchCoopFall(now);
         UpdateHudNames(now);
         UpdateGunLooks(now);
+        UpdateCharms(now);
         ForEachSeatTurn([&] {
             if (g->run->phase() == rm::Phase::ArenaActive && g->match.inMatch) ApplyBuildHealth();  // gains mid-arena
             // Items earned by perks, rewards and the shop wait until the player is in a match.

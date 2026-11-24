@@ -99,7 +99,7 @@ shipped) is a test loader that does what those loaders are documented to do (`pl
      ones and the dogs down more slowly. Its tank is only on your back while it is in your hands.
    Every row of the main screen, CREDITS and the run's results has its icon next to it.
    Esc goes back one screen; locked entries are red, like the game's own disabled rows.
-3. Every run starts with one gun: the game's Mercenaries loadout is cut down to the weapon in your hands, its ammo and the knife when the first arena starts (for most costumes that is the pistol; Sheva keeps her VZ61), and your Supply perks then add their items and weapons (a weapon arrives with a full magazine and is one of the run's guns like any other: its level and stats, upgrades, refines and the build's elements). Everything else comes from rewards and the shop, which can offer any gun of `configs/weapons.json`: during a run every stage loads all of their models along with yours (about 20 MB), and what you buy comes with you to the next stage. The game's grid has nine slots; the number keys 1 to 4 pick its first four cells. (`configs/loadouts.json` still holds the item catalog and an optional point-budget roll, off by default.)
+3. Every run starts with one gun: the game's Mercenaries loadout is cut down to the weapon in your hands, its ammo and the knife when the first arena starts (for most costumes that is the pistol; Sheva keeps her VZ61), and your Supply perks then add their items and weapons (a weapon arrives with a full magazine and is one of the run's guns like any other: its level and stats, upgrades, refines and the build's elements). A run never starts with two guns of one kind: a Supply perk's gun of the starting gun's kind takes its place, in your hands, rare, or epic when your build favours that kind (Sheva's VZ61 and Close Support's VZ61: her VZ61 becomes the rare one). A gun the build cannot use comes as a usable one of its kind, or not at all. Everything else comes from rewards and the shop, which can offer any gun of `configs/weapons.json`: during a run every stage loads all of their models along with yours (about 20 MB), and what you buy comes with you to the next stage. The game's grid has nine slots; the number keys 1 to 4 pick its first four cells. (`configs/loadouts.json` still holds the item catalog and an optional point-budget roll, off by default.)
    *Without the menu row:* go to **The Mercenaries → Solo**, press **F7**, select the same character and press **Enter** (Start run). Set `"direct_start": false` in `adapter.json` to go through the game's own setup screens yourself.
 4. The run starts with the match. There is no clock and no score: the Mercenaries countdown, score and combo panels stay off screen for the whole run, and the game can no longer end the match by itself (the countdown is held underneath and its 150-kill limit is off), so the kill target decides the arena. In the clock's place the same big orange digits count the *enemies left*; the arena number is on the left and your supplies on the right, in the game's font. Since 0.2.6 a solo run also has a small **ARENA INTEL** panel in the top right corner: the time (against the arena's par time), kills, damage dealt (and per second), damage taken, supplies, keys, credits, the kill chain, in a boss arena the boss's health and phase, and the rating so far; the supplies and keys move from the top line into it (`"info_panel": false` in `adapter.json` turns it off). Since 0.2.7 every arena plays another of the game's battle tracks (the `b_bgm` streams, the Gold Edition's too) in place of the Mercenaries theme, which comes round once in each round of them; the swap is made between matches, once the last track has given way (`"music_rotation": false` keeps the theme), and the arena's time no longer runs while the game is paused. (`"merc_hud": true` in `adapter.json` shows the game's clock and score again, and the count moves into the label.) The mod spawns the arena's enemies itself (`configs/maps.json`: the spawn points and enemy types each stage uses in the original game): the game's own waves stay off for the whole run, up to 12 enemies are alive at once, and the arena ends when exactly its kill target has died, however they died. Enemies are spawned the way the game's own Mercenaries spawns them (weapons, plagas and looks as surveyed per stage) and already know where you are, so they come for you from the start. Enemies get harder as the run goes on: the first arena has only Majini with bare hands or small blades, at most 6 at once and no special enemies; later arenas add axes, torches, bows and handguns, then dynamite, stun rods, shotguns and the big special enemies (a Licker, the Executioner), and the hardest routes machine guns, rocket launchers, gatlings and the chainsaw, up to 12 at once (`economy.json` `enemy_threat`; the arena line in `adapter.log` names its level). Each stage's special enemies join once a quarter of the arena is dead: one at a time from threat level 3, one more at level 4. From the second arena on, each arena also brings *guests*: enemies of another stage, planned when the run starts (`economy.json` `run_rosters`): one more kind of Majini and, from threat level 3, another stage's special enemy, never more than five kinds in one arena, and preferably kinds you have not met yet on the way there. Only those load with the stage. NEXT ROUTE says where they come from when the help line has room, and the arena's name on screen is followed by "WITH ENEMIES FROM ...". The first enemies come 3 s after an arena starts. Since 0.2.71 the fat Majini (uEm13), the tribal big Majini (uEm24), the Gatling Majini (uEm23) and the megaphone Majini (uEm21) spawn with their health from the game's own Mercenaries set data (`economy.json` `enemy_health`), not a Majini's 1000. (`"director": false` in `adapter.json` brings back the game's own waves.)
    **The ladder** (`economy.json` `ladder`): the first run is 4 arenas and ends on the Uroboros. Beat him and the next short run ends on a choice in the last NEXT ROUTE: the Uroboros again, U-8 or Popokarimu. Beat U-8 or Popokarimu and the 8-arena run opens: arena 4 is the 4-arena run's boss (your pick), arena 8 Uroboros Mkono, then Uroboros Mkono, Uroboros Aheri or Jill (at 1.3 times their health). Beat Aheri or Jill and the 12-arena run opens: bosses on arenas 4, 8 and 12, the last Uroboros Wesker on the Volcano (at 1.5 times his health). A 12-arena run that took the alternate boss on arena 4 and on arena 8 goes on to a 13th arena against Midnight Wesker; otherwise it ends on arena 12 (the user, 2026-11-08: "you get 1 on 4 one on 8 and one on 12, except if you take both alternate routes, then you get 13th stage"). Each boss has its own length's health wherever it is fought. **Endless** (RUN LENGTH's last row) opens once you beat an 8-arena run: no last arena, the run ends when you fall; a boss every 4 arenas, the bosses of the run lengths you have opened in turn (the 4-arena run's choices, the 8's, the 12's, then Midnight Wesker once you have won the 13th arena), 25 percent more health each time round; rewards and refines come as in a 12-arena run, and a boss beaten there counts for what it unlocks, not for the ladder (`economy.json` `ladder.endless`). The boss names are the game's own (its Library: Uroboros Mkono is the flamethrower room's, Uroboros Aheri Excella's on the ship; before 2026-11-19 the mod had them the other way round and called U-8 a giant Uroboros). From the fifth arena on every arena brings 2 more enemies, hits 8 percent harder and takes 5 percent more to kill than the one before. RUN RESULTS says what a boss win opened. Your profile keeps which bosses you beat (`stats.bosses_beaten`).
@@ -137,6 +137,22 @@ New in 0.2.0-alpha.28, made playable for both players in alpha.29 and alpha.30, 
 - Each player's flamethrower fires its element's recoloured stream, its hits and arcs theirs; each player's sniper scope is on their own pad (the right stick's click while aiming; a gun model scoped by one player is scoped for both while both hold it, the game keeping one record per model).
 - **CONTINUE RUN** goes on with a two-player run too: the resume point saved between arenas keeps both players (the core's seats, player 2's carried inventory, health and costume). Continuing shows the game's lobby again (the pads are learned there), player 2 joins with START, both ready, and the arena that was left starts again with each player's items.
 
+### Charms
+
+A charm is an item that takes a cell of your grid and works while you carry it. It comes with its perk
+or skin when the run starts and has its own picture and name; drop or store it and its rule stops until you carry it
+again. **Fidelity Card** (Clubbin' Sheva's Night Shopper): every third chest a weapon, rare or better. **Uroboros
+Virus** (Wesker's Perfection): kill stacks, lost on a hit. **Grapple Gun** (Ada's): no grab holds her, and the
+special button flips her clear. Each stands for a treasure the run never hands out, so the game shows the charm's picture
+(`configs/charms`) and name in its place while a run lasts.
+
+### The pouches
+
+**Grenade Pouch**: hand grenades hit 50 percent harder and their blast reaches 2 m further (half its biggest hit).
+**Flash Pouch**: a flash grenade also stuns the masked Majini near the ones it stuns, and each stun plays once more as it
+ends. **Fire Pouch**: an incendiary grenade's hits burn like the Incendiary element. **Ammo Belt**: every ammo stack 50
+percent larger, the arena's first stacks too (it used to be 20 percent, and only stacks made later grew).
+
 ### Style perks
 
 The PERKS menu's first slot is the character's way of playing: one free trait each, and more to buy with Credits. Most
@@ -150,15 +166,15 @@ of the newer ones are a rule with a cost. Written 2026-11-04 and waiting for a p
 | Chris | Iron Grip | Throws off whatever grabs him at once (Majini, the big axe men, chainsaws, the Village's creature, the Uroboros; not the Wesker bosses' blows), but every heal is 25 percent smaller. | 200 credits |
 | Sheva | Field Training | Each kill heals 2 percent of max health. | free, the default |
 | Sheva | Flash Tactics | Every 3 kills hand you a flash grenade. | 120 credits |
-| Sheva | Scavenger | Ammo and herbs she picks up become ammo for the gun in her hands. | 150 credits |
+| Sheva | Scavenger | Ammo and herbs she picks up become ammo for the gun in her hands. With every gun empty and no rounds for any of them, rounds for the gun in her hands come by themselves: 10 handgun rounds after 6 s, 30 SMG rounds after 8 s, 20 machine gun rounds after 10 s, 4 shells after 12 s, 3 rifle rounds after 15 s, 2 magnum rounds after 18 s, 1 launcher round after 25 s. | 150 credits |
 | Sheva | Sharpshooter | Rifles hit 35 percent harder, rifle rounds stack twice as high. Machine guns 20 percent less. | 150 credits |
 | Jill | Battle Instinct | 15 percent of hits are critical and deal double damage. | free, the default |
 | Jill | Weapon Expert | Handguns hit 30 percent harder, handgun rounds stack twice as high. Shotguns 20 percent less. | 150 credits |
 | Jill | Finisher | Shots deal 60 percent more to enemies under a third of their health, 10 percent less otherwise. | 150 credits |
-| Albert | Firestarter | Wesker. Every 5 kills hand you an incendiary grenade. | free, the default |
+| Albert | Perfection | Wesker. He carries the Uroboros Virus, a charm: while it is in his grid, every kill adds a stack, up to 10. Each stack gives 3 percent more damage, 2 percent less damage taken, 1 percent more critical chance and 1.5 percent more speed. A hit he takes clears them. (It was Firestarter: every 5 kills an incendiary grenade.) | free, the default |
 | Albert | Superior Being | Wesker. He takes 30 percent less damage, but heals are half as strong. | 200 credits |
 | Albert | Predator | Wesker. Each kill within 5 seconds of the last adds 10 percent damage, up to 50. 85 percent health. | 180 credits |
-| Josh | Squad Tactics | Every kill gives 1 extra supply. | free, the default |
+| Josh | Squad Tactics | Every kill gives 1 extra supply, and every 8 kills a hand grenade. His hand grenades are cluster grenades: four bomblets go off around each a moment later, each half the blast's biggest hit to the enemies within 2.5 m. They never hurt a player. | free, the default |
 | Josh | Field Commander | Every arena clear hands him a hand grenade and a flash grenade. 20 percent fewer supplies. | 150 credits |
 | Josh | Point Man | Machine guns hit 25 percent harder, their rounds stack 50 percent higher. No magnums offered. | 150 credits |
 | Barry | Demolition Man | Every 5 kills hand you a grenade, and an arena clear two more. | free, the default |
@@ -182,7 +198,7 @@ the others are written and wait for a playtest (2026-11-03).
 | Chris | S.T.A.R.S. | Field Kit | A first aid spray on every arena clear. |
 | Chris | Warrior | Brute Force | Only shotguns, handguns and magnums are offered; they hit 25 percent harder. |
 | Chris | Heavy Metal | Heavy Gunner | Starts with the pistol only; every shop sells the Gatling gun for 100 supplies until he has it (no unlock); ammo stacks three times as high. |
-| Sheva | Clubbin' | Night Shopper | Supplies x1.2; one free NEW STOCK at every shop. |
+| Sheva | Clubbin' | Night Shopper | Supplies x1.2; one free NEW STOCK at every shop. Her Fidelity Card, a charm: while it is in her grid, every third chest she opens holds a weapon, rare or better. |
 | Sheva | Tribal | Hunter | Starts with her longbow and 20 arrows (10 more per arena clear); arrows hit 50 percent harder; each kill heals 1.5 percent of her health. |
 | Sheva | Business | Expense Account | Better rarities in rewards, shop and chests; SMGs hit 30 percent harder and upgrade without limit. |
 | Sheva | Fairy Tale | Enchanted Arms | A legendary M3 that upgrades without limit. |
@@ -256,8 +272,9 @@ in red, and pressing her opens the mod's page; it has no preview, so since 0.2.7
 (`configs/portraits`: the user's renders, cut out) and SKINS and CHARACTERS show them once the mod is found; a picture
 put in the mod's folder as `ada_agent.png`, `ada_assignment.png` or `ada_red_dress.png` (a square bust; transparency is
 kept) is shown in its place. Her own perks: **Butterfly**
-(her trait: shots deal 30 percent more to enemies under half their health), **Grapple Gun** (she slips every grab, a
-melee kill pays 1 supply, heals 20 percent smaller), **Double Agent** (10 more supplies an arena, 15 percent more
+(her trait: shots deal 30 percent more to enemies under half their health), **Grapple Gun** (a charm: while it is in her
+grid she slips every grab, and the special button flips her clear of the nearest enemy, staggering those she leaves for
+350; a melee kill pays 1 supply; no heal penalty any more), **Double Agent** (10 more supplies an arena, 15 percent more
 damage taken), **Assassin** (15 percent of hits critical for two and a half times, 85 percent health), and the
 supply **Machine Pistol** (a VZ61 and 60 rounds; the longbow until 0.2.72). Her skins: **Agent** (Intel Network: her Px4, a free NEW STOCK and
 better rarities in every shop, handguns 25 percent harder, supplies x0.85), **Assignment** (a rare MP5, machine guns
@@ -340,7 +357,8 @@ raised, the inventory's reload fills it, after the game's own reload the rest co
 
 **The mod's own effects.** The elements are colour coded with effects the mod makes from the game's own: the
 flamethrower's flame recoloured cyan for Cryo, green for Toxic and violet for Shock, and its small flame in those
-colours (orange for fire) on the enemies an element reaches; Shock's hits keep the stun rod's sparks. A Cryo, Toxic or
+colours (orange for fire) on the enemies an element reaches, with `"element_lights": true` (off by default: enemies
+change colour instead); Shock's hits keep the stun rod's sparks. A Cryo, Toxic or
 Shock flamethrower fires its coloured flame instead of the fire one, and what it reaches takes that element (frozen,
 poisoned, stunned) instead of catching fire, 300 damage a second within 5 m ahead, scaled like its hits. The mod
 builds them at start from your own game files (`uWp21.arc`, `coreEff.arc`, read only) into
@@ -359,14 +377,17 @@ picture where the game's camera shows those enemies, so a wall between does not 
   its top right corner: a flame, a bolt, a snowflake, a blast or a drop. An evolved element gets a stronger colour and a
   glowing badge.
 - **The gun's model** takes the colour too.
-- **In your hands**, the gun gives off its element's effect every 2 seconds. The flamethrower keeps its coloured flame.
 
 The colour is mixed into the game's own picture and textures in memory, so their detail stays, and they go back to the
 game's when the run ends. Nothing on disk changes. In `adapter.json`, `"gun_looks"` turns each part off (`"pictures"`,
-`"models"`, `"aura"`: false) and sets how strong it is: `"picture_tint"` 0.45, `"model_tint"` 0.3 and
-`"evolved_extra"` 0.15, each from 0 to 1. For the effect, `"aura_every"` sets the seconds between plays and
-`"aura_scale"` its size. `"gun_<element>"` in `element_effects` picks the effect itself; by default it's the element's
-hit look, and Explosive has none.
+`"models"`: false) and sets how strong it is: `"picture_tint"` 0.45, `"model_tint"` 0.3 and `"evolved_extra"` 0.15,
+each from 0 to 1. (An effect on the gun in hand was tried and taken out: it hid too much.)
+
+**Enemies show their status by colour.** An enemy turns orange while it burns, icy blue while it is frozen and green
+while it is poisoned, and goes back to its own colours the moment that ends. An elite keeps a faint tint of its element.
+The effects that used to play on affected enemies (the small coloured flames, the elites' glow) are off: they hid too
+much and some outlasted the status. `"enemy_tints": false` in `adapter.json` turns the colours off, and
+`"element_lights": true` brings those effects back. Shock's lightning, the elites' warnings and the poison clouds stay.
 
 **Picking the elements' looks (the effect gallery).** In an arena, press **Numpad \*** to turn the gallery on or
 off. Every 3 seconds the next effect in memory plays on the nearest enemy, its name at the top of the screen.

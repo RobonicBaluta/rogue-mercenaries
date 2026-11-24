@@ -1030,6 +1030,54 @@ void SetMessageText(int id, const std::string& text) {
     RM_LOGW("dev msgset: message %d now \"%s\" (was \"%s\")", id, text.c_str(), Letters(it->second.first).c_str());
 }
 
+// A game item's name in the item messages (every loaded mes_item; the item record's dword 16, +0x40, names its
+// message; dev itemnames): `text` while set, the game's own again with an empty text or RestoreItemNames.
+std::map<std::pair<std::uintptr_t, int>, std::pair<std::uintptr_t, std::unique_ptr<std::array<std::uint16_t, 64>>>> g_itemNames;
+bool SetItemName(std::uint32_t item, const std::string& text) {
+    std::lock_guard lock(g_textMutex);
+    const auto records = ReadOr<std::uintptr_t>(re5::addr::kItemTableRoot + ((item >> 8) & 0xFF) * 4, 0);
+    const int message = records ? ReadOr<std::int32_t>(records + (item & 0xFF) * 0x48 + 0x40, -1) : -1;
+    if (message < 0 || message > 0xFFFF || (!text.empty() && !g_widthsReady)) return false;
+    const auto sMessage = ReadOr<std::uintptr_t>(re5::addr::kSMessageInstance, 0);
+    int changed = 0;
+    for (int language = 0; sMessage && language < re5::off::kMessageLanguages; ++language) {
+        for (int file = 0; file < 19; ++file) {
+            const auto rMessage = ReadOr<std::uintptr_t>(
+                sMessage + re5::off::kMessageFirstTable + (static_cast<std::uintptr_t>(language) * 19 + file) * 0x3A0, 0);
+            if (!rMessage || ReadOr<std::uint32_t>(rMessage + re5::off::kRMessageTypeCrc, 0) != kRMessageCrc) continue;
+            if (ReadCString(rMessage + re5::off::kRMessagePath, 64).find("mes_item") == std::string::npos) continue;
+            const auto data = ReadOr<std::uintptr_t>(rMessage + re5::off::kRMessageData, 0);
+            if (!data || ReadOr<std::uint32_t>(data, 0) != kMsg2Magic) continue;
+            const auto table = ReadOr<std::uintptr_t>(rMessage + re5::off::kRMessageTable, 0);
+            if (!table || message >= ReadOr<std::uint16_t>(data + re5::off::kMsg2Count, 0)) continue;
+            const auto cell = table + static_cast<std::uintptr_t>(message) * 4;
+            const auto key = std::make_pair(table, message);
+            auto it = g_itemNames.find(key);
+            if (text.empty()) {
+                if (it != g_itemNames.end()) {
+                    SafeStore(cell, it->second.first);
+                    g_itemNames.erase(it);
+                    ++changed;
+                }
+                continue;
+            }
+            if (it == g_itemNames.end()) {
+                it = g_itemNames.emplace(key, std::make_pair(ReadOr<std::uintptr_t>(cell, 0), std::make_unique<std::array<std::uint16_t, 64>>())).first;
+            }
+            EncodeInto(*it->second.second, text);
+            SafeStore(cell, reinterpret_cast<std::uintptr_t>(it->second.second->data()));
+            ++changed;
+        }
+    }
+    return changed > 0;
+}
+
+void RestoreItemNames() {
+    std::lock_guard lock(g_textMutex);
+    for (const auto& [key, entry] : g_itemNames) SafeStore(key.first + static_cast<std::uintptr_t>(key.second) * 4, entry.first);
+    g_itemNames.clear();
+}
+
 std::uintptr_t LayoutElementOf(std::uintptr_t screen, const char* name) { return LayoutElement(screen, name); }
 
 std::uintptr_t LayoutElementOnLayer(int layer, const char* name) {

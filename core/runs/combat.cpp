@@ -146,9 +146,10 @@ OutgoingResult RunController::ComputeOutgoingMultiplier(const HitContext& hit) {
     // The skin's build: melee damage, the stats a run gained, a heal's damage buff.
     const SkinBuild& build = run_.character.build;
     if (hit.is_melee.value_or(false)) b.build_bonus += build.melee_damage;
-    b.build_bonus += run_.stats.damage;
+    const RunStats charm = CharmStats();  // a carried charm's kill stacks (the Uroboros Virus)
+    b.build_bonus += run_.stats.damage + charm.damage;
     if (hit.now < run_.damage_buff_until) b.build_bonus += run_.damage_buff;
-    crit_chance += run_.stats.crit;
+    crit_chance += run_.stats.crit + charm.crit;
     // Damage by the category of the gun that fired (any gun of that kind, instance or not;
     // never melee).
     if (hit.weapon_id && !hit.is_melee.value_or(false) && !run_.character.build.category_damage.empty()) {
@@ -443,7 +444,7 @@ IncomingResult RunController::ComputeIncoming(const IncomingContext& incoming) {
 
     const EconomyConfig& eco = content_->economy();
     const RouteDef* route = Route();
-    double bonus = -run_.stats.defense;  // a build's gained defense
+    double bonus = -(run_.stats.defense + CharmStats().defense);  // a build's gained defense, a charm's stacks
     double leave_fraction = 0.0;
     std::string cheat_source;
     for (const auto& [id, stacks] : run_.perks) {

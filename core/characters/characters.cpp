@@ -144,6 +144,36 @@ void ApplyPerkBuild(SkinBuild& build, const SkinBuild& perk) {
     build.refine_every_shop = build.refine_every_shop || perk.refine_every_shop;
     build.refine_price_mult *= perk.refine_price_mult;
     build.fuel_regen_mult *= perk.fuel_regen_mult;
+    // The grenades' (the Perk Workshop's pouches and Squad Tactics): bonuses add, the blasts take the wider.
+    build.grenade_damage += perk.grenade_damage;
+    if (perk.grenade_blast_m > build.grenade_blast_m) {
+        build.grenade_blast_m = perk.grenade_blast_m;
+        build.grenade_blast_fraction = perk.grenade_blast_fraction;
+    }
+    if (perk.cluster_bomblets > build.cluster_bomblets) {
+        build.cluster_bomblets = perk.cluster_bomblets;
+        build.cluster_damage_fraction = perk.cluster_damage_fraction;
+        build.cluster_radius_m = perk.cluster_radius_m;
+    }
+    build.incendiary_burns = build.incendiary_burns || perk.incendiary_burns;
+    build.flash_masked = build.flash_masked || perk.flash_masked;
+    build.flash_extra_seconds = std::max(build.flash_extra_seconds, perk.flash_extra_seconds);
+    for (const auto& [category, regen] : perk.empty_ammo_regen) build.empty_ammo_regen.try_emplace(category, regen);
+    for (const CharmDef& charm : perk.charms) {
+        if (std::none_of(build.charms.begin(), build.charms.end(), [&charm](const CharmDef& c) { return c.id == charm.id; })) {
+            build.charms.push_back(charm);
+        }
+    }
+}
+
+void ApplyCharmSpecial(SkinBuild& build) {
+    if (build.special.Any()) return;
+    for (const CharmDef& charm : build.charms) {
+        if (!charm.special.Any()) continue;
+        build.special = charm.special;
+        build.special_charm = charm.id;
+        return;
+    }
 }
 
 bool WeaponFilter::Allows(std::string_view base_id, std::string_view category) const {

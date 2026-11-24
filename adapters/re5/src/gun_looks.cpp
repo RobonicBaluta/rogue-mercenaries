@@ -36,9 +36,12 @@ struct Rect {
 struct Look {
     std::string element;
     bool evolved = false;
-    bool operator==(const Look& o) const { return element == o.element && evolved == o.evolved; }
+    std::filesystem::path picture;  // a picture of its own in place of the item's (a charm's), not an element's colour
+    bool operator==(const Look& o) const { return element == o.element && evolved == o.evolved && picture == o.picture; }
     bool operator!=(const Look& o) const { return !(*this == o); }
-    [[nodiscard]] std::string Text() const { return element + (evolved ? " (evolved)" : ""); }
+    [[nodiscard]] std::string Text() const {
+        return picture.empty() ? element + (evolved ? " (evolved)" : "") : picture.filename().string();
+    }
 };
 
 // The elements' colours: those of the mod's element text (mod.cpp ElementColour).
@@ -63,6 +66,7 @@ std::map<std::uint32_t, Rect> g_pictures;
 std::map<std::uint32_t, std::string> g_folders;  // item -> "wp02"
 Options g_options;
 std::vector<Gun> g_wanted;
+std::vector<Picture> g_wantedPictures;
 bool g_changed = false;
 DWORD g_lastLook = 0;
 
@@ -179,6 +183,49 @@ const Badge& BadgeFor(const Look& look) {
 // The blocks wholly inside a picture (its cuts are 102 pixels, not always on a block's edge).
 Rect Inner(const Rect& r) { return {(r.x0 + 3) / 4 * 4, (r.y0 + 3) / 4 * 4, r.x1 / 4 * 4, r.y1 / 4 * 4}; }
 
+// A picture of its own (a charm's, 102x102 as the item's cut): decoded once a file ({}: unreadable, logged once).
+std::map<std::filesystem::path, std::vector<dxt::Rgba>> g_ownPictures;
+const std::vector<dxt::Rgba>& OwnPicture(const std::filesystem::path& file, int width, int height) {
+    auto it = g_ownPictures.find(file);
+    if (it != g_ownPictures.end()) return it->second;
+    std::vector<dxt::Rgba> pixels;
+    std::vector<unsigned char> bgra;
+    unsigned w = 0, h = 0;
+    if (!icons::DecodePng(file, w, h, bgra)) {
+        RM_LOGW("gun looks: %s cannot be read", file.string().c_str());
+    } else if (static_cast<int>(w) != width || static_cast<int>(h) != height) {
+        RM_LOGW("gun looks: %s is %ux%u, the item's picture %dx%d", file.string().c_str(), w, h, width, height);
+    } else {
+        pixels.resize(static_cast<std::size_t>(w) * h);
+        for (std::size_t i = 0; i < pixels.size(); ++i) pixels[i] = {bgra[i * 4 + 2], bgra[i * 4 + 1], bgra[i * 4], bgra[i * 4 + 3]};
+    }
+    return g_ownPictures.emplace(file, std::move(pixels)).first->second;
+}
+
+// The blocks inside `rect` with a picture of its own in place of the game's (texel (x, y) of the sheet is the
+// picture's (x - rect.x0, y - rect.y0)); the original's blocks when the picture cannot be read.
+std::vector<std::uint8_t> OwnPictureBlocks(const std::vector<std::uint8_t>& original, const Rect& inner, const Rect& rect,
+                                           const std::filesystem::path& file) {
+    const std::vector<dxt::Rgba>& own = OwnPicture(file, rect.Width(), rect.Height());
+    if (own.empty()) return original;
+    std::vector<std::uint8_t> out;
+    out.reserve(original.size());
+    for (int by = 0; by < inner.Height() / 4; ++by) {
+        for (int bx = 0; bx < inner.Width() / 4; ++bx) {
+            dxt::Texels texels{};
+            for (int i = 0; i < 16; ++i) {
+                const int x = inner.x0 + bx * 4 + i % 4 - rect.x0, y = inner.y0 + by * 4 + i / 4 - rect.y0;
+                if (x >= 0 && y >= 0 && x < rect.Width() && y < rect.Height()) {
+                    texels[static_cast<std::size_t>(i)] = own[static_cast<std::size_t>(y) * static_cast<std::size_t>(rect.Width()) + static_cast<std::size_t>(x)];
+                }
+            }
+            const auto block = dxt::EncodeDxt5(texels);
+            out.insert(out.end(), block.begin(), block.end());
+        }
+    }
+    return out;
+}
+
 // The picture's blocks with the look: every colour moved, the badge drawn over its top right corner
 // (2 pixels in).
 std::vector<std::uint8_t> PictureBlocks(const std::vector<std::uint8_t>& original, const Rect& inner, const Look& look) {
@@ -198,6 +245,7 @@ struct Sheet {
     std::uintptr_t resource = 0;
     IDirect3DTexture9* texture = nullptr;  // held (AddRef)
     struct Written {
+        Rect rect;
         Rect inner;
         std::vector<std::uint8_t> original;
         Look look;
@@ -247,6 +295,7 @@ void ApplySheet(const std::map<std::pair<int, int>, std::pair<Rect, Look>>& want
     for (const auto& [key, wanted] : want) {
         if (g_sheet.written.count(key)) continue;
         Sheet::Written w;
+        w.rect = wanted.first;
         w.inner = Inner(wanted.first);
         w.look = wanted.second;
         if (!ReadBlocks(g_sheet.texture, 0, w.inner, 16, w.original)) {
@@ -254,7 +303,8 @@ void ApplySheet(const std::map<std::pair<int, int>, std::pair<Rect, Look>>& want
             if (fails++ < 5) RM_LOGW("gun looks: the picture at %d,%d could not be read", key.first, key.second);
             continue;
         }
-        if (!WriteBlocks(g_sheet.texture, 0, w.inner, 16, PictureBlocks(w.original, w.inner, w.look))) {
+        const auto blocks = w.look.picture.empty() ? PictureBlocks(w.original, w.inner, w.look) : OwnPictureBlocks(w.original, w.inner, w.rect, w.look.picture);
+        if (!WriteBlocks(g_sheet.texture, 0, w.inner, 16, blocks)) {
             static int fails = 0;
             if (fails++ < 5) RM_LOGW("gun looks: the picture at %d,%d could not be written", key.first, key.second);
             continue;
@@ -415,6 +465,14 @@ void SetOptions(const Options& options) {
     g_changed = true;
 }
 
+void SetPictures(std::vector<Picture> pictures) {
+    std::lock_guard lock(g_mutex);
+    const auto same = [](const Picture& a, const Picture& b) { return a.item == b.item && a.png == b.png; };
+    if (pictures.size() == g_wantedPictures.size() && std::equal(pictures.begin(), pictures.end(), g_wantedPictures.begin(), same)) return;
+    g_wantedPictures = std::move(pictures);
+    g_changed = true;
+}
+
 void SetWanted(std::vector<Gun> guns) {
     std::lock_guard lock(g_mutex);
     const auto same = [](const Gun& a, const Gun& b) { return a.item == b.item && a.element == b.element && a.evolved == b.evolved; };
@@ -428,7 +486,7 @@ void OnDraw(IDirect3DDevice9* device) {
     std::lock_guard lock(g_mutex);
     if (!g_loaded) LoadConfig();
     if (!g_ok) return;
-    if (g_wanted.empty() && g_sheet.written.empty() && g_models.empty()) return;
+    if (g_wanted.empty() && g_wantedPictures.empty() && g_sheet.written.empty() && g_models.empty()) return;
     // Looked at once a second (a texture loaded again since, or released), at once when the guns changed.
     const DWORD now = GetTickCount();
     if (!g_changed && now - g_lastLook < 1000) return;
@@ -444,6 +502,13 @@ void OnDraw(IDirect3DDevice9* device) {
         }
         if (g_options.models) {
             if (const auto f = g_folders.find(gun.item); f != g_folders.end()) models.emplace(f->second, look);
+        }
+    }
+    for (const Picture& own : g_wantedPictures) {  // the charms' pictures (a gun's look never takes their cut)
+        if (const auto p = g_pictures.find(own.item); p != g_pictures.end()) {
+            Look look;
+            look.picture = own.png;
+            pictures[std::make_pair(p->second.x0, p->second.y0)] = std::make_pair(p->second, look);
         }
     }
     std::uintptr_t sheet = 0;

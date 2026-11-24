@@ -6,6 +6,28 @@ HAND, INCENDIARY, FLASH, SPRAY, HANDGUN_AMMO = 0x0106, 0x0107, 0x0108, 0x0304, 0
 M92F, ITHACA, MP5, LHAWK, SHELLS, MG_AMMO, MAGNUM_AMMO = 0x0102, 0x0104, 0x0113, 0x011A, 0x0203, 0x0202, 0x0209
 VZ61, M500, M29, PSG1, DRAGUNOV, RIFLE_AMMO = 0x0103, 0x011B, 0x010B, 0x011C, 0x0120, 0x0204
 M93R = 0x011E
+
+# Charms (the Perk Workshop's picks, 2026-11-24): items that take a cell of the grid and act while carried.
+# Each is a treasure no run hands out, drawn over by its own picture (configs/charms, scripts/charm_pictures.py).
+FIDELITY_CARD = {
+    'id': 'fidelity_card', 'name': 'Fidelity Card', 'game_item': '0x0419', 'picture': 'fidelity_card.png',
+    'description': 'While it is in her grid, every third chest she opens holds a weapon, rare or better.',
+    'chest_weapon_every': 3, 'chest_weapon_rarity': 'rare',
+}
+UROBOROS_VIRUS = {
+    'id': 'uroboros_virus', 'name': 'Uroboros Virus', 'game_item': '0x0422', 'picture': 'uroboros_virus.png',
+    'description': 'While it is in his grid, every kill adds a stack, up to 10: 3 percent more damage, 2 percent less '
+                   'damage taken, 1 percent more critical chance and 1.5 percent more speed each. A hit he takes clears them.',
+    'kill_stack_stats': {'damage': 0.03, 'defense': 0.02, 'crit': 0.01, 'move_speed': 0.015},
+    'kill_stack_max': 10, 'stacks_end_on_hit': True,
+}
+GRAPPLE_GUN = {
+    'id': 'grapple_gun', 'name': 'Grapple Gun', 'game_item': '0x0423', 'picture': 'grapple_gun.png',
+    'description': 'While it is in her grid, she slips out of every grab at once, and the special button flips her '
+                   'clear of the nearest enemy, kicking those around her.',
+    'breaks_grabs': True,
+    'special': {'kind': 'flip', 'name': 'Flip', 'icon': 'lunge', 'cooldown_seconds': 6, 'duration_seconds': 0.7, 'power': 350},
+}
 # The longbow takes no ammo item: the game's item table (0x011B5170, 0x140 bytes an item) gives
 # WP0F BOW 0x0200, "none", at +0x1C, like the knife and the rocket launcher (2026-11-24); 0x020B is not
 # its arrows (a stack of one), so nothing hands it out.
@@ -43,13 +65,20 @@ perks += [
          [{'kind': 'item_on_kill', 'game_item': FLASH, 'amount': 1, 'every_kills': 3}], ['sheva'], cost=120, rarity='rare', tags=['items']),
     perk('jill_battle_instinct', 'Battle Instinct', 'Jill. 15 percent of hits are critical and deal double damage.', 'style',
          [{'kind': 'crit', 'chance': 0.15, 'multiplier': 2.0}], ['jill'], tags=['crit']),
-    perk('wesker_firestarter', 'Firestarter', 'Wesker. Every 5 kills hand you an incendiary grenade.', 'style',
-         [{'kind': 'item_on_kill', 'game_item': INCENDIARY, 'amount': 1, 'every_kills': 5}], ['wesker'], tags=['items']),
+    # Firestarter became Perfection (the Perk Workshop, 2026-11-24: "Completely change it to. Perfection"); its id
+    # stays, so the profiles that equip it and Wesker's own trait keep it.
+    perk('wesker_firestarter', 'Perfection', 'Wesker. The Uroboros Virus, each kill makes him stronger and faster, up to 10. '
+         'A hit clears it.', 'style',
+         [], ['wesker'], tags=['items'], build={'charms': [UROBOROS_VIRUS]}),
     # The supply perks, 2026-11-11 (the user: a marathon should pay for 4 or 5 guns built all the way;
     # scripts/economy_math.py): Squad Tactics 2 -> 1 a kill, Executive Bonus 25 -> 8 a clear, Hostile
     # Takeover 15 -> 1 and Suplex 10 -> 1 a melee kill, Clean Sweep 40 -> 15 a clean clear.
-    perk('josh_squad_tactics', 'Squad Tactics', 'Josh. Every kill gives 1 extra supply.', 'style',
-         [{'kind': 'supplies_on_kill', 'amount': 1, 'chance': 1.0}], ['josh'], tags=['supplies']),
+    # Squad Tactics' cluster grenades (the Perk Workshop, 2026-11-24: "The grenade explodes in several other grenades that
+    # detonate a bit after (player shouldn't take damage from all of them but enemies should)").
+    perk('josh_squad_tactics', 'Squad Tactics', 'Josh. A supply a kill, a hand grenade every 8. His grenades burst into four bomblets.', 'style',
+         [{'kind': 'supplies_on_kill', 'amount': 1, 'chance': 1.0},
+          {'kind': 'item_on_kill', 'game_item': HAND, 'amount': 1, 'every_kills': 8}], ['josh'], tags=['supplies', 'items'],
+         build={'cluster_bomblets': 4, 'cluster_damage_fraction': 0.5, 'cluster_radius_m': 2.5}),
     perk('barry_demolition_man', 'Demolition Man', 'Barry. Every 5 kills hand you a grenade, and an arena clear two more.', 'style',
          [{'kind': 'item_on_kill', 'game_item': HAND, 'amount': 1, 'every_kills': 5},
           {'kind': 'item_on_arena_clear', 'game_item': HAND, 'amount': 2}], ['barry'], tags=['items']),
@@ -77,8 +106,14 @@ perks += [
          [], ['chris'], cost=150, rarity='rare', tags=['melee'], build={'melee_damage': 1.5, 'category_damage': {'handgun': -0.25}}),
     perk('chris_iron_grip', 'Iron Grip', 'Chris. Throws off whatever grabs him at once, but every heal is 25 percent smaller.', 'style',
          [], ['chris'], cost=200, rarity='epic', tags=['survival'], build={'break_grabs': True, 'heal_mult': 0.75}),
-    perk('sheva_scavenger', 'Scavenger', 'Sheva. Ammo and herbs she picks up become ammo for the gun in her hands.', 'style',
-         [], ['sheva'], cost=150, rarity='rare', tags=['items'], build={'drops_as_held_ammo': True}),
+    # The empty guns' rounds (the Perk Workshop, 2026-11-24: "When she has no more ammo from any weapons she carries she should
+    # get ammo based on the weapon type (the bigger the class the more you have to wait and less ammo you get)").
+    perk('sheva_scavenger', 'Scavenger', 'Sheva. Pickups become ammo for her gun. All guns dry, rounds come by themselves, '
+         'fewer for big guns.', 'style',
+         [], ['sheva'], cost=150, rarity='rare', tags=['items'],
+         build={'drops_as_held_ammo': True,
+                'empty_ammo_regen': {'handgun': [6, 10], 'smg': [8, 30], 'machine_gun': [10, 20], 'shotgun': [12, 4],
+                                     'rifle': [15, 3], 'magnum': [18, 2], 'launcher': [25, 1]}}),
     perk('sheva_sharpshooter', 'Sharpshooter', 'Sheva. Rifles hit 35 percent harder, rifle rounds stack twice as high. Machine guns 20 percent less.', 'style',
          [], ['sheva'], cost=150, rarity='rare', tags=['weapon'],
          build={'category_damage': {'rifle': 0.35, 'smg': -0.2, 'machine_gun': -0.2}, 'stack_mult': {hex(RIFLE_AMMO_ITEM): 2}}),
@@ -119,9 +154,11 @@ perks += [
          build={'melee_damage': 1.0, 'category_damage': {'rifle': -0.25}}),
     perk('leon_agent_training', 'Agent Training', 'Leon. 20 percent of his hits are critical and deal double damage. Heals 25 percent smaller.', 'style',
          [{'kind': 'crit', 'chance': 0.2, 'multiplier': 2.0}], ['leon'], cost=200, rarity='epic', tags=['crit'], build={'heal_mult': 0.75}),
-    perk('ada_grapple', 'Grapple Gun', 'Ada. She slips out of every grab at once, and every melee kill pays 1 supply. Heals 20 percent smaller.',
+    # The grapple gun as a charm, its flip, no heal penalty (the Perk Workshop, 2026-11-24: "She can also have a button combo
+    # that she can use to make a flip to evade and deal damage"; "Take out Heals 20 percent smaller").
+    perk('ada_grapple', 'Grapple Gun', 'Ada. Her grapple gun, no grab holds her and the special flips her clear. A supply a melee kill.',
          'style', [{'kind': 'supplies_on_kill', 'amount': 1, 'melee_only': True}], ['ada'], cost=150, rarity='rare', tags=['melee'],
-         build={'break_grabs': True, 'heal_mult': 0.8}),
+         build={'charms': [GRAPPLE_GUN]}),
     perk('ada_double_agent', 'Double Agent', 'Ada. 10 extra supplies for every arena cleared, but she takes 15 percent more damage.',
          'style', [{'kind': 'supplies_on_arena_clear', 'amount': 10, 'require_no_damage': False},
                    {'kind': 'incoming_damage_mult', 'value': 0.15}], ['ada'], cost=180, rarity='rare', tags=['supplies']),
@@ -134,11 +171,15 @@ perks += [
 ]
 # ---- Supply: what you start with. Generic ones for everyone, one per character. ----
 perks += [
-    perk('supply_grenades', 'Grenade Pouch', 'Start every run with 2 hand grenades.', 'supply', [item_start(HAND, 2)], cost=60, tags=['items']),
-    perk('supply_flash', 'Flash Pouch', 'Start every run with 2 flash grenades.', 'supply', [item_start(FLASH, 2)], cost=50, tags=['items']),
-    perk('supply_incendiary', 'Fire Pouch', 'Start every run with 2 incendiary grenades.', 'supply', [item_start(INCENDIARY, 2)], cost=70, tags=['items']),
+    # The pouches' grenades do more (the Perk Workshop, 2026-11-24).
+    perk('supply_grenades', 'Grenade Pouch', 'Start every run with 2 hand grenades. Hand grenades hit 50 percent harder, 2 m wider.', 'supply', [item_start(HAND, 2)], cost=60, tags=['items'],
+         build={'grenade_damage': 0.5, 'grenade_blast_m': 2.0, 'grenade_blast_fraction': 0.5}),
+    perk('supply_flash', 'Flash Pouch', 'Start every run with 2 flash grenades. They stun masked Majini too, 3 seconds longer.', 'supply', [item_start(FLASH, 2)], cost=50, tags=['items'],
+         build={'flash_masked': True, 'flash_extra_seconds': 3.0}),
+    perk('supply_incendiary', 'Fire Pouch', 'Start every run with 2 incendiary grenades. They burn like the Incendiary element.', 'supply', [item_start(INCENDIARY, 2)], cost=70, tags=['items'], build={'incendiary_burns': True}),
     perk('supply_spray', 'Medkit', 'Start every run with a first aid spray.', 'supply', [item_start(SPRAY, 1)], cost=80, tags=['items']),
-    perk('supply_ammo', 'Ammo Belt', 'Every kind of ammo stacks 20 percent higher.', 'supply', [], cost=40, tags=['items'], build={'ammo_stack_mult': 1.2}),
+    # 20 -> 50 percent (the Perk Workshop, 2026-11-24: "lets make it a bit bigger and check that it actually does it").
+    perk('supply_ammo', 'Ammo Belt', 'Every kind of ammo stacks 50 percent higher.', 'supply', [], cost=40, tags=['items'], build={'ammo_stack_mult': 1.5}),
     perk('chris_shotgun', 'Shotgun Licence', 'Chris starts with an Ithaca M37 and 12 shells.', 'supply', [item_start(ITHACA), item_start(SHELLS, 12)], ['chris'], cost=150, rarity='rare', tags=['weapon']),
     perk('sheva_smg', 'Close Support', 'Sheva starts with a VZ61 and 60 rounds.', 'supply', [item_start(VZ61), item_start(MG_AMMO, 60)], ['sheva'], cost=150, rarity='rare', tags=['weapon']),
     perk('jill_smg', 'Rapid Response', 'Jill starts with an MP5 and 60 rounds.', 'supply', [item_start(MP5), item_start(MG_AMMO, 60)], ['jill'], cost=150, rarity='rare', tags=['weapon']),
@@ -289,8 +330,9 @@ BUILDS = {
     },
     'sheva_clubbin': {
         'name': 'Night Shopper', 'icon': 'supplies',
-        'summary': '20 percent more supplies, and one free shop reroll at every shop.',
+        'summary': '20 percent more supplies, a free shop reroll, and a Fidelity Card, every third chest a weapon.',
         'supplies_mult': 1.2, 'free_shop_rerolls': 1,  # 1.5 until 2026-11-11 (the economy by the numbers)
+        'charms': [FIDELITY_CARD],  # the Perk Workshop, 2026-11-24
     },
     'sheva_business': {
         'name': 'Expense Account', 'icon': 'credits',
@@ -424,7 +466,7 @@ perks += [
 # Icons the menus show next to each listed perk (configs/icons/<icon>.png, drawn by scripts/make_icons.py).
 ICONS = {
     'chris_veteran': 'medal', 'chris_pocket_grenades': 'grenade', 'sheva_field_training': 'heal',
-    'sheva_flash_tactics': 'flash', 'jill_battle_instinct': 'crosshair', 'wesker_firestarter': 'fire',
+    'sheva_flash_tactics': 'flash', 'jill_battle_instinct': 'crosshair', 'wesker_firestarter': 'syringe',
     'josh_squad_tactics': 'supplies', 'barry_demolition_man': 'explosion', 'rebecca_combat_medic': 'medkit',
     'excella_executive_bonus': 'supplies', 'supply_grenades': 'grenade', 'supply_flash': 'flash',
     'supply_incendiary': 'fire', 'supply_spray': 'medkit', 'supply_ammo': 'ammo', 'chris_shotgun': 'shotgun',

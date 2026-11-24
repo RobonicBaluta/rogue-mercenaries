@@ -243,10 +243,44 @@ Status RunController::GrantPerk(std::string_view perk_id, std::string_view sourc
     // Supply perks: their items go to the adapter's queue (applied at the first arena, or at
     // once when granted mid-run).
     if (caps_.Has(cap::kInventory)) {
+        // A gun the build cannot use (Classic Jill's handguns and launchers, S.T.A.R.S. Wesker's own three; the
+        // Perk Workshop, 2026-11-24) comes as a usable gun of its kind, the build's own list first; without one the
+        // perk's items do not come at all (rounds for a gun the player never holds).
+        const SkinBuild& build = run_.character.build;
+        const auto usable = [&build](const WeaponBaseDef& w) {
+            return build.usable_weapons.Empty() || build.usable_weapons.Allows(w.id, WeaponCategoryName(w.category));
+        };
+        std::int64_t swap_from = -1, swap_to = -1;
+        bool unusable = false;
         for (const EffectDef& ef : def->effects) {
             if (ef.kind != EffectKind::ItemOnRunStart) continue;
+            const auto item = ItemAsGameItem(build, static_cast<std::int64_t>(std::lround(ef.AtStacks(stacks).game_item)));
+            const auto& all = content_->weapons();
+            const auto gun = std::find_if(all.begin(), all.end(), [item](const WeaponBaseDef& w) { return w.game_item >= 0 && w.game_item == item; });
+            if (gun == all.end() || usable(*gun)) continue;
+            const WeaponBaseDef* alt = nullptr;
+            for (const std::string& id : build.usable_weapons.ids) {
+                const WeaponBaseDef* w = content_->FindWeapon(id);
+                if (alt == nullptr && w != nullptr && w->category == gun->category && w->game_item >= 0) alt = w;
+            }
+            for (const WeaponBaseDef& w : all) {
+                if (alt == nullptr && w.category == gun->category && w.game_item >= 0 && !w.build_only && usable(w)) alt = &w;
+            }
+            Event u = MakeEvent(EventType::PerkTriggered);
+            u.Add("source", def->id).Add("trigger", "unusable_gun").Add("weapon", gun->id).Add("given", alt != nullptr ? alt->id : std::string());
+            Emit(std::move(u));
+            if (alt == nullptr) {
+                unusable = true;
+            } else {
+                swap_from = item;
+                swap_to = alt->game_item;
+            }
+        }
+        for (const EffectDef& ef : def->effects) {
+            if (unusable || ef.kind != EffectKind::ItemOnRunStart) continue;
             const EffectParams p = ef.AtStacks(stacks);
-            const auto game_item = ItemAsGameItem(run_.character.build, static_cast<std::int64_t>(std::lround(p.game_item)));
+            auto game_item = ItemAsGameItem(run_.character.build, static_cast<std::int64_t>(std::lround(p.game_item)));
+            if (game_item == swap_from) game_item = swap_to;
             run_.item_grants.push_back(ItemGrant{game_item, std::max(1, static_cast<int>(std::lround(p.amount))), def->id});
             // A gun is one of the run's guns too, as the build's starting gun is: its level, the
             // upgrades and refines, the build's elements and its stats (2026-11-19, the user: "the
@@ -669,6 +703,7 @@ Result<std::string> RunController::ResumeRun() {
             const PerkDef* def = content_->FindPerk(id);
             if (def != nullptr && def->build) ApplyPerkBuild(view.character.build, *def->build);
         }
+        ApplyCharmSpecial(view.character.build);
         return true;
     };
     for (std::size_t i = 0; i < std::max<std::size_t>(r.seats.size(), 1); ++i) {
@@ -1136,6 +1171,14 @@ void RunController::EquipSeat(const CharacterDef& character) {
         const PerkDef* def = content_->FindPerk(id);
         if (def != nullptr && def->build) ApplyPerkBuild(run_.character.build, *def->build);
     }
+    // Charms (CharmDef): one's special fills an empty special slot, and each is handed over (the adapter
+    // puts it in a cell of the grid, with its picture and name).
+    ApplyCharmSpecial(run_.character.build);
+    if (caps_.Has(cap::kInventory)) {
+        for (const CharmDef& charm : run_.character.build.charms) {
+            run_.item_grants.push_back(ItemGrant{charm.game_item, 1, "charm:" + charm.id});
+        }
+    }
 }
 
 // ---- local co-op (ROADMAP M10) -------------------------------------------------------------
@@ -1446,6 +1489,17 @@ KillOutcome RunController::OnEnemyKilled(const KillEvent& kill) {
             ++a.player_kills;
             if (kill.was_melee.value_or(false)) run_.last_melee_time = kill.now;
             ApplyBuildKill(kill, out);
+            // A carried charm's kill stacks (the Uroboros Virus): one more, up to its most.
+            int most = 0;
+            for (const CharmDef* c : CarriedCharmDefs()) {
+                if (!c->kill_stack_stats.empty()) most = std::max(most, c->kill_stack_max);
+            }
+            if (run_.charm_stacks < most) {
+                ++run_.charm_stacks;
+                Event st = MakeEvent(EventType::PerkTriggered, EventLevel::Debug);
+                st.Add("source", "charm").Add("trigger", "kill_stack").Add("stacks", run_.charm_stacks).Add("now", kill.now);
+                Emit(std::move(st));
+            }
             AddKillProcs(kill, weapon, out);
 
             // Kill-streak record (+ legendary window extensions from the killing weapon).
@@ -1572,6 +1626,15 @@ void RunController::OnPlayerDamaged(const DamageEvent& damage) {
     ++a.damage_events;
     if (damage.amount > 0.0) a.damage_taken += damage.amount;
     a.hp_max_seen = std::max(a.hp_max_seen, damage.hp_max);
+    if (damage.amount > 0.0 && run_.charm_stacks > 0) {
+        const auto charms = CarriedCharmDefs();
+        if (std::any_of(charms.begin(), charms.end(), [](const CharmDef* c) { return c->stacks_end_on_hit; })) {
+            Event st = MakeEvent(EventType::PerkTriggered);
+            st.Add("source", "charm").Add("trigger", "stacks_lost").Add("stacks", run_.charm_stacks).Add("now", damage.now);
+            Emit(std::move(st));
+            run_.charm_stacks = 0;
+        }
+    }
     Event e = MakeEvent(EventType::PlayerDamaged);
     e.Add("amount", damage.amount).Add("hp_before", damage.hp_before).Add("hp_after", damage.hp_after)
         .Add("hp_max", damage.hp_max).Add("now", damage.now);
@@ -2169,6 +2232,9 @@ Status RunController::UseSpecial(double now, double cooldown_scale, int slot) {
     const SkinSpecial& sp = run_.character.build.Special(slot);
     RunState::SpecialUse& use = run_.specials[static_cast<std::size_t>(slot)];
     if (!sp.Any()) return Fail(op, ErrorCode::NotEligible, "this build has no special");
+    if (slot == 0 && !run_.character.build.special_charm.empty() && !CharmCarried(run_.character.build.special_charm)) {
+        return Fail(op, ErrorCode::NotEligible, sp.name + " needs its charm in the grid");
+    }
     if (run_.phase != Phase::ArenaActive) return Fail(op, ErrorCode::WrongPhase, "phase is " + std::string(PhaseName(run_.phase)));
     const SpecialState state = Special(now, slot);
     if (state.cooldown_left > 0.0) return Fail(op, ErrorCode::NotEligible, sp.name + " is cooling down");
@@ -2178,7 +2244,7 @@ Status RunController::UseSpecial(double now, double cooldown_scale, int slot) {
     use.ready_at = now + use.cooldown;
     use.used_arena = run_.arena_index;
     ++use.uses;
-    if ((sp.kind == "dash" || sp.kind == "burst") && sp.duration_seconds > 0.0) {
+    if ((sp.kind == "dash" || sp.kind == "burst" || sp.kind == "flip") && sp.duration_seconds > 0.0) {
         run_.invulnerable_until = std::max(run_.invulnerable_until, now + sp.duration_seconds);
     }
     Event e = MakeEvent(EventType::PerkTriggered);
@@ -2499,6 +2565,17 @@ Result<ChestReward> RunController::OpenChest(double now, std::optional<std::stri
             }
         }
     }
+    // A carried charm's chest (the Fidelity Card): every n-th chest opened while it is carried holds a weapon
+    // of at least its rarity.
+    std::optional<Rarity> charm_rarity;
+    for (const CharmDef* c : CarriedCharmDefs()) {
+        if (c->chest_weapon_every <= 0) continue;
+        if (++run_.charm_chests % c->chest_weapon_every == 0) {
+            charm_rarity = ParseRarity(c->chest_weapon_rarity).value_or(Rarity::Common);
+            out.charm = c->name;
+        }
+        break;
+    }
     const double roll = rng.NextDouble();
     bool placed = false;
     // A build whose drops are one item (Safari Chris: mines) gets that item from every chest.
@@ -2514,7 +2591,7 @@ Result<ChestReward> RunController::OpenChest(double now, std::optional<std::stri
             break;
         }
     }
-    if (!placed && roll < eco.chests.weapon_chance) {
+    if (!placed && (charm_rarity || roll < eco.chests.weapon_chance)) {
         std::vector<const WeaponBaseDef*> bases = OfferableWeapons(ctx);
         std::erase_if(bases, [this, &ctx](const WeaponBaseDef* b) {
             return !UsableWeapon(ctx, *b) ||
@@ -2522,9 +2599,9 @@ Result<ChestReward> RunController::OpenChest(double now, std::optional<std::stri
         });
         if (!bases.empty()) {
             const WeaponBaseDef* base = bases[rng.Index(bases.size())];
-            WeaponInstance w = GenerateWeapon(rng, *content_, caps_, base->id,
-                                              RollRarity(rng, ShiftRarityWeights(eco.rewards.rarity_weights, ctx.rarity_shift)),
-                                              NextInstanceId(), BuildElements());
+            Rarity rarity = RollRarity(rng, ShiftRarityWeights(eco.rewards.rarity_weights, ctx.rarity_shift));
+            if (charm_rarity && static_cast<int>(rarity) < static_cast<int>(*charm_rarity)) rarity = *charm_rarity;
+            WeaponInstance w = GenerateWeapon(rng, *content_, caps_, base->id, rarity, NextInstanceId(), BuildElements());
             if (PlaceWeaponItem(w, "chest").ok()) {
                 GrantWeapon(w, "chest");
                 out.weapon_id = base->id;
@@ -2558,6 +2635,7 @@ Result<ChestReward> RunController::OpenChest(double now, std::optional<std::stri
     if (!out.item_id.empty()) e.Add("item", out.item_id).Add("count", out.item_count);
     if (!out.weapon_id.empty()) e.Add("weapon", out.weapon_id);
     if (!out.refined_instance_id.empty()) e.Add("refined", out.refined_instance_id).Add("refined_rarity", out.refined_rarity);
+    if (!out.charm.empty()) e.Add("charm", out.charm);
     Emit(std::move(e));
     return out;
 }
@@ -2566,7 +2644,10 @@ Status RunController::SwapStartingWeapon(std::string_view base_id) {
     if (!run_.active) return Status::Error(ErrorCode::NoActiveRun, "no active run");
     const WeaponBaseDef* base = content_->FindWeapon(base_id);
     if (base == nullptr) return Status::Error(ErrorCode::UnknownId, "unknown weapon '" + std::string(base_id) + "'");
-    if (run_.loadout.weapon_id == base->id) return Status::Success();
+    if (run_.loadout.weapon_id == base->id) {
+        SettleStartingGuns();  // the hands hold the rolled gun (most costumes' pistol): the perks' guns still settle
+        return Status::Success();
+    }
     const std::string previous = run_.loadout.weapon_id;
     std::erase_if(run_.weapons, [&previous](const WeaponInstance& w) { return w.base_id == previous; });
     run_.loadout.weapon_id = base->id;
@@ -2577,7 +2658,96 @@ Status RunController::SwapStartingWeapon(std::string_view base_id) {
     Event e = MakeEvent(EventType::PerkAcquired, EventLevel::Debug);
     e.Add("starting_weapon", base->id).Add("replaced", previous);
     Emit(std::move(e));
+    SettleStartingGuns();
     return Status::Success();
+}
+
+// The Perk Workshop (2026-11-24, the user on Rapid Response: "Check all the weapon perks so the character doesn't
+// start with 2 weapons of the same type and tweak them accordingly, if the character is an expert on that weapon
+// type, then take the normal weapon and give a way better version of the weapon you are giving to them"): a supply
+// perk's gun of the starting gun's kind takes its place, rare, or epic when the build's damage favours that kind
+// (category_damage above 0). Its own gun (Sheva's VZ61 and Close Support's) only becomes the better one.
+void RunController::SettleStartingGuns() {
+    run_.starting_gun_replaced_by.clear();
+    const WeaponBaseDef* start = content_->FindWeapon(run_.loadout.weapon_id);
+    if (start == nullptr) return;
+    const SkinBuild& build = run_.character.build;
+    for (const auto& [perk_id, stacks] : run_.perks) {
+        const PerkDef* def = content_->FindPerk(perk_id);
+        if (def == nullptr || def->category != PerkCategory::Supply) continue;
+        for (const EffectDef& ef : def->effects) {
+            if (ef.kind != EffectKind::ItemOnRunStart) continue;
+            const auto game_item = ItemAsGameItem(build, static_cast<std::int64_t>(std::lround(ef.AtStacks(stacks).game_item)));
+            const WeaponBaseDef* gun = nullptr;
+            for (const WeaponBaseDef& w : content_->weapons()) {
+                if (w.game_item >= 0 && w.game_item == game_item) gun = &w;
+            }
+            if (gun == nullptr || gun->category != start->category) continue;
+            const auto favoured = build.category_damage.find(std::string(WeaponCategoryName(gun->category)));
+            const bool expert = favoured != build.category_damage.end() && favoured->second > 0.0;
+            const Rarity rarity = expert ? Rarity::Epic : Rarity::Rare;
+            const auto held = std::find_if(run_.weapons.begin(), run_.weapons.end(), [gun](const WeaponInstance& w) { return w.base_id == gun->id; });
+            if (held != run_.weapons.end() && static_cast<int>(held->rarity) >= static_cast<int>(rarity)) return;
+            WeaponInstance better = GenerateWeapon(streams_->loot, *content_, caps_, gun->id, rarity,
+                                                   held != run_.weapons.end() ? held->instance_id : NextInstanceId(), BuildElements());
+            if (gun->id != start->id) {
+                std::erase_if(run_.weapons, [start](const WeaponInstance& w) { return w.base_id == start->id; });
+                run_.loadout.weapon_id = gun->id;
+                run_.starting_gun_replaced_by = gun->id;
+            }
+            Event e = MakeEvent(EventType::PerkTriggered);
+            e.Add("source", def->id).Add("trigger", "starting_gun").Add("weapon", gun->id).Add("rarity", RarityName(rarity))
+                .Add("expert", expert).Add("replaced", gun->id != start->id ? start->id : std::string());
+            Emit(std::move(e));
+            GrantWeapon(std::move(better), def->id);
+            return;  // one gun of each kind
+        }
+    }
+}
+
+// ---- Charms (CharmDef) ----------------------------------------------------------------------
+
+std::vector<const CharmDef*> RunController::CarriedCharmDefs() const {
+    std::vector<const CharmDef*> out;
+    if (!run_.active) return out;
+    for (const CharmDef& c : run_.character.build.charms) {
+        if (std::find(run_.carried_charms.begin(), run_.carried_charms.end(), c.id) != run_.carried_charms.end()) out.push_back(&c);
+    }
+    return out;
+}
+
+void RunController::SetCarriedCharms(std::vector<std::string> ids) {
+    if (!run_.active) return;
+    std::sort(ids.begin(), ids.end());
+    if (ids == run_.carried_charms) return;
+    std::string list;
+    for (const std::string& id : ids) list += (list.empty() ? "" : ",") + id;
+    Event e = MakeEvent(EventType::PerkTriggered, EventLevel::Debug);
+    e.Add("source", "charm").Add("trigger", "carried").Add("charms", list);
+    Emit(std::move(e));
+    run_.carried_charms = std::move(ids);
+}
+
+bool RunController::CharmCarried(std::string_view id) const {
+    return run_.active && std::find(run_.carried_charms.begin(), run_.carried_charms.end(), id) != run_.carried_charms.end();
+}
+
+RunStats RunController::CharmStats() const {
+    RunStats out;
+    if (run_.charm_stacks <= 0) return out;
+    for (const CharmDef* c : CarriedCharmDefs()) {
+        for (const auto& [stat, amount] : c->kill_stack_stats) {
+            if (double* field = out.Field(stat)) *field += amount * std::min(run_.charm_stacks, c->kill_stack_max);
+        }
+    }
+    return out;
+}
+
+bool RunController::BreaksGrabs() const {
+    if (!run_.active) return false;
+    if (run_.character.build.break_grabs) return true;
+    const auto charms = CarriedCharmDefs();
+    return std::any_of(charms.begin(), charms.end(), [](const CharmDef* c) { return c->breaks_grabs; });
 }
 
 std::vector<std::int64_t> RunController::RestockWeaponItems() const {

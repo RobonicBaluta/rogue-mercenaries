@@ -200,6 +200,10 @@ struct PlayerSeat {
     std::optional<double> player_hp;
     std::optional<double> player_hp_max;
     std::vector<HealRequest> heal_requests;
+    std::vector<std::string> carried_charms;
+    int charm_chests = 0;
+    int charm_stacks = 0;
+    std::string starting_gun_replaced_by;
 };
 
 /// Complete temporary state of one run. Rebuilt from scratch by StartRun.
@@ -269,6 +273,13 @@ struct RunState {
     bool clamp_logged = false;  // first clamped hit per arena is always logged
 
     std::vector<HealRequest> heal_requests;
+    // Charms (CharmDef): the ones the player carries now (the adapter's report), chests opened while one
+    // with chest_weapon_every was carried, and the kill stacks one with kill_stack_stats holds.
+    std::vector<std::string> carried_charms;
+    int charm_chests = 0;
+    int charm_stacks = 0;
+    // A supply perk's gun that took the starting gun's place (RunController::StartingGunReplacedBy).
+    std::string starting_gun_replaced_by;
     std::string end_reason;
 
     // M10 local co-op. One player: `seats` is empty. Two or more: seats[i] holds seat i's own
@@ -317,6 +328,10 @@ inline void SwapSeat(RunState& run, PlayerSeat& seat) {
     swap(run.player_hp, seat.player_hp);
     swap(run.player_hp_max, seat.player_hp_max);
     swap(run.heal_requests, seat.heal_requests);
+    swap(run.carried_charms, seat.carried_charms);
+    swap(run.charm_chests, seat.charm_chests);
+    swap(run.charm_stacks, seat.charm_stacks);
+    swap(run.starting_gun_replaced_by, seat.starting_gun_replaced_by);
 }
 
 struct PerkView {

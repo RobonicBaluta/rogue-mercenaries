@@ -85,14 +85,15 @@ for item, picture in EXTRA.items():
 
 pictures, folders = {}, {}
 for item, picture in sorted(table.items()):
-    if item >> 8 != 1 or picture not in rects:
-        continue  # guns (and grenades) only: the elements are a gun's
+    if item >> 8 not in (1, 4) or picture not in rects:
+        continue  # guns and grenades (the elements' looks), treasures (the charms stand for them)
     pictures[f'0x{item:04X}'] = rects[picture]
     if item in models:
         folders[f'0x{item:04X}'] = models[item]
 out = {
-    '_comment': 'Written by scripts/item_pictures.py: each gun\'s 102x102 picture in the item picture sheet, '
-                'as x0 y0 x1 y1 in pixels. gun_looks.cpp recolours it for the gun\'s element.',
+    '_comment': 'Written by scripts/item_pictures.py: each gun\'s and treasure\'s 102x102 picture in the item picture '
+                'sheet, as x0 y0 x1 y1 in pixels. gun_looks.cpp recolours a gun\'s for its element and draws a '
+                'charm\'s picture over its treasure\'s.',
     'texture': TEXTURE,
     'width': 1024,
     'height': 1760,
@@ -103,4 +104,4 @@ out = {
 with open(args.out, 'w', encoding='utf-8', newline='\n') as f:
     json.dump(out, f, indent=1)
     f.write('\n')
-print(len(pictures), 'gun pictures,', len(folders), 'model folders ->', args.out)
+print(len(pictures), 'gun and treasure pictures,', len(folders), 'model folders ->', args.out)

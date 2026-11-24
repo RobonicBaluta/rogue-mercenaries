@@ -117,35 +117,48 @@
     },
     {
       "id": "wesker_firestarter",
-      "name": "Firestarter",
-      "description": "Wesker. Every 5 kills hand you an incendiary grenade.",
+      "name": "Perfection",
+      "description": "Wesker. The Uroboros Virus, each kill makes him stronger and faster, up to 10. A hit clears it.",
       "category": "style",
       "rarity": "common",
       "tags": [
         "items"
       ],
       "max_stacks": 1,
-      "effects": [
-        {
-          "kind": "item_on_kill",
-          "game_item": 263,
-          "amount": 1,
-          "every_kills": 5
-        }
-      ],
+      "effects": [],
       "characters": [
         "wesker"
       ],
-      "icon": "fire"
+      "build": {
+        "charms": [
+          {
+            "id": "uroboros_virus",
+            "name": "Uroboros Virus",
+            "game_item": "0x0422",
+            "picture": "uroboros_virus.png",
+            "description": "While it is in his grid, every kill adds a stack, up to 10: 3 percent more damage, 2 percent less damage taken, 1 percent more critical chance and 1.5 percent more speed each. A hit he takes clears them.",
+            "kill_stack_stats": {
+              "damage": 0.03,
+              "defense": 0.02,
+              "crit": 0.01,
+              "move_speed": 0.015
+            },
+            "kill_stack_max": 10,
+            "stacks_end_on_hit": true
+          }
+        ]
+      },
+      "icon": "syringe"
     },
     {
       "id": "josh_squad_tactics",
       "name": "Squad Tactics",
-      "description": "Josh. Every kill gives 1 extra supply.",
+      "description": "Josh. A supply a kill, a hand grenade every 8. His grenades burst into four bomblets.",
       "category": "style",
       "rarity": "common",
       "tags": [
-        "supplies"
+        "supplies",
+        "items"
       ],
       "max_stacks": 1,
       "effects": [
@@ -153,11 +166,22 @@
           "kind": "supplies_on_kill",
           "amount": 1,
           "chance": 1.0
+        },
+        {
+          "kind": "item_on_kill",
+          "game_item": 262,
+          "amount": 1,
+          "every_kills": 8
         }
       ],
       "characters": [
         "josh"
       ],
+      "build": {
+        "cluster_bomblets": 4,
+        "cluster_damage_fraction": 0.5,
+        "cluster_radius_m": 2.5
+      },
       "icon": "supplies"
     },
     {
@@ -334,7 +358,7 @@
     {
       "id": "sheva_scavenger",
       "name": "Scavenger",
-      "description": "Sheva. Ammo and herbs she picks up become ammo for the gun in her hands.",
+      "description": "Sheva. Pickups become ammo for her gun. All guns dry, rounds come by themselves, fewer for big guns.",
       "category": "style",
       "rarity": "rare",
       "tags": [
@@ -347,7 +371,37 @@
       ],
       "unlock_cost_credits": 150,
       "build": {
-        "drops_as_held_ammo": true
+        "drops_as_held_ammo": true,
+        "empty_ammo_regen": {
+          "handgun": [
+            6,
+            10
+          ],
+          "smg": [
+            8,
+            30
+          ],
+          "machine_gun": [
+            10,
+            20
+          ],
+          "shotgun": [
+            12,
+            4
+          ],
+          "rifle": [
+            15,
+            3
+          ],
+          "magnum": [
+            18,
+            2
+          ],
+          "launcher": [
+            25,
+            1
+          ]
+        }
       },
       "icon": "ammo"
     },
@@ -744,7 +798,7 @@
     {
       "id": "ada_grapple",
       "name": "Grapple Gun",
-      "description": "Ada. She slips out of every grab at once, and every melee kill pays 1 supply. Heals 20 percent smaller.",
+      "description": "Ada. Her grapple gun, no grab holds her and the special flips her clear. A supply a melee kill.",
       "category": "style",
       "rarity": "rare",
       "tags": [
@@ -763,8 +817,24 @@
       ],
       "unlock_cost_credits": 150,
       "build": {
-        "break_grabs": true,
-        "heal_mult": 0.8
+        "charms": [
+          {
+            "id": "grapple_gun",
+            "name": "Grapple Gun",
+            "game_item": "0x0423",
+            "picture": "grapple_gun.png",
+            "description": "While it is in her grid, she slips out of every grab at once, and the special button flips her clear of the nearest enemy, kicking those around her.",
+            "breaks_grabs": true,
+            "special": {
+              "kind": "flip",
+              "name": "Flip",
+              "icon": "lunge",
+              "cooldown_seconds": 6,
+              "duration_seconds": 0.7,
+              "power": 350
+            }
+          }
+        ]
       },
       "icon": "chain"
     },
@@ -850,7 +920,7 @@
     {
       "id": "supply_grenades",
       "name": "Grenade Pouch",
-      "description": "Start every run with 2 hand grenades.",
+      "description": "Start every run with 2 hand grenades. Hand grenades hit 50 percent harder, 2 m wider.",
       "category": "supply",
       "rarity": "common",
       "tags": [
@@ -865,12 +935,17 @@
         }
       ],
       "unlock_cost_credits": 60,
+      "build": {
+        "grenade_damage": 0.5,
+        "grenade_blast_m": 2.0,
+        "grenade_blast_fraction": 0.5
+      },
       "icon": "grenade"
     },
     {
       "id": "supply_flash",
       "name": "Flash Pouch",
-      "description": "Start every run with 2 flash grenades.",
+      "description": "Start every run with 2 flash grenades. They stun masked Majini too, 3 seconds longer.",
       "category": "supply",
       "rarity": "common",
       "tags": [
@@ -885,12 +960,16 @@
         }
       ],
       "unlock_cost_credits": 50,
+      "build": {
+        "flash_masked": true,
+        "flash_extra_seconds": 3.0
+      },
       "icon": "flash"
     },
     {
       "id": "supply_incendiary",
       "name": "Fire Pouch",
-      "description": "Start every run with 2 incendiary grenades.",
+      "description": "Start every run with 2 incendiary grenades. They burn like the Incendiary element.",
       "category": "supply",
       "rarity": "common",
       "tags": [
@@ -905,6 +984,9 @@
         }
       ],
       "unlock_cost_credits": 70,
+      "build": {
+        "incendiary_burns": true
+      },
       "icon": "fire"
     },
     {
@@ -930,7 +1012,7 @@
     {
       "id": "supply_ammo",
       "name": "Ammo Belt",
-      "description": "Every kind of ammo stacks 20 percent higher.",
+      "description": "Every kind of ammo stacks 50 percent higher.",
       "category": "supply",
       "rarity": "common",
       "tags": [
@@ -940,7 +1022,7 @@
       "effects": [],
       "unlock_cost_credits": 40,
       "build": {
-        "ammo_stack_mult": 1.2
+        "ammo_stack_mult": 1.5
       },
       "icon": "ammo"
     },

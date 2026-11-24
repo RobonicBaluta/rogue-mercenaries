@@ -14,7 +14,7 @@ The user's picks, as pasted ("Next, in this order"); their notes in quotes.
      - **What it does (gun_looks.cpp):**
        - A gun's picture takes its element's colour and badge. The picture is a 102x102 cut of `id\jpn\cockpit\cp05_360_NOMIP_BM`, which the inventory, the rings and ORGANIZE draw from. Each DXT block's two colours move toward the element's at their own brightness: 45 percent, 60 for an evolved element (rm/dxt.h). The badge sits in the top right corner (`configs/element_badges`, made by `scripts/element_badges.py`: flame, bolt, snowflake, blast, drop; evolved ones glow).
        - The model's colour maps (`pawn\wp\wpNN\model\*_BM`) take the colour at 30 percent, every mip level.
-       - In hand, the element's effect starts on the gun's unit (uWpNN) every 2 s, at joint 0 and scale 0.35 (`DriveGunAuras`). It plays element_effects `gun_<element>`, else the element's hit look. The flamethrower keeps its stream, and Explosive has no effect unless one is set.
+       - *Taken out the same day (the user: "effects on weapons are too much, they obstruct visibility, just change the textures to a hue").* In hand, the element's effect starts on the gun's unit (uWpNN) every 2 s, at joint 0 and scale 0.35 (`DriveGunAuras`). It plays element_effects `gun_<element>`, else the element's hit look. The flamethrower keeps its stream, and Explosive has no effect unless one is set.
        - Textures are found by path in the resource manager's table (textures.cpp). The game's bytes go back when the run's guns change or the run ends.
        - adapter.json `gun_looks` turns each part off and sets the strengths.
      - **Where each picture sits:** `configs/item_pictures.json`, from `scripts/item_pictures.py`. The script reads the item box layout's 119 `item_NNN` rects and the executable's item box table (0x01128C70), and also records each gun's model folder. It covers all 40 gun items, including every weapons.json gun.
@@ -42,6 +42,38 @@ The user's picks, as pasted ("Next, in this order"); their notes in quotes.
 Later: infinite ammo as a reward; the second Jill, the gunner (uEm83); boss music, or your own tracks; new items made from the game's own.
 
 ## After 0.3.0a (a closed beta)
+
+- [~] Enemies' status by colour; the elements' lights off (2026-11-24). The user: "the element light on them is too much, just change the hue to see they are still affected and that's it + the element light stays even if it doesn't do anything on them anymore, like for example when an enemy is done burning the element stays". Coded, not played.
+  - `DriveEnemyTints` (5 times a second): a burning, frozen or poisoned enemy's own materials take a tint (orange, icy blue, green), an elite's a faint one of its element, put back the moment the status ends or it dies.
+    - Each material is a cMaterialStandard in the unit's list (+0xAC8, count +0xACC). Its colour at +0x30 is multiplied; this is the field Uroboros Aheri's death writes its dead colour to (research/re5-engine-map.md "A unit's own materials").
+    - A unit that is gone is dropped without a write.
+  - `PlayLook` and the elites' periodic glow are off unless adapter.json `element_lights` is true. Shock's lightning, the elites' warnings (the Shock elite's sparks, the volatile one's) and the poison clouds stay.
+  - The gun's effect in hand is removed (`DriveGunAuras`, gun_looks' `aura` settings).
+  - Not known until played: that the colour at +0x30 is a multiplier (the log names the game's first value), and that the materials are the unit's own, not its class's.
+
+- [~] The Perk Workshop picks (2026-11-24, pasted from https://claude.ai/artifact/B9ANXWvXKXMervmK2SdGpj). Coded and unit-tested, not played (test DLL on the PC over 0.3.0a; the version is the user's to name).
+  - **Core:** rm::CharmDef (a build's or a perk's `charms`: handed over at the run's start as their treasure, ApplyCharmSpecial, RunController::SetCarriedCharms / CharmCarried / CharmStats / BreaksGrabs, the Fidelity Card in OpenChest, the stacks in OnEnemyKilled and OnPlayerDamaged, CharmStats in the damage maths), the build fields grenade_*, cluster_*, incendiary_burns, flash_*, empty_ammo_regen (merged from perks), the "flip" special, and SettleStartingGuns at SwapStartingWeapon (a supply gun of the starting gun's kind replaces it, rare or epic; GrantPerk gives a usable gun of the kind for one the build cannot use, else none of that perk's items). Tests: test_charms.cpp (7 cases, the shipped picks among them); a negative control broke the stacks' clear and the card's count, both caught.
+  - **Adapter:**
+    - charms: GiveItem puts a treasure in a free grid cell; UpdateCharms reports the carried ones, gives their pictures (gun_looks own pictures, configs/charms from scripts/charm_pictures.py) and names (nativemenu::SetItemName: mes_item, the record's +0x40).
+    - The grab check is RunController::BreaksGrabs; speed adds CharmStats().move_speed; the card's chest names it in the notice.
+    - StartFlip: the special's dodge toward a point behind her, away from the nearest enemy, strikes within 2.5 m.
+    - Grenades: GrenadeHit (uWp06 damage, the wider blast, the bomblets; uWp07 burns); DriveFlashPouch; DriveEmptyAmmo; ApplyBuildStacks grows the slots already there; SettleStartingGunSwaps (the hands take the new gun, then the old one goes).
+  - **Not known until played:**
+    - whether a treasure sits and stays in a grid cell (and in the item box between arenas), and whether its name is the record's +0x40 message;
+    - which way the avoid move flips Ada;
+    - what the bomblets look like (the bombs' explosion when loaded, else the incendiary fire);
+    - the Flash Pouch needs at least one unmasked Majini stunned to know where it went off.
+  The plan, with my readings of what was left open:
+  1. Night Shopper (Clubbin Sheva): the **Fidelity Card**, a charm that takes a cell. While she carries it, every 3rd chest she opens holds a weapon, rare or better. Its picture is a golden card drawn in the item sheet's style (the door keycards are key items, whose pictures no Mercenaries archive loads), painted over a treasure's picture (treasures never appear in a run).
+  2. Firestarter (Wesker) becomes **Perfection** ("Completely change it to. Perfection"): the **Uroboros Virus** charm. Each kill while carried adds a stack (damage, defense, critical chance, move speed), and a hit he takes clears them. The incendiary grenades go.
+  3. Squad Tactics (Josh): keeps its supply a kill. His hand grenades are **cluster grenades**: each splits into bomblets that go off a moment later around it and hurt enemies only. A hand grenade every 8 kills.
+  4. Scavenger (Sheva): with every gun empty and no ammo for any of them, ammo for the gun in hand comes after a wait. The bigger the class, the longer the wait and the fewer the rounds.
+  5. Grapple Gun (Ada): no heal penalty. The **Grapple Gun** charm: while carried, she slips out of grabs, and the special button flips her away from the nearest threat (her own dodge, untouchable for it). The enemies she leaves take damage and stagger.
+  6. Grenade Pouch: hand grenades hit harder and wider.
+  7. Flash Pouch: masked Majini are stunned too, and every stun lasts longer.
+  8. Fire Pouch: an incendiary grenade's hits burn like the Incendiary element.
+  9. Ammo Belt: 50 percent bigger stacks (was 20), and the arena's existing ammo slots grow too. Before, only slots made later did, because the stacks were raised after the arena's inventory existed.
+  10. Rapid Response and every supply perk that gives a weapon: a run never starts with two guns of one kind. The perk's gun replaces the starting gun of its kind, at a better rarity when the build favours that kind (rare, epic for an expert). A gun the build cannot use is not given; that perk's gun is replaced with an allowed one.
 
 - [ ] Female Majini and burst heads (2026-11-24). Coded, not played (test DLL `22F871B62C016AF5` on the PC over 0.3.0a).
   - **Female Majini.** The user: "female majini, they don't get affected by stuff, flamethrower doesn't stagger or they don't do the burn animation". They are uEm11 (Public Assembly), and the mod played its reactions on uEm10, uEm12 and uEm14 only: the 2026-11-08 test never saw a uEm11 come out. On 2026-11-23 the PC's log showed two of them still walking at zero health after the flame. uEm11 joins `kReactionClasses`:

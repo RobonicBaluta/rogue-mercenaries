@@ -158,9 +158,20 @@
           "build": {
             "name": "Night Shopper",
             "icon": "supplies",
-            "summary": "20 percent more supplies, and one free shop reroll at every shop.",
+            "summary": "20 percent more supplies, a free shop reroll, and a Fidelity Card, every third chest a weapon.",
             "supplies_mult": 1.2,
-            "free_shop_rerolls": 1
+            "free_shop_rerolls": 1,
+            "charms": [
+              {
+                "id": "fidelity_card",
+                "name": "Fidelity Card",
+                "game_item": "0x0419",
+                "picture": "fidelity_card.png",
+                "description": "While it is in her grid, every third chest she opens holds a weapon, rare or better.",
+                "chest_weapon_every": 3,
+                "chest_weapon_rarity": "rare"
+              }
+            ]
           },
           "unlock_kind": "runs_completed_as",
           "unlock_character": "sheva",

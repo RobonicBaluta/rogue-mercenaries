@@ -66,6 +66,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $modFiles 'configs\icons') 
 New-Item -ItemType Directory -Force -Path (Join-Path $modFiles 'configs\hud_names') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $modFiles 'configs\portraits') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $modFiles 'configs\element_badges') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $modFiles 'configs\charms') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $docs 'licenses') | Out-Null
 
 # What goes into the game folder.
@@ -120,6 +121,9 @@ Get-ChildItem -LiteralPath (Join-Path $repoRoot 'configs\portraits') -Filter '*.
 # The element badges on an element gun's inventory picture (scripts/element_badges.py; gun_looks.cpp).
 Get-ChildItem -LiteralPath (Join-Path $repoRoot 'configs\element_badges') -Filter '*.png' -File |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $modFiles 'configs\element_badges') }
+# The charms' pictures, drawn over the treasures they stand for (scripts/charm_pictures.py; gun_looks.cpp).
+Get-ChildItem -LiteralPath (Join-Path $repoRoot 'configs\charms') -Filter '*.png' -File |
+    ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $modFiles 'configs\charms') }
 
 # Text files: Windows line endings, the version filled in.
 function Write-Text([string]$text, [string]$dst, [string]$version) {

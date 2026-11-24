@@ -50,7 +50,7 @@ struct WeaponFilter {
 /// A build's special move, used with a button combo during an arena (the adapter reads the
 /// input and performs it; the core keeps its cooldown and availability).
 struct SkinSpecial {
-    std::string kind;              // "dash", "dual_smg", "backup", "burst", "element_pick" (the tester); empty = none
+    std::string kind;              // "dash", "dual_smg", "backup", "burst", "element_pick" (the tester), "flip"; empty = none
     std::string name;              // HUD label
     std::string icon;              // icons/<icon>.png
     double cooldown_seconds = 0.0;
@@ -58,6 +58,35 @@ struct SkinSpecial {
     double power = 0.0;            // dash: metres; dual_smg, burst: damage per enemy (per pulse)
     double duration_seconds = 0.0; // dash, burst: invulnerability; dual_smg: burst length
     [[nodiscard]] bool Any() const { return !kind.empty(); }
+};
+
+/// A charm (the user's Perk Workshop picks, 2026-11-24): an item that takes a cell of the grid and
+/// acts while the player carries it (the adapter reports what is carried, RunController::SetCarriedCharms).
+/// The game holds it as `game_item`, a treasure no run ever hands out; the adapter draws `picture` over
+/// that treasure's picture and gives it `name`. A skin's build or a perk's brings it; it is handed over
+/// when the run starts.
+struct CharmDef {
+    std::string id;                    // "fidelity_card"
+    std::string name;                  // "Fidelity Card"
+    std::string description;
+    std::int64_t game_item = -1;       // a treasure (category 4)
+    std::string picture;               // configs\charms\<file>.png, 102x102
+    int chest_weapon_every = 0;        // every n-th chest opened while carried holds a weapon
+    std::string chest_weapon_rarity;   // ... of at least this rarity (empty: any)
+    /// Each of the player's kills while carried adds a stack (up to kill_stack_max); each stack adds
+    /// these run stats ("damage", "defense", "crit", "move_speed").
+    StringMap<double> kill_stack_stats;
+    int kill_stack_max = 0;
+    bool stacks_end_on_hit = false;    // a hit the player takes clears the stacks
+    bool breaks_grabs = false;         // while carried, a grab is broken at once (as SkinBuild::break_grabs)
+    SkinSpecial special;               // usable while carried, on the special's button when the build has none
+};
+
+/// Rounds that come by themselves when every gun the player carries is empty and none of their
+/// rounds is in the grid (Scavenger): for the gun in hand's category, after `seconds`.
+struct AmmoRegen {
+    double seconds = 0.0;
+    int rounds = 0;
 };
 
 /// A skin's build (configs/characters.json skin "build", ROADMAP M8): rules a run of that skin
@@ -130,6 +159,22 @@ struct SkinBuild {
     /// The damage explosions do to the player (the adapter: a hit by no character, a bomb's, a grenade's,
     /// a barrel's, a rocket's), times this (Safari Chris: 0.5; "he should also get less damage from explosions").
     double explosion_damage_mult = 1.0;
+    /// Hand grenades (the adapter tells their hits by the grenade's unit, uWp06; the Perk Workshop's
+    /// Grenade Pouch and Squad Tactics): this much more damage, a wider blast as the bombs' (mine_blast_*),
+    /// and cluster_bomblets bomblets that go off around it a moment later, each cluster_damage_fraction of
+    /// its biggest hit to the enemies within cluster_radius_m (never to a player).
+    double grenade_damage = 0.0;
+    double grenade_blast_m = 0.0;
+    double grenade_blast_fraction = 0.0;
+    int cluster_bomblets = 0;
+    double cluster_damage_fraction = 0.0;
+    double cluster_radius_m = 0.0;
+    bool incendiary_burns = false;     // an incendiary grenade's hits burn as the Incendiary element (Fire Pouch)
+    bool flash_masked = false;         // a flash grenade stuns the masked Majini too (Flash Pouch)
+    double flash_extra_seconds = 0.0;  // ... and every stun it makes lasts this much longer
+    /// Weapon category -> the rounds that come when everything is empty (Scavenger; the adapter).
+    StringMap<AmmoRegen> empty_ammo_regen;
+    std::vector<CharmDef> charms;      // handed over when the run starts
     bool break_grabs = false;        // a grab is broken at once: the grabber's own grab is ended (the adapter's families)
     /// Base id the shop always offers, with no unlock, until the run holds it (Heavy Metal's
     /// Gatling), at shop_weapon_price supplies (0: the common weapon price).
@@ -150,6 +195,7 @@ struct SkinBuild {
     WeaponFilter infinite_ammo;
     SkinSpecial special;
     SkinSpecial special_2;  // a second special on its own button (Wesker's burst)
+    std::string special_charm;  // the charm whose special `special` is (ApplyCharmSpecial): usable while it is carried
     [[nodiscard]] const SkinSpecial& Special(int slot) const { return slot == 1 ? special_2 : special; }
     [[nodiscard]] bool Uncapped(std::string_view base_id, std::string_view category) const {
         return !uncapped_upgrades.Empty() && uncapped_upgrades.Allows(base_id, category);
@@ -263,5 +309,7 @@ CharacterDef ApplySkin(const CharacterDef& def, const SkinDef& skin);
 /// Being): category damage, melee damage and rarity shift add; health, heals, supplies and stack
 /// sizes multiply; filters, conversions and flags join. Name, icon, specials and weapons stay.
 void ApplyPerkBuild(SkinBuild& build, const SkinBuild& perk);
+/// A build without a special takes the first of its charms' (special_charm names that charm).
+void ApplyCharmSpecial(SkinBuild& build);
 
 }  // namespace rm

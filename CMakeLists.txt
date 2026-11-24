@@ -120,6 +120,7 @@ if(RM_BUILD_TESTS)
         tests/test_rarity.cpp
         tests/test_coop.cpp
         tests/test_dxt.cpp
+        tests/test_charms.cpp
     )
     target_link_libraries(rm_tests PRIVATE rm_core rm_json rm_catch2)
     target_compile_definitions(rm_tests PRIVATE RM_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

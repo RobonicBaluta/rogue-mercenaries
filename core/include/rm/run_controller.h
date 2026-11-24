@@ -289,6 +289,7 @@ struct ChestReward {
     std::string refined_instance_id;  // a gun refined one tier up (the rarity remake), if any
     std::string refined_name;
     std::string refined_rarity;       // the tier it reached
+    std::string charm;         // a charm made it hold a weapon (CharmDef::chest_weapon_every): its name
     int number = 0;            // chests opened this run, this one included
 };
 
@@ -462,6 +463,20 @@ public:
     /// (a dash build's stronger moves recover longer). `slot` 1 is the build's special_2, with
     /// its own cooldown and arena limit.
     Status UseSpecial(double now, double cooldown_scale = 1.0, int slot = 0);
+
+    // ---- Charms (CharmDef; the Perk Workshop's picks, 2026-11-24) ----
+    /// The adapter's report: the charms (CharmDef ids) the active seat's player carries now.
+    void SetCarriedCharms(std::vector<std::string> ids);
+    [[nodiscard]] bool CharmCarried(std::string_view id) const;
+    /// What the carried charms' kill stacks add to the run stats now (damage, defense, crit, move_speed).
+    [[nodiscard]] RunStats CharmStats() const;
+    [[nodiscard]] int CharmStacks() const { return run_.charm_stacks; }
+    /// A grab is broken at once: the build's own rule, or a carried charm's.
+    [[nodiscard]] bool BreaksGrabs() const;
+    /// The gun a supply perk gave in place of the starting gun of its kind (SwapStartingWeapon; the
+    /// Perk Workshop's "doesn't start with 2 weapons of the same type"): the adapter puts it in the
+    /// hands and takes the starting gun away. Empty: none.
+    [[nodiscard]] const std::string& StartingGunReplacedBy() const { return run_.starting_gun_replaced_by; }
     [[nodiscard]] bool Invulnerable(double now) const { return run_.active && now < run_.invulnerable_until; }
     /// The current arena's enemy threat level (economy enemy_threat; 0 without a director or levels).
     [[nodiscard]] int ArenaThreatLevel() const { return director_ ? director_->threat_level() : 0; }
@@ -626,6 +641,10 @@ public:
     [[nodiscard]] const std::optional<RunSummary>& last_summary() const { return last_summary_; }
 
 private:
+    /// The active seat's carried charms, as the build defines them.
+    [[nodiscard]] std::vector<const CharmDef*> CarriedCharmDefs() const;
+    /// A supply perk's gun of the starting gun's kind takes its place, better (StartingGunReplacedBy).
+    void SettleStartingGuns();
     // The ladder (EconomyConfig::Ladder): what the profile has beaten and opened.
     [[nodiscard]] bool Beaten(std::string_view key) const;
     // The rarity remake's refines: a refine reward added to the offer; one for the shop.

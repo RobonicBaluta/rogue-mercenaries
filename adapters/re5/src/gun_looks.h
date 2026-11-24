@@ -17,7 +17,7 @@ struct IDirect3DDevice9;
 // badge's blocks are encoded again. Where each gun's picture sits and its model's folder:
 // configs\item_pictures.json (scripts/item_pictures.py). The game's bytes go back when the run's
 // guns change or the run ends; a texture the game loads again is its own again. Nothing on disk
-// changes. The element's effect on the gun in hand is mod.cpp's (DriveGunAuras).
+// changes.
 namespace rmre5::gunlooks {
 
 struct Gun {
@@ -40,6 +40,14 @@ void SetOptions(const Options& options);
 /// Mod tick: the guns that show their element now, the first player's first (a picture two guns
 /// share shows the first's). Empty: every look is the game's own.
 void SetWanted(std::vector<Gun> guns);
+/// An item's picture of its own (a charm's, over the treasure it stands for; configs\charms): its PNG, the
+/// size of the item's cut (102x102), drawn in place of the game's while wanted.
+struct Picture {
+    std::uint32_t item = 0;
+    std::filesystem::path png;
+};
+/// Mod tick: the items that show a picture of their own now. Empty: none.
+void SetPictures(std::vector<Picture> pictures);
 /// The game's thread, in the overlay's frame: finds the textures (once a second while there is
 /// something to show or put back), writes and puts back.
 void OnDraw(IDirect3DDevice9* device);

@@ -141,9 +141,24 @@ PLAY
       end when a boss goes down for its next phase), and Jill and Wesker flinch when the
       flame takes a share of their health in one go.
     - New in 0.3.0a: a gun with an element shows it. Its picture in the inventory takes
-      the element's colour and badge (flame, bolt, snowflake, blast, drop), its model
-      takes the colour, and in your hands it gives off its element's effect. "gun_looks"
-      in adapter.json turns each part off or makes it stronger (README.md).
+      the element's colour and badge (flame, bolt, snowflake, blast, drop), and its model
+      takes the colour. "gun_looks" in adapter.json turns each part off or makes it
+      stronger (README.md).
+    - New: an enemy shows its status by colour: orange while it burns, icy blue while
+      frozen, green while poisoned, back to normal when it ends; an elite keeps a faint
+      tint of its element. The effects that played on them are off ("element_lights":
+      true in adapter.json brings them back).
+    - New: charms, items that take a cell of your grid and work while you carry them.
+      Clubbin' Sheva's Fidelity Card (every third chest a rare weapon or better),
+      Wesker's Perfection, the Uroboros Virus (kills make him stronger, a hit clears
+      it), Ada's Grapple Gun (no grab holds her, the special button flips her clear).
+    - New: Squad Tactics' hand grenades burst into four bomblets that hurt enemies only;
+      the Grenade Pouch's grenades hit harder and wider, the Flash Pouch's stun the
+      masked Majini too and for longer, the Fire Pouch's burn like the element; the Ammo
+      Belt's stacks are 50 percent larger, the first ones too; Scavenger's guns refill a
+      little by themselves when everything is empty.
+    - New: a Supply perk's gun of your starting gun's kind takes its place, better, so
+      no run starts with two guns of one kind.
     - A rocket launcher, once bought, comes back at the start of every arena (into the
       storage if your grid is full). Selling it gives it up for good.
     - What does not fit in your nine cells waits in the storage of ORGANIZE INVENTORY.
