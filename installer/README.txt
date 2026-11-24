@@ -182,6 +182,10 @@ PLAY
     - New in 0.3.0a: Tribal Sheva's Quiver heals on kills only (the longbow takes no ammo
       item, so the arrows it handed out did nothing).
     - New in 0.3.0a: your progress is saved without the short pause each save made.
+    - New in 0.3.0a: the town's women Majini (Public Assembly) burn, freeze, stagger and
+      fly from the elements and the flamethrower like the men.
+    - New in 0.3.0a: a head your shot bursts is always a kill: the Majini no longer grows
+      a Plaga from it and fights on.
     - Dying or beating the run's last boss ends the run and banks your Credits.
 
 TWO PLAYERS (SPLIT SCREEN) - NEW IN ALPHA.28, MADE PLAYABLE IN ALPHA.29 AND ALPHA.30
