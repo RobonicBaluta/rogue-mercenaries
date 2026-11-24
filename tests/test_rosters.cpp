@@ -466,6 +466,7 @@ TEST_CASE("the shipped dogs: a guest from the Bridge, from level 2, in every are
     const std::optional<MapEnemy> dog = GuestEntry(*r.content, "uEm30");
     REQUIRE(dog);
     CHECK_FALSE(dog->special);
+    CHECK(dog->max_alive == 3);  // a pack, not a crowd (the playtest: "too many dogs at the same time")
     for (const int stage : {104, 500}) {
         const MapDef* m = r.content->FindMapByStage(stage);
         REQUIRE(m != nullptr);

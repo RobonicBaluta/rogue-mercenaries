@@ -163,6 +163,19 @@ constexpr std::uintptr_t kFnCharSetMotion = 0x0084CFF0;
 constexpr std::uintptr_t kDtiMotionList = 0x0124B574;  // rMotionList
 constexpr std::uintptr_t kDtiEffectList = 0x0124ABE0;  // rEffectList (build/dti_all.txt)
 constexpr std::uintptr_t kDtiTexture = 0x0124A7E4;     // rTexture (build/dti_all.txt)
+// A material's colour map and normal map setters (cMaterialStandard; thiscall (texture), ret 4): each holds the new
+// texture and lets the old one go; the current ones at +0x24 and +0xD0. The game's ice look (uEnemy 0x009DAE90) sets
+// effect\tex\0033\tx0033_BM / _NM on every material of a unit (+0xAC8) this way; its end (0x009DAF60) the model's
+// own back from its table ([[unit+0xA80]+0x78], 0xA0 an entry: +0x18 colour, +0x1C normal).
+constexpr std::uintptr_t kFnMaterialSetColourMap = 0x005F4870;
+constexpr std::uintptr_t kFnMaterialSetNormalMap = 0x005DC010;
+constexpr std::size_t kMaterialColourMap = 0x24;
+constexpr std::size_t kMaterialNormalMap = 0xD0;
+constexpr std::size_t kUnitModel = 0xA80;
+constexpr std::size_t kModelMaterialTable = 0x78;
+constexpr std::size_t kModelMaterialSize = 0xA0;
+constexpr std::size_t kModelMaterialColourMap = 0x18;
+constexpr std::size_t kModelMaterialNormalMap = 0x1C;
 constexpr std::uint32_t kTextureTypeHash = 0x241F5DEB;  // its +0x20, the archives' type of a .tex
 // Starting an effect list on a unit, the game's way (static analysis 2026-11-11): the starters
 // (0x007723E0 and its kin, called by every enemy and weapon) build the list's path, get it with a
@@ -1225,6 +1238,9 @@ inline constexpr Signature kSignatures[] = {
     {"area_camera_set", addr::kFnAreaCameraSet, "55 8B EC 83 E4 F0 81 EC D4 00 00 00 53 56 8B 75 08 83 FE FF 8B D9 57"},
     {"rahcamera_get_dti", 0x007F71C0, "B8 4C 89 1E 01 C3"},
     // The camera's view: `and esp, -16`, `lea eax, [ecx+0x40]`, `lea edx, [ecx+0x50]`, `add ecx, 0x30`, then its call.
+    // A material's maps: `mov ebx, [esp+8]`, `mov esi, ecx`, `mov edi, [esi+0x24]` (colour) / `[esi+0xD0]` (normal).
+    {"material_set_colour_map", addr::kFnMaterialSetColourMap, "53 8B 5C 24 08 56 8B F1 57 8B 7E 24 3B DF"},
+    {"material_set_normal_map", addr::kFnMaterialSetNormalMap, "53 8B 5C 24 08 56 8B F1 57 8B BE D0 00 00 00 3B DF"},
     {"camera_view", addr::kFnCameraView, "55 8B EC 83 E4 F0 83 EC 0C 56 8B 75 08 8D 41 40 8D 51 50 50 83 C1 30 52 51 8B CE E8"},
     // The enemy hit check: `mov ebp, [esp+8]` (the part), `cmovz eax, esi`, `mov edi, [eax+0x129C]`.
     // Uroboros Wesker's "may this hit hurt": `cmp ax, 0x3C`, `mov ecx, [esi+0x1F50]`; his getDTI.

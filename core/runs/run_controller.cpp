@@ -1419,6 +1419,9 @@ Status RunController::BeginArena(double now) {
                 auto scaled = [&](int n) { return std::clamp(static_cast<int>(std::lround(n * coop.alive_mult)), 1, 40); };
                 arena.max_alive = scaled(arena.max_alive);
                 if (threat.max_alive > 0) threat.max_alive = scaled(threat.max_alive);
+                for (MapEnemy& e : arena.roster) {
+                    if (!e.special && e.max_alive > 0) e.max_alive = scaled(e.max_alive);  // the dogs' cap
+                }
             }
             director_.emplace(arena, budget, route->difficulty_tier, streams_->director.Next(), threat);
             director_->PickChests(content_->economy().chests.per_arena + run_.character.build.extra_chests);

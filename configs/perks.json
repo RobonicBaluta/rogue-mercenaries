@@ -148,7 +148,7 @@
             "transform": {
               "skin": "wesker_midnight",
               "slot": 1,
-              "cinematic_seconds": 2.4,
+              "cinematic_seconds": 3.0,
               "special": {
                 "kind": "transform",
                 "name": "Uroboros",

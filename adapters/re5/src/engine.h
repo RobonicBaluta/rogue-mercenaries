@@ -84,6 +84,7 @@ struct Verified {
     bool gameShop = false;      // campaign shop screen constructor and unit registration
     bool enemySpawn = false;    // sEnemy::Create, the set spawn, class lookup (director)
     bool sceneCamera = false;   // a camera's view function (areacams::SetSceneCamera)
+    bool materialMaps = false;  // a material's colour and normal map setters (TextureResource, SetMaterialMaps)
     bool areaCameras = false;   // the player camera's zone cameras (a run's campaign areas keep its own)
     bool hitCheckProbe = false; // developer: the enemy hit check, logged (dev "hitprobe")
     bool bossGunfire = false;   // Uroboros Wesker as a run's boss takes gunfire anywhere (his own check: only his open core)
@@ -169,6 +170,12 @@ bool PlayEffect(const char* path, std::uintptr_t unit);
 std::uint32_t StartEffect(const char* path, std::uintptr_t unit, int joint, float scale = 1.0f);
 /// Stops an effect StartEffect (or the game) started; false when it could not.
 bool StopEffect(std::uint32_t id);
+/// A texture (rTexture) by path, a reference held (ReleaseResource): looked up, else loaded as the game's ice look
+/// loads its own (0x009DAE90, flags 1). 0: none.
+std::uintptr_t TextureResource(const char* path);
+/// A material's colour and normal maps through its own setters (re5::addr::kFnMaterialSetColourMap and ..NormalMap);
+/// false when one faulted.
+bool SetMaterialMaps(std::uintptr_t material, std::uintptr_t colour, std::uintptr_t normal);
 /// True when the effect list at `path` is in memory (looked up, never loaded).
 bool EffectInMemory(const char* path);
 /// Every effect list in memory now (the resource manager's table), sorted.

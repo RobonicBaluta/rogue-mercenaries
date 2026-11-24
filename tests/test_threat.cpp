@@ -313,3 +313,32 @@ TEST_CASE("economy enemy_threat's class_weight_by_level is validated", "[threat]
     }
 }
 
+TEST_CASE("a normal enemy's max_alive caps how many of it are alive at once", "[threat]") {
+    MapDef map = Map();
+    MapEnemy dog{"uEm30", {}, {}, 1, 50.0};  // by far the likeliest pick
+    dog.max_alive = 3;
+    map.roster.push_back(dog);
+    Director d(map, 60, 1, 11);
+    std::vector<std::pair<std::string, std::string>> alive;  // id, class
+    int peakDogs = 0, dogs = 0;
+    double now = 0.0;
+    while (!d.complete() && now < 600.0) {
+        for (const SpawnRequest& r : d.Tick(now, std::nullopt)) {
+            const std::string id = "u" + std::to_string(r.ticket);
+            d.Spawned(r.ticket, id);
+            alive.emplace_back(id, r.unit_class);
+            dogs += r.unit_class == "uEm30" ? 1 : 0;
+        }
+        int n = 0;
+        for (const auto& [id, cls] : alive) n += cls == "uEm30" ? 1 : 0;
+        peakDogs = std::max(peakDogs, n);
+        if (now >= 5.0 && !alive.empty()) {  // a crowd builds up first, then one dies a second
+            d.Died(alive.front().first);
+            alive.erase(alive.begin());
+        }
+        now += 1.0;
+    }
+    CHECK(dogs > 10);
+    CHECK(peakDogs == 3);
+}
+

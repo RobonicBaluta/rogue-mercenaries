@@ -170,6 +170,7 @@ bool VerifySignatures(unsigned timeoutMs) {
     g_caps.areaCameras = SignatureOk("area_camera_check") && SignatureOk("area_camera_none") && SignatureOk("area_camera_force") &&
                          SignatureOk("area_camera_set") && SignatureOk("rahcamera_get_dti");
     g_caps.sceneCamera = SignatureOk("camera_view");
+    g_caps.materialMaps = SignatureOk("material_set_colour_map") && SignatureOk("material_set_normal_map");
     g_caps.fatalHandler = SignatureOk("game_fatal_error");
     g_caps.stageLayouts = SignatureOk("stage_layouts") && SignatureOk("register_layout");
     g_caps.itemBox = SignatureOk("itembox_create") && SignatureOk("unit_register");
@@ -827,6 +828,43 @@ bool EffectFileExists(const std::string& path) {
     std::filesystem::path file = std::filesystem::path(exe).parent_path() / "nativePC_MT" / (path + ".efl");
     std::error_code ec;
     return std::filesystem::is_regular_file(file, ec);
+}
+
+std::uintptr_t TextureResource(const char* path) {
+    if (!g_caps.materialMaps || !path) return 0;
+    const auto manager = ReadOr<std::uintptr_t>(re5::addr::kResourceManager, 0);
+    if (!manager) return 0;
+    std::uintptr_t texture = 0;
+    if (!CallResourceGetTyped(manager, re5::addr::kDtiTexture, path, kLookupOnly, texture)) return 0;
+    if (!texture && !CallResourceGetTyped(manager, re5::addr::kDtiTexture, path, 1, texture)) return 0;
+    if (texture && !IsKindOf(texture, re5::addr::kDtiTexture)) {
+        ReleaseResource(texture);
+        return 0;
+    }
+    return texture;
+}
+
+namespace {
+using MaterialSetMapFn = void(__thiscall*)(std::uintptr_t material, std::uintptr_t texture);
+bool CallMaterialSet(std::uintptr_t fn, std::uintptr_t material, std::uintptr_t texture) {
+    __try {
+        reinterpret_cast<MaterialSetMapFn>(fn)(material, texture);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+    return true;
+}
+}  // namespace
+
+bool SetMaterialMaps(std::uintptr_t material, std::uintptr_t colour, std::uintptr_t normal) {
+    if (!g_caps.materialMaps || !material) return false;
+    const bool ok = CallMaterialSet(re5::addr::kFnMaterialSetColourMap, material, colour) &&
+                    CallMaterialSet(re5::addr::kFnMaterialSetNormalMap, material, normal);
+    if (!ok) {
+        RM_LOGW("materials: a map setter faulted; material maps off");
+        g_caps.materialMaps = false;
+    }
+    return ok;
 }
 
 void ReleaseResource(std::uintptr_t resource) {

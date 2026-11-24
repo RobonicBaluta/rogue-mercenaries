@@ -61,9 +61,10 @@ CLASSES = {
 }
 # A class's weight in the director's picks at each threat level, times its roster weight (the user, 2026-11-24:
 # "add dogs to the enemy possibilities, specially for the later stages get them to appear more ... like bigger
-# tiers"). The dogs come in at level 2 and grow from there.
+# tiers"). The dogs come in at level 2 and grow from there; after the first playtest ("maybe too many dogs at the same
+# time at least for SP") less steeply, and at most 3 alive at once (their maps.json entries' max_alive).
 CLASS_WEIGHT_BY_LEVEL = {
-    'uEm30': [1.0, 1.0, 2.0, 3.5],
+    'uEm30': [1.0, 1.0, 1.5, 2.5],
 }
 
 

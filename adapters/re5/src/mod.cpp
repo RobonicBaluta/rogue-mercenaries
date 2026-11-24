@@ -10708,7 +10708,7 @@ std::array<float, 3> TintRgb(const std::string& kind) {
     if (kind == "elite_cryo") return {0.78f, 0.95f, 1.25f};
     if (kind == "elite_toxic") return {0.82f, 1.18f, 0.76f};
     if (kind == "elite_explosive") return {1.25f, 0.72f, 0.72f};
-    if (kind == "uroboros") return {0.42f, 0.17f, 0.2f};  // Midnight Wesker transformed: dark, red veined
+    if (kind == "uroboros") return {0.55f, 0.08f, 0.1f};  // Midnight Wesker transformed: dark crimson over the crust
     return {1.0f, 1.0f, 1.0f};
 }
 
@@ -11730,11 +11730,16 @@ const std::vector<BossStep>* BossSteps(const std::string& move) {
     static const std::vector<BossStep> dash = {{0x20, 1.5f}};
     static const std::vector<BossStep> knee = {{0x24, 1.6f}};
     static const std::vector<BossStep> kick = {{0xC9, 1.6f}};
-    // The transformation (the Uroboros Virus): he drops to a knee (0x72, his Hiza) as it takes him and comes up out
-    // of a shift's stop (0x20); its strike his other kick (0xCA).
-    static const std::vector<BossStep> transform = {{0x72, 1.4f}, {0x20, 1.1f}};
-    static const std::vector<BossStep> strike = {{0xCA, 1.8f}};
+    // The transformation (the Uroboros Virus): his kneel as cEm80ActHiza plays it (0x00911C30: 0x72 down, 0x73 the
+    // kneeling loop, 0x75 up) as it takes him; its end his weakened stagger (cEm80ActShrink's 0x77) and his recovery
+    // (ShrinkEnd's 0x75). The first try (2026-11-24) came up out of a shift's stop (0x20), which carried him 3.9 m (the
+    // user: "a weird dash"), and struck with 0xCA, which turned him round ("spins him 180 degrees and lets the camera on
+    // the other side"); the strike is his first kick (0xC8) now, his facing held while it plays.
+    static const std::vector<BossStep> transform = {{0x72, 1.4f}, {0x73, 1.5f}, {0x75, 1.3f}};
+    static const std::vector<BossStep> revert = {{0x77, 1.6f}, {0x75, 1.4f}};
+    static const std::vector<BossStep> strike = {{0xC8, 1.8f}};
     if (move == "transform") return &transform;
+    if (move == "uroboros_revert") return &revert;
     if (move == "uroboros_strike") return &strike;
     if (move == "dual_smg") return &sweep;
     if (move == "dash") return &dash;
@@ -12158,8 +12163,79 @@ struct UroborosForm {
     int power = 0;
     EnemyTint tint;
     bool tinted = false;
+    // The Uroboros skin (WearUroborosSkin): each material's own maps, to put back; the crust's textures held.
+    std::vector<std::array<std::uintptr_t, 3>> skin;  // material, its colour map, its normal map
+    std::uintptr_t crust = 0, crustNormal = 0;
+    double revertAt = 0.0;  // its end's stagger began (0: not yet)
+    double strikeUntil = 0.0;
+    float strikeYaw = 0.0f;  // his facing when the strike began, held while it plays
 };
 UroborosForm g_uro;
+constexpr double kUroRevertSeconds = 1.8;    // the end's stagger begins this long before it is over (still untouchable)
+constexpr double kUroRevertLongest = 2.6;    // ... and never holds him longer
+constexpr double kUroStrikeHold = 0.9;       // seconds his facing is held through a strike
+constexpr const char* kUroCrust = "effect\\tex\\0033\\tx0033_BM";  // the game's ice crust (coreEff.arc, nativePC_MT)
+constexpr const char* kUroCrustNormal = "effect\\tex\\0033\\tx0033_NM";
+
+// The user (2026-11-24): "his model doesn't swap". There is no player model of Uroboros Wesker, and the boss's
+// (uEm82) has a skeleton of its own; what the game does to a frozen enemy is done to him instead: every material of
+// his (+0xAC8) wears the ice look's crust (its colour and normal maps; uEnemy 0x009DAE90), under his dark crimson
+// tint. Only a material whose maps are its model's own (the model's table holds them, so they stay alive while it
+// wears the crust) is changed, and those maps go back after.
+int WearUroborosSkin(std::uintptr_t player) {
+    if (!engine::Caps().materialMaps || !g_uro.skin.empty()) return 0;
+    const auto list = ReadOr<std::uintptr_t>(player + kUnitMaterials, 0);
+    const int count = ReadOr<std::int32_t>(player + kUnitMaterialCount, 0);
+    const auto model = ReadOr<std::uintptr_t>(player + re5::addr::kUnitModel, 0);
+    const auto table = model ? ReadOr<std::uintptr_t>(model + re5::addr::kModelMaterialTable, 0) : 0;
+    if (!list || !table || count <= 0 || count > 128) return 0;
+    g_uro.crust = engine::TextureResource(kUroCrust);
+    g_uro.crustNormal = engine::TextureResource(kUroCrustNormal);
+    if (!g_uro.crust || !g_uro.crustNormal) {
+        RM_LOGI("uroboros: the crust textures are not in memory (%08X %08X); his own stay", static_cast<unsigned>(g_uro.crust),
+                static_cast<unsigned>(g_uro.crustNormal));
+        engine::ReleaseResource(g_uro.crust);
+        engine::ReleaseResource(g_uro.crustNormal);
+        g_uro.crust = g_uro.crustNormal = 0;
+        return 0;
+    }
+    int skipped = 0;
+    for (int i = 0; i < count; ++i) {
+        const auto material = ReadOr<std::uintptr_t>(list + static_cast<std::size_t>(i) * 4, 0);
+        if (material < 0x10000 || !engine::IsKindOf(material, kDtiMaterialStandard)) continue;
+        const auto colour = ReadOr<std::uintptr_t>(material + re5::addr::kMaterialColourMap, 0);
+        const auto normal = ReadOr<std::uintptr_t>(material + re5::addr::kMaterialNormalMap, 0);
+        const std::uintptr_t entry = table + static_cast<std::size_t>(i) * re5::addr::kModelMaterialSize;
+        if (!colour || colour != ReadOr<std::uintptr_t>(entry + re5::addr::kModelMaterialColourMap, 1) ||
+            normal != ReadOr<std::uintptr_t>(entry + re5::addr::kModelMaterialNormalMap, 1)) {
+            ++skipped;
+            continue;
+        }
+        if (!engine::SetMaterialMaps(material, g_uro.crust, g_uro.crustNormal)) break;
+        g_uro.skin.push_back({material, colour, normal});
+    }
+    RM_LOGI("uroboros: %zu of his %d materials wear the crust (%d not their model's own)", g_uro.skin.size(), count, skipped);
+    return static_cast<int>(g_uro.skin.size());
+}
+
+// His own maps back (while `player` still is the unit that wore them), the crust's references let go.
+void ShedUroborosSkin(std::uintptr_t player) {
+    if (!g_uro.skin.empty() && player == g_uro.player) {
+        const auto list = ReadOr<std::uintptr_t>(player + kUnitMaterials, 0);
+        const int count = ReadOr<std::int32_t>(player + kUnitMaterialCount, 0);
+        int back = 0;
+        for (const auto& [material, colour, normal] : g_uro.skin) {
+            bool still = false;
+            for (int i = 0; list && i < count && i < 128 && !still; ++i) still = ReadOr<std::uintptr_t>(list + static_cast<std::size_t>(i) * 4, 0) == material;
+            if (still && engine::SetMaterialMaps(material, colour, normal)) ++back;
+        }
+        RM_LOGI("uroboros: %d of %zu materials have their own maps again", back, g_uro.skin.size());
+    }
+    g_uro.skin.clear();
+    engine::ReleaseResource(g_uro.crust);
+    engine::ReleaseResource(g_uro.crustNormal);
+    g_uro.crust = g_uro.crustNormal = 0;
+}
 constexpr float kUroBlastRadius = 600.0f;
 constexpr float kUroStrikeReach = 750.0f;   // the strike: ahead of him this far (within kUroStrikeCos)...
 constexpr float kUroStrikeAround = 250.0f;  // ... and anyone this close
@@ -12186,7 +12262,8 @@ void StartTransformation(double now, const rm::SkinSpecial& sp, std::uintptr_t l
     const rm::CharmDef* charm = run.TransformCharm();
     const double scene = charm ? charm->transform.cinematic_seconds : 0.0;
     EndSpecialMove("transformed");
-    if (g_uro.tinted && g_uro.player) PutTint(g_uro.player, g_uro.tint, "");
+    if (g_uro.tinted && g_uro.player == local) PutTint(g_uro.player, g_uro.tint, "");
+    ShedUroborosSkin(local);
     g_uro = {};
     g_uro.player = local;
     g_uro.seat = run.ActiveSeat();
@@ -12244,20 +12321,38 @@ void StepTransformation(double now) {
     }
     if (!on) {
         if (g_uro.tinted && local == g_uro.player) PutTint(g_uro.player, g_uro.tint, "");
+        ShedUroborosSkin(local);
         RM_LOGI("uroboros: over after %.1f s", now - g_uro.start);
-        if (local == g_uro.player && g->match.inMatch) {
+        if (local == g_uro.player && g->match.inMatch && g_uro.revertAt <= 0.0) {
             g->notice = "UROBOROS ENDS";
             g->noticeUntil = now + 1.5;
         }
         g_uro = {};
         return;
     }
-    // His colours go as he kneels.
-    if (!g_uro.tinted && now >= g_uro.start + (g_uro.sceneUntil - g_uro.start) * 0.45) {
+    // His look goes as he kneels: the crust, then his colours dark crimson over it.
+    if (!g_uro.tinted && g_uro.revertAt <= 0.0 && now >= g_uro.start + (g_uro.sceneUntil - g_uro.start) * 0.45) {
+        WearUroborosSkin(local);
         PutTint(local, g_uro.tint, "uroboros");
         g_uro.tinted = true;
         RM_LOGI("uroboros: %zu of his materials dark", g_uro.tint.original.size());
     }
+    // Its end, still untouchable: the virus leaves him (his look back) as he staggers and recovers.
+    if (g_uro.revertAt <= 0.0 && !g_uro.scene && run.TransformedLeft(now) <= kUroRevertSeconds) {
+        g_uro.revertAt = now;
+        if (g_uro.tinted) PutTint(local, g_uro.tint, "");
+        g_uro.tinted = true;  // not again
+        ShedUroborosSkin(local);
+        const bool moved = StartBossMove(local, "uroboros_revert", now);
+        g->notice = "UROBOROS ENDS";
+        g->noticeUntil = now + 1.5;
+        RM_LOGI("uroboros: the virus leaves him (%s)", moved ? "his stagger and recovery" : "no boss move");
+    }
+    if (g_uro.revertAt > 0.0 && now - g_uro.revertAt > kUroRevertLongest && g_boss.move == "uroboros_revert") {
+        EndBossMove(local, "its time");
+    }
+    // A strike's kick keeps him facing the way he struck (its motion turned him round).
+    if (now < g_uro.strikeUntil && g_boss.move == "uroboros_strike") engine::TurnTo(local, g_uro.strikeYaw, 0);
     if (g_uro.scene && engine::Caps().sceneCamera) {
         if (!g_uro.camera) {
             engine::CameraView view;
@@ -12305,6 +12400,8 @@ void StartUroborosStrike(double now, const rm::SkinSpecial& sp, std::uintptr_t l
         if (++struck >= kUroStrikeMost) break;
     }
     const bool moved = StartBossMove(local, "uroboros_strike", now);
+    g_uro.strikeYaw = std::atan2(fx, fz);
+    g_uro.strikeUntil = now + kUroStrikeHold;
     RM_LOGI("uroboros: strike (%d%s):%s [%s]", damage, moved ? ", his kick" : "", results.empty() ? " nobody in reach" : results.c_str(), source);
     g->notice = Upper(Plain(sp.name));
     g->noticeUntil = now + 0.8;

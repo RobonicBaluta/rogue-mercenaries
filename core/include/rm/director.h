@@ -36,6 +36,9 @@ struct MapEnemy {
     /// normal pick; once `MapDef::special_after` of the budget is dead, kept at `max_alive`
     /// (default 1) until the budget runs out. Its kills count like any other.
     bool special = false;
+    /// A special: kept at this many (default 1). A normal entry: at most this many alive at once (0: no cap; the
+    /// dogs, the user 2026-11-24: "maybe too many dogs at the same time at least for SP"); times coop.alive_mult with
+    /// two players.
     int max_alive = 0;
     /// A guest (ROADMAP M3.3, rm::WithGuests): the map key of the map whose roster entry this is;
     /// -1 for the map's own enemies.

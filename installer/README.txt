@@ -175,6 +175,11 @@ PLAY
     - New in 0.3.0c: a charm shows its picture in the match's grid as in ORGANIZE.
     - New in 0.3.0c: the Drilling Facilities refuse the jump down at the boat's mooring,
       and a jump down that holds you for 6 seconds puts you back at the arena's start.
+    - New: fewer dogs at once (3 at most, 4 with two players), and fewer more of them on the
+      bigger tiers.
+    - New: Midnight Wesker's Uroboros kneels, stays down and rises (no dash), the virus covers
+      him in a dark crimson crust, his strike no longer turns him round, and as it ends the
+      virus leaves him with a stagger.
     - A rocket launcher, once bought, comes back at the start of every arena (into the
       storage if your grid is full). Selling it gives it up for good.
     - What does not fit in your nine cells waits in the storage of ORGANIZE INVENTORY.

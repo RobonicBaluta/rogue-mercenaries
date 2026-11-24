@@ -846,7 +846,8 @@
         },
         {
           "class": "uEm30",
-          "weight": 20.0
+          "weight": 20.0,
+          "max_alive": 3
         }
       ]
     },
@@ -2548,7 +2549,8 @@
         },
         {
           "class": "uEm30",
-          "weight": 20.0
+          "weight": 20.0,
+          "max_alive": 3
         }
       ]
     },

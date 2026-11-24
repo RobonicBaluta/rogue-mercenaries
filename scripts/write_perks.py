@@ -27,7 +27,7 @@ UROBOROS_VIRUS = {
     'kill_stack_stats': {'damage': 0.01, 'defense': 0.007, 'crit': 0.003, 'move_speed': 0.005},
     'kill_stack_max': 30, 'stacks_end_on_hit': True,
     'transform': {
-        'skin': 'wesker_midnight', 'slot': 1, 'cinematic_seconds': 2.4,
+        'skin': 'wesker_midnight', 'slot': 1, 'cinematic_seconds': 3.0,
         'special': {'kind': 'transform', 'name': 'Uroboros', 'icon': 'syringe', 'cooldown_seconds': 120,
                     'duration_seconds': 12, 'power': 600},
         'attack': {'kind': 'uroboros_strike', 'name': 'Uroboros Strike', 'icon': 'fist', 'cooldown_seconds': 1.2,

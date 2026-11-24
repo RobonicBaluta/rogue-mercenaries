@@ -114,6 +114,7 @@ const MapEnemy* Director::PickEnemy() {
         for (const MapEnemy& e : map_.roster) {
             if ((tierGate && e.min_tier > tier_) || e.weight <= 0.0 || (e.special && !withSpecial)) continue;
             if (unavailable_.count(e.unit_class) != 0) continue;
+            if (!e.special && e.max_alive > 0 && Active(&e) >= e.max_alive) continue;  // its cap alive already
             const double share = Share(e);
             if (share <= 0.0) continue;
             pool.push_back(&e);
