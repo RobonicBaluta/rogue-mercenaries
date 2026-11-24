@@ -1870,7 +1870,7 @@ void ParseMaps(const Diag& file, const json& doc, std::vector<MapDef>& out) {
                         {"rage_seconds", 1, 1.0, 60.0}, {"specials_every", 1, 3.0, 300.0}, {"attack_chance", 6, 0.0, 1.0},
                         {"fire_cooldown_max", 1, 0.1, 5.0}, {"melee_every", 1, 1.0, 120.0}, {"melee_range", 1, 100.0, 2000.0},
                         {"wide_fire_every", 1, 1.0, 120.0}, {"flinch_only_explosives", 1, 0.0, 1.0}, {"dodge_chance", 1, 0.0, 1.0},
-                        {"dodge_aim_seconds", 1, 0.2, 10.0},
+                        {"dodge_aim_seconds", 1, 0.2, 10.0}, {"arm_dance", 1, 0.0, 1.0},
                     };
                     if (!tuning->is_object()) {
                         bd.Error("field 'tuning' must be an object");

@@ -894,14 +894,15 @@ TEST_CASE("a boss's tuning is validated, and the shipped bosses carry the user's
     const MapDef* volcano = r.content->FindMapByStage(508);
     REQUIRE(volcano != nullptr);
     REQUIRE(volcano->boss);
-    CHECK(volcano->boss->hp == 9000);
+    CHECK(volcano->boss->hp == 8000);  // less tanky (2026-11-24, the Deck: "too tanky")
     CHECK(volcano->boss->Tuning("second_form_at", -1.0) == Catch::Approx(-1.0));  // his first death brings it instead
     REQUIRE(volcano->boss->phases.size() == 1);
     CHECK(volcano->boss->phases[0].transform);
     CHECK(volcano->boss->phases[0].down_action == "cEm82ActDmgCore");  // not StageChange: its giant form takes no hits
     CHECK(volcano->boss->phases[0].hp_fraction == Catch::Approx(1.0));
     CHECK(volcano->boss->phases[0].adds.empty());
-    CHECK(volcano->boss->Tuning("body_damage") == Catch::Approx(0.5));
+    CHECK(volcano->boss->Tuning("body_damage") == Catch::Approx(0.6));
+    CHECK(volcano->boss->Tuning("arm_dance", 1.0) == 0.0);  // "the attack that instantly throws you off": off
     CHECK(volcano->boss->Tuning("rage_every") == Catch::Approx(60));
     CHECK(volcano->boss->Tuning("specials_every") == Catch::Approx(20));
     CHECK(volcano->boss->Tuning("dodge_chance", -1.0) == Catch::Approx(-1.0));  // not set: the fallback

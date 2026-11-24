@@ -190,6 +190,8 @@ PLAY
     - New in 0.3.0d: Midnight Wesker's Uroboros kneels, stays down and rises (no dash),
       the virus covers him in a dark crimson crust, his strike no longer turns him
       round, and as it ends the virus leaves him with a stagger.
+    - New: Uroboros Wesker is less tanky (8000 health, body hits count for 60 percent),
+      and his arm dance, which could throw you off the platform, is gone.
     - A rocket launcher, once bought, comes back at the start of every arena (into the
       storage if your grid is full). Selling it gives it up for good.
     - What does not fit in your nine cells waits in the storage of ORGANIZE INVENTORY.

@@ -158,8 +158,11 @@ BOSSES = {
     # with his health back (the user, the same day: "when he dies we bump it to a second phase"): a 2.5 s
     # stagger at his core, then his pose byte alone. Not the story's StageChange: its end applies the giant
     # lava form, whose hit shapes are off ("he's untargetable, no damage").
-    508: {'class': 'uEm82', 'name': 'Uroboros Wesker', 'article': '', 'hp': 9000, 'preload': ['uEm8c', 'uEm8e'],
-          'tuning': {'body_damage': 0.5, 'rage_every': 60, 'rage_seconds': 15, 'specials_every': 20},
+    # Less tanky (the user, 2026-11-24 on the Deck: "uroboros wesker is too tanky, make him a bit less so"): 8000 health,
+    # body hits at 60 percent (each form 13333 of body damage, was 18000); his arm dance off ("the attack that instantly
+    # throws you off").
+    508: {'class': 'uEm82', 'name': 'Uroboros Wesker', 'article': '', 'hp': 8000, 'preload': ['uEm8c', 'uEm8e'],
+          'tuning': {'body_damage': 0.6, 'rage_every': 60, 'rage_seconds': 15, 'specials_every': 20, 'arm_dance': 0},
           'phases': [{'down_seconds': 2.5, 'down_action': 'cEm82ActDmgCore', 'transform': True}]},
     # Uroboros Mkono, the stronger Uroboros of the flamethrower room (uEm41, 2026-11-08; called Aheri
     # before 2026-11-19: the game's chapter 5-2 boss): it walks, runs, beats down

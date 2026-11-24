@@ -89,7 +89,7 @@ struct MapBoss {
     /// How the adapter makes it harder (the user's picks, 2026-11-22, the boss tuning board): numbers
     /// by name, each checked against kBossTuningKeys. Uroboros Wesker: second_form_at (his health
     /// share when his second form starts), body_damage (the share of a body hit he takes), rage_every
-    /// and rage_seconds, specials_every. Jill: attack_chance (6 chances, far to near), fire_cooldown_max
+    /// and rage_seconds, specials_every, arm_dance (0: his arm dance is never his). Jill: attack_chance (6 chances, far to near), fire_cooldown_max
     /// (seconds), melee_every and melee_range, wide_fire_every, flinch_only_explosives, dodge_chance
     /// and dodge_aim_seconds.
     StringMap<std::vector<double>> tuning;

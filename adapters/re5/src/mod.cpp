@@ -7796,6 +7796,15 @@ void DriveUroborosWesker(const rm::MapBoss& boss, std::uintptr_t unit, const std
             RM_LOGI("boss tuning: %s enraged for %.0f s (in %s)", boss.name.c_str(), boss.Tuning("rage_seconds", 15.0), action.c_str());
         }
     }
+    // His arm dance off (the user, 2026-11-24 on the Deck: "can you turn off the attack that instantly throws you off?":
+    // its hit flung them 43.7 m, off the platform, and they died a second later): with arm_dance 0 it is cut the moment
+    // he begins it, his wait in its place, and the specials leave it out.
+    const bool armDance = boss.Tuning("arm_dance", 1.0) > 0.0;
+    if (!armDance && action.find("ArmDancing") != std::string::npos && action != t.lastAction) {
+        const bool cut = StartActionSpec(unit, "cEm82ActWait");
+        static int told = 0;
+        if (told++ < 8) RM_LOGI("boss tuning: %s's arm dance (%s) %s", boss.name.c_str(), action.c_str(), cut ? "cut, his wait instead" : "could not be cut");
+    }
     const double specialsEvery = boss.Tuning("specials_every", 0.0);
     if (specialsEvery > 0.0 && now >= t.nextSpecial) {
         const bool busy = ContainsAny(action, {"Atk", "Dmg", "Drill", "Pinion", "Event", "StageChange", "CoreRev", "Jump"});
@@ -7803,7 +7812,7 @@ void DriveUroborosWesker(const rm::MapBoss& boss, std::uintptr_t unit, const std
             t.nextSpecial = now + 0.5;
         } else {
             static const char* const kSpecials[] = {"cEm82AtkGroundHitStart", "cEm82AtkJavelinThrow", "cEm82AtkArmDancing"};
-            const char* special = kSpecials[t.picks++ % 3];
+            const char* special = kSpecials[t.picks++ % (armDance ? 3 : 2)];
             const bool ok = StartActionSpec(unit, special);
             t.nextSpecial = now + (ok ? specialsEvery : 1.0);
             RM_LOGI("boss tuning: %s %s (in %s): %s", boss.name.c_str(), special, action.c_str(), ok ? "started" : "refused");

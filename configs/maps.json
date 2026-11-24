@@ -4045,12 +4045,13 @@
         "class": "uEm82",
         "name": "Uroboros Wesker",
         "article": "",
-        "hp": 9000,
+        "hp": 8000,
         "tuning": {
-          "body_damage": 0.5,
+          "body_damage": 0.6,
           "rage_every": 60,
           "rage_seconds": 15,
-          "specials_every": 20
+          "specials_every": 20,
+          "arm_dance": 0
         },
         "phases": [
           {
