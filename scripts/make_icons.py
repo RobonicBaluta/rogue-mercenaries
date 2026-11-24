@@ -683,7 +683,24 @@ def snowflake():
     return s
 
 
+def bolt():
+    """Shock: a lightning bolt."""
+    s = Shape()
+    s.poly([(60, 4), (24, 54), (46, 54), (36, 96), (78, 40), (55, 40), (68, 4)])
+    return s
+
+
+def drop():
+    """Toxic: a drop with a bubble in it."""
+    s = Shape()
+    s.poly(spline([(50, 4), (64, 30), (77, 54), (76, 74), (64, 91), (50, 95), (36, 91), (24, 74), (23, 54), (36, 30)], 10))
+    s.ellipse(41, 68, 9, 9, cut=True)
+    s.ellipse(58, 52, 5, 5, cut=True)
+    return s
+
+
 ICONS = {
+    'bolt': bolt, 'drop': drop,
     'chain': chain, 'skull': skull, 'shades': shades, 'herb': herb, 'parachute': parachute,
     'grenade': grenade, 'flash': flash, 'fire': fire, 'medkit': medkit, 'heal': heal, 'second_wind': second_wind,
     'ammo': ammo, 'shotgun': shotgun, 'smg': smg, 'magnum': magnum, 'rifle': rifle, 'crosshair': crosshair,

@@ -140,6 +140,10 @@ PLAY
       Plague's victims let out a green cloud. Burns and poison hurt bosses as well (they
       end when a boss goes down for its next phase), and Jill and Wesker flinch when the
       flame takes a share of their health in one go.
+    - A gun with an element shows it: its picture in the inventory takes the element's
+      colour and badge (flame, bolt, snowflake, blast, drop), its model takes the colour,
+      and in your hands it gives off its element's effect. "gun_looks" in adapter.json
+      turns each part off or makes it stronger (README.md).
     - A rocket launcher, once bought, comes back at the start of every arena (into the
       storage if your grid is full). Selling it gives it up for good.
     - What does not fit in your nine cells waits in the storage of ORGANIZE INVENTORY.

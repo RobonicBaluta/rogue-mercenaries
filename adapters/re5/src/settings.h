@@ -121,6 +121,21 @@ struct Settings {
     // Shock's arcs drawn as lightning between the enemies it jumps to, and from a Shock flamethrower
     // to the enemy in its flame (over the picture, where the game's camera shows them).
     bool elementArcs = true;
+    // An element gun shows its element (gun_looks.h; the user's item 4, 2026-11-24): adapter.json
+    // "gun_looks": {"pictures", "models", "aura": on/off; "picture_tint", "model_tint", "evolved_extra":
+    // how far the colours move to the element's (0..1); "aura_every" seconds between the element's
+    // effects on the gun in hand, "aura_scale" their size, "aura_joint" the gun's joint they start at}.
+    // The aura's effect: element_effects "gun_<element>" ("gun_<element>_evolved" first), else the
+    // elite's look of that element.
+    bool gunPictures = true;
+    bool gunModels = true;
+    bool gunAura = true;
+    float gunPictureTint = 0.45f;
+    float gunModelTint = 0.3f;
+    float gunEvolvedExtra = 0.15f;
+    float gunAuraEvery = 2.0f;
+    float gunAuraScale = 0.35f;
+    int gunAuraJoint = 0;
     // Each arena of a run plays another track: the Mercenaries theme and the battle tracks take turns
     // (music.h; 2026-11-22, the user: "cycle through the games battle themes").
     bool musicRotation = true;

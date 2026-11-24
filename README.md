@@ -354,6 +354,20 @@ Storm), and a Shock flamethrower throws bolts from the gun to the nearest enemy 
 picture where the game's camera shows those enemies, so a wall between does not hide them. `"element_arcs": false` in
 `adapter.json` turns them off.
 
+**Element guns look the part.** A gun with an element shows it:
+- **Its picture** in the inventory, the weapon rings and ORGANIZE takes the element's colour, with the element's badge in
+  its top right corner: a flame, a bolt, a snowflake, a blast or a drop. An evolved element gets a stronger colour and a
+  glowing badge.
+- **The gun's model** takes the colour too.
+- **In your hands**, the gun gives off its element's effect every 2 seconds. The flamethrower keeps its coloured flame.
+
+The colour is mixed into the game's own picture and textures in memory, so their detail stays, and they go back to the
+game's when the run ends. Nothing on disk changes. In `adapter.json`, `"gun_looks"` turns each part off (`"pictures"`,
+`"models"`, `"aura"`: false) and sets how strong it is: `"picture_tint"` 0.45, `"model_tint"` 0.3 and
+`"evolved_extra"` 0.15, each from 0 to 1. For the effect, `"aura_every"` sets the seconds between plays and
+`"aura_scale"` its size. `"gun_<element>"` in `element_effects` picks the effect itself; by default it's the element's
+hit look, and Explosive has none.
+
 **Picking the elements' looks (the effect gallery).** In an arena, press **Numpad \*** to turn the gallery on or
 off. Every 3 seconds the next effect in memory plays on the nearest enemy, its name at the top of the screen.
 **Numpad +** and **Numpad -** step to the next or the previous one at once, **Numpad 0** holds the one shown (it plays

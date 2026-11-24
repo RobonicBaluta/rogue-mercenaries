@@ -159,6 +159,8 @@ constexpr std::uintptr_t kFnMotionListSet = 0x005CCDD0;
 constexpr std::uintptr_t kFnCharSetMotion = 0x0084CFF0;
 constexpr std::uintptr_t kDtiMotionList = 0x0124B574;  // rMotionList
 constexpr std::uintptr_t kDtiEffectList = 0x0124ABE0;  // rEffectList (build/dti_all.txt)
+constexpr std::uintptr_t kDtiTexture = 0x0124A7E4;     // rTexture (build/dti_all.txt)
+constexpr std::uint32_t kTextureTypeHash = 0x241F5DEB;  // its +0x20, the archives' type of a .tex
 // Starting an effect list on a unit, the game's way (static analysis 2026-11-11): the starters
 // (0x007723E0 and its kin, called by every enemy and weapon) build the list's path, get it with a
 // get that loads a missing file (the game's fatal error), then call the creator on the effect

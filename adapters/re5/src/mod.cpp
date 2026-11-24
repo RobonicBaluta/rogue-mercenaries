@@ -38,6 +38,7 @@
 #include "imgui.h"
 #include "icons.h"
 #include "hud_names.h"
+#include "gun_looks.h"
 #include "portraits.h"
 #include "imgui_internal.h"
 #include "log.h"
@@ -6859,6 +6860,27 @@ void UpdateHudNames(double now) {
     hudnames::SetWanted(box[0], box[1], CockpitObject(0), CockpitObject(1));
 }
 
+// The run's element guns, each player's (gun_looks.h): their pictures and models in the element's
+// colours while the run lasts. Twice a second.
+void UpdateGunLooks(double now) {
+    static double next = 0.0;
+    if (now < next) return;
+    next = now + 0.5;
+    std::vector<gunlooks::Gun> guns;
+    rm::RunController& run = *g->run;
+    if (run.HasActiveRun()) {
+        for (int seat = 0; seat < std::max(1, run.SeatCount()); ++seat) {
+            rm::SeatScope scope(run, seat);
+            for (const rm::WeaponInstance& w : run.state().weapons) {
+                const rm::WeaponBaseDef* def = w.elements.empty() ? nullptr : g->content->FindWeapon(w.base_id);
+                if (def == nullptr || def->game_item < 0) continue;
+                guns.push_back({static_cast<std::uint32_t>(def->game_item), std::string(rm::ElementName(w.elements.front())), w.element_evolved});
+            }
+        }
+    }
+    gunlooks::SetWanted(std::move(guns));
+}
+
 void WatchCoopFall(double now) {
     static double started = -1.0;
     static double next = 0.0;
@@ -10118,16 +10140,25 @@ void RegisterElite(std::uintptr_t unit, const std::string& element, double now) 
 
 // An elite's look: "elite_<element>" in element_effects, else its element's own (the explosive one, which has none,
 // the game's own flame, apart from Incendiary's recoloured one).
+// The look element_effects gives an element's own hit (Incendiary's burn, Shock's, Cryo's freeze,
+// Toxic's poison); "" for Explosive, which has none.
+std::string ElementHitLook(const std::string& element) {
+    static const std::map<std::string, std::string> kKind = {{"incendiary", "burn"}, {"shock", "shock"}, {"cryo", "freeze"}, {"toxic", "poison"}};
+    const auto kind = kKind.find(element);
+    if (kind == kKind.end()) return {};
+    const auto look = g->settings.elementEffects.find(kind->second);
+    return look == g->settings.elementEffects.end() ? std::string() : look->second;
+}
+
 void PlayEliteLook(const std::string& element, std::uintptr_t unit) {
     if (!unit || !engine::Caps().effects) return;
-    static const std::map<std::string, std::string> kKind = {{"incendiary", "burn"}, {"shock", "shock"}, {"cryo", "freeze"}, {"toxic", "poison"}};
     std::string paths;
     if (const auto own = g->settings.elementEffects.find("elite_" + element); own != g->settings.elementEffects.end()) {
         paths = own->second;
     } else if (element == "explosive") {
         paths = "effect\\efl\\wp\\wp21\\wp2103";
-    } else if (const auto kind = kKind.find(element); kind != kKind.end()) {
-        if (const auto look = g->settings.elementEffects.find(kind->second); look != g->settings.elementEffects.end()) paths = look->second;
+    } else {
+        paths = ElementHitLook(element);
     }
     if (paths.empty()) return;
     for (const std::string& path : Alternatives(paths)) {
@@ -10168,6 +10199,72 @@ void EliteHitPlayer(std::uintptr_t attacker, int seat, double now) {
 double EliteChill(int seat, double now) {
     if (seat < 0 || seat >= static_cast<int>(g_playerElements.size())) return 0.0;
     return now < g_playerElements[static_cast<std::size_t>(seat)].chillUntil ? g->content->economy().elites.chill_slow : 0.0;
+}
+
+// An element gun's effect in hand (gun_looks.h; the user's item 4, 2026-11-24: "adding some effect"):
+// every gun_looks.aura_every seconds its element's effect starts on the gun's own unit (uWpNN, among
+// the player's pointers, as the flamethrower's is found), at its joint aura_joint and aura_scale its
+// size: element_effects "gun_<element>_evolved" / "gun_<element>", else the element's hit look
+// (Explosive has none unless set). Not the flamethrower: its stream shows its element already.
+void DriveGunAuras(double now) {
+    if (!g->settings.gunAura || !engine::Caps().effects) return;
+    if (!g->match.inMatch || !g->run->HasActiveRun() || g->run->phase() != rm::Phase::ArenaActive || GamePaused() || ItemScreenOpen()) return;
+    struct Held {
+        double next = 0.0;
+        std::uint32_t item = 0;
+        std::uintptr_t unit = 0;
+    };
+    static std::array<Held, 4> held{};
+    static std::set<std::string> told;
+    ForEachSeatTurn([&] {
+        Held& h = held[static_cast<std::size_t>(std::clamp(g_adapterSeat, 0, 3))];
+        if (now < h.next) return;
+        const std::uintptr_t slot = EquippedGunSlot();
+        const auto player = engine::LocalPlayer();
+        if (!slot || !player) return;
+        const auto item = ReadOr<std::uint32_t>(slot + re5::off::kSlotItemId, 0);
+        const rm::WeaponBaseDef* def = WeaponForItem(item);
+        if (def == nullptr || def->id == "flamethrower") return;
+        const rm::WeaponInstance* gun = nullptr;
+        for (const rm::WeaponInstance& w : g->run->state().weapons) {
+            if (w.base_id == def->id && !w.elements.empty()) gun = &w;
+        }
+        if (gun == nullptr) return;
+        h.next = now + g->settings.gunAuraEvery;
+        char cls[8];
+        std::snprintf(cls, sizeof(cls), "uWp%02x", item & 0xFFu);  // item 0x01NN loads class uWpNN (resources.h)
+        if (h.item != item || !h.unit || engine::ClassName(h.unit) != cls) {
+            h.item = item;
+            h.unit = 0;
+            for (std::size_t off = 0; off < 0x4000 && !h.unit; off += 4) {
+                const auto p = ReadOr<std::uintptr_t>(player + off, 0);
+                if (p >= 0x00400000 && p < 0x7FFF0000 && !(p & 3) && engine::ClassName(p) == cls) h.unit = p;
+            }
+        }
+        if (!h.unit) return;
+        const std::string element(rm::ElementName(gun->elements.front()));
+        std::string paths;
+        for (const std::string& key : {"gun_" + element + "_evolved", "gun_" + element}) {
+            if (key.size() > 8 && key.compare(key.size() - 8, 8, "_evolved") == 0 && !gun->element_evolved) continue;
+            if (const auto own = g->settings.elementEffects.find(key); own != g->settings.elementEffects.end()) {
+                paths = own->second;
+                break;
+            }
+        }
+        if (paths.empty()) paths = ElementHitLook(element);
+        std::string played;
+        for (const std::string& path : Alternatives(paths)) {
+            if (engine::StartEffect(path.c_str(), h.unit, g->settings.gunAuraJoint, g->settings.gunAuraScale) != 0) {
+                played = path;
+                break;
+            }
+        }
+        if (told.insert(std::string(cls) + element).second) {
+            RM_LOGI("gun looks: %s in hand (%s), its %s look %s (joint %d, scale %.2f)", cls, def->id.c_str(), element.c_str(),
+                    played.empty() ? (paths.empty() ? "none set" : ("none in memory of " + paths).c_str()) : played.c_str(),
+                    g->settings.gunAuraJoint, g->settings.gunAuraScale);
+        }
+    });
 }
 
 void DriveElites(double now) {
@@ -15127,6 +15224,7 @@ private:
         { ProfileScope p("tick:DriveElements"); DriveElements(now); }
         { ProfileScope p("tick:DriveLevelHits"); DriveLevelHits(now); }
         { ProfileScope p("tick:DriveElites"); DriveElites(now); }
+        { ProfileScope p("tick:DriveGunAuras"); DriveGunAuras(now); }
         {
             // The game's pause (its menu, a paused world) stops the arena's clock (the user, 2026-11-22:
             // "timer continues in pause menu").
@@ -15214,6 +15312,7 @@ private:
         }
         WatchCoopFall(now);
         UpdateHudNames(now);
+        UpdateGunLooks(now);
         ForEachSeatTurn([&] {
             if (g->run->phase() == rm::Phase::ArenaActive && g->match.inMatch) ApplyBuildHealth();  // gains mid-arena
             // Items earned by perks, rewards and the shop wait until the player is in a match.
@@ -15607,6 +15706,8 @@ void ModInit(const Paths& paths, const Settings& settings) {
     auto loaded = rm::Content::LoadFromDirectory(paths.configDir);
     icons::SetDirectory(paths.configDir / L"icons");
     hudnames::SetDirectory(paths.configDir / L"hud_names");
+    gunlooks::SetDirectory(paths.configDir);
+    gunlooks::SetOptions({settings.gunPictures, settings.gunModels, settings.gunPictureTint, settings.gunModelTint, settings.gunEvolvedExtra});
     portraits::SetGameDirectory(paths.gameDir);
     LoadJoypadMapping();
     for (const auto& w : loaded.warnings) RM_LOGW("content: %s", w.c_str());
@@ -15953,6 +16054,7 @@ void DrawUnguarded() {
     DrawSplitMenus();  // M10: match_ui's own lock, not the mod's
     DrawLabImgui();    // developer: the UI lab's overlay showcase
     hudnames::OnDraw(overlay::FrameDevice());  // the HUD's names (its own lock)
+    gunlooks::OnDraw(overlay::FrameDevice());  // the element guns' pictures and models (its own lock)
     std::lock_guard lock(g->mutex);
     { ProfileScope p("draw:DrawElementArcs"); DrawElementArcs(); }
     mapeditor::Draw({g->run.get(), CurrentMapKey(), g->match.inMatch});

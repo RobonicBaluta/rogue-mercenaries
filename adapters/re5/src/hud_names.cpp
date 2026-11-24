@@ -24,6 +24,7 @@
 #include "log.h"
 #include "memory.h"
 #include "re5_layout.h"
+#include "textures.h"
 
 namespace rmre5::hudnames {
 namespace {
@@ -202,79 +203,20 @@ const std::vector<unsigned char>& Tile(const std::string& file, const Box& box) 
 
 // ---- the texture ----------------------------------------------------------------------------
 //
-// An rTexture keeps its path at +4 ("id\eng\cockpit\cp03_360_NOMIP_BM") and, among its fields, a
-// cTrans::Texture whose +0x10 is the IDirect3DTexture9 (seen 2026-11-21: rTexture +0xCC, a 512x512
-// "DXT5" cTrans::Texture). The language archive loads its own cp03 and the Japanese one; both are
-// written (the HUD's layouts use the language's).
+// An rTexture keeps its path at +4 ("id\eng\cockpit\cp03_360_NOMIP_BM") and its D3D texture
+// (textures.h). The language archive loads its own cp03 and the Japanese one; both are written (the
+// HUD's layouts use the language's).
 
-bool InImage(std::uintptr_t address) {
-    MEMORY_BASIC_INFORMATION mbi{};
-    return VirtualQuery(reinterpret_cast<void*>(address), &mbi, sizeof(mbi)) == sizeof(mbi) && mbi.Type == MEM_IMAGE &&
-           mbi.State == MEM_COMMIT;
-}
+using textures::D3DTextureOf;
 
-D3DRESOURCETYPE ResourceType(IDirect3DResource9* r) {
-    __try {
-        return r->GetType();
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return static_cast<D3DRESOURCETYPE>(0);
-    }
-}
-
-bool LevelDesc(IDirect3DTexture9* t, D3DSURFACE_DESC& desc) {
-    __try {
-        return SUCCEEDED(t->GetLevelDesc(0, &desc));
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
-}
-
-// The first field of `object` (up to `bytes`) whose DTI is named `name`.
-std::uintptr_t FieldOfClass(std::uintptr_t object, std::size_t bytes, const char* name, std::uintptr_t& dtiCache) {
-    for (std::size_t off = 4; off < bytes; off += 4) {
-        const auto p = ReadOr<std::uintptr_t>(object + off, 0);
-        if (p < 0x10000 || p >= 0x7FFF0000 || (p & 3)) continue;
-        const std::uintptr_t dti = engine::DtiOf(p);
-        if (!dti) continue;
-        if (dti == dtiCache || (!dtiCache && engine::DtiName(dti) == name)) {
-            dtiCache = dti;
-            return p;
-        }
-    }
-    return 0;
-}
-
-// The D3D texture of an rTexture (render thread: it asks the object what it is).
-IDirect3DTexture9* D3DTextureOf(std::uintptr_t resource) {
-    static std::uintptr_t wrapperDti = 0;
-    const std::uintptr_t wrapper = FieldOfClass(resource, 0x120, "cTrans::Texture", wrapperDti);
-    if (!wrapper) return nullptr;
-    for (std::size_t off = 4; off < 0x40; off += 4) {
-        const auto p = ReadOr<std::uintptr_t>(wrapper + off, 0);
-        if (p < 0x10000 || p >= 0x7FFF0000 || (p & 3)) continue;
-        const auto vtable = ReadOr<std::uintptr_t>(p, 0);
-        if (!vtable || !InImage(vtable) || !InImage(ReadOr<std::uintptr_t>(vtable, 0))) continue;
-        auto* r = reinterpret_cast<IDirect3DResource9*>(p);
-        if (ResourceType(r) == D3DRTYPE_TEXTURE) return static_cast<IDirect3DTexture9*>(r);
-    }
-    return nullptr;
-}
+bool LevelDesc(IDirect3DTexture9* t, D3DSURFACE_DESC& desc) { return textures::LevelDesc(t, 0, desc); }
 
 bool LockBlocks(IDirect3DTexture9* t, const Box& box, DWORD flags, D3DLOCKED_RECT& locked) {
     RECT rect{box.x0, box.y0, box.x1, box.y1};
-    __try {
-        return SUCCEEDED(t->LockRect(0, &locked, &rect, flags)) && locked.pBits;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return false;
-    }
+    return textures::Lock(t, 0, &rect, flags, locked);
 }
 
-void Unlock(IDirect3DTexture9* t) {
-    __try {
-        t->UnlockRect(0);
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-    }
-}
+void Unlock(IDirect3DTexture9* t) { textures::Unlock(t, 0); }
 
 // A box's DXT5 blocks, block row by block row.
 bool ReadBox(IDirect3DTexture9* t, const Box& box, std::vector<unsigned char>& out) {

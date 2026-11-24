@@ -4,6 +4,7 @@
 
 #include <shlobj.h>
 
+#include <algorithm>
 #include <fstream>
 
 #include "nlohmann/json.hpp"
@@ -138,6 +139,18 @@ Settings LoadAdapterSettings(const Paths& paths, std::string* error) {
         settings.effectGallery = json.value("effect_gallery", settings.effectGallery);
         settings.customEffects = json.value("custom_effects", settings.customEffects);
         settings.elementArcs = json.value("element_arcs", settings.elementArcs);
+        if (json.contains("gun_looks") && json["gun_looks"].is_object()) {
+            const auto& gl = json["gun_looks"];
+            settings.gunPictures = gl.value("pictures", settings.gunPictures);
+            settings.gunModels = gl.value("models", settings.gunModels);
+            settings.gunAura = gl.value("aura", settings.gunAura);
+            settings.gunPictureTint = std::clamp(gl.value("picture_tint", settings.gunPictureTint), 0.0f, 1.0f);
+            settings.gunModelTint = std::clamp(gl.value("model_tint", settings.gunModelTint), 0.0f, 1.0f);
+            settings.gunEvolvedExtra = std::clamp(gl.value("evolved_extra", settings.gunEvolvedExtra), 0.0f, 1.0f);
+            settings.gunAuraEvery = std::clamp(gl.value("aura_every", settings.gunAuraEvery), 0.25f, 60.0f);
+            settings.gunAuraScale = std::clamp(gl.value("aura_scale", settings.gunAuraScale), 0.05f, 3.0f);
+            settings.gunAuraJoint = std::clamp(gl.value("aura_joint", settings.gunAuraJoint), -1, 255);
+        }
         settings.musicRotation = json.value("music_rotation", settings.musicRotation);
         settings.flameStreamScale = json.value("flame_stream_scale", settings.flameStreamScale);
         settings.flameStreamCompanion = json.value("flame_stream_companion", settings.flameStreamCompanion);
