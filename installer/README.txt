@@ -175,21 +175,21 @@ PLAY
     - New in 0.3.0c: a charm shows its picture in the match's grid as in ORGANIZE.
     - New in 0.3.0c: the Drilling Facilities refuse the jump down at the boat's mooring,
       and a jump down that holds you for 6 seconds puts you back at the arena's start.
-    - New: fewer dogs at once (3 at most, 4 with two players), and fewer more of them on the
-      bigger tiers.
-    - New: Classic Jill's Last Escape is RE3's: a Perfect Dodge special (dodge a blow as it
-      lands, those near freeze, her next 3 shots crit) and a Reloading Tool that mixes
-      grenade launcher rounds (flame, acid, freeze) every 8 kills. No more three elements
-      on every gun; handguns, shotguns and launchers.
-    - New: Sheva's Scavenger and Ada's Separate Ways no longer turn pickups into ammo:
-      Scavenger's kills may refill a third of her gun, Ada's rifle headshots give their
-      round back.
-    - New: Hound Wolf Sheva's Incendiary is on her flamethrower and launchers only, and
-      Winter Rebecca's Cryo on her rifles and handguns only; their other guns keep the
-      element they rolled.
-    - New: Midnight Wesker's Uroboros kneels, stays down and rises (no dash), the virus covers
-      him in a dark crimson crust, his strike no longer turns him round, and as it ends the
-      virus leaves him with a stagger.
+    - New in 0.3.0d: fewer dogs at once (3 at most, 4 with two players), and they grow
+      less steeply with the tier.
+    - New in 0.3.0d: Classic Jill's Last Escape is RE3's: a Perfect Dodge special (dodge
+      a blow as it lands, those near freeze, her next 3 shots crit) and a Reloading Tool
+      that mixes grenade launcher rounds (flame, acid, freeze) every 8 kills. No more
+      three elements on every gun; handguns, shotguns and launchers.
+    - New in 0.3.0d: Sheva's Scavenger and Ada's Separate Ways no longer turn pickups
+      into ammo: Scavenger's kills may refill a third of her gun, Ada's rifle headshots
+      give their round back.
+    - New in 0.3.0d: Hound Wolf Sheva's Incendiary is on her flamethrower and launchers
+      only, and Winter Rebecca's Cryo on her rifles and handguns only; their other guns
+      keep the element they rolled.
+    - New in 0.3.0d: Midnight Wesker's Uroboros kneels, stays down and rises (no dash),
+      the virus covers him in a dark crimson crust, his strike no longer turns him
+      round, and as it ends the virus leaves him with a stagger.
     - A rocket launcher, once bought, comes back at the start of every arena (into the
       storage if your grid is full). Selling it gives it up for good.
     - What does not fit in your nine cells waits in the storage of ORGANIZE INVENTORY.
